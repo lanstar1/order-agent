@@ -1295,7 +1295,7 @@ def get_price_sheet_vendors() -> list:
         FROM material_sources s
         LEFT JOIN price_data p ON p.source_id = s.id
         WHERE s.source_type = 'sheet' AND s.is_active = 1
-        GROUP BY s.id
+        GROUP BY s.id, s.name, s.vendor, s.last_synced
         ORDER BY s.vendor
     """).fetchall()
     conn.close()

@@ -77,6 +77,9 @@ def _sql_to_pg(sql):
         )
         sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
 
+    # LIKE → ILIKE (PostgreSQL 대소문자 무시 검색)
+    sql = re.sub(r"\bLIKE\b", "ILIKE", sql)
+
     return sql
 
 
