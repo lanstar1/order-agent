@@ -97,6 +97,30 @@ def init_db():
         created_at   TEXT DEFAULT (datetime('now','localtime'))
     )""")
 
+    # ── 직원 (로그인)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS employees (
+        emp_cd        TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        password_hash TEXT NOT NULL
+    )""")
+
+    # 초기 직원 데이터 (비밀번호 = 담당자코드 숫자)
+    _init_employees = [
+        ("42", "김대기"), ("04", "김재호"), ("51", "박인수"),
+        ("49", "박진주"), ("55", "백광현"), ("60", "신시은"),
+        ("15", "윤웅렬"), ("50", "이준호"), ("82", "이지원"),
+        ("59", "전성진"), ("28", "정광규"), ("38", "정성우"),
+        ("01", "정정섭"), ("53", "황지성"),
+    ]
+    import hashlib
+    for emp_cd, name in _init_employees:
+        pw_hash = hashlib.sha256(emp_cd.encode()).hexdigest()
+        cur.execute(
+            "INSERT OR IGNORE INTO employees(emp_cd, name, password_hash) VALUES(?,?,?)",
+            (emp_cd, name, pw_hash)
+        )
+
     # ── 채팅 세션
     cur.execute("""
     CREATE TABLE IF NOT EXISTS chat_sessions (
