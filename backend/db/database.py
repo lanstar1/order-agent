@@ -124,34 +124,34 @@ class _PgConnectionWrapper:
         has_on_conflict = "ON CONFLICT" in pg_sql.upper()
         has_returning = "RETURNING" in pg_sql.upper()
 
+        cursor = self._conn.cursor(
+            cursor_factory=psycopg2.extras.DictCursor
+        )
+
         # INSERT에 RETURNING id 추가 (lastrowid 지원용)
-        # ON CONFLICT DO NOTHING이나 기존 ON CONFLICT ... DO UPDATE 제외
+        # ON CONFLICT DO NOTHING이나 기존 RETURNING은 제외
         if is_insert and not has_returning and not has_on_conflict:
             try_sql = pg_sql.rstrip().rstrip(";") + " RETURNING id"
-            cursor = self._conn.cursor(
-                cursor_factory=psycopg2.extras.DictCursor
-            )
             try:
                 cursor.execute("SAVEPOINT _ret_sp")
                 cursor.execute(try_sql, params or ())
-                cursor.execute("RELEASE SAVEPOINT _ret_sp")
                 row = cursor.fetchone()
+                cursor.execute("RELEASE SAVEPOINT _ret_sp")
                 lastrowid = row[0] if row else None
                 return _PgCursorWrapper(cursor, lastrowid)
             except Exception:
                 # id 컬럼 없는 테이블 → RETURNING 없이 재시도
-                sp_cur = self._conn.cursor()
-                sp_cur.execute("ROLLBACK TO SAVEPOINT _ret_sp")
-                sp_cur.execute("RELEASE SAVEPOINT _ret_sp")
+                try:
+                    cursor.execute("ROLLBACK TO SAVEPOINT _ret_sp")
+                    cursor.execute("RELEASE SAVEPOINT _ret_sp")
+                except Exception:
+                    pass
                 cursor = self._conn.cursor(
                     cursor_factory=psycopg2.extras.DictCursor
                 )
                 cursor.execute(pg_sql, params or ())
                 return _PgCursorWrapper(cursor)
         else:
-            cursor = self._conn.cursor(
-                cursor_factory=psycopg2.extras.DictCursor
-            )
             cursor.execute(pg_sql, params or ())
             return _PgCursorWrapper(cursor)
 
