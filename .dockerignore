@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.git/
+.env
+data/order_agent.db
+data/orders.db
+data/uploads/*
+data/feedback/*
+*.command
+start.bat
+scripts/

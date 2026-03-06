@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: order-agent
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt python-dotenv
+    startCommand: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: ERP_COM_CODE
+        sync: false
+      - key: ERP_USER_ID
+        sync: false
+      - key: ERP_ZONE
+        sync: false
+      - key: ERP_API_KEY
+        sync: false
+      - key: ERP_WH_CD
+        sync: false
+      - key: DEBUG
+        value: "false"

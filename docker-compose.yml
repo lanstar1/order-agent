@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  order-agent:
+    build: .
+    container_name: order-agent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # DB, 상품CSV, 업로드 파일 → NAS에 영구 저장
+      - ./data:/app/data
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
