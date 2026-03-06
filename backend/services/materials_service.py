@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from db.database import get_connection
+from db.database import get_connection, column_exists, now_kst
 from config import GOOGLE_API_KEY
 
 logger = logging.getLogger(__name__)
@@ -95,12 +95,10 @@ def _ensure_tables():
 
 _ensure_tables()
 
-# sheet_tab 컬럼 마이그레이션 (기존 DB 호환)
+# sheet_tab 컬럼 마이그레이션 (기존 DB 호환, SQLite/PG 모두 지원)
 def _migrate_sheet_tab():
     conn = get_connection()
-    try:
-        conn.execute("SELECT sheet_tab FROM price_data LIMIT 1")
-    except Exception:
+    if not column_exists(conn, 'price_data', 'sheet_tab'):
         conn.execute("ALTER TABLE price_data ADD COLUMN sheet_tab TEXT DEFAULT ''")
         conn.commit()
         logger.info("[Materials] price_data.sheet_tab 컬럼 추가 완료")
@@ -110,12 +108,10 @@ def _migrate_sheet_tab():
 
 _migrate_sheet_tab()
 
-# row_colors 컬럼 마이그레이션 (기존 DB 호환)
+# row_colors 컬럼 마이그레이션 (기존 DB 호환, SQLite/PG 모두 지원)
 def _migrate_row_colors():
     conn = get_connection()
-    try:
-        conn.execute("SELECT row_colors FROM price_data LIMIT 1")
-    except Exception:
+    if not column_exists(conn, 'price_data', 'row_colors'):
         conn.execute("ALTER TABLE price_data ADD COLUMN row_colors TEXT DEFAULT ''")
         conn.commit()
         logger.info("[Materials] price_data.row_colors 컬럼 추가 완료")
@@ -660,8 +656,8 @@ async def sync_sheet(source_id: int) -> dict:
                         tab_results.append({"tab": tab["title"], "rows": 0, "error": str(tab_err)})
 
         conn.execute(
-            "UPDATE material_sources SET last_synced=datetime('now','localtime') WHERE id=?",
-            (source_id,)
+            "UPDATE material_sources SET last_synced=? WHERE id=?",
+            (now_kst(), source_id)
         )
         conn.commit()
         conn.close()
@@ -836,8 +832,8 @@ async def sync_drive_folder(source_id: int) -> dict:
 
         # 마지막 동기화 시간 업데이트
         conn.execute(
-            "UPDATE material_sources SET last_synced=datetime('now','localtime') WHERE id=?",
-            (source_id,)
+            "UPDATE material_sources SET last_synced=? WHERE id=?",
+            (now_kst(), source_id)
         )
         conn.commit()
         conn.close()

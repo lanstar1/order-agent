@@ -1,39 +1,251 @@
 """
-SQLite 데이터베이스 초기화 및 세션 관리
+데이터베이스 초기화 및 세션 관리
+SQLite (로컬/NAS) 또는 PostgreSQL (Render) 자동 선택
+- DATABASE_URL 환경변수가 있으면 PostgreSQL
+- 없으면 기존 SQLite 사용
 """
+import os
+import re
+import hashlib
+import logging
 import sqlite3
 from pathlib import Path
-import sys, os
+from datetime import datetime, timezone, timedelta
+import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import DB_PATH
 
+logger = logging.getLogger(__name__)
 
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+USE_PG = bool(DATABASE_URL)
+
+if USE_PG:
+    import psycopg2
+    import psycopg2.extras
+
+
+# ─── SQL 변환 유틸 (SQLite → PostgreSQL) ───────────────
+def _sql_to_pg(sql):
+    """SQLite SQL 구문을 PostgreSQL 호환으로 변환"""
+    if not sql or not sql.strip():
+        return None
+
+    stripped = sql.strip()
+
+    # PRAGMA 처리
+    if stripped.upper().startswith("PRAGMA"):
+        pragma_match = re.match(
+            r"PRAGMA\s+table_info\((\w+)\)", stripped, re.IGNORECASE
+        )
+        if pragma_match:
+            table = pragma_match.group(1)
+            return (
+                f"SELECT ordinal_position - 1 as cid, column_name as name, "
+                f"data_type as type, 0 as notnull, NULL as dflt_value, 0 as pk "
+                f"FROM information_schema.columns "
+                f"WHERE table_name = '{table}' ORDER BY ordinal_position"
+            )
+        return None  # 다른 PRAGMA는 무시
+
+    # 파라미터 플레이스홀더: ? → %s
+    sql = sql.replace("?", "%s")
+
+    # datetime 함수
+    sql = sql.replace("datetime('now','localtime')", "NOW()")
+    sql = sql.replace("datetime('now', 'localtime')", "NOW()")
+
+    # AUTOINCREMENT → SERIAL
+    sql = re.sub(
+        r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT",
+        "SERIAL PRIMARY KEY",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # BLOB → BYTEA
+    sql = re.sub(r"\bBLOB\b", "BYTEA", sql, flags=re.IGNORECASE)
+
+    # INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
+    if re.search(r"INSERT\s+OR\s+IGNORE", sql, re.IGNORECASE):
+        sql = re.sub(
+            r"INSERT\s+OR\s+IGNORE\s+INTO",
+            "INSERT INTO",
+            sql,
+            flags=re.IGNORECASE,
+        )
+        sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+
+    return sql
+
+
+# ─── PostgreSQL 래퍼 클래스 ───────────────────────────
+class _PgCursorWrapper:
+    """SQLite cursor 호환 인터페이스를 제공하는 PostgreSQL cursor 래퍼"""
+
+    def __init__(self, cursor=None, lastrowid=None):
+        self._cursor = cursor
+        self._lastrowid = lastrowid
+
+    @property
+    def lastrowid(self):
+        return self._lastrowid
+
+    def fetchone(self):
+        if self._cursor is None:
+            return None
+        try:
+            return self._cursor.fetchone()
+        except psycopg2.ProgrammingError:
+            return None
+
+    def fetchall(self):
+        if self._cursor is None:
+            return []
+        try:
+            return self._cursor.fetchall()
+        except psycopg2.ProgrammingError:
+            return []
+
+
+class _PgConnectionWrapper:
+    """SQLite connection 호환 인터페이스를 제공하는 PostgreSQL connection 래퍼"""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=None):
+        pg_sql = _sql_to_pg(sql)
+        if pg_sql is None:
+            return _PgCursorWrapper()
+
+        is_insert = pg_sql.strip().upper().startswith("INSERT")
+        has_on_conflict = "ON CONFLICT" in pg_sql.upper()
+        has_returning = "RETURNING" in pg_sql.upper()
+
+        # INSERT에 RETURNING id 추가 (lastrowid 지원용)
+        # ON CONFLICT DO NOTHING이나 기존 ON CONFLICT ... DO UPDATE 제외
+        if is_insert and not has_returning and not has_on_conflict:
+            try_sql = pg_sql.rstrip().rstrip(";") + " RETURNING id"
+            cursor = self._conn.cursor(
+                cursor_factory=psycopg2.extras.DictCursor
+            )
+            try:
+                cursor.execute("SAVEPOINT _ret_sp")
+                cursor.execute(try_sql, params or ())
+                cursor.execute("RELEASE SAVEPOINT _ret_sp")
+                row = cursor.fetchone()
+                lastrowid = row[0] if row else None
+                return _PgCursorWrapper(cursor, lastrowid)
+            except Exception:
+                # id 컬럼 없는 테이블 → RETURNING 없이 재시도
+                sp_cur = self._conn.cursor()
+                sp_cur.execute("ROLLBACK TO SAVEPOINT _ret_sp")
+                sp_cur.execute("RELEASE SAVEPOINT _ret_sp")
+                cursor = self._conn.cursor(
+                    cursor_factory=psycopg2.extras.DictCursor
+                )
+                cursor.execute(pg_sql, params or ())
+                return _PgCursorWrapper(cursor)
+        else:
+            cursor = self._conn.cursor(
+                cursor_factory=psycopg2.extras.DictCursor
+            )
+            cursor.execute(pg_sql, params or ())
+            return _PgCursorWrapper(cursor)
+
+    def executescript(self, sql):
+        """SQL 스크립트 실행 (세미콜론으로 분리, 개별 실행)"""
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        for stmt in statements:
+            pg_stmt = _sql_to_pg(stmt)
+            if pg_stmt:
+                cursor = self._conn.cursor()
+                try:
+                    cursor.execute("SAVEPOINT _script_sp")
+                    cursor.execute(pg_stmt)
+                    cursor.execute("RELEASE SAVEPOINT _script_sp")
+                except Exception as e:
+                    logger.warning(f"[DB/PG] executescript 구문 스킵: {e}")
+                    try:
+                        sp_cur = self._conn.cursor()
+                        sp_cur.execute("ROLLBACK TO SAVEPOINT _script_sp")
+                        sp_cur.execute("RELEASE SAVEPOINT _script_sp")
+                    except Exception:
+                        pass
+        self._conn.commit()
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def cursor(self):
+        return self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+
+# ─── 유틸리티 함수 ──────────────────────────────────
+def now_kst() -> str:
+    """현재 한국 시간(KST, UTC+9) 문자열 반환"""
+    KST = timezone(timedelta(hours=9))
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def column_exists(conn, table_name, column_name):
+    """테이블에 특정 컬럼이 존재하는지 확인 (SQLite/PG 모두 지원)"""
+    if USE_PG:
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name=? AND column_name=?",
+            (table_name, column_name),
+        ).fetchone()
+        return row is not None
+    else:
+        cols = [
+            r[1]
+            for r in conn.execute(
+                f"PRAGMA table_info({table_name})"
+            ).fetchall()
+        ]
+        return column_name in cols
+
+
+# ─── 연결 함수 ──────────────────────────────────
 def get_connection():
-    """SQLite 연결 반환 (WAL 모드)"""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    """데이터베이스 연결 반환 (PG 또는 SQLite 자동 선택)"""
+    if USE_PG:
+        conn = psycopg2.connect(DATABASE_URL)
+        return _PgConnectionWrapper(conn)
+    else:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
 
 
+# ─── 테이블 초기화 ──────────────────────────────────
 def init_db():
     """테이블 초기화 (최초 실행 시)"""
     conn = get_connection()
-    cur = conn.cursor()
+    cur_or_conn = conn
 
     # ── 거래처 테이블
-    cur.execute("""
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS customers (
         cust_code  TEXT PRIMARY KEY,
         cust_name  TEXT NOT NULL,
-        alias      TEXT,          -- 거래처 별칭 (쉼표 구분)
+        alias      TEXT,
         created_at TEXT DEFAULT (datetime('now','localtime'))
     )""")
 
     # ── 발주서 헤더
-    cur.execute("""
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS orders (
         order_id    TEXT PRIMARY KEY,
         cust_code   TEXT NOT NULL,
@@ -47,7 +259,7 @@ def init_db():
     )""")
 
     # ── 발주서 라인
-    cur.execute("""
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS order_lines (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id     TEXT NOT NULL,
@@ -55,13 +267,14 @@ def init_db():
         raw_text     TEXT,
         qty          REAL,
         unit         TEXT,
-        selected_cd  TEXT,         -- 최종 선택 PROD_CD
+        price        REAL DEFAULT 0,
+        selected_cd  TEXT,
         is_confirmed INTEGER DEFAULT 0,
         FOREIGN KEY (order_id) REFERENCES orders(order_id)
     )""")
 
-    # ── 매칭 후보 (학습 데이터용)
-    cur.execute("""
+    # ── 매칭 후보
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS match_candidates (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         line_id      INTEGER NOT NULL,
@@ -69,12 +282,12 @@ def init_db():
         prod_name    TEXT,
         score        REAL,
         match_reason TEXT,
-        was_selected INTEGER DEFAULT 0,   -- 사용자가 이 후보를 선택했는지
+        was_selected INTEGER DEFAULT 0,
         FOREIGN KEY (line_id) REFERENCES order_lines(id)
     )""")
 
     # ── ERP 전송 로그
-    cur.execute("""
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS erp_submissions (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id    TEXT NOT NULL,
@@ -84,13 +297,13 @@ def init_db():
         submitted_at TEXT DEFAULT (datetime('now','localtime'))
     )""")
 
-    # ── 피드백 / 학습 데이터 (raw_text → 최종 선택 PROD_CD 매핑)
-    cur.execute("""
+    # ── 피드백 / 학습 데이터
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS feedback_log (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         cust_code    TEXT,
-        raw_text     TEXT NOT NULL,    -- 발주서 원문 상품 표현
-        prod_cd      TEXT NOT NULL,    -- 최종 확정된 PROD_CD
+        raw_text     TEXT NOT NULL,
+        prod_cd      TEXT NOT NULL,
         prod_name    TEXT,
         qty          REAL,
         unit         TEXT,
@@ -98,7 +311,7 @@ def init_db():
     )""")
 
     # ── 직원 (로그인)
-    cur.execute("""
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS employees (
         emp_cd        TEXT PRIMARY KEY,
         name          TEXT NOT NULL,
@@ -113,16 +326,15 @@ def init_db():
         ("59", "전성진"), ("28", "정광규"), ("38", "정성우"),
         ("01", "정정섭"), ("53", "황지성"),
     ]
-    import hashlib
     for emp_cd, name in _init_employees:
         pw_hash = hashlib.sha256(emp_cd.encode()).hexdigest()
-        cur.execute(
+        cur_or_conn.execute(
             "INSERT OR IGNORE INTO employees(emp_cd, name, password_hash) VALUES(?,?,?)",
-            (emp_cd, name, pw_hash)
+            (emp_cd, name, pw_hash),
         )
 
     # ── 채팅 세션
-    cur.execute("""
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS chat_sessions (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id  TEXT UNIQUE NOT NULL,
@@ -133,21 +345,32 @@ def init_db():
     )""")
 
     # ── 채팅 메시지
-    cur.execute("""
+    cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS chat_messages (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id  TEXT NOT NULL,
-        role        TEXT NOT NULL,        -- 'user' | 'assistant'
+        role        TEXT NOT NULL,
         content     TEXT NOT NULL,
-        file_path   TEXT,                 -- 첨부파일 경로
-        file_name   TEXT,                 -- 원본 파일명
+        file_path   TEXT,
+        file_name   TEXT,
         created_at  TEXT DEFAULT (datetime('now','localtime')),
         FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id)
     )""")
 
+    # ── 단가 이력 (ERP 단가 캐시)
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS product_prices (
+        cust_code  TEXT NOT NULL,
+        prod_cd    TEXT NOT NULL,
+        price      REAL DEFAULT 0,
+        updated_at TEXT,
+        PRIMARY KEY (cust_code, prod_cd)
+    )""")
+
     conn.commit()
     conn.close()
-    print(f"[DB] 초기화 완료: {DB_PATH}")
+    db_type = "PostgreSQL" if USE_PG else f"SQLite ({DB_PATH})"
+    print(f"[DB] 초기화 완료: {db_type}")
 
 
 if __name__ == "__main__":

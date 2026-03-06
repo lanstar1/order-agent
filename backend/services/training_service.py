@@ -20,7 +20,7 @@ from datetime import datetime
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from db.database import get_connection
+from db.database import get_connection, column_exists
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +70,12 @@ def _ensure_training_tables():
             ON po_training_items(item_code);
     """)
 
-    # 기존 테이블에 이미지 컬럼이 없으면 추가 (마이그레이션)
+    # 기존 테이블에 이미지 컬럼이 없으면 추가 (마이그레이션, SQLite/PG 모두 지원)
     try:
-        cols = [row[1] for row in conn.execute("PRAGMA table_info(po_training_pairs)").fetchall()]
-        if "raw_po_image" not in cols:
+        if not column_exists(conn, 'po_training_pairs', 'raw_po_image'):
             conn.execute("ALTER TABLE po_training_pairs ADD COLUMN raw_po_image BLOB DEFAULT NULL")
             conn.execute("ALTER TABLE po_training_pairs ADD COLUMN raw_po_image_type TEXT DEFAULT ''")
+            conn.commit()
             logger.info("[Training] 마이그레이션: raw_po_image, raw_po_image_type 컬럼 추가")
     except Exception as e:
         logger.warning(f"[Training] 마이그레이션 확인 중 오류 (무시): {e}")
