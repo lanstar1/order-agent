@@ -22,6 +22,13 @@ from services.training_service import (
     delete_training_pair,
     get_training_stats,
 )
+from services.bulk_training_service import (
+    create_session as bulk_create_session,
+    get_session as bulk_get_session,
+    extract_po_image as bulk_extract_po,
+    suggest_matches as bulk_suggest_matches,
+    confirm_and_save as bulk_confirm_save,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/training", tags=["training"])
@@ -220,3 +227,104 @@ async def remove_training_pair(pair_id: int):
 async def training_stats():
     """학습 데이터 통계"""
     return get_training_stats()
+
+
+# ─────────────────────────────────────────
+#  대량 학습 (Bulk Training) API
+# ─────────────────────────────────────────
+
+@router.post("/bulk/create-session")
+async def bulk_create(
+    file: UploadFile = File(...),
+    cust_code: str = Form(...),
+    cust_name: str = Form(...),
+):
+    """대량 학습 세션 생성 + 판매전표 엑셀 파싱"""
+    allowed_exts = {".xlsx", ".xls", ".xlsm"}
+    suffix = Path(file.filename).suffix.lower() if file.filename else ""
+    if suffix not in allowed_exts:
+        raise HTTPException(400, f"지원하지 않는 파일 형식: {suffix}")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "파일 크기가 10MB를 초과합니다.")
+
+    try:
+        result = bulk_create_session(cust_code, cust_name, content, file.filename)
+        return result
+    except Exception as e:
+        logger.error(f"[BulkTrain] 세션 생성 실패: {e}", exc_info=True)
+        raise HTTPException(500, f"세션 생성 실패: {str(e)}")
+
+
+@router.post("/bulk/extract-po")
+async def bulk_extract(
+    file: UploadFile = File(...),
+    session_id: str = Form(...),
+):
+    """발주서 이미지 1건 AI 추출"""
+    allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"}
+    suffix = Path(file.filename).suffix.lower() if file.filename else ""
+    if suffix not in allowed_exts:
+        raise HTTPException(400, f"지원하지 않는 파일 형식: {suffix}")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "파일 크기가 10MB를 초과합니다.")
+
+    media_types = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".gif": "image/gif",
+        ".webp": "image/webp", ".pdf": "application/pdf",
+    }
+    media_type = media_types.get(suffix, "image/jpeg")
+
+    try:
+        result = await bulk_extract_po(session_id, file.filename, content, media_type)
+        return result
+    except Exception as e:
+        logger.error(f"[BulkTrain] 추출 실패: {e}", exc_info=True)
+        raise HTTPException(500, f"추출 실패: {str(e)}")
+
+
+@router.post("/bulk/suggest-matches")
+async def bulk_suggest(session_id: str = Form(...)):
+    """매칭 제안 생성"""
+    result = bulk_suggest_matches(session_id)
+    if "error" in result:
+        raise HTTPException(404, result["error"])
+    return result
+
+
+class BulkMatchItem(BaseModel):
+    po_item: dict
+    excel_item: dict
+
+
+class BulkConfirmation(BaseModel):
+    extraction_id: int
+    matches: List[BulkMatchItem]
+
+
+class BulkConfirmRequest(BaseModel):
+    session_id: str
+    confirmations: List[BulkConfirmation]
+
+
+@router.post("/bulk/confirm")
+async def bulk_confirm(body: BulkConfirmRequest):
+    """확인된 매칭 저장"""
+    confirmations = [c.dict() for c in body.confirmations]
+    result = bulk_confirm_save(body.session_id, confirmations)
+    if not result.get("success"):
+        raise HTTPException(500, result.get("error", "저장 실패"))
+    return result
+
+
+@router.get("/bulk/session/{session_id}")
+async def bulk_session_detail(session_id: str):
+    """세션 상태 조회"""
+    session = bulk_get_session(session_id)
+    if not session:
+        raise HTTPException(404, "세션을 찾을 수 없습니다.")
+    return session

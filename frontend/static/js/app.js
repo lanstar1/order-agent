@@ -2313,7 +2313,319 @@ document.addEventListener("click", (e) => {
   if (dd && search && !search.contains(e.target) && !dd.contains(e.target)) {
     dd.style.display = "none";
   }
+  // 대량학습 거래처 드롭다운 닫기
+  const bdd = document.getElementById("bulk-cust-dropdown");
+  const bs = document.getElementById("bulk-cust-search");
+  if (bdd && bs && !bs.contains(e.target) && !bdd.contains(e.target)) {
+    bdd.style.display = "none";
+  }
 });
+
+
+/* =============================================
+   대량 학습 (Bulk Training)
+   ============================================= */
+const _bulkState = {
+  sessionId: null,
+  custCode: "",
+  custName: "",
+  poFiles: [],
+  excelFile: null,
+  excelItems: [],
+  extractionResults: [],
+  matchData: null,
+};
+
+function openBulkTrainingModal() {
+  // 상태 초기화
+  Object.assign(_bulkState, {
+    sessionId: null, custCode: "", custName: "",
+    poFiles: [], excelFile: null, excelItems: [],
+    extractionResults: [], matchData: null,
+  });
+  document.getElementById("bulk-cust-search").value = "";
+  document.getElementById("bulk-po-file-list").innerHTML = "";
+  document.getElementById("bulk-excel-info").innerHTML = "";
+  document.getElementById("bulk-start-btn").disabled = true;
+  // 모든 step 숨기고 step1만 표시
+  document.querySelectorAll(".bulk-step").forEach(s => s.style.display = "none");
+  document.getElementById("bulk-step-1").style.display = "block";
+  document.getElementById("bulk-step-indicator").textContent = "1 / 4";
+  document.getElementById("bulk-training-modal").style.display = "block";
+}
+
+function closeBulkTrainingModal() {
+  document.getElementById("bulk-training-modal").style.display = "none";
+}
+
+function _checkBulkReady() {
+  const ready = _bulkState.custCode && _bulkState.poFiles.length > 0 && _bulkState.excelFile;
+  document.getElementById("bulk-start-btn").disabled = !ready;
+}
+
+// 거래처 검색 (기존 로직 재사용)
+let _bulkCustTimer = null;
+function onBulkCustSearch(q) {
+  clearTimeout(_bulkCustTimer);
+  if (!q || q.length < 1) {
+    document.getElementById("bulk-cust-dropdown").style.display = "none";
+    return;
+  }
+  _bulkCustTimer = setTimeout(async () => {
+    try {
+      const data = await api.customerSearch(q);
+      const list = data.results || [];
+      const dd = document.getElementById("bulk-cust-dropdown");
+      const inner = dd.querySelector("div");
+      if (!list.length) { dd.style.display = "none"; return; }
+      inner.innerHTML = list.map(c =>
+        `<div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6"
+              onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background=''"
+              onclick="selectBulkCust('${c.cust_code}','${escapeHtml(c.cust_name)}')">
+          <strong>${escapeHtml(c.cust_name)}</strong> <span style="color:#9ca3af">(${c.cust_code})</span>
+        </div>`
+      ).join("");
+      dd.style.display = "block";
+    } catch(e) { console.error(e); }
+  }, 300);
+}
+
+function selectBulkCust(code, name) {
+  _bulkState.custCode = code;
+  _bulkState.custName = name;
+  document.getElementById("bulk-cust-search").value = `${name} (${code})`;
+  document.getElementById("bulk-cust-dropdown").style.display = "none";
+  _checkBulkReady();
+}
+
+// 발주서 이미지 파일 선택
+function onBulkPoFiles(files) {
+  const arr = Array.from(files).filter(f => f.type.startsWith("image/"));
+  _bulkState.poFiles = arr;
+  document.getElementById("bulk-po-file-list").innerHTML = arr.length
+    ? `<strong>${arr.length}개 파일 선택됨:</strong> ` + arr.map(f => escapeHtml(f.name)).join(", ")
+    : "";
+  _checkBulkReady();
+}
+
+function onBulkPoDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor = "#d1d5db";
+  if (e.dataTransfer.files.length) onBulkPoFiles(e.dataTransfer.files);
+}
+
+// 엑셀 파일 선택
+function onBulkExcelFile(file) {
+  if (!file) return;
+  _bulkState.excelFile = file;
+  document.getElementById("bulk-excel-info").innerHTML =
+    `<strong>📊 ${escapeHtml(file.name)}</strong> (${(file.size/1024).toFixed(0)}KB)`;
+  _checkBulkReady();
+}
+
+function onBulkExcelDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor = "#d1d5db";
+  if (e.dataTransfer.files.length) onBulkExcelFile(e.dataTransfer.files[0]);
+}
+
+// Step 2: AI 추출 시작
+async function startBulkExtraction() {
+  // Step 1 → Step 2
+  document.getElementById("bulk-step-1").style.display = "none";
+  document.getElementById("bulk-step-2").style.display = "block";
+  document.getElementById("bulk-step-indicator").textContent = "2 / 4";
+
+  const logEl = document.getElementById("bulk-extraction-log");
+  const progFill = document.getElementById("bulk-progress-fill");
+  const progText = document.getElementById("bulk-progress-text");
+  logEl.innerHTML = "";
+
+  const addLog = (msg, color = "#374151") => {
+    logEl.innerHTML += `<div style="color:${color};margin-bottom:4px">${msg}</div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  // 1) 세션 생성 + 엑셀 파싱
+  addLog("📊 엑셀 파싱 중...");
+  try {
+    const fd = new FormData();
+    fd.append("file", _bulkState.excelFile);
+    fd.append("cust_code", _bulkState.custCode);
+    fd.append("cust_name", _bulkState.custName);
+    const sessionResult = await api.bulkCreateSession(fd);
+    _bulkState.sessionId = sessionResult.session_id;
+    _bulkState.excelItems = sessionResult.excel_items || [];
+    addLog(`✅ 엑셀 파싱 완료: ${sessionResult.total_items}건`, "#059669");
+  } catch (e) {
+    addLog(`❌ 엑셀 파싱 실패: ${e.message}`, "#dc2626");
+    return;
+  }
+
+  // 2) 발주서 이미지 순차 추출
+  const total = _bulkState.poFiles.length;
+  _bulkState.extractionResults = [];
+
+  for (let i = 0; i < total; i++) {
+    const file = _bulkState.poFiles[i];
+    const pct = Math.round(((i) / total) * 100);
+    progFill.style.width = pct + "%";
+    progFill.textContent = pct + "%";
+    progText.textContent = `${i + 1} / ${total} 처리 중: ${file.name}`;
+
+    addLog(`🔍 [${i+1}/${total}] ${file.name} 추출 중...`);
+
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("session_id", _bulkState.sessionId);
+      const result = await api.bulkExtractPo(fd);
+      _bulkState.extractionResults.push(result);
+
+      if (result.status === "success") {
+        addLog(`  ✅ 날짜: ${result.order_date || "?"}, ${result.items?.length || 0}건 추출`, "#059669");
+      } else {
+        addLog(`  ⚠️ 추출 실패 (건너뜀)`, "#d97706");
+      }
+    } catch (e) {
+      addLog(`  ❌ 오류: ${e.message}`, "#dc2626");
+    }
+  }
+
+  progFill.style.width = "100%";
+  progFill.textContent = "100%";
+  progText.textContent = `추출 완료! 매칭 분석 중...`;
+
+  // 3) 매칭 제안 요청
+  addLog("🔗 매칭 분석 중...");
+  try {
+    const matchResult = await api.bulkSuggestMatches(_bulkState.sessionId);
+    _bulkState.matchData = matchResult;
+    addLog(`✅ 매칭 완료: ${matchResult.total_matched}건 자동 매칭됨`, "#059669");
+
+    setTimeout(() => showBulkMatchResults(), 500);
+  } catch (e) {
+    addLog(`❌ 매칭 분석 실패: ${e.message}`, "#dc2626");
+  }
+}
+
+// Step 3: 매칭 결과 표시
+function showBulkMatchResults() {
+  document.getElementById("bulk-step-2").style.display = "none";
+  document.getElementById("bulk-step-3").style.display = "block";
+  document.getElementById("bulk-step-indicator").textContent = "3 / 4";
+
+  const data = _bulkState.matchData;
+  if (!data) return;
+
+  document.getElementById("bulk-match-summary").innerHTML =
+    `발주서 ${data.extractions?.length || 0}건 분석 | 자동 매칭 ${data.total_matched}건 | 미매칭 엑셀 ${data.unmatched_excel_count}건`;
+
+  const container = document.getElementById("bulk-match-results");
+  let html = "";
+
+  (data.extractions || []).forEach((ext, extIdx) => {
+    html += `<div style="border:1px solid #e5e7eb;border-radius:8px;margin-bottom:12px;overflow:hidden">`;
+    html += `<div style="background:#f9fafb;padding:10px 14px;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb">
+      📄 ${escapeHtml(ext.filename)} <span style="color:#6b7280;font-weight:400">날짜: ${ext.order_date || "?"}</span>
+    </div>`;
+
+    if (ext.matches && ext.matches.length) {
+      html += `<table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead><tr style="background:#f3f4f6">
+          <th style="padding:6px 10px;text-align:left;width:30px">✓</th>
+          <th style="padding:6px 10px;text-align:left">발주서 품명</th>
+          <th style="padding:6px 10px;text-align:left">수량</th>
+          <th style="padding:6px 10px;text-align:left">→</th>
+          <th style="padding:6px 10px;text-align:left">엑셀 품명</th>
+          <th style="padding:6px 10px;text-align:left">품목코드</th>
+          <th style="padding:6px 10px;text-align:left">신뢰도</th>
+        </tr></thead><tbody>`;
+
+      ext.matches.forEach((m, mIdx) => {
+        const conf = m.confidence || 0;
+        const confColor = conf >= 90 ? "#059669" : conf >= 70 ? "#d97706" : "#dc2626";
+        const checked = conf >= 70 ? "checked" : "";
+        const exItem = m.excel_item;
+        const poItem = m.po_item || {};
+
+        html += `<tr style="border-bottom:1px solid #f3f4f6" data-ext-idx="${extIdx}" data-match-idx="${mIdx}">
+          <td style="padding:6px 10px"><input type="checkbox" ${checked} class="bulk-match-check" data-ext="${extIdx}" data-match="${mIdx}"></td>
+          <td style="padding:6px 10px">${escapeHtml(poItem.product_hint || "")}</td>
+          <td style="padding:6px 10px">${poItem.qty || ""} ${poItem.unit || ""}</td>
+          <td style="padding:6px 10px;color:#9ca3af">→</td>
+          <td style="padding:6px 10px">${exItem ? escapeHtml(exItem.product_name || exItem.model_name || "") : '<span style="color:#dc2626">미매칭</span>'}</td>
+          <td style="padding:6px 10px;font-family:monospace">${exItem ? escapeHtml(exItem.item_code || "") : ""}</td>
+          <td style="padding:6px 10px;font-weight:600;color:${confColor}">${conf}%</td>
+        </tr>`;
+      });
+
+      html += `</tbody></table>`;
+    } else {
+      html += `<div style="padding:12px;font-size:12px;color:#9ca3af">추출된 항목이 없습니다.</div>`;
+    }
+
+    html += `</div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+// Step 4: 저장
+async function saveBulkMatches() {
+  const data = _bulkState.matchData;
+  if (!data) return;
+
+  const confirmations = [];
+
+  (data.extractions || []).forEach((ext, extIdx) => {
+    const matches = [];
+    (ext.matches || []).forEach((m, mIdx) => {
+      const cb = document.querySelector(`.bulk-match-check[data-ext="${extIdx}"][data-match="${mIdx}"]`);
+      if (cb && cb.checked && m.excel_item && m.excel_item.item_code) {
+        matches.push({
+          po_item: m.po_item,
+          excel_item: m.excel_item,
+        });
+      }
+    });
+
+    if (matches.length > 0) {
+      confirmations.push({
+        extraction_id: ext.extraction_id,
+        matches: matches,
+      });
+    }
+  });
+
+  if (!confirmations.length) {
+    toast("저장할 매칭이 없습니다.", "warning");
+    return;
+  }
+
+  document.getElementById("bulk-save-btn").disabled = true;
+  document.getElementById("bulk-save-btn").textContent = "저장 중...";
+
+  try {
+    const result = await api.bulkConfirm({
+      session_id: _bulkState.sessionId,
+      confirmations: confirmations,
+    });
+
+    // Step 4: 완료
+    document.getElementById("bulk-step-3").style.display = "none";
+    document.getElementById("bulk-step-4").style.display = "block";
+    document.getElementById("bulk-step-indicator").textContent = "4 / 4";
+    document.getElementById("bulk-result-summary").innerHTML =
+      `<strong>${result.saved_pairs}건</strong>의 학습 데이터가 저장되었습니다.<br>총 <strong>${result.saved_items}개</strong> 품목이 학습되었습니다.`;
+
+    toast(`대량 학습 완료: ${result.saved_pairs}건 저장`, "success");
+  } catch (e) {
+    toast("저장 실패: " + e.message, "error");
+    document.getElementById("bulk-save-btn").disabled = false;
+    document.getElementById("bulk-save-btn").textContent = "✅ 확인된 매칭 저장";
+  }
+}
 
 
 /* =============================================

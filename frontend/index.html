@@ -643,7 +643,12 @@ C규격품 200개
       <div class="card" style="margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div class="card-title" style="margin:0">발주서 처리 강화 (학습 데이터)</div>
-          <div id="training-stats" style="font-size:13px;color:var(--gray-500)"></div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div id="training-stats" style="font-size:13px;color:var(--gray-500)"></div>
+            <button class="btn btn-primary" onclick="openBulkTrainingModal()" style="font-size:13px;padding:6px 14px">
+              📦 대량 학습
+            </button>
+          </div>
         </div>
         <p style="font-size:13px;color:var(--gray-600);margin-top:8px;margin-bottom:0">
           원본 발주서와 정확한 판매전표(엑셀)를 매칭하여 학습 데이터로 저장합니다.<br>
@@ -1331,7 +1336,108 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 </script>
 
-<script src="/static/js/api.js?v=20260305e"></script>
-<script src="/static/js/app.js?v=20260305n"></script>
+<!-- ─── 대량 학습 모달 ─── -->
+<div id="bulk-training-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,.5);overflow-y:auto">
+<div style="max-width:960px;margin:30px auto;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+  <!-- 헤더 -->
+  <div style="padding:20px 24px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:18px;font-weight:700">📦 대량 학습</div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <div id="bulk-step-indicator" style="font-size:13px;color:#6b7280"></div>
+      <button onclick="closeBulkTrainingModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280">&times;</button>
+    </div>
+  </div>
+
+  <!-- Step 1: 업로드 -->
+  <div id="bulk-step-1" class="bulk-step" style="padding:24px">
+    <h3 style="margin:0 0 16px;font-size:15px;color:#374151">Step 1: 파일 업로드</h3>
+
+    <!-- 거래처 선택 -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:13px;font-weight:600;color:#374151">거래처 <span style="color:red">*</span></label>
+      <input id="bulk-cust-search" type="text" placeholder="거래처명 또는 코드 검색..."
+             oninput="onBulkCustSearch(this.value)"
+             style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+      <div id="bulk-cust-dropdown" style="display:none;position:relative;z-index:10">
+        <div style="position:absolute;width:100%;max-height:200px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+      </div>
+    </div>
+
+    <!-- 발주서 이미지 업로드 -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:13px;font-weight:600;color:#374151">원본 발주서 이미지 (여러 장) <span style="color:red">*</span></label>
+      <div id="bulk-po-dropzone"
+           ondrop="onBulkPoDrop(event)" ondragover="event.preventDefault();this.style.borderColor='#3b82f6'"
+           ondragleave="this.style.borderColor='#d1d5db'"
+           style="margin-top:4px;border:2px dashed #d1d5db;border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .2s"
+           onclick="document.getElementById('bulk-po-input').click()">
+        <div style="font-size:32px;margin-bottom:8px">🖼️</div>
+        <div style="font-size:13px;color:#6b7280">발주서 이미지를 드래그하거나 클릭하세요</div>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px">JPG, PNG (여러 파일 선택 가능)</div>
+        <input id="bulk-po-input" type="file" accept="image/*" multiple style="display:none"
+               onchange="onBulkPoFiles(this.files)">
+      </div>
+      <div id="bulk-po-file-list" style="margin-top:8px;font-size:13px;color:#374151"></div>
+    </div>
+
+    <!-- 판매전표 엑셀 -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:13px;font-weight:600;color:#374151">판매전표 엑셀 <span style="color:red">*</span></label>
+      <div id="bulk-excel-dropzone"
+           ondrop="onBulkExcelDrop(event)" ondragover="event.preventDefault();this.style.borderColor='#3b82f6'"
+           ondragleave="this.style.borderColor='#d1d5db'"
+           style="margin-top:4px;border:2px dashed #d1d5db;border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .2s"
+           onclick="document.getElementById('bulk-excel-input').click()">
+        <div style="font-size:32px;margin-bottom:8px">📊</div>
+        <div style="font-size:13px;color:#6b7280">판매전표 엑셀을 드래그하거나 클릭하세요</div>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px">.xlsx (날짜순 정리된 파일 1개)</div>
+        <input id="bulk-excel-input" type="file" accept=".xlsx,.xls,.xlsm" style="display:none"
+               onchange="onBulkExcelFile(this.files[0])">
+      </div>
+      <div id="bulk-excel-info" style="margin-top:8px;font-size:13px;color:#374151"></div>
+    </div>
+
+    <div style="text-align:right">
+      <button id="bulk-start-btn" class="btn btn-primary" onclick="startBulkExtraction()" disabled>
+        AI 추출 시작 →
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 2: AI 추출 진행 -->
+  <div id="bulk-step-2" class="bulk-step" style="padding:24px;display:none">
+    <h3 style="margin:0 0 16px;font-size:15px;color:#374151">Step 2: AI 추출 중...</h3>
+    <div id="bulk-progress-bar" style="background:#e5e7eb;border-radius:8px;height:24px;overflow:hidden;margin-bottom:12px">
+      <div id="bulk-progress-fill" style="background:#3b82f6;height:100%;width:0%;transition:width .3s;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600"></div>
+    </div>
+    <div id="bulk-progress-text" style="font-size:13px;color:#6b7280;margin-bottom:16px"></div>
+    <div id="bulk-extraction-log" style="max-height:300px;overflow-y:auto;font-size:12px;font-family:monospace;background:#f9fafb;border-radius:6px;padding:12px"></div>
+  </div>
+
+  <!-- Step 3: 매칭 확인 -->
+  <div id="bulk-step-3" class="bulk-step" style="padding:24px;display:none">
+    <h3 style="margin:0 0 16px;font-size:15px;color:#374151">Step 3: 매칭 확인</h3>
+    <div id="bulk-match-summary" style="font-size:13px;color:#6b7280;margin-bottom:16px"></div>
+    <div id="bulk-match-results" style="max-height:500px;overflow-y:auto"></div>
+    <div style="text-align:right;margin-top:16px">
+      <button class="btn" onclick="closeBulkTrainingModal()" style="margin-right:8px">취소</button>
+      <button id="bulk-save-btn" class="btn btn-primary" onclick="saveBulkMatches()">
+        ✅ 확인된 매칭 저장
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 4: 완료 -->
+  <div id="bulk-step-4" class="bulk-step" style="padding:24px;display:none;text-align:center">
+    <div style="font-size:48px;margin-bottom:16px">🎉</div>
+    <h3 style="margin:0 0 8px;font-size:18px;color:#374151">학습 완료!</h3>
+    <div id="bulk-result-summary" style="font-size:14px;color:#6b7280;margin-bottom:24px"></div>
+    <button class="btn btn-primary" onclick="closeBulkTrainingModal();loadTrainingPairs();loadTrainingStats()">닫기</button>
+  </div>
+</div>
+</div>
+
+<script src="/static/js/api.js?v=20260306a"></script>
+<script src="/static/js/app.js?v=20260306a"></script>
 </body>
 </html>

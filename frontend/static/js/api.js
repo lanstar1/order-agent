@@ -118,6 +118,17 @@ const api = {
   trainingDeletePair: (pairId) => api.delete(`/api/training/pairs/${pairId}`),
   trainingStats: () => api.get("/api/training/stats"),
 
+  // ── 대량 학습 (Bulk Training) ──
+  bulkCreateSession: (formData) => api.postForm("/api/training/bulk/create-session", formData),
+  bulkExtractPo: (formData) => api.postForm("/api/training/bulk/extract-po", formData),
+  bulkSuggestMatches: (sessionId) => {
+    const fd = new FormData();
+    fd.append("session_id", sessionId);
+    return api.postForm("/api/training/bulk/suggest-matches", fd);
+  },
+  bulkConfirm: (body) => api.post("/api/training/bulk/confirm", body),
+  bulkSession: (sessionId) => api.get(`/api/training/bulk/session/${sessionId}`),
+
   // ── 재고 조회 ──
   inventoryAutocomplete(q, limit = 15) {
     return api.get(`/api/inventory/autocomplete?q=${encodeURIComponent(q)}&limit=${limit}`);

@@ -80,6 +80,38 @@ def _ensure_training_tables():
     except Exception as e:
         logger.warning(f"[Training] 마이그레이션 확인 중 오류 (무시): {e}")
 
+    # ── 대량 학습 테이블 ──
+    conn.executescript("""
+        -- 대량 학습 세션
+        CREATE TABLE IF NOT EXISTS bulk_training_sessions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  TEXT UNIQUE NOT NULL,
+            cust_code   TEXT NOT NULL,
+            cust_name   TEXT NOT NULL,
+            excel_data  TEXT DEFAULT '',
+            status      TEXT DEFAULT 'uploading',
+            created_at  TEXT DEFAULT (datetime('now','localtime')),
+            updated_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        -- 발주서별 AI 추출 결과
+        CREATE TABLE IF NOT EXISTS bulk_training_extractions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id      TEXT NOT NULL,
+            po_filename     TEXT NOT NULL,
+            po_image        BLOB DEFAULT NULL,
+            po_image_type   TEXT DEFAULT '',
+            order_date      TEXT DEFAULT '',
+            extracted_lines TEXT DEFAULT '[]',
+            raw_text        TEXT DEFAULT '',
+            status          TEXT DEFAULT 'pending',
+            created_at      TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_bulk_ext_session
+            ON bulk_training_extractions(session_id);
+    """)
+
     conn.close()
 
 
