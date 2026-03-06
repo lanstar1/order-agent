@@ -41,6 +41,22 @@ def _sql_to_pg(sql):
         )
         if pragma_match:
             table = pragma_match.group(1)
+            # SQL 인젝션 방지: 테이블명 화이트리스트 검증
+            _ALLOWED_TABLES = {
+                'customers', 'orders', 'order_lines', 'match_candidates',
+                'erp_submissions', 'feedback_log', 'employees',
+                'chat_sessions', 'chat_messages', 'product_prices',
+                'material_sources', 'price_data', 'drive_documents',
+                'app_settings', 'product_aliases', 'po_training_pairs',
+                'po_training_items', 'bulk_training_sessions',
+                'bulk_training_extractions', 'ai_metrics',
+            }
+            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
+                logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
+                return None
+            if table.lower() not in _ALLOWED_TABLES:
+                logger.warning(f"[DB] PRAGMA table_info 거부: 미허용 테이블 '{table}'")
+                return None
             return (
                 f"SELECT ordinal_position - 1 as cid, column_name as name, "
                 f"data_type as type, 0 as notnull, NULL as dflt_value, 0 as pk "
@@ -369,6 +385,19 @@ def init_db():
         updated_at TEXT,
         PRIMARY KEY (cust_code, prod_cd)
     )""")
+
+    # ── 인덱스 추가 (성능 최적화) ──
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
+        CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+        CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+        CREATE INDEX IF NOT EXISTS idx_order_lines_order_id ON order_lines(order_id);
+        CREATE INDEX IF NOT EXISTS idx_match_candidates_line_id ON match_candidates(line_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_cust_code ON feedback_log(cust_code);
+        CREATE INDEX IF NOT EXISTS idx_erp_submissions_order_id ON erp_submissions(order_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_sessions_emp_cd ON chat_sessions(emp_cd);
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
+    """)
 
     conn.commit()
     conn.close()

@@ -1,17 +1,18 @@
 """
 거래처 관리 API
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from db.database import get_connection
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from security import get_current_user
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
 
 @router.get("/")
-async def list_customers(q: str = ""):
+async def list_customers(q: str = "", user: dict = Depends(get_current_user)):
     """거래처 목록 (q 파라미터로 검색, 없으면 전체)"""
     conn = get_connection()
     if q:
@@ -27,7 +28,7 @@ async def list_customers(q: str = ""):
 
 
 @router.post("/")
-async def create_customer(cust_code: str, cust_name: str, alias: str = ""):
+async def create_customer(cust_code: str, cust_name: str, alias: str = "", user: dict = Depends(get_current_user)):
     conn = get_connection()
     try:
         conn.execute(
@@ -43,7 +44,7 @@ async def create_customer(cust_code: str, cust_name: str, alias: str = ""):
 
 
 @router.put("/{cust_code}")
-async def update_customer(cust_code: str, cust_name: str = None, alias: str = None, new_code: str = None):
+async def update_customer(cust_code: str, cust_name: str = None, alias: str = None, new_code: str = None, user: dict = Depends(get_current_user)):
     """거래처 정보 업데이트 (new_code 전달 시 cust_code 자체도 변경)"""
     conn = get_connection()
     try:

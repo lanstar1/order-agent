@@ -13,9 +13,10 @@ import time
 import logging
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Depends
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from security import get_current_user
 
 from models.schemas import (
     OrderCreateRequest, OrderProcessResponse, OrderConfirmRequest,
@@ -89,7 +90,7 @@ _ensure_sale_orders_table()
 #  주문서 생성 및 처리 (텍스트)
 # ─────────────────────────────────────────
 @router.post("/process", response_model=OrderProcessResponse)
-async def process_sale_order(req: OrderCreateRequest):
+async def process_sale_order(req: OrderCreateRequest, user: dict = Depends(get_current_user)):
     """발주서 텍스트를 받아 AI 처리 후 주문서 라인 반환"""
     order_id = "SO-" + str(uuid.uuid4())[:8].upper()
 
@@ -176,7 +177,8 @@ async def process_sale_order(req: OrderCreateRequest):
 async def process_sale_order_image(
     cust_code: str = Form(...),
     cust_name: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
 ):
     """이미지/PDF 발주서를 업로드하고 Claude Vision OCR 후 주문서 처리"""
     from agents.ocr import ocr_and_extract
@@ -286,7 +288,7 @@ async def process_sale_order_image(
 #  사용자 확인
 # ─────────────────────────────────────────
 @router.post("/confirm", response_model=dict)
-async def confirm_sale_order(req: OrderConfirmRequest):
+async def confirm_sale_order(req: OrderConfirmRequest, user: dict = Depends(get_current_user)):
     """사용자가 검토한 라인별 최종 상품 코드를 저장"""
     conn = get_connection()
     row = conn.execute("SELECT order_id FROM sale_orders WHERE order_id=?", (req.order_id,)).fetchone()
@@ -312,7 +314,7 @@ async def confirm_sale_order(req: OrderConfirmRequest):
 #  ERP 견적서입력 전송
 # ─────────────────────────────────────────
 @router.post("/submit-erp/{order_id}", response_model=ERPSubmitResponse)
-async def submit_sale_order_to_erp(order_id: str, emp_cd: str = ""):
+async def submit_sale_order_to_erp(order_id: str, emp_cd: str = "", user: dict = Depends(get_current_user)):
     """확인된 견적서를 ECOUNT ERP 견적서입력(SaveQuotation)으로 전송"""
     conn = get_connection()
     try:
@@ -422,7 +424,7 @@ async def submit_sale_order_to_erp(order_id: str, emp_cd: str = ""):
 #  주문서 목록 조회
 # ─────────────────────────────────────────
 @router.get("/list")
-async def list_sale_orders(limit: int = 20):
+async def list_sale_orders(limit: int = 20, user: dict = Depends(get_current_user)):
     conn = get_connection()
     rows = conn.execute(
         "SELECT order_id,cust_name,status,created_at,updated_at FROM sale_orders ORDER BY created_at DESC LIMIT ?",
@@ -433,7 +435,7 @@ async def list_sale_orders(limit: int = 20):
 
 
 @router.get("/{order_id}")
-async def get_sale_order(order_id: str):
+async def get_sale_order(order_id: str, user: dict = Depends(get_current_user)):
     conn = get_connection()
     order = conn.execute("SELECT * FROM sale_orders WHERE order_id=?", (order_id,)).fetchone()
     if not order:

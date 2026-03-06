@@ -2,6 +2,7 @@
 설정 관리 - 환경변수 또는 config.json 으로 관리
 """
 import os
+import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -18,6 +19,7 @@ if _env_path.exists():
 # ─────────────────────────────────────────
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLAUDE_MODEL       = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+CLAUDE_MODEL_LIGHT = os.getenv("CLAUDE_MODEL_LIGHT", "claude-haiku-4-5-20251001")  # 간단한 작업용
 
 # ─────────────────────────────────────────
 #  Google API (Drive 파일 목록 조회용)
@@ -27,10 +29,10 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 # ─────────────────────────────────────────
 #  ECOUNT ERP
 # ─────────────────────────────────────────
-ERP_COM_CODE  = os.getenv("ERP_COM_CODE",  "89356")
-ERP_USER_ID   = os.getenv("ERP_USER_ID",   "TIGER")
+ERP_COM_CODE  = os.getenv("ERP_COM_CODE",  "")
+ERP_USER_ID   = os.getenv("ERP_USER_ID",   "")
 ERP_ZONE      = os.getenv("ERP_ZONE",      "CD")
-ERP_API_KEY   = os.getenv("ERP_API_KEY",   "1d667e0cff97845728acdeed64e34ce789")
+ERP_API_KEY   = os.getenv("ERP_API_KEY",   "")
 ERP_WH_CD     = os.getenv("ERP_WH_CD",     "10")   # 기본 창고코드
 ERP_EMP_CD    = os.getenv("ERP_EMP_CD",   "")    # 담당자 코드 (ERP에서 필수 설정된 경우)
 
@@ -46,7 +48,7 @@ PRODUCTS_CSV   = BASE_DIR / "data" / "products" / "products.csv"
 # ─────────────────────────────────────────
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
-DEBUG = os.getenv("DEBUG", "true").lower() == "true"
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # ─────────────────────────────────────────
 #  파일 업로드
@@ -57,5 +59,24 @@ MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
 # ─────────────────────────────────────────
 #  AI 파라미터
 # ─────────────────────────────────────────
-CONFIDENCE_THRESHOLD = 0.90   # 이 값 이상이면 자동처리(STP)
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.90"))
 TOP_K_RESULTS        = 5      # RAG 검색 상위 후보 수
+
+# ─────────────────────────────────────────
+#  JWT 인증
+# ─────────────────────────────────────────
+JWT_SECRET_KEY  = os.getenv("JWT_SECRET_KEY", secrets.token_hex(32))
+JWT_ALGORITHM   = "HS256"
+JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
+
+# ─────────────────────────────────────────
+#  CORS 허용 도메인
+# ─────────────────────────────────────────
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()
+] or ["*"]  # 환경변수 미설정 시 개발 모드 허용
+
+# ─────────────────────────────────────────
+#  Rate Limiting
+# ─────────────────────────────────────────
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))

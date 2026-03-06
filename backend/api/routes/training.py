@@ -5,7 +5,7 @@
 - 통계 조회
 """
 import logging
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Depends
 from fastapi.responses import Response
 from typing import Optional, List
 from pydantic import BaseModel
@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from security import get_current_user
 from services.training_service import (
     parse_sales_slip_excel,
     save_training_pair,
@@ -38,7 +39,7 @@ router = APIRouter(prefix="/api/training", tags=["training"])
 #  엑셀 미리보기 (파싱만, 저장 안 함)
 # ─────────────────────────────────────────
 @router.post("/preview-excel")
-async def preview_excel(file: UploadFile = File(...)):
+async def preview_excel(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     """판매전표 엑셀 업로드 → 파싱 결과 미리보기 (저장 안 함)"""
     allowed_exts = {".xlsx", ".xls", ".xlsm"}
     suffix = Path(file.filename).suffix.lower() if file.filename else ""
@@ -74,6 +75,7 @@ async def upload_training_data(
     raw_po_text: str = Form(""),
     order_id: str = Form(""),
     memo: str = Form(""),
+    user: dict = Depends(get_current_user),
 ):
     """판매전표 엑셀 + 원본 발주서 텍스트를 매칭하여 학습 데이터로 저장"""
     allowed_exts = {".xlsx", ".xls", ".xlsm"}
@@ -141,7 +143,7 @@ class TrainingPairInput(BaseModel):
 
 
 @router.post("/save-json")
-async def save_training_json(body: TrainingPairInput):
+async def save_training_json(body: TrainingPairInput, user: dict = Depends(get_current_user)):
     """JSON으로 직접 학습 데이터 저장 (이미지 포함 가능)"""
     if not body.items:
         raise HTTPException(400, "최소 1개 이상의 품목이 필요합니다.")
@@ -215,7 +217,7 @@ async def training_pair_detail(pair_id: int):
 
 
 @router.delete("/pairs/{pair_id}")
-async def remove_training_pair(pair_id: int):
+async def remove_training_pair(pair_id: int, user: dict = Depends(get_current_user)):
     """학습 데이터 삭제"""
     result = delete_training_pair(pair_id)
     if not result.get("success"):
@@ -238,6 +240,7 @@ async def bulk_create(
     file: UploadFile = File(...),
     cust_code: str = Form(...),
     cust_name: str = Form(...),
+    user: dict = Depends(get_current_user),
 ):
     """대량 학습 세션 생성 + 판매전표 엑셀 파싱"""
     allowed_exts = {".xlsx", ".xls", ".xlsm"}
@@ -261,6 +264,7 @@ async def bulk_create(
 async def bulk_extract(
     file: UploadFile = File(...),
     session_id: str = Form(...),
+    user: dict = Depends(get_current_user),
 ):
     """발주서 이미지 1건 AI 추출"""
     allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"}
@@ -288,7 +292,7 @@ async def bulk_extract(
 
 
 @router.post("/bulk/suggest-matches")
-async def bulk_suggest(session_id: str = Form(...)):
+async def bulk_suggest(session_id: str = Form(...), user: dict = Depends(get_current_user)):
     """매칭 제안 생성"""
     result = bulk_suggest_matches(session_id)
     if "error" in result:
@@ -312,7 +316,7 @@ class BulkConfirmRequest(BaseModel):
 
 
 @router.post("/bulk/confirm")
-async def bulk_confirm(body: BulkConfirmRequest):
+async def bulk_confirm(body: BulkConfirmRequest, user: dict = Depends(get_current_user)):
     """확인된 매칭 저장"""
     confirmations = [c.dict() for c in body.confirmations]
     result = bulk_confirm_save(body.session_id, confirmations)

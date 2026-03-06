@@ -577,15 +577,38 @@ async def llm_judge(hint: str, candidates: List[dict], specs: dict = None) -> di
             spec_context = f"\n파싱된 스펙: {', '.join(spec_parts)}"
 
     try:
+        import time as _time
+        start = _time.time()
+
+        # 프롬프트 캐싱 적용
         r = await client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=300,
-            system=JUDGE_SYSTEM,
+            system=[{
+                "type": "text",
+                "text": JUDGE_SYSTEM,
+                "cache_control": {"type": "ephemeral"},
+            }],
             messages=[{
                 "role": "user",
                 "content": f"발주서 상품 표현: {hint}{spec_context}\n\n후보 목록:\n{cand_text}"
             }]
         )
+        duration_ms = (_time.time() - start) * 1000
+
+        # 메트릭 기록
+        try:
+            from services.ai_metrics import record_llm_call
+            record_llm_call(
+                call_type="llm_judge",
+                model=CLAUDE_MODEL,
+                input_tokens=r.usage.input_tokens,
+                output_tokens=r.usage.output_tokens,
+                duration_ms=duration_ms,
+            )
+        except Exception:
+            pass
+
         text = r.content[0].text.strip()
         if "```" in text:
             text = text.split("```")[1]

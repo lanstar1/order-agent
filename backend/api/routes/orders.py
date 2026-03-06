@@ -7,7 +7,7 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import AsyncGenerator
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 import sys
@@ -22,6 +22,7 @@ from agents.resolution import resolve_product
 from services.erp_client import erp_client
 from db.database import get_connection
 from config import UPLOAD_DIR, CONFIDENCE_THRESHOLD
+from security import get_current_user, sanitize_for_prompt, validate_file_upload
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 logger = logging.getLogger(__name__)
@@ -33,12 +34,17 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 #  발주서 생성 및 처리 (텍스트)
 # ─────────────────────────────────────────
 @router.post("/process", response_model=OrderProcessResponse)
-async def process_order(req: OrderCreateRequest):
+async def process_order(req: OrderCreateRequest, user: dict = Depends(get_current_user)):
     """발주서 텍스트를 받아 AI 처리 후 결과 반환"""
     order_id = str(uuid.uuid4())[:8].upper()
 
     if not req.raw_text or not req.raw_text.strip():
         raise HTTPException(400, "발주서 텍스트를 입력해주세요.")
+
+    # 입력 검증 및 프롬프트 보호
+    if len(req.raw_text) > 50000:
+        raise HTTPException(400, "발주서 텍스트가 너무 깁니다. (최대 50,000자)")
+    req.raw_text = sanitize_for_prompt(req.raw_text)
 
     # DB 저장
     conn = get_connection()
@@ -128,7 +134,8 @@ async def process_order(req: OrderCreateRequest):
 async def process_image(
     cust_code: str = Form(...),
     cust_name: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
 ):
     """이미지/PDF 발주서를 업로드하고 Claude Vision OCR 후 처리"""
     from agents.ocr import ocr_and_extract
@@ -145,8 +152,8 @@ async def process_image(
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(400, "파일 크기가 10MB를 초과합니다.")
+    # 파일 보안 검증 (MIME 타입 확인)
+    validate_file_upload(content, file.filename or "upload.jpg", "image")
     with open(save_path, "wb") as f:
         f.write(content)
 
@@ -362,6 +369,36 @@ async def submit_to_erp(order_id: str, emp_cd: str = ""):
                            DO UPDATE SET price=excluded.price, updated_at=excluded.updated_at""",
                         (cust_code_val, l["selected_cd"], float(price_val))
                     )
+
+            # ── 자동 학습 파이프라인: ERP 전송 성공 = 확정된 매칭 데이터 ──
+            try:
+                auto_trained = 0
+                for l in lines:
+                    if l["selected_cd"] and l["raw_text"]:
+                        conn.execute(
+                            """INSERT INTO feedback_log(cust_code, raw_text, prod_cd, qty, unit)
+                               VALUES(?,?,?,?,?)""",
+                            (cust_code_val, l["raw_text"], l["selected_cd"],
+                             l["qty"], l["unit"] or "EA")
+                        )
+                        auto_trained += 1
+                if auto_trained > 0:
+                    from services.ai_metrics import record_auto_training, record_match_result
+                    record_auto_training(cust_code_val, order_id, auto_trained)
+                    # 매칭 결과 메트릭도 기록
+                    auto_cnt = sum(1 for l in lines if l["is_confirmed"])
+                    record_match_result(
+                        cust_code=cust_code_val,
+                        order_id=order_id,
+                        total_lines=len(lines),
+                        auto_matched=auto_cnt,
+                        manual_fixed=len(lines) - auto_cnt,
+                        avg_confidence=0.0,
+                    )
+                    logger.info(f"[AutoTrain] ERP 전송 성공 → {auto_trained}건 학습 데이터 자동 축적")
+            except Exception as train_err:
+                logger.warning(f"[AutoTrain] 자동 학습 실패: {train_err}")
+
             conn.commit()
             conn.close()
             return ERPSubmitResponse(order_id=order_id, success=True,
@@ -411,14 +448,36 @@ async def submit_to_erp(order_id: str, emp_cd: str = ""):
 #  주문 목록 조회
 # ─────────────────────────────────────────
 @router.get("/list")
-async def list_orders(limit: int = 20):
+async def list_orders(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: str = Query("", description="상태 필터"),
+    cust_code: str = Query("", description="거래처코드 필터"),
+):
     conn = get_connection()
-    rows = conn.execute(
-        "SELECT order_id,cust_name,status,created_at,updated_at FROM orders ORDER BY created_at DESC LIMIT ?",
-        (limit,)
-    ).fetchall()
+    query = "SELECT order_id,cust_name,cust_code,status,created_at,updated_at FROM orders WHERE 1=1"
+    params = []
+
+    if status:
+        query += " AND status=?"
+        params.append(status)
+    if cust_code:
+        query += " AND cust_code=?"
+        params.append(cust_code)
+
+    # 전체 건수
+    count_row = conn.execute(
+        query.replace("SELECT order_id,cust_name,cust_code,status,created_at,updated_at", "SELECT COUNT(*) as cnt"),
+        params
+    ).fetchone()
+    total = count_row["cnt"] if count_row else 0
+
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+
+    rows = conn.execute(query, params).fetchall()
     conn.close()
-    return {"orders": [dict(r) for r in rows]}
+    return {"orders": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/{order_id}")

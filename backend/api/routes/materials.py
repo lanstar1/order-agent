@@ -5,12 +5,13 @@
 - 소스 관리 (추가/삭제/활성화)
 """
 import logging
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from security import get_current_user
 
 from services.materials_service import (
     sync_sheet, sync_all_sheets,
@@ -31,14 +32,14 @@ router = APIRouter(prefix="/api/materials", tags=["materials"])
 #  동기화
 # ─────────────────────────────────────────
 @router.post("/sync")
-async def sync_all():
+async def sync_all(user: dict = Depends(get_current_user)):
     """모든 소스 동기화 (Sheets + Drive 폴더)"""
     result = await sync_all_sources()
     return result
 
 
 @router.post("/sync/{source_id}")
-async def sync_one(source_id: int):
+async def sync_one(source_id: int, user: dict = Depends(get_current_user)):
     """특정 소스 동기화 (sheet 또는 drive_folder 자동 판별)"""
     conn = get_connection()
     source = conn.execute("SELECT source_type FROM material_sources WHERE id=?", (source_id,)).fetchone()
@@ -150,7 +151,7 @@ class SourceCreate(BaseModel):
 
 
 @router.post("/sources")
-async def add_source(body: SourceCreate):
+async def add_source(body: SourceCreate, user: dict = Depends(get_current_user)):
     """새 소스 추가"""
     conn = get_connection()
     try:
@@ -168,7 +169,7 @@ async def add_source(body: SourceCreate):
 
 
 @router.delete("/sources/{source_id}")
-async def delete_source(source_id: int):
+async def delete_source(source_id: int, user: dict = Depends(get_current_user)):
     """소스 삭제 (관련 데이터 포함)"""
     conn = get_connection()
     try:
@@ -182,7 +183,7 @@ async def delete_source(source_id: int):
 
 
 @router.put("/sources/{source_id}/toggle")
-async def toggle_source(source_id: int):
+async def toggle_source(source_id: int, user: dict = Depends(get_current_user)):
     """소스 활성/비활성 토글"""
     conn = get_connection()
     try:

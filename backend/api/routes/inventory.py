@@ -6,11 +6,12 @@
 import logging
 import csv
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import Optional
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from security import get_current_user
 
 from services.erp_client import erp_client
 from config import PRODUCTS_CSV
@@ -73,6 +74,7 @@ async def autocomplete_products(
 # ─────────────────────────────────────────
 @router.get("/search")
 async def search_inventory(
+    user: dict = Depends(get_current_user),
     q: str = Query(..., min_length=1, description="검색어 (품목명, 모델명, 품목코드)"),
     wh_cd: str = Query(default="", description="창고코드 (빈 값=전체)"),
     base_date: str = Query(default="", description="기준일 YYYYMMDD (빈 값=오늘)"),
@@ -105,7 +107,7 @@ async def search_inventory(
 #  품목코드로 직접 재고 조회
 # ─────────────────────────────────────────
 @router.post("/check")
-async def check_inventory(req: InventoryCheckRequest):
+async def check_inventory(req: InventoryCheckRequest, user: dict = Depends(get_current_user)):
     """품목코드로 직접 재고 조회"""
     result = await erp_client.check_inventory(
         prod_cd=req.prod_cd,

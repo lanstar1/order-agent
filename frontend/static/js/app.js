@@ -109,6 +109,7 @@ function navigateTo(pageId) {
     doc_search:   "자료검색",
     price_sheet:  "단가표 조회",
     training:     "발주서 학습",
+    ai_dashboard: "AI 대시보드",
     settings:     "설정",
   }[pageId] || "";
   // 주문서 페이지 진입 시 드롭존 초기화
@@ -119,6 +120,8 @@ function navigateTo(pageId) {
   if (pageId === "price_sheet") initPriceSheetPage().catch(e => console.error("initPriceSheetPage 실패:", e));
   // 발주서 학습 페이지 진입 시 데이터 로드
   if (pageId === "training") initTrainingPage().catch(e => console.error("initTrainingPage 실패:", e));
+  // AI 대시보드 진입 시 데이터 로드
+  if (pageId === "ai_dashboard" && typeof loadDashboard === "function") loadDashboard();
 }
 
 function statusBadge(status) {

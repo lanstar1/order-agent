@@ -4,11 +4,12 @@
 - 기타 시스템 설정
 """
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from security import get_current_user
 
 from db.database import get_connection
 import config
@@ -102,7 +103,7 @@ async def get_models():
 #  모델 변경
 # ─────────────────────────────────────────
 @router.post("/models")
-async def set_model(req: ModelSettingRequest):
+async def set_model(req: ModelSettingRequest, user: dict = Depends(get_current_user)):
     """Claude 모델 변경"""
     valid_ids = {m["id"] for m in AVAILABLE_MODELS}
     if req.model_id not in valid_ids:

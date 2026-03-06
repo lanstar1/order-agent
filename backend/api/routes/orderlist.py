@@ -3,10 +3,11 @@
 - 해외 발주 현황 조회 (Google Sheets 동기화)
 """
 import logging
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from security import get_current_user
 
 from services.orderlist_service import (
     sync_orderlist, get_orderlist_data, get_orderlist_tabs,
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/api/orderlist", tags=["orderlist"])
 
 
 @router.post("/sync")
-def api_sync_orderlist(tab: str = ""):
+def api_sync_orderlist(tab: str = "", user: dict = Depends(get_current_user)):
     """오더리스트 동기화 (전체 또는 특정 탭)"""
     result = sync_orderlist(tab_title=tab)
     if not result.get("success"):
