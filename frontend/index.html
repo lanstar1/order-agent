@@ -614,6 +614,21 @@ C규격품 200개
               <button class="btn btn-primary btn-sm" onclick="doChangePwInline()">비밀번호 변경</button>
             </div>
           </div>
+
+          <!-- 관리자 전용: 비밀번호 초기화 -->
+          <div id="admin-reset-section" style="display:none;border-top:1px solid var(--gray-100);padding-top:16px;margin-top:16px">
+            <div class="card-title" style="font-size:15px">🔑 직원 비밀번호 초기화 (관리자 전용)</div>
+            <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">비밀번호를 잊은 직원의 비밀번호를 담당자 코드 숫자로 초기화합니다.</p>
+            <div style="max-width:360px">
+              <div class="form-group">
+                <label class="form-label">초기화할 직원</label>
+                <select class="form-control" id="reset-target-emp">
+                  <option value="">-- 직원 선택 --</option>
+                </select>
+              </div>
+              <button class="btn btn-sm" style="background:#e53e3e;color:#fff" onclick="doResetPassword()">비밀번호 초기화</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1024,6 +1039,43 @@ function updateAccountInfo() {
   const user = getCurrentUser();
   const el = document.getElementById("account-info");
   if (el && user) el.textContent = `[${user.emp_cd}] ${user.name} 님이 로그인 중입니다.`;
+
+  // 관리자 전용 비밀번호 초기화 섹션 표시
+  const adminSection = document.getElementById("admin-reset-section");
+  const ADMIN_CODES = ["28", "01"];
+  if (adminSection && user && ADMIN_CODES.includes(user.emp_cd)) {
+    adminSection.style.display = "block";
+    loadResetTargetEmployees();
+  }
+}
+
+async function loadResetTargetEmployees() {
+  try {
+    const res = await fetch("/api/auth/employees");
+    const data = await res.json();
+    const select = document.getElementById("reset-target-emp");
+    select.innerHTML = '<option value="">-- 직원 선택 --</option>';
+    (data.employees || []).forEach(e => {
+      select.innerHTML += `<option value="${e.emp_cd}">[${e.emp_cd}] ${e.name}</option>`;
+    });
+  } catch(e) { console.warn("직원 목록 로드 실패:", e); }
+}
+
+async function doResetPassword() {
+  const user = getCurrentUser();
+  const targetEmp = document.getElementById("reset-target-emp").value;
+  if (!targetEmp) { toast("초기화할 직원을 선택하세요.", "error"); return; }
+  if (!confirm("선택한 직원의 비밀번호를 담당자 코드 숫자로 초기화합니다.\n계속하시겠습니까?")) return;
+  try {
+    const res = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({emp_cd: targetEmp, admin_emp_cd: user.emp_cd})
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.detail || "초기화 실패", "error"); return; }
+    toast(data.message, "success");
+  } catch(e) { toast("오류: " + e.message, "error"); }
 }
 
 // ── 자료관리 함수들

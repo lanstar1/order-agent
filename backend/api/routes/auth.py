@@ -94,3 +94,40 @@ async def change_password(req: ChangePasswordRequest):
     conn.commit()
     conn.close()
     return {"success": True, "message": "비밀번호가 변경되었습니다."}
+
+
+class ResetPasswordRequest(BaseModel):
+    emp_cd: str          # 초기화 대상
+    admin_emp_cd: str    # 요청자 (관리자)
+
+
+# 관리자 코드 목록 (비밀번호 초기화 권한)
+ADMIN_EMP_CDS = {"28", "01"}  # 정광규, 정정섭
+
+
+@router.post("/reset-password")
+async def reset_password(req: ResetPasswordRequest):
+    """관리자가 직원 비밀번호를 담당자코드로 초기화"""
+    if req.admin_emp_cd not in ADMIN_EMP_CDS:
+        raise HTTPException(403, "비밀번호 초기화 권한이 없습니다.")
+
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT emp_cd, name FROM employees WHERE emp_cd=?",
+        (req.emp_cd,)
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        raise HTTPException(404, "직원을 찾을 수 없습니다.")
+
+    # 비밀번호를 담당자 코드 숫자로 초기화
+    conn.execute(
+        "UPDATE employees SET password_hash=? WHERE emp_cd=?",
+        (_hash(req.emp_cd), req.emp_cd)
+    )
+    conn.commit()
+    conn.close()
+
+    logger.info(f"[Auth] 비밀번호 초기화: {row['name']}({req.emp_cd}) by {req.admin_emp_cd}")
+    return {"success": True, "message": f"{row['name']}님의 비밀번호가 초기화되었습니다."}
