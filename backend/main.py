@@ -183,23 +183,23 @@ async def _auto_sync_on_startup():
         from db.database import get_connection
         conn = get_connection()
 
-        # 가장 최근 동기화 시간 확인
+        # 소스 유형별 가장 오래된 동기화 시간 확인
         row = conn.execute(
-            "SELECT MAX(last_synced) as latest FROM material_sources WHERE last_synced != ''"
+            "SELECT MIN(last_synced) as oldest FROM material_sources WHERE last_synced != '' AND is_active=1"
         ).fetchone()
         conn.close()
 
-        latest_sync = row["latest"] if row and row["latest"] else None
+        oldest_sync = row["oldest"] if row and row["oldest"] else None
         need_sync = True
 
-        if latest_sync:
+        if oldest_sync:
             try:
-                last_dt = datetime.strptime(str(latest_sync)[:19], "%Y-%m-%d %H:%M:%S")
+                last_dt = datetime.strptime(str(oldest_sync)[:19], "%Y-%m-%d %H:%M:%S")
                 hours_ago = (datetime.now() - last_dt).total_seconds() / 3600
-                logger.info(f"[자동동기화] 마지막 동기화: {latest_sync} ({hours_ago:.1f}시간 전)")
+                logger.info(f"[자동동기화] 가장 오래된 동기화: {oldest_sync} ({hours_ago:.1f}시간 전)")
                 if hours_ago < 6:
                     need_sync = False
-                    logger.info("[자동동기화] 최근 동기화됨 → 스킵")
+                    logger.info("[자동동기화] 모든 소스 최근 동기화됨 → 스킵")
             except (ValueError, TypeError) as e:
                 logger.warning(f"[자동동기화] 날짜 파싱 실패: {e}")
 
@@ -216,6 +216,10 @@ async def _auto_sync_on_startup():
                 f"Drive {drive.get('success_count',0)}/{drive.get('total_sources',0)}개, "
                 f"총 {drive.get('total_files',0)}파일"
             )
+            # Drive 동기화 실패 상세 로깅
+            for d in drive.get("details", []):
+                if not d.get("success"):
+                    logger.warning(f"[자동동기화] Drive 실패: {d.get('name','?')} - {d.get('error','알 수 없음')}")
 
     except Exception as e:
         logger.error(f"[자동동기화] 오류: {e}", exc_info=True)
