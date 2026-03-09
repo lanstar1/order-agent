@@ -682,6 +682,22 @@ C규격품 200개
 
       <!-- ─── 탭 2: 거래처 관리 ─── -->
       <div class="settings-panel" id="settings-tab-customers" style="display:none">
+        <!-- ERP 거래처 동기화 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>ERP 거래처 동기화</span>
+            <button class="btn btn-primary btn-sm" onclick="syncCustomersFromERP()" id="cust-erp-sync-btn">
+              🔄 ERP에서 가져오기
+            </button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:8px">
+            이카운트 ERP에 등록된 거래처를 자동으로 동기화합니다. 서버 시작 시 거래처가 없으면 자동 실행됩니다.
+          </p>
+          <div id="cust-erp-sync-status" style="font-size:13px;color:var(--gray-500)">
+            상태 확인 중...
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-title">거래처 관리</div>
           <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
@@ -1097,6 +1113,7 @@ function switchSettingsTab(tab) {
   if (tab === "customers") {
     const searchEl = document.getElementById("settings-cust-search");
     if (searchEl) setTimeout(() => searchEl.focus(), 50);
+    loadCustERPSyncStatus();
   }
   if (tab === "account") updateAccountInfo();
   if (tab === "activity") {
@@ -1538,6 +1555,37 @@ async function loadSettingsOlStatus() {
   }
 }
 
+// ── ERP 거래처 동기화 ──
+async function syncCustomersFromERP() {
+  const btn = document.getElementById("cust-erp-sync-btn");
+  btn.disabled = true;
+  btn.textContent = "동기화 중...";
+  try {
+    const data = await api.customerSyncERP();
+    if (data.success) {
+      toast(`거래처 동기화 완료: ${data.total}개 (신규 ${data.inserted}, 업데이트 ${data.updated})`, "success");
+      loadCustERPSyncStatus();
+    } else {
+      toast("동기화 실패", "error");
+    }
+  } catch (e) {
+    toast(`동기화 오류: ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 ERP에서 가져오기";
+  }
+}
+
+async function loadCustERPSyncStatus() {
+  const el = document.getElementById("cust-erp-sync-status");
+  try {
+    const data = await api.customerCount();
+    el.innerHTML = `<strong>등록 거래처:</strong> ${(data.count || 0).toLocaleString()}개`;
+  } catch (e) {
+    el.textContent = "상태 확인 실패";
+  }
+}
+
 // ── 활동 로그 (관리자 전용) ──
 const ADMIN_EMP_CDS = new Set(["28", "01"]);
 
@@ -1908,7 +1956,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </div>
 </div>
 
-<script src="/static/js/api.js?v=20260310a"></script>
-<script src="/static/js/app.js?v=20260310a"></script>
+<script src="/static/js/api.js?v=20260310b"></script>
+<script src="/static/js/app.js?v=20260310b"></script>
 </body>
 </html>

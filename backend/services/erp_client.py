@@ -282,6 +282,74 @@ class ERPClient:
             return {"success": False, "error": str(e), "data": [], "total_qty": 0}
 
     # ─────────────────────────────────────────
+    #  거래처 목록 조회: GetListCustomerBySearch
+    #  POST https://oapi{ZONE}.ecount.com/OAPI/V2/AccountBasic/GetListCustomerBySearch
+    # ─────────────────────────────────────────
+    async def get_customer_list(self, page: int = 1, per_page: int = 500) -> dict:
+        """
+        ECOUNT 거래처 목록 조회
+        Returns: {"success": bool, "customers": [{"cust_code": ..., "cust_name": ...}], "total": int}
+        """
+        if not self._session_id:
+            await self.ensure_session()
+
+        zone = (self._zone or ERP_ZONE).lower()
+        url = (
+            f"https://oapi{zone}.ecount.com/OAPI/V2/AccountBasic/GetListCustomerBySearch"
+            f"?SESSION_ID={self._session_id}"
+        )
+
+        payload = {
+            "PAGE_NO": str(page),
+            "PER_PAGE_CNT": str(per_page),
+        }
+
+        async def _fetch(u, p):
+            async with httpx.AsyncClient() as c:
+                r = await c.post(u, json=p, timeout=30)
+                r.raise_for_status()
+                return r.json()
+
+        try:
+            data = await _fetch(url, payload)
+            logger.info(f"[ERP CustomerList] Status={data.get('Status')}, Page={page}")
+
+            # 세션 만료 시 재로그인 후 재시도
+            if str(data.get("Status", "")) in ("301", "302"):
+                logger.warning("[ERP] 세션 만료 - 재로그인 후 거래처 재조회")
+                await self.ensure_session()
+                zone = (self._zone or ERP_ZONE).lower()
+                url = (
+                    f"https://oapi{zone}.ecount.com/OAPI/V2/AccountBasic/GetListCustomerBySearch"
+                    f"?SESSION_ID={self._session_id}"
+                )
+                data = await _fetch(url, payload)
+
+            if str(data.get("Status", "")) != "200":
+                logger.warning(f"[ERP CustomerList] 실패: {data}")
+                return {"success": False, "customers": [], "total": 0, "error": str(data)}
+
+            result_list = data.get("Data", {}).get("Result", [])
+            total_cnt = data.get("Data", {}).get("TotalCnt", 0)
+
+            customers = []
+            for item in result_list:
+                cust_code = str(item.get("CUST_CD", "") or item.get("CUST", "") or "").strip()
+                cust_name = str(item.get("CUST_DES", "") or item.get("CUST_NAME", "") or "").strip()
+                if cust_code and cust_name:
+                    customers.append({
+                        "cust_code": cust_code,
+                        "cust_name": cust_name,
+                    })
+
+            logger.info(f"[ERP CustomerList] {len(customers)}개 거래처 반환 (총 {total_cnt})")
+            return {"success": True, "customers": customers, "total": total_cnt}
+
+        except Exception as e:
+            logger.error(f"[ERP CustomerList] 오류: {e}", exc_info=True)
+            return {"success": False, "customers": [], "total": 0, "error": str(e)}
+
+    # ─────────────────────────────────────────
     #  Step 3: SaveSale (판매 전표 저장)
     #  POST https://oapi{ZONE}.ecount.com/OAPI/V2/Sale/SaveSale?SESSION_ID={session_id}
     #  Body: {"SaleList": {"BulkDatas": [...]}}

@@ -124,6 +124,8 @@ const api = {
 
   // ── 거래처 ──
   getCustomers:  () => api.get("/api/customers/"),
+  customerSyncERP() { return api.post("/api/customers/sync-erp"); },
+  customerCount() { return api.get("/api/customers/count"); },
   // ── 발주서 처리 ──
   processOrder:  (body) => api.post("/api/orders/process", body),
   confirmOrder:  (body) => api.post("/api/orders/confirm", body),
