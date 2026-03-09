@@ -11,7 +11,7 @@ from security import get_current_user
 
 from services.orderlist_service import (
     sync_orderlist, get_orderlist_data, get_orderlist_tabs,
-    get_orderlist_summary, get_sheet_tabs,
+    get_orderlist_summary, get_sheet_tabs, autocomplete_orderlist,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,16 @@ def api_sync_orderlist(tab: str = "", user: dict = Depends(get_current_user)):
     if not result.get("success"):
         raise HTTPException(500, result.get("error", "동기화 실패"))
     return result
+
+
+@router.get("/autocomplete")
+def api_autocomplete(
+    q: str = Query(..., min_length=1, description="검색어"),
+    limit: int = Query(default=15, ge=1, le=50),
+):
+    """오더리스트 자동완성 검색 (인증 불필요)"""
+    results = autocomplete_orderlist(q, limit=limit)
+    return {"results": results, "query": q}
 
 
 @router.get("/data")

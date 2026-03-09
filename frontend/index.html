@@ -437,10 +437,18 @@ C규격품 200개
             <label class="form-label">검색어</label>
             <input type="text" class="form-control" id="ol-search-input"
               placeholder="모델명, 카테고리, 주문번호 검색..."
-              oninput="onOlSearchInput()"
-              onkeydown="if(event.key==='Enter')loadOrderList()"
+              oninput="onOlSearchInput(this.value)"
+              onkeydown="onOlSearchKeydown(event)"
+              autocomplete="off"
               style="padding-right:32px">
             <span style="position:absolute;right:10px;top:calc(50% + 10px);transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+            <!-- 자동완성 드롭다운 -->
+            <div id="ol-autocomplete-dropdown"
+              style="display:none;position:absolute;left:0;right:0;top:100%;z-index:100;
+                     background:#fff;border:1px solid var(--gray-200);border-radius:8px;
+                     box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:320px;overflow-y:auto;
+                     margin-top:2px">
+            </div>
           </div>
           <button class="btn btn-primary btn-sm" onclick="loadOrderList()">검색</button>
         </div>
@@ -750,6 +758,25 @@ C규격품 200개
           </div>
         </div>
 
+        <!-- 오더리스트 동기화 -->
+        <div class="card" style="margin-top:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>오더리스트 동기화 (해외 발주)</span>
+            <button class="btn btn-primary btn-sm" onclick="settingsSyncOrderList()" id="settings-ol-sync-btn">
+              🔄 동기화
+            </button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">
+            해외 공장 발주 현황을 Google Sheets에서 동기화합니다. 서버 시작 시 자동 동기화됩니다.
+          </p>
+          <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
+            <strong>시트 ID:</strong> <code style="font-size:11px;background:#f7fafc;padding:2px 6px;border-radius:3px">1ej0cxyM3NHJKpF-KBXbZ16fH-lZcUrr3Z3eTwFVFSco</code>
+          </div>
+          <div id="settings-ol-status" style="font-size:13px;color:var(--gray-500)">
+            상태 확인 중...
+          </div>
+        </div>
+
       </div>
 
       <!-- ─── 탭 4: 내 계정 ─── -->
@@ -1003,7 +1030,7 @@ function switchSettingsTab(tab) {
 
   // 탭별 초기화
   if (tab === "api") loadModels();
-  if (tab === "materials") loadMaterialSources();
+  if (tab === "materials") { loadMaterialSources(); loadSettingsOlStatus(); }
   if (tab === "customers") {
     const searchEl = document.getElementById("settings-cust-search");
     if (searchEl) setTimeout(() => searchEl.focus(), 50);
@@ -1397,6 +1424,50 @@ async function materialSearch() {
       </div>`;
   } catch (e) {
     el.innerHTML = `<p style="color:var(--danger);text-align:center;padding:20px">검색 오류: ${e.message}</p>`;
+  }
+}
+
+// ── 오더리스트 동기화 (설정 페이지) ──
+async function settingsSyncOrderList() {
+  const btn = document.getElementById("settings-ol-sync-btn");
+  btn.disabled = true;
+  btn.textContent = "동기화 중...";
+  try {
+    const data = await api.orderlistSync();
+    if (data.success) {
+      toast(`오더리스트 동기화 완료: ${data.total_items}건`, "success");
+      loadSettingsOlStatus();
+    } else {
+      toast(`동기화 실패: ${data.error || ""}`, "error");
+    }
+  } catch (e) {
+    toast(`동기화 오류: ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 동기화";
+  }
+}
+
+async function loadSettingsOlStatus() {
+  const el = document.getElementById("settings-ol-status");
+  try {
+    const summary = await api.orderlistSummary();
+    const tabs = summary.tabs || [];
+    const total = summary.total_items || 0;
+    const lastSync = summary.last_sync || "없음";
+    let html = `<div style="margin-bottom:8px"><strong>마지막 동기화:</strong> ${lastSync} | <strong>총 ${total}건</strong></div>`;
+    if (tabs.length) {
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      tabs.forEach(t => {
+        html += `<span style="background:#edf2f7;border-radius:6px;padding:3px 10px;font-size:12px">
+          <strong>${t.sheet_tab}</strong>: ${t.cnt}건 (수량 ${(t.total_qty || 0).toLocaleString()})
+        </span>`;
+      });
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = "상태 조회 실패";
   }
 }
 

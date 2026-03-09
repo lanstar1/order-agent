@@ -374,6 +374,25 @@ def get_orderlist_tabs() -> list:
     return [dict(r) for r in rows]
 
 
+def autocomplete_orderlist(query: str, limit: int = 15) -> list:
+    """오더리스트 DB에서 모델명/카테고리/주문번호 자동완성 검색"""
+    if not query or not query.strip():
+        return []
+
+    conn = get_connection()
+    q = f"%{query.strip()}%"
+    rows = conn.execute("""
+        SELECT DISTINCT model_name, category, description, sheet_tab, order_no, qty, unit
+        FROM orderlist_items
+        WHERE model_name LIKE ? OR description LIKE ? OR category LIKE ? OR order_no LIKE ?
+        ORDER BY sheet_tab DESC, model_name ASC
+        LIMIT ?
+    """, (q, q, q, q, limit)).fetchall()
+    conn.close()
+
+    return [dict(r) for r in rows]
+
+
 def get_orderlist_summary() -> dict:
     """오더리스트 요약 통계"""
     conn = get_connection()

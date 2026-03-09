@@ -2635,14 +2635,16 @@ async function saveBulkMatches() {
    오더리스트 (해외 발주 현황)
    ============================================= */
 let olCurrentPage = 1;
+let _olAutoTimer = null;
+let _olAutoIdx = -1;
+let _olAutoResults = [];
 
 async function syncOrderList() {
   const btn = document.getElementById("ol-sync-btn");
   btn.disabled = true;
   btn.textContent = "동기화 중...";
   try {
-    const res = await fetch("/api/orderlist/sync", { method: "POST" });
-    const data = await res.json();
+    const data = await api.orderlistSync();
     if (data.success) {
       toast(`오더리스트 동기화 완료: ${data.total_items}건`, "success");
       loadOrderListTabs();
@@ -2660,8 +2662,7 @@ async function syncOrderList() {
 
 async function loadOrderListTabs() {
   try {
-    const res = await fetch("/api/orderlist/tabs");
-    const tabs = await res.json();
+    const tabs = await api.orderlistTabs();
     const sel = document.getElementById("ol-tab-select");
     sel.innerHTML = '<option value="">전체</option>';
     tabs.forEach(t => {
@@ -2670,11 +2671,115 @@ async function loadOrderListTabs() {
   } catch (e) { /* ignore */ }
 }
 
-let _olSearchTimer = null;
-function onOlSearchInput() {
-  clearTimeout(_olSearchTimer);
-  _olSearchTimer = setTimeout(() => loadOrderList(1), 300);
+// ─── 오더리스트 자동완성 ───
+async function onOlSearchInput(query) {
+  const dd = document.getElementById("ol-autocomplete-dropdown");
+  _olAutoIdx = -1;
+
+  if (!query || query.trim().length < 1) {
+    dd.style.display = "none";
+    _olAutoResults = [];
+    return;
+  }
+
+  clearTimeout(_olAutoTimer);
+  _olAutoTimer = setTimeout(async () => {
+    try {
+      const res = await api.orderlistAutocomplete(query.trim(), 15);
+      _olAutoResults = res.results || [];
+
+      if (!_olAutoResults.length) {
+        dd.innerHTML = `<div style="padding:12px 14px;color:#a0aec0;font-size:13px">검색 결과 없음</div>`;
+        dd.style.display = "block";
+        return;
+      }
+
+      dd.innerHTML = _olAutoResults.map((p, i) => `
+        <div class="ol-ac-item" data-idx="${i}"
+          onclick="selectOlItem(${i})"
+          onmouseover="highlightOlItem(${i})"
+          style="padding:8px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f7fafc;
+                 display:flex;align-items:center;gap:10px;transition:background .1s">
+          <span style="flex-shrink:0;background:var(--primary);color:#fff;border-radius:4px;padding:1px 5px;font-size:10px">
+            ${escapeHtml(p.sheet_tab || '')}
+          </span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            <strong style="color:var(--primary)">${escapeHtml(p.model_name || '')}</strong>
+            ${p.description ? `<span style="color:var(--gray-500);font-size:11px;margin-left:4px">${escapeHtml(p.description.substring(0, 40))}</span>` : ''}
+          </span>
+          <span style="font-size:11px;color:var(--gray-400);flex-shrink:0">
+            ${p.qty ? p.qty.toLocaleString() + (p.unit || 'PCS') : ''}
+          </span>
+        </div>
+      `).join("");
+      dd.style.display = "block";
+    } catch (e) {
+      console.warn("오더리스트 자동완성 오류:", e);
+    }
+  }, 180);
 }
+
+function highlightOlItem(idx) {
+  _olAutoIdx = idx;
+  document.querySelectorAll(".ol-ac-item").forEach((el, i) => {
+    el.style.background = i === idx ? "#ebf8ff" : "";
+  });
+}
+
+function selectOlItem(idx) {
+  const p = _olAutoResults[idx];
+  if (!p) return;
+  const input = document.getElementById("ol-search-input");
+  input.value = p.model_name || p.category || p.order_no || "";
+  document.getElementById("ol-autocomplete-dropdown").style.display = "none";
+  _olAutoResults = [];
+  _olAutoIdx = -1;
+  loadOrderList(1);
+}
+
+function onOlSearchKeydown(event) {
+  const dd = document.getElementById("ol-autocomplete-dropdown");
+  const items = _olAutoResults;
+
+  if (dd.style.display === "none" || !items.length) {
+    if (event.key === "Enter") { event.preventDefault(); loadOrderList(1); }
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    _olAutoIdx = Math.min(_olAutoIdx + 1, items.length - 1);
+    highlightOlItem(_olAutoIdx);
+    const el = dd.querySelector(`[data-idx="${_olAutoIdx}"]`);
+    if (el) el.scrollIntoView({ block: "nearest" });
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    _olAutoIdx = Math.max(_olAutoIdx - 1, 0);
+    highlightOlItem(_olAutoIdx);
+    const el = dd.querySelector(`[data-idx="${_olAutoIdx}"]`);
+    if (el) el.scrollIntoView({ block: "nearest" });
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    if (_olAutoIdx >= 0 && _olAutoIdx < items.length) {
+      selectOlItem(_olAutoIdx);
+    } else {
+      dd.style.display = "none";
+      loadOrderList(1);
+    }
+  } else if (event.key === "Escape") {
+    dd.style.display = "none";
+    _olAutoIdx = -1;
+  }
+}
+
+// 드롭다운 외부 클릭 시 닫기
+document.addEventListener("click", (e) => {
+  const dd = document.getElementById("ol-autocomplete-dropdown");
+  const input = document.getElementById("ol-search-input");
+  if (dd && input && !dd.contains(e.target) && e.target !== input) {
+    dd.style.display = "none";
+  }
+});
 
 async function loadOrderList(page = 1) {
   olCurrentPage = page;
@@ -2687,12 +2792,7 @@ async function loadOrderList(page = 1) {
   container.innerHTML = '<p style="text-align:center;padding:20px;color:var(--gray-400)">로딩 중...</p>';
 
   try {
-    const params = new URLSearchParams({ page, page_size: 50 });
-    if (tab) params.set("tab", tab);
-    if (query) params.set("query", query);
-
-    const res = await fetch(`/api/orderlist/data?${params}`);
-    const data = await res.json();
+    const data = await api.orderlistData(query, tab, page, 50);
 
     summary.textContent = `총 ${data.total}건 / ${data.total_pages}페이지`;
 

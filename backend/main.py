@@ -234,6 +234,41 @@ async def _auto_sync_on_startup():
     except Exception as e:
         logger.error(f"[자동동기화] 오류: {e}", exc_info=True)
 
+    # ── 오더리스트 자동동기화 ──
+    try:
+        from db.database import get_connection as _gc2
+        conn2 = _gc2()
+        ol_row = conn2.execute(
+            "SELECT MAX(synced_at) as ts FROM orderlist_sync_log"
+        ).fetchone()
+        conn2.close()
+
+        ol_last = ol_row["ts"] if ol_row and ol_row["ts"] else None
+        ol_need_sync = True
+
+        if ol_last:
+            try:
+                ol_dt = datetime.strptime(str(ol_last)[:19], "%Y-%m-%d %H:%M:%S")
+                ol_hours = (datetime.now() - ol_dt).total_seconds() / 3600
+                logger.info(f"[자동동기화] 오더리스트 마지막 동기화: {ol_last} ({ol_hours:.1f}시간 전)")
+                if ol_hours < 6:
+                    ol_need_sync = False
+                    logger.info("[자동동기화] 오더리스트 최근 동기화됨 → 스킵")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[자동동기화] 오더리스트 날짜 파싱 실패: {e}")
+
+        if ol_need_sync:
+            logger.info("[자동동기화] 오더리스트 동기화 시작...")
+            from services.orderlist_service import sync_orderlist
+            ol_result = sync_orderlist()
+            if ol_result.get("success"):
+                logger.info(f"[자동동기화] 오더리스트 완료: {ol_result.get('total_items', 0)}건")
+            else:
+                logger.warning(f"[자동동기화] 오더리스트 실패: {ol_result.get('error', '알 수 없음')}")
+
+    except Exception as e:
+        logger.error(f"[자동동기화] 오더리스트 오류: {e}", exc_info=True)
+
 
 # ─────────────────────────────────────────
 #  프론트엔드 서빙
