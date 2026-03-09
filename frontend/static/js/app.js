@@ -151,8 +151,7 @@ async function onCustSearch(query) {
   clearTimeout(_custSearchTimer);
   _custSearchTimer = setTimeout(async () => {
     try {
-      const res = await fetch(`/api/customers/?q=${encodeURIComponent(query.trim())}`);
-      const data = await res.json();
+      const data = await api.get(`/api/customers/?q=${encodeURIComponent(query.trim())}`);
       const matches = data.customers || [];
       if (!matches.length) {
         dd.innerHTML = `<div style="padding:10px 14px;color:#a0aec0;font-size:13px">검색 결과 없음</div>`;
@@ -907,8 +906,7 @@ async function onSOCustSearch(query) {
   clearTimeout(_soCustSearchTimer);
   _soCustSearchTimer = setTimeout(async () => {
     try {
-      const res = await fetch(`/api/customers/?q=${encodeURIComponent(query.trim())}`);
-      const data = await res.json();
+      const data = await api.get(`/api/customers/?q=${encodeURIComponent(query.trim())}`);
       const matches = data.customers || [];
       if (!matches.length) {
         dd.innerHTML = `<div style="padding:10px 14px;color:#a0aec0;font-size:13px">검색 결과 없음</div>`;
@@ -1893,8 +1891,7 @@ async function onTrainingCustSearch(query) {
   clearTimeout(_trCustTimer);
   _trCustTimer = setTimeout(async () => {
     try {
-      const res = await fetch(`/api/customers/?q=${encodeURIComponent(query.trim())}`);
-      const data = await res.json();
+      const data = await api.get(`/api/customers/?q=${encodeURIComponent(query.trim())}`);
       const matches = data.customers || [];
       if (!matches.length) {
         dd.innerHTML = '<div style="padding:10px 14px;color:#a0aec0;font-size:13px">검색 결과 없음</div>';
@@ -2376,8 +2373,8 @@ function onBulkCustSearch(q) {
   }
   _bulkCustTimer = setTimeout(async () => {
     try {
-      const data = await api.customerSearch(q);
-      const list = data.results || [];
+      const data = await api.get(`/api/customers/?q=${encodeURIComponent(q)}`);
+      const list = data.customers || [];
       const dd = document.getElementById("bulk-cust-dropdown");
       const inner = dd.querySelector("div");
       if (!list.length) { dd.style.display = "none"; return; }
