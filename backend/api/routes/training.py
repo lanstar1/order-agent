@@ -228,7 +228,11 @@ async def remove_training_pair(pair_id: int, user: dict = Depends(get_current_us
 @router.get("/stats")
 async def training_stats():
     """학습 데이터 통계"""
-    return get_training_stats()
+    try:
+        return get_training_stats()
+    except Exception as e:
+        logger.error(f"[Training] 통계 조회 실패: {e}", exc_info=True)
+        return {"total_pairs": 0, "total_items": 0, "vendors": [], "_error": str(e)}
 
 
 # ─────────────────────────────────────────

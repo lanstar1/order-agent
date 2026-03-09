@@ -88,7 +88,19 @@ async def security_headers_middleware(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"[Unhandled] {request.method} {request.url.path}: {exc}", exc_info=True)
-    detail = str(exc) if DEBUG else "서버 내부 오류가 발생했습니다."
+    if DEBUG:
+        detail = str(exc)
+    else:
+        # 프로덕션: 에러 유형별 사용자 친화적 메시지
+        exc_str = str(exc).lower()
+        if "connection" in exc_str or "timeout" in exc_str:
+            detail = "데이터베이스 연결에 실패했습니다. 잠시 후 다시 시도해주세요."
+        elif "permission" in exc_str or "access" in exc_str:
+            detail = "접근 권한이 없습니다."
+        elif "not found" in exc_str:
+            detail = "요청한 데이터를 찾을 수 없습니다."
+        else:
+            detail = "서버 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
     return JSONResponse(status_code=500, content={"detail": detail})
 
 

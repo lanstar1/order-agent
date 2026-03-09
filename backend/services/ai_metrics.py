@@ -195,31 +195,78 @@ def get_dashboard_stats(days: int = 30) -> dict:
         ).fetchone()
         auto_train_count = auto_train_rows["cnt"] if auto_train_rows else 0
 
-        # 5. 일별 STP 추이 (최근 30일)
-        daily_stp = conn.execute("""
-            SELECT
-                substr(created_at, 1, 10) as day,
-                SUM(json_extract(data, '$.total_lines')) as total_lines,
-                SUM(json_extract(data, '$.auto_matched')) as auto_matched
-            FROM ai_metrics
-            WHERE metric_type='match_result' AND created_at >= ?
-            GROUP BY substr(created_at, 1, 10)
-            ORDER BY day
-        """, (since,)).fetchall()
+        # 5. 일별 STP 추이 (최근 30일) — Python에서 JSON 파싱 (PG 호환)
+        daily_match_rows = conn.execute(
+            "SELECT created_at, data FROM ai_metrics WHERE metric_type='match_result' AND created_at >= ?",
+            (since,)
+        ).fetchall()
 
+        daily_stp_map = {}
+        for r in daily_match_rows:
+            day = str(r["created_at"])[:10]
+            d = json.loads(r["data"])
+            if day not in daily_stp_map:
+                daily_stp_map[day] = {"total_lines": 0, "auto_matched": 0}
+            daily_stp_map[day]["total_lines"] += d.get("total_lines", 0)
+            daily_stp_map[day]["auto_matched"] += d.get("auto_matched", 0)
+
+        # 5-2. 일별 LLM 호출 통계 (토큰, 비용)
+        daily_llm_rows = conn.execute(
+            "SELECT created_at, data FROM ai_metrics WHERE metric_type='llm_call' AND created_at >= ?",
+            (since,)
+        ).fetchall()
+
+        daily_llm_map = {}
+        for r in daily_llm_rows:
+            day = str(r["created_at"])[:10]
+            d = json.loads(r["data"])
+            if day not in daily_llm_map:
+                daily_llm_map[day] = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost": 0}
+            daily_llm_map[day]["calls"] += 1
+            daily_llm_map[day]["input_tokens"] += d.get("input_tokens", 0)
+            daily_llm_map[day]["output_tokens"] += d.get("output_tokens", 0)
+            total_t = d.get("total_tokens", 0)
+            model = d.get("model", "")
+            if "haiku" in model.lower():
+                daily_llm_map[day]["cost"] += total_t * 0.000001
+            elif "sonnet" in model.lower():
+                daily_llm_map[day]["cost"] += total_t * 0.000006
+            else:
+                daily_llm_map[day]["cost"] += total_t * 0.00003
+
+        # 모든 날짜 합치기
+        all_days = sorted(set(list(daily_stp_map.keys()) + list(daily_llm_map.keys())))
         daily_trend = []
-        for r in daily_stp:
-            tl = r["total_lines"] or 0
-            am = r["auto_matched"] or 0
+        for day in all_days:
+            stp = daily_stp_map.get(day, {})
+            llm = daily_llm_map.get(day, {})
+            tl = stp.get("total_lines", 0)
+            am = stp.get("auto_matched", 0)
             daily_trend.append({
-                "date": r["day"],
+                "date": day,
                 "total_lines": tl,
                 "auto_matched": am,
-                "stp_rate": round(am / max(tl, 1) * 100, 1)
+                "stp_rate": round(am / max(tl, 1) * 100, 1),
+                "calls": llm.get("calls", 0),
+                "input_tokens": llm.get("input_tokens", 0),
+                "output_tokens": llm.get("output_tokens", 0),
+                "cost": round(llm.get("cost", 0), 4),
             })
 
         return {
             "period_days": days,
+            # 호환성 필드 (프론트엔드 직접 참조용)
+            "total_calls": len(rows),
+            "total_input_tokens": sum(json.loads(r["data"]).get("input_tokens", 0) for r in rows),
+            "total_output_tokens": sum(json.loads(r["data"]).get("output_tokens", 0) for r in rows),
+            "estimated_cost_usd": round(total_cost_estimate, 2),
+            "stp_rate": {
+                "total_lines": total_lines_sum,
+                "auto_matched": auto_matched_sum,
+                "stp_pct": stp_rate,
+            },
+            "auto_training_total": auto_train_count,
+            # 상세 구조
             "token_usage": {
                 "total_tokens": total_tokens,
                 "cost_estimate_usd": round(total_cost_estimate, 2),

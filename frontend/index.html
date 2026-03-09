@@ -507,15 +507,14 @@ C규격품 200개
             <thead>
               <tr style="border-bottom:2px solid #e5e7eb">
                 <th style="text-align:left;padding:8px">거래처</th>
-                <th style="text-align:right;padding:8px">총 주문</th>
+                <th style="text-align:right;padding:8px">발주건수</th>
                 <th style="text-align:right;padding:8px">총 라인</th>
                 <th style="text-align:right;padding:8px">자동매칭</th>
                 <th style="text-align:right;padding:8px">STP율</th>
-                <th style="text-align:right;padding:8px">학습데이터</th>
               </tr>
             </thead>
             <tbody id="dash-cust-tbody">
-              <tr><td colspan="6" style="text-align:center;padding:20px;color:#9ca3af">데이터를 불러오는 중...</td></tr>
+              <tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">데이터를 불러오는 중...</td></tr>
             </tbody>
           </table>
         </div>
@@ -555,7 +554,8 @@ C규격품 200개
         document.getElementById("dash-cost").textContent = "$" + (data.estimated_cost_usd || 0).toFixed(2);
 
         const stpData = data.stp_rate || {};
-        const stpPct = stpData.total_lines ? ((stpData.auto_matched / stpData.total_lines) * 100).toFixed(1) : "0";
+        const stpPct = stpData.stp_pct != null ? stpData.stp_pct
+            : (stpData.total_lines ? ((stpData.auto_matched / stpData.total_lines) * 100).toFixed(1) : "0");
         document.getElementById("dash-stp").textContent = stpPct + "%";
         document.getElementById("dash-auto-train").textContent = (data.auto_training_total || 0).toLocaleString();
 
@@ -563,17 +563,17 @@ C규격품 200개
         const custTbody = document.getElementById("dash-cust-tbody");
         const custs = data.customer_stats || [];
         if (custs.length === 0) {
-          custTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#9ca3af">데이터 없음</td></tr>';
+          custTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">아직 처리된 발주서가 없습니다</td></tr>';
         } else {
           custTbody.innerHTML = custs.map(c => {
-            const stp = c.total_lines ? ((c.auto_matched / c.total_lines) * 100).toFixed(1) : "0";
+            const stp = c.stp_rate != null ? c.stp_rate
+                : (c.total_lines ? ((c.auto_matched / c.total_lines) * 100).toFixed(1) : "0");
             return `<tr style="border-bottom:1px solid #f3f4f6">
               <td style="padding:8px">${c.cust_code || "-"}</td>
-              <td style="text-align:right;padding:8px">${c.total_orders || 0}</td>
+              <td style="text-align:right;padding:8px">${c.orders || 0}</td>
               <td style="text-align:right;padding:8px">${c.total_lines || 0}</td>
               <td style="text-align:right;padding:8px">${c.auto_matched || 0}</td>
               <td style="text-align:right;padding:8px"><span style="color:${parseFloat(stp)>=80?"#10b981":parseFloat(stp)>=50?"#f59e0b":"#ef4444"};font-weight:600">${stp}%</span></td>
-              <td style="text-align:right;padding:8px">${c.training_count || 0}</td>
             </tr>`;
           }).join("");
         }
@@ -582,7 +582,7 @@ C규격품 200개
         const dailyTbody = document.getElementById("dash-daily-tbody");
         const daily = data.daily_trend || [];
         if (daily.length === 0) {
-          dailyTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">데이터 없음</td></tr>';
+          dailyTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">아직 데이터가 없습니다</td></tr>';
         } else {
           dailyTbody.innerHTML = daily.slice(-14).reverse().map(d => `<tr style="border-bottom:1px solid #f3f4f6">
             <td style="padding:8px">${d.date || ""}</td>
@@ -594,7 +594,21 @@ C규격품 200개
         }
       } catch(e) {
         console.error("대시보드 로드 실패:", e);
-        toast("대시보드 데이터 로드 실패: " + e.message, "error");
+        // 에러 시 사용자에게 부드러운 메시지 표시 (빨간 에러 대신 안내 메시지)
+        document.getElementById("dash-total-calls").textContent = "-";
+        document.getElementById("dash-total-tokens").textContent = "-";
+        document.getElementById("dash-cost").textContent = "-";
+        document.getElementById("dash-stp").textContent = "-";
+        document.getElementById("dash-auto-train").textContent = "-";
+        const custTbody = document.getElementById("dash-cust-tbody");
+        if (custTbody) custTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">데이터를 불러올 수 없습니다</td></tr>';
+        const dailyTbody = document.getElementById("dash-daily-tbody");
+        if (dailyTbody) dailyTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">데이터를 불러올 수 없습니다</td></tr>';
+        if (e.message && e.message.includes("401")) {
+          // 인증 만료 시 조용히 처리 (로그인 화면으로 전환)
+        } else {
+          toast("대시보드 로드 실패. 잠시 후 다시 시도해주세요.", "warning");
+        }
       }
     }
 

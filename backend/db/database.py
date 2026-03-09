@@ -68,9 +68,18 @@ def _sql_to_pg(sql):
     # 파라미터 플레이스홀더: ? → %s
     sql = sql.replace("?", "%s")
 
-    # datetime 함수
+    # datetime 함수 (CREATE TABLE DEFAULT 및 INSERT/UPDATE 모두 처리)
     sql = sql.replace("datetime('now','localtime')", "NOW()")
     sql = sql.replace("datetime('now', 'localtime')", "NOW()")
+    sql = sql.replace("datetime('now')", "NOW()")
+
+    # json_extract → PG JSON 연산자 (Python 측 파싱으로 대체 권장, 호환용)
+    sql = re.sub(
+        r"json_extract\((\w+),\s*'\$\.(\w+)'\)",
+        r"(\1::json->'\2')::text",
+        sql,
+        flags=re.IGNORECASE,
+    )
 
     # AUTOINCREMENT → SERIAL
     sql = re.sub(

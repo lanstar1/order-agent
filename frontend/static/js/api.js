@@ -46,7 +46,10 @@ const api = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || "API 오류");
+      const msg = err.detail || "API 오류";
+      const e = new Error(msg);
+      e.status = res.status;
+      throw e;
     }
     return res.json();
   },

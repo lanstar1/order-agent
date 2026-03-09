@@ -2,6 +2,7 @@
 설정 관리 - 환경변수 또는 config.json 으로 관리
 """
 import os
+import hashlib
 import secrets
 from pathlib import Path
 from dotenv import load_dotenv
@@ -65,7 +66,12 @@ TOP_K_RESULTS        = 5      # RAG 검색 상위 후보 수
 # ─────────────────────────────────────────
 #  JWT 인증
 # ─────────────────────────────────────────
-JWT_SECRET_KEY  = os.getenv("JWT_SECRET_KEY", secrets.token_hex(32))
+# JWT_SECRET_KEY: 프로덕션에서는 반드시 환경변수로 설정할 것!
+# 미설정 시 ERP_COM_CODE 기반 결정론적 키 생성 (서버 재시작 시 토큰 유지)
+_jwt_fallback = hashlib.sha256(
+    f"order-agent-jwt-{os.getenv('ERP_COM_CODE', 'dev')}".encode()
+).hexdigest()
+JWT_SECRET_KEY  = os.getenv("JWT_SECRET_KEY", _jwt_fallback)
 JWT_ALGORITHM   = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
 
