@@ -288,4 +288,20 @@ const api = {
   getModels:    () => api.get("/api/settings/models"),
   setModel:     (modelId) => api.post("/api/settings/models", { model_id: modelId }),
   getSettings:  () => api.get("/api/settings/"),
+
+  // ── 활동 로그 (관리자) ──
+  activityLogs(page = 1, pageSize = 50, empCd = "", action = "", dateFrom = "", dateTo = "") {
+    const params = new URLSearchParams({ page, page_size: pageSize });
+    if (empCd) params.set("emp_cd", empCd);
+    if (action) params.set("action", action);
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    return api.get(`/api/activity/logs?${params}`);
+  },
+  activitySummary() {
+    return api.get("/api/activity/summary");
+  },
+  activityEmployees() {
+    return api.get("/api/activity/employees");
+  },
 };

@@ -651,6 +651,11 @@ C규격품 200개
           style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s">
           내 계정
         </button>
+        <button class="settings-tab-btn" data-settings-tab="activity" id="settings-activity-tab-btn"
+          onclick="switchSettingsTab('activity')"
+          style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;display:none">
+          활동 로그
+        </button>
       </div>
 
       <!-- ─── 탭 1: AI 모델 설정 ─── -->
@@ -818,6 +823,64 @@ C규격품 200개
               <button class="btn btn-sm" style="background:#e53e3e;color:#fff" onclick="doResetPassword()">비밀번호 초기화</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ─── 탭 5: 활동 로그 (관리자 전용) ─── -->
+      <div class="settings-panel" id="settings-tab-activity" style="display:none">
+
+        <!-- 요약 통계 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>사용자 활동 로그</span>
+            <button class="btn btn-outline btn-sm" onclick="loadActivityLogs(1)" style="font-size:12px">🔄 새로고침</button>
+          </div>
+          <div id="activity-summary" style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+            로딩 중...
+          </div>
+        </div>
+
+        <!-- 필터 -->
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div>
+              <label class="form-label" style="font-size:12px">직원</label>
+              <select class="form-control" id="activity-filter-emp" style="min-width:130px;font-size:13px" onchange="loadActivityLogs(1)">
+                <option value="">전체</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size:12px">액션</label>
+              <select class="form-control" id="activity-filter-action" style="min-width:140px;font-size:13px" onchange="loadActivityLogs(1)">
+                <option value="">전체</option>
+                <option value="로그인">로그인</option>
+                <option value="발주서">발주서 관련</option>
+                <option value="견적서">견적서 관련</option>
+                <option value="재고">재고 조회</option>
+                <option value="ERP 전송">ERP 전송</option>
+                <option value="동기화">동기화</option>
+                <option value="모델 변경">모델 변경</option>
+                <option value="학습">학습 데이터</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size:12px">시작일</label>
+              <input type="date" class="form-control" id="activity-filter-from" style="font-size:13px" onchange="loadActivityLogs(1)">
+            </div>
+            <div>
+              <label class="form-label" style="font-size:12px">종료일</label>
+              <input type="date" class="form-control" id="activity-filter-to" style="font-size:13px" onchange="loadActivityLogs(1)">
+            </div>
+          </div>
+        </div>
+
+        <!-- 로그 테이블 -->
+        <div class="card">
+          <div id="activity-logs-container">
+            <p style="color:var(--gray-400);text-align:center;padding:20px">로딩 중...</p>
+          </div>
+          <!-- 페이지네이션 -->
+          <div id="activity-pagination" style="display:flex;justify-content:center;gap:8px;margin-top:16px"></div>
         </div>
       </div>
 
@@ -1036,6 +1099,11 @@ function switchSettingsTab(tab) {
     if (searchEl) setTimeout(() => searchEl.focus(), 50);
   }
   if (tab === "account") updateAccountInfo();
+  if (tab === "activity") {
+    loadActivitySummary();
+    loadActivityEmployeeFilter();
+    loadActivityLogs(1);
+  }
 }
 
 // ── AI 모델 관리
@@ -1471,10 +1539,153 @@ async function loadSettingsOlStatus() {
   }
 }
 
+// ── 활동 로그 (관리자 전용) ──
+const ADMIN_EMP_CDS = new Set(["28", "01"]);
+
+function showActivityTabIfAdmin() {
+  const user = getCurrentUser();
+  const btn = document.getElementById("settings-activity-tab-btn");
+  if (btn) {
+    btn.style.display = (user && ADMIN_EMP_CDS.has(user.emp_cd)) ? "" : "none";
+  }
+}
+
+let _activityPage = 1;
+
+async function loadActivityLogs(page = 1) {
+  _activityPage = page;
+  const container = document.getElementById("activity-logs-container");
+  const pagEl = document.getElementById("activity-pagination");
+
+  const empCd = document.getElementById("activity-filter-emp")?.value || "";
+  const action = document.getElementById("activity-filter-action")?.value || "";
+  const dateFrom = document.getElementById("activity-filter-from")?.value || "";
+  const dateTo = document.getElementById("activity-filter-to")?.value || "";
+
+  container.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:20px">로딩 중...</p>';
+
+  try {
+    const data = await api.activityLogs(page, 50, empCd, action, dateFrom, dateTo);
+    const items = data.items || [];
+
+    if (!items.length) {
+      container.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:30px">활동 기록이 없습니다.</p>';
+      pagEl.innerHTML = "";
+      return;
+    }
+
+    let html = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:#f7fafc;border-bottom:2px solid var(--gray-200)">
+          <th style="padding:8px 10px;text-align:left;white-space:nowrap">시간</th>
+          <th style="padding:8px 10px;text-align:left;white-space:nowrap">직원</th>
+          <th style="padding:8px 10px;text-align:left;white-space:nowrap">액션</th>
+          <th style="padding:8px 10px;text-align:left">상세</th>
+          <th style="padding:8px 10px;text-align:left;white-space:nowrap">IP</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+    items.forEach(item => {
+      const actionColor = item.action === "로그인" ? "#48bb78" :
+        item.action.includes("ERP") ? "#e53e3e" :
+        item.action.includes("분석") ? "#4299e1" :
+        item.action.includes("동기화") ? "#9f7aea" : "#718096";
+      html += `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:6px 10px;white-space:nowrap;color:var(--gray-500);font-size:12px">${item.created_at || ""}</td>
+        <td style="padding:6px 10px;white-space:nowrap"><strong>[${item.emp_cd}]</strong> ${item.emp_name || ""}</td>
+        <td style="padding:6px 10px;white-space:nowrap">
+          <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
+            background:${actionColor}18;color:${actionColor}">${item.action}</span>
+        </td>
+        <td style="padding:6px 10px;font-size:12px;color:var(--gray-500);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="${(item.detail || '').replace(/"/g, '&quot;')}">${item.detail || "-"}</td>
+        <td style="padding:6px 10px;font-size:11px;color:var(--gray-400);white-space:nowrap">${item.ip_address || "-"}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    html += `<div style="font-size:12px;color:var(--gray-400);margin-top:8px;text-align:right">
+      총 ${data.total}건 (${data.page}/${data.total_pages} 페이지)</div>`;
+    container.innerHTML = html;
+
+    // 페이지네이션
+    let pagHtml = "";
+    if (data.total_pages > 1) {
+      if (page > 1) pagHtml += `<button class="btn btn-outline btn-sm" onclick="loadActivityLogs(${page - 1})" style="font-size:12px">◀ 이전</button>`;
+      const start = Math.max(1, page - 2);
+      const end = Math.min(data.total_pages, page + 2);
+      for (let i = start; i <= end; i++) {
+        pagHtml += `<button class="btn ${i === page ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="loadActivityLogs(${i})" style="font-size:12px;min-width:36px">${i}</button>`;
+      }
+      if (page < data.total_pages) pagHtml += `<button class="btn btn-outline btn-sm" onclick="loadActivityLogs(${page + 1})" style="font-size:12px">다음 ▶</button>`;
+    }
+    pagEl.innerHTML = pagHtml;
+
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:20px">오류: ${e.message}</p>`;
+    pagEl.innerHTML = "";
+  }
+}
+
+async function loadActivitySummary() {
+  const el = document.getElementById("activity-summary");
+  try {
+    const data = await api.activitySummary();
+    let html = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+      <span><strong>총 기록:</strong> ${(data.total || 0).toLocaleString()}건</span>
+    </div>`;
+
+    if (data.by_user && data.by_user.length) {
+      html += '<div style="margin-bottom:8px"><strong>최근 7일 사용자별:</strong></div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+      data.by_user.forEach(u => {
+        html += `<span style="background:#edf2f7;border-radius:6px;padding:3px 10px;font-size:12px">
+          <strong>[${u.emp_cd}] ${u.emp_name}</strong>: ${u.cnt}회
+        </span>`;
+      });
+      html += '</div>';
+    }
+
+    if (data.by_action && data.by_action.length) {
+      html += '<div style="margin-bottom:8px"><strong>최근 7일 액션별:</strong></div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      data.by_action.forEach(a => {
+        html += `<span style="background:#ebf8ff;border-radius:6px;padding:3px 10px;font-size:12px">
+          ${a.action}: <strong>${a.cnt}회</strong>
+        </span>`;
+      });
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--danger)">요약 로드 실패: ${e.message}</span>`;
+  }
+}
+
+async function loadActivityEmployeeFilter() {
+  try {
+    const data = await api.activityEmployees();
+    const sel = document.getElementById("activity-filter-emp");
+    if (!sel) return;
+    // 기존 옵션 유지하면서 직원 추가
+    const existing = sel.options.length;
+    if (existing > 1) return; // 이미 로드됨
+    (data.employees || []).forEach(e => {
+      const opt = document.createElement("option");
+      opt.value = e.emp_cd;
+      opt.textContent = `[${e.emp_cd}] ${e.emp_name}`;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* 무시 */ }
+}
+
 // settings 페이지 진입 시
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelector('[data-page="settings"]').addEventListener("click", () => {
     updateAccountInfo();
+    showActivityTabIfAdmin();
     // 기본 탭 활성화
     switchSettingsTab('api');
   });
@@ -1698,7 +1909,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </div>
 </div>
 
-<script src="/static/js/api.js?v=20260309b"></script>
-<script src="/static/js/app.js?v=20260309b"></script>
+<script src="/static/js/api.js?v=20260309c"></script>
+<script src="/static/js/app.js?v=20260309c"></script>
 </body>
 </html>

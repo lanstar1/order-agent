@@ -22,6 +22,7 @@ from api.routes.sale_orders import router as sale_orders_router
 from api.routes.materials import router as materials_router
 from api.routes.training import router as training_router
 from api.routes.orderlist import router as orderlist_router
+from api.routes.activity import router as activity_router
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -83,6 +84,83 @@ async def security_headers_middleware(request: Request, call_next):
 
 
 # ─────────────────────────────────────────
+#  활동 로그 미들웨어
+# ─────────────────────────────────────────
+# 기록할 API 액션 매핑 (경로 prefix → 액션 라벨)
+_ACTIVITY_ACTIONS = {
+    ("POST", "/api/auth/login"): "로그인",
+    ("POST", "/api/orders/process"): "발주서 분석",
+    ("POST", "/api/orders/process-image"): "발주서 이미지 분석",
+    ("POST", "/api/orders/confirm"): "발주서 확정",
+    ("POST", "/api/orders/submit-erp"): "발주서 ERP 전송",
+    ("POST", "/api/sale-orders/process"): "견적서 분석",
+    ("POST", "/api/sale-orders/process-image"): "견적서 이미지 분석",
+    ("POST", "/api/sale-orders/confirm"): "견적서 확정",
+    ("POST", "/api/sale-orders/submit-erp"): "견적서 ERP 전송",
+    ("GET", "/api/inventory/search"): "재고 조회",
+    ("POST", "/api/inventory/check"): "재고 확인",
+    ("POST", "/api/materials/sync"): "자료 동기화",
+    ("POST", "/api/orderlist/sync"): "오더리스트 동기화",
+    ("POST", "/api/settings/models"): "AI 모델 변경",
+    ("POST", "/api/training/upload"): "학습 데이터 업로드",
+    ("POST", "/api/training/bulk/create-session"): "대량 학습 세션 생성",
+}
+
+@app.middleware("http")
+async def activity_log_middleware(request: Request, call_next):
+    """주요 API 호출을 활동 로그에 기록"""
+    response = await call_next(request)
+
+    # 성공한 API 호출만 기록
+    if response.status_code < 400:
+        method = request.method
+        path = request.url.path
+
+        # 정확한 매칭 또는 prefix 매칭
+        action_label = None
+        for (m, p), label in _ACTIVITY_ACTIONS.items():
+            if method == m and path.startswith(p):
+                action_label = label
+                break
+
+        if action_label:
+            # JWT에서 사용자 정보 추출 (미들웨어에서는 직접 파싱)
+            try:
+                from security import verify_token
+                auth_header = request.headers.get("authorization", "")
+                token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer") else ""
+
+                emp_cd = ""
+                emp_name = ""
+
+                if token:
+                    payload = verify_token(token)
+                    if payload:
+                        emp_cd = payload.get("emp_cd", "")
+                        emp_name = payload.get("name", "")
+
+                # 로그인 성공 시 body에서 emp_cd 추출 (토큰 없음)
+                if action_label == "로그인" and not emp_cd:
+                    # 로그인 응답이 성공이면 request body에서 추출하기 어려우므로
+                    # path 기반으로만 기록
+                    pass
+
+                if emp_cd:
+                    ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "")
+                    detail = path
+                    # query string 포함
+                    if request.url.query:
+                        detail += f"?{request.url.query}"
+
+                    from services.activity_service import log_activity
+                    log_activity(emp_cd, emp_name, action_label, detail, ip)
+            except Exception as e:
+                logger.debug(f"[ActivityLog] 미들웨어 기록 실패 (무시): {e}")
+
+    return response
+
+
+# ─────────────────────────────────────────
 #  글로벌 예외 핸들러
 # ─────────────────────────────────────────
 @app.exception_handler(Exception)
@@ -114,6 +192,7 @@ app.include_router(sale_orders_router)
 app.include_router(materials_router)
 app.include_router(training_router)
 app.include_router(orderlist_router)
+app.include_router(activity_router)
 
 # AI 대시보드 라우터
 try:
@@ -170,6 +249,14 @@ async def startup():
         logger.info("AI 메트릭 테이블 초기화 완료")
     except Exception as e:
         logger.warning(f"AI 메트릭 테이블 초기화 실패: {e}")
+
+    # 활동 로그 테이블 초기화
+    try:
+        from services.activity_service import ensure_activity_table
+        ensure_activity_table()
+        logger.info("활동 로그 테이블 초기화 완료")
+    except Exception as e:
+        logger.warning(f"활동 로그 테이블 초기화 실패: {e}")
 
     # 자료관리: 서버 시작 시 마지막 동기화가 오래됐으면 자동 동기화
     asyncio.create_task(_auto_sync_on_startup())

@@ -90,6 +90,13 @@ async def login(req: LoginRequest):
     token = create_token(row["emp_cd"], row["name"])
     logger.info(f"[Auth] 로그인: [{row['emp_cd']}] {row['name']}")
 
+    # 활동 로그 기록
+    try:
+        from services.activity_service import log_activity
+        log_activity(row["emp_cd"], row["name"], "로그인", "로그인 성공")
+    except Exception:
+        pass
+
     return {
         "success": True,
         "emp_cd": row["emp_cd"],

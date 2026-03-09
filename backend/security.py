@@ -64,6 +64,15 @@ def decode_token(token: str) -> Optional[dict]:
         raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
 
 
+def verify_token(token: str) -> Optional[dict]:
+    """JWT 토큰 검증 (예외 미발생, 실패 시 None 반환) - 미들웨어용"""
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        return {"emp_cd": payload.get("sub", ""), "name": payload.get("name", "")}
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────
 #  FastAPI 인증 의존성
 # ─────────────────────────────────────────
