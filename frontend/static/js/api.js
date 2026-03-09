@@ -257,16 +257,24 @@ const api = {
   },
 
   // ── 오더리스트 ──
-  orderlistSync:         (tab = "") => api.post(`/api/orderlist/sync${tab ? '?tab=' + encodeURIComponent(tab) : ''}`),
-  orderlistData:         (query = "", tab = "", page = 1, pageSize = 50) => {
+  orderlistSync(tab = "") {
+    return api.post(`/api/orderlist/sync${tab ? '?tab=' + encodeURIComponent(tab) : ''}`);
+  },
+  orderlistData(query = "", tab = "", page = 1, pageSize = 50) {
     const params = new URLSearchParams({ page, page_size: pageSize });
     if (tab) params.set("tab", tab);
     if (query) params.set("query", query);
     return api.get(`/api/orderlist/data?${params}`);
   },
-  orderlistTabs:         () => api.get("/api/orderlist/tabs"),
-  orderlistAutocomplete: (q, limit = 15) => api.get(`/api/orderlist/autocomplete?q=${encodeURIComponent(q)}&limit=${limit}`),
-  orderlistSummary:      () => api.get("/api/orderlist/summary"),
+  orderlistTabs() {
+    return api.get("/api/orderlist/tabs");
+  },
+  orderlistAutocomplete(q, limit = 15) {
+    return api.get(`/api/orderlist/autocomplete?q=${encodeURIComponent(q)}&limit=${limit}`);
+  },
+  orderlistSummary() {
+    return api.get("/api/orderlist/summary");
+  },
 
   // ── AI 대시보드 ──
   dashboardStats(days = 30) {
