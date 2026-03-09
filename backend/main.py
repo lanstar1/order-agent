@@ -138,6 +138,16 @@ async def startup():
     init_db()
     logger.info("데이터베이스 초기화 완료")
 
+    # products.csv 확인
+    from config import PRODUCTS_CSV
+    if PRODUCTS_CSV.exists():
+        import csv
+        with open(PRODUCTS_CSV, encoding="utf-8-sig") as f:
+            row_count = sum(1 for _ in f) - 1  # 헤더 제외
+        logger.info(f"products.csv 로드 완료: {PRODUCTS_CSV} ({row_count}개 품목)")
+    else:
+        logger.error(f"products.csv 파일을 찾을 수 없습니다: {PRODUCTS_CSV}")
+
     # DB에 저장된 모델 설정 복원
     try:
         from api.routes.settings import ensure_settings_table

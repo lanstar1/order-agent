@@ -29,6 +29,7 @@ class InventoryCheckRequest(BaseModel):
 def _search_products_csv(query: str, limit: int = 20) -> list:
     """products.csv에서 품목 검색 (품목코드, 품명, 모델명으로 검색)"""
     if not PRODUCTS_CSV.exists():
+        logger.warning(f"[Inventory] products.csv 없음: {PRODUCTS_CSV}")
         return []
 
     query_lower = query.lower().strip()

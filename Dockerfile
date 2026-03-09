@@ -17,8 +17,11 @@ RUN pip install --no-cache-dir -r backend/requirements.txt python-dotenv
 COPY backend/ /app/backend/
 COPY frontend/ /app/frontend/
 
-# data 디렉토리 (볼륨 마운트 대상)
-RUN mkdir -p /app/data/products /app/data/uploads /app/data/feedback
+# data 디렉토리 복사 (products.csv 포함)
+COPY data/ /app/data/
+
+# 업로드/피드백 디렉토리 보장
+RUN mkdir -p /app/data/uploads /app/data/feedback
 
 # 포트
 EXPOSE 8000
