@@ -161,53 +161,64 @@ async def startup():
     except Exception as e:
         logger.warning(f"AI 메트릭 테이블 초기화 실패: {e}")
 
-    # 자료관리 자동 동기화 스케줄러 시작 (매일 오전 9시)
-    asyncio.create_task(_materials_scheduler())
+    # 자료관리: 서버 시작 시 마지막 동기화가 오래됐으면 자동 동기화
+    asyncio.create_task(_auto_sync_on_startup())
 
 
 # ─────────────────────────────────────────
-#  자료관리 자동 동기화 스케줄러
+#  자료관리 자동 동기화 (서버 시작 시)
 # ─────────────────────────────────────────
-async def _materials_scheduler():
-    """매일 오전 9시에 Google Sheets 단가표 자동 동기화"""
+async def _auto_sync_on_startup():
+    """
+    서버 시작 시 마지막 동기화가 6시간 이상 지났으면 자동 동기화.
+    Render 무료 플랜은 5분 후 서버가 꺼지므로, 오전 9시 스케줄러 방식은 작동하지 않음.
+    대신 서버가 깨어날 때마다 동기화 필요 여부를 체크.
+    """
     from datetime import datetime, timedelta
-    from services.materials_service import sync_all_sheets
 
-    while True:
-        try:
-            now = datetime.now()
-            # 다음 오전 9시 계산
-            target = now.replace(hour=9, minute=0, second=0, microsecond=0)
-            if now >= target:
-                target += timedelta(days=1)
-            wait_seconds = (target - now).total_seconds()
+    # 서버 시작 직후 약간의 딜레이 (DB 초기화 완료 대기)
+    await asyncio.sleep(5)
 
-            logger.info(
-                f"[Materials 스케줄러] 다음 자동 동기화: {target.strftime('%Y-%m-%d %H:%M')} "
-                f"({int(wait_seconds)}초 후)"
-            )
-            await asyncio.sleep(wait_seconds)
+    try:
+        from db.database import get_connection
+        conn = get_connection()
 
-            # 동기화 실행
-            logger.info("[Materials 스케줄러] 자동 동기화 시작")
+        # 가장 최근 동기화 시간 확인
+        row = conn.execute(
+            "SELECT MAX(last_synced) as latest FROM material_sources WHERE last_synced != ''"
+        ).fetchone()
+        conn.close()
+
+        latest_sync = row["latest"] if row and row["latest"] else None
+        need_sync = True
+
+        if latest_sync:
+            try:
+                last_dt = datetime.strptime(str(latest_sync)[:19], "%Y-%m-%d %H:%M:%S")
+                hours_ago = (datetime.now() - last_dt).total_seconds() / 3600
+                logger.info(f"[자동동기화] 마지막 동기화: {latest_sync} ({hours_ago:.1f}시간 전)")
+                if hours_ago < 6:
+                    need_sync = False
+                    logger.info("[자동동기화] 최근 동기화됨 → 스킵")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[자동동기화] 날짜 파싱 실패: {e}")
+
+        if need_sync:
+            logger.info("[자동동기화] 동기화 시작...")
             from services.materials_service import sync_all as sync_all_sources
             result = await sync_all_sources()
             sheets = result.get("sheets", {})
             drive = result.get("drive", {})
             logger.info(
-                f"[Materials 스케줄러] 자동 동기화 완료: "
+                f"[자동동기화] 완료: "
                 f"시트 {sheets.get('success_count',0)}/{sheets.get('total_sources',0)}개, "
                 f"총 {sheets.get('total_rows',0)}행 / "
                 f"Drive {drive.get('success_count',0)}/{drive.get('total_sources',0)}개, "
                 f"총 {drive.get('total_files',0)}파일"
             )
-        except asyncio.CancelledError:
-            logger.info("[Materials 스케줄러] 종료")
-            break
-        except Exception as e:
-            logger.error(f"[Materials 스케줄러] 오류: {e}", exc_info=True)
-            # 오류 시 1시간 후 재시도
-            await asyncio.sleep(3600)
+
+    except Exception as e:
+        logger.error(f"[자동동기화] 오류: {e}", exc_info=True)
 
 
 # ─────────────────────────────────────────
