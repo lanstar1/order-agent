@@ -2952,77 +2952,63 @@ async function loadDailyShipments() {
   }
 }
 
-// ── 운송장 추적 ──
+// ── 운송장 추적 (로젠 공식 배송조회 페이지) ──
 async function trackShipment() {
   const input = document.getElementById("ship-track-no").value.trim();
   if (!input) { alert("운송장번호를 입력하세요."); return; }
-  const slipNos = input.split(/[,\s]+/).filter(Boolean);
+
+  // 숫자만 추출
+  const slipNo = input.replace(/\D/g, "");
+  if (slipNo.length < 10) { alert("유효한 운송장번호를 입력하세요."); return; }
 
   const container = document.getElementById("ship-track-result");
-  container.innerHTML = '<p style="color:#6b7280">추적 중...</p>';
 
+  // DB에서 간단 정보 조회 (비동기, 빠르게)
+  let dbInfoHtml = "";
   try {
-    const data = await api.shippingTrack(slipNos);
-    if (!data.items || data.items.length === 0) {
-      container.innerHTML = '<p style="color:#6b7280">추적 결과가 없습니다.</p>';
-      return;
-    }
-    let html = '';
-    for (const item of data.items) {
-      const wh = item._warehouse || "";
-      const whBadge = wh ? `<span style="display:inline-block;padding:2px 8px;background:${wh === '용산' ? '#dbeafe' : '#dcfce7'};color:${wh === '용산' ? '#1d4ed8' : '#166534'};border-radius:10px;font-size:11px;font-weight:600">${wh}</span>` : "";
-      const resultLabel = item.resultCd === 'TRUE' ? '✅ API 조회 성공' :
-                          item.resultCd === 'DB' ? '📋 DB 저장 정보' :
-                          '❌ ' + (item.resultMsg || '조회 실패');
-      const resultColor = item.resultCd === 'TRUE' ? '#6b7280' : item.resultCd === 'DB' ? '#2563eb' : '#6b7280';
-      html += `<div class="card" style="margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-          <span style="font-weight:700;font-size:15px">📦 ${item.slipNo || ""}</span>
-          ${whBadge}
-          <span style="font-size:12px;color:${resultColor}">${resultLabel}</span>
+    const searchData = await api.get(`/api/shipping/search?q=&page=1&page_size=1&warehouse=`);
+    // slip_no로 직접 DB 검색
+    const resp = await fetch(`/api/shipping/track-info?slip_no=${slipNo}`, {
+      headers: { "Authorization": `Bearer ${api._token || localStorage.getItem("token")}` }
+    });
+    if (resp.ok) {
+      const info = await resp.json();
+      if (info && info.rcv_name) {
+        const whColor = info.warehouse === "용산" ? "#1d4ed8" : "#166534";
+        const whBg = info.warehouse === "용산" ? "#dbeafe" : "#dcfce7";
+        dbInfoHtml = `<div style="padding:10px 14px;background:#f0f9ff;border:1px solid #dbeafe;border-radius:8px;margin-bottom:12px;font-size:13px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-weight:700;font-size:15px">📦 ${slipNo}</span>
+            <span style="display:inline-block;padding:2px 8px;background:${whBg};color:${whColor};border-radius:10px;font-size:11px;font-weight:600">${info.warehouse || ""}</span>
+            <span style="color:${getStatusColor(info.status)};font-weight:600">${info.status || ""}</span>
+          </div>
+          <div><b>받는분:</b> ${info.rcv_name} &nbsp;|&nbsp; <b>물품:</b> ${info.goods_nm || "-"} &nbsp;|&nbsp; <b>접수일:</b> ${formatTakeDt(info.take_dt)}</div>
+          <div style="color:#6b7280">${info.rcv_addr1 || ""}</div>
         </div>`;
-      // DB 정보 표시
-      if (item._db_info) {
-        const db = item._db_info;
-        html += `<div style="margin-bottom:10px;padding:8px 12px;background:#f0f9ff;border-radius:6px;font-size:13px">
-          <div><b>받는분:</b> ${db.rcv_name || ""} &nbsp;|&nbsp; <b>물품:</b> ${db.goods_nm || "-"}</div>
-          <div><b>주소:</b> ${db.rcv_addr1 || ""}</div>
-          <div><b>상태:</b> <span style="color:${getStatusColor(db.status)};font-weight:600">${db.status || ""}</span>
-            &nbsp;|&nbsp; <b>접수일:</b> ${formatTakeDt(db.take_dt)}</div>
-        </div>`
       }
-      if (item.data1 && item.data1.length > 0) {
-        html += `<table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
-            <th style="padding:6px 10px;text-align:left">일시</th>
-            <th style="padding:6px 10px;text-align:left">상태</th>
-            <th style="padding:6px 10px;text-align:left">지점</th>
-            <th style="padding:6px 10px;text-align:left">담당</th>
-          </tr></thead><tbody>`;
-        for (const d of item.data1) {
-          const dt = formatScanDt(d.scanDt, d.scanTm);
-          const statColor = getStatusColor(d.statNm);
-          html += `<tr style="border-bottom:1px solid #f3f4f6">
-            <td style="padding:6px 10px">${dt}</td>
-            <td style="padding:6px 10px"><span style="color:${statColor};font-weight:600">${d.statNm || ""}</span></td>
-            <td style="padding:6px 10px">${d.branNm || ""}</td>
-            <td style="padding:6px 10px">${d.salesNm || ""}</td>
-          </tr>`;
-        }
-        html += '</tbody></table>';
-      }
-      html += '</div>';
     }
-    // 자동 저장 결과 표시
-    if (data.saved_to_db > 0) {
-      html += `<div style="margin-top:8px;padding:8px 12px;background:#ecfdf5;border-radius:6px;font-size:13px;color:#065f46">
-        ✅ ${data.saved_to_db}건이 DB에 자동 저장되었습니다. 이제 받는사람 검색/일별 조회가 가능합니다.
-      </div>`;
-    }
-    container.innerHTML = html;
-  } catch (e) {
-    container.innerHTML = `<p style="color:#dc2626">추적 오류: ${e.message}</p>`;
-  }
+  } catch (e) { /* DB 조회 실패해도 iframe은 표시 */ }
+
+  // 로젠 공식 배송조회 iframe + 새창 열기 버튼
+  const logenUrl = `https://www.ilogen.com/m/personal/trace/${slipNo}`;
+  container.innerHTML = `
+    ${dbInfoHtml}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#f9fafb;border-bottom:1px solid #e5e7eb">
+        <span style="font-size:13px;font-weight:600;color:#374151">🚚 로젠택배 실시간 배송조회</span>
+        <button onclick="window.open('${logenUrl}', 'logenTrack', 'width=600,height=700')"
+          style="padding:4px 12px;background:#2563eb;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer">
+          새창으로 열기 ↗
+        </button>
+      </div>
+      <iframe src="${logenUrl}" style="width:100%;height:520px;border:none" loading="lazy"></iframe>
+    </div>`;
+}
+
+// 운송장 추적 (팝업 방식 - 일별조회 테이블에서 사용)
+function openTrackPopup(slipNo) {
+  const clean = slipNo.replace(/\D/g, "");
+  window.open(`https://www.ilogen.com/m/personal/trace/${clean}`, "logenTrack", "width=600,height=700");
 }
 
 // ── SmartLogen 자동 가져오기 ──
@@ -3312,9 +3298,8 @@ function renderShipmentTable(items, total, page, totalPages, paginationFn) {
 }
 
 function quickTrack(slipNo) {
-  document.getElementById("ship-track-no").value = slipNo;
-  switchShipTab("track");
-  trackShipment();
+  // 바로 팝업으로 로젠 배송조회 열기 (가장 빠름)
+  openTrackPopup(slipNo);
 }
 
 function formatTakeDt(dt) {

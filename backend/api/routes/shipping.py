@@ -395,6 +395,30 @@ async def daily_shipments(
     }
 
 
+# ─── 운송장번호 DB 정보 조회 (경량) ──────────────────
+@router.get("/track-info")
+async def track_info(
+    slip_no: str = Query(..., description="운송장번호"),
+    user: dict = Depends(get_current_user),
+):
+    """운송장번호로 DB에 저장된 정보만 빠르게 조회 (API 호출 없음)"""
+    import re
+    clean = re.sub(r'\D', '', slip_no.strip())
+    if not clean:
+        return {}
+
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT warehouse, slip_no, rcv_name, rcv_addr1, goods_nm, status, take_dt FROM shipments WHERE slip_no = ?",
+        (clean,)
+    ).fetchone()
+    conn.close()
+
+    if row:
+        return dict(row)
+    return {}
+
+
 # ─── 운송장번호로 화물추적 (결과 자동 DB 저장) ──────────
 @router.post("/track")
 async def track_shipment(req: TrackRequest, user: dict = Depends(get_current_user)):
