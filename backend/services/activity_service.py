@@ -104,17 +104,19 @@ def get_activity_summary() -> dict:
 
     total = conn.execute("SELECT COUNT(*) as cnt FROM activity_log").fetchone()["cnt"]
 
-    # 최근 7일 사용자별 활동 수
-    # PostgreSQL: NOW() - INTERVAL '7 days', SQLite: date('now','-7 days')
+    # 최근 7일 필터: PG는 TEXT→TIMESTAMP 캐스팅 필요
     import os
     use_pg = bool(os.getenv("DATABASE_URL", ""))
-    date_7days = "NOW() - INTERVAL '7 days'" if use_pg else "date('now', '-7 days')"
+    if use_pg:
+        date_cond = "created_at::timestamptz >= NOW() - INTERVAL '7 days'"
+    else:
+        date_cond = "created_at >= date('now', '-7 days')"
 
     by_user = conn.execute(f"""
         SELECT emp_cd, emp_name, COUNT(*) as cnt,
                MAX(created_at) as last_activity
         FROM activity_log
-        WHERE created_at >= {date_7days}
+        WHERE {date_cond}
         GROUP BY emp_cd, emp_name
         ORDER BY cnt DESC
     """).fetchall()
@@ -123,7 +125,7 @@ def get_activity_summary() -> dict:
     by_action = conn.execute(f"""
         SELECT action, COUNT(*) as cnt
         FROM activity_log
-        WHERE created_at >= {date_7days}
+        WHERE {date_cond}
         GROUP BY action
         ORDER BY cnt DESC
         LIMIT 20
