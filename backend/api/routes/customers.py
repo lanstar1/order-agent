@@ -121,6 +121,50 @@ async def customer_count(user: dict = Depends(get_current_user)):
     return {"count": row["cnt"] if row else 0}
 
 
+@router.get("/diagnostic")
+async def customer_diagnostic():
+    """거래처 동기화 진단 (인증 불필요 - 디버깅용)"""
+    result = {"customer_count": 0, "erp_test": None}
+
+    # 1. 거래처 수 확인
+    try:
+        conn = get_connection()
+        row = conn.execute("SELECT COUNT(*) as cnt FROM customers").fetchone()
+        result["customer_count"] = row["cnt"] if row else 0
+        # 샘플 거래처 5개
+        samples = conn.execute("SELECT cust_code, cust_name FROM customers LIMIT 5").fetchall()
+        result["sample_customers"] = [dict(r) for r in samples]
+        conn.close()
+    except Exception as e:
+        result["db_error"] = str(e)
+
+    # 2. ERP 환경변수 확인
+    from config import ERP_COM_CODE, ERP_API_KEY, ERP_USER_ID, ERP_ZONE
+    result["erp_config"] = {
+        "COM_CODE": bool(ERP_COM_CODE),
+        "API_KEY": bool(ERP_API_KEY),
+        "USER_ID": bool(ERP_USER_ID),
+        "ZONE": ERP_ZONE or "(empty)",
+    }
+
+    # 3. ERP 연결 테스트
+    try:
+        from services.erp_client import erp_client
+        test_result = await erp_client.get_customer_list(page=1, per_page=5)
+        result["erp_test"] = {
+            "success": test_result.get("success", False),
+            "count": len(test_result.get("customers", [])),
+            "total": test_result.get("total", 0),
+            "error": test_result.get("error", ""),
+        }
+        if test_result.get("customers"):
+            result["erp_sample"] = test_result["customers"][:3]
+    except Exception as e:
+        result["erp_test"] = {"success": False, "error": str(e)}
+
+    return result
+
+
 @router.put("/{cust_code}")
 async def update_customer(cust_code: str, cust_name: str = None, alias: str = None, new_code: str = None, user: dict = Depends(get_current_user)):
     """거래처 정보 업데이트 (new_code 전달 시 cust_code 자체도 변경)"""
