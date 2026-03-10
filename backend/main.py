@@ -269,8 +269,8 @@ async def startup():
 #  자료관리 자동 동기화 (서버 시작 시)
 # ─────────────────────────────────────────
 async def _auto_sync_customers():
-    """서버 시작 시 거래처 테이블이 비어있으면 ERP에서 자동 동기화"""
-    await asyncio.sleep(3)  # DB 초기화 대기
+    """서버 시작 시 거래처 테이블이 비어있으면 엑셀 파일에서 자동 임포트"""
+    await asyncio.sleep(2)  # DB 초기화 대기
     try:
         from db.database import get_connection
         conn = get_connection()
@@ -279,35 +279,43 @@ async def _auto_sync_customers():
         conn.close()
 
         if cnt == 0:
-            logger.info("[자동동기화] 거래처 테이블이 비어있음 - ERP에서 자동 가져오기 시작")
-            from services.erp_client import erp_client
-            all_customers = []
-            page = 1
-            while page <= 20:
-                result = await erp_client.get_customer_list(page=page, per_page=500)
-                if not result.get("success") or not result.get("customers"):
-                    break
-                all_customers.extend(result["customers"])
-                if len(all_customers) >= result.get("total", 0):
-                    break
-                page += 1
+            # data/customer.xlsx에서 거래처 임포트
+            import openpyxl
+            xlsx_path = Path(__file__).parent.parent / "data" / "customer.xlsx"
+            if not xlsx_path.exists():
+                logger.warning(f"[자동동기화] 거래처 엑셀 파일 없음: {xlsx_path}")
+                return
 
-            if all_customers:
+            logger.info(f"[자동동기화] 거래처 테이블이 비어있음 - 엑셀에서 임포트 시작: {xlsx_path}")
+            wb = openpyxl.load_workbook(str(xlsx_path), read_only=True)
+            ws = wb[wb.sheetnames[0]]
+
+            customers = []
+            for i, row_data in enumerate(ws.iter_rows(values_only=True)):
+                if i == 0:  # 헤더 스킵
+                    continue
+                code = str(row_data[0] or "").strip()
+                name = str(row_data[1] or "").strip()
+                if code and name:
+                    customers.append((code, name))
+            wb.close()
+
+            if customers:
                 conn = get_connection()
-                for c in all_customers:
+                for code, name in customers:
                     conn.execute(
                         "INSERT OR IGNORE INTO customers(cust_code, cust_name, alias) VALUES(?,?,?)",
-                        (c["cust_code"], c["cust_name"], "")
+                        (code, name, "")
                     )
                 conn.commit()
                 conn.close()
-                logger.info(f"[자동동기화] 거래처 {len(all_customers)}개 ERP에서 동기화 완료")
+                logger.info(f"[자동동기화] 거래처 {len(customers)}개 엑셀에서 임포트 완료")
             else:
-                logger.warning("[자동동기화] ERP에서 거래처를 가져오지 못했습니다")
+                logger.warning("[자동동기화] 엑셀 파일에서 거래처를 찾지 못했습니다")
         else:
-            logger.info(f"[자동동기화] 거래처 {cnt}개 존재 - 동기화 불필요")
+            logger.info(f"[자동동기화] 거래처 {cnt}개 존재 - 임포트 불필요")
     except Exception as e:
-        logger.error(f"[자동동기화] 거래처 동기화 오류: {e}", exc_info=True)
+        logger.error(f"[자동동기화] 거래처 임포트 오류: {e}", exc_info=True)
 
 
 async def _auto_sync_on_startup():
