@@ -3262,8 +3262,12 @@ function renderShipmentTable(items, total, page, totalPages, paginationFn) {
         <th style="padding:8px 10px;text-align:left">주소</th>
         <th style="padding:8px 10px;text-align:left">물품명</th>
         <th style="padding:8px 10px;text-align:left">접수일</th>
-        <th style="padding:8px 10px;text-align:center">추적</th>
+        <th style="padding:8px 10px;text-align:center"><span title="집하 전에는 추적이 되지 않습니다">추적</span></th>
       </tr></thead><tbody>`;
+
+  html += `<tr><td colspan="8" style="padding:4px 10px;font-size:11px;color:#9ca3af;background:#fefce8;border-bottom:1px solid #fde68a">
+    <span style="color:#f59e0b">ℹ️</span> 집하 전에는 추적이 되지 않습니다
+  </td></tr>`;
 
   for (const s of items) {
     const whColor = s.warehouse === "용산" ? "#1d4ed8" : "#166534";

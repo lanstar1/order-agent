@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260310h">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260310i">
 </head>
 <body>
 
@@ -545,6 +545,9 @@ C규격품 200개
               <input type="text" id="ship-track-no" placeholder="운송장번호 입력 (쉼표로 여러건)" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" onkeydown="if(event.key==='Enter')trackShipment()">
             </div>
             <button onclick="trackShipment()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">추적</button>
+          </div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:5px;font-size:12px;color:#9ca3af">
+            <span style="color:#f59e0b">ℹ️</span> 집하 전에는 추적이 되지 않습니다.
           </div>
         </div>
         <div id="ship-track-result"></div>
@@ -2190,7 +2193,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </div>
 </div>
 
-<script src="/static/js/api.js?v=20260310h"></script>
-<script src="/static/js/app.js?v=20260310h"></script>
+<script src="/static/js/api.js?v=20260310i"></script>
+<script src="/static/js/app.js?v=20260310i"></script>
 </body>
 </html>
