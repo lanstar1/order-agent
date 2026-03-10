@@ -3010,6 +3010,42 @@ async function trackShipment() {
   }
 }
 
+// ── SmartLogen 자동 가져오기 ──
+async function autoFetchShipments() {
+  const btn = document.getElementById("ship-autofetch-btn");
+  const resultDiv = document.getElementById("ship-autofetch-result");
+  const warehouse = document.getElementById("ship-autofetch-wh").value;
+  const days = parseInt(document.getElementById("ship-autofetch-days").value) || 7;
+
+  btn.disabled = true;
+  btn.textContent = "⏳ 가져오는 중...";
+  resultDiv.innerHTML = '<div style="color:#6b7280;font-size:13px">SmartLogen에 로그인하여 데이터를 가져오고 있습니다... (최대 30초 소요)</div>';
+
+  try {
+    const data = await api.shippingAutoFetch(warehouse, "", "", days);
+    if (data.success) {
+      const color = data.fetched > 0 ? "#059669" : "#6b7280";
+      resultDiv.innerHTML = `<div style="color:${color};font-size:14px;font-weight:600;padding:10px;background:#f0fdf4;border-radius:6px">
+        ✅ ${data.message || `${data.fetched}건 조회, ${data.saved}건 저장`}
+      </div>`;
+      // 검색 탭으로 전환해서 결과 확인
+      if (data.fetched > 0) {
+        setTimeout(() => {
+          switchShipTab("search");
+          searchShipments();
+        }, 1500);
+      }
+    } else {
+      resultDiv.innerHTML = `<div style="color:#dc2626;font-size:13px;padding:10px;background:#fef2f2;border-radius:6px">❌ ${data.message || "가져오기 실패"}</div>`;
+    }
+  } catch (e) {
+    resultDiv.innerHTML = `<div style="color:#dc2626;font-size:13px;padding:10px;background:#fef2f2;border-radius:6px">❌ 오류: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🚀 자동 가져오기";
+  }
+}
+
 // ── 대량 운송장 동기화 ──
 async function syncShipments() {
   const input = document.getElementById("ship-sync-input").value.trim();

@@ -584,6 +584,58 @@ async def sync_from_excel(
         return {"success": False, "message": str(e)}
 
 
+# ─── SmartLogen 자동 가져오기 ─────────────────────
+@router.post("/auto-fetch")
+async def auto_fetch_shipments(
+    warehouse: str = Query("", description="창고 (용산/김포/전체)"),
+    from_date: str = Query("", description="시작일 YYYYMMDD"),
+    to_date: str = Query("", description="종료일 YYYYMMDD"),
+    days: int = Query(7, description="조회 기간 (일)"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    SmartLogen 포털에서 발송 실적을 자동으로 가져와 DB에 저장.
+    로그인 → PickSndRecordSelect 호출 → SEED 복호화 → DB 저장.
+    """
+    from services.smart_logen_client import fetch_shipments, save_fetched_to_db
+
+    try:
+        # SmartLogen에서 발송 내역 조회
+        wh = warehouse if warehouse and warehouse != "전체" else ""
+        records = await fetch_shipments(
+            warehouse=wh,
+            from_date=from_date,
+            to_date=to_date,
+            days=days,
+        )
+
+        if not records:
+            return {
+                "success": True,
+                "message": "조회된 발송 내역이 없습니다.",
+                "fetched": 0,
+                "saved": 0,
+            }
+
+        # DB에 저장
+        conn = get_connection()
+        try:
+            saved = save_fetched_to_db(records, conn)
+        finally:
+            conn.close()
+
+        return {
+            "success": True,
+            "fetched": len(records),
+            "saved": saved,
+            "message": f"SmartLogen에서 {len(records)}건 조회, {saved}건 저장 완료",
+        }
+
+    except Exception as e:
+        logger.error(f"[Shipping] SmartLogen 자동 가져오기 오류: {e}", exc_info=True)
+        return {"success": False, "message": str(e)}
+
+
 # ─── 통계 ────────────────────────────────────
 @router.get("/stats")
 async def shipping_stats(user: dict = Depends(get_current_user)):

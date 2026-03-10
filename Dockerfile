@@ -1,9 +1,11 @@
 # ── 경량 Python 이미지 (RAM 절약) ──
 FROM python:3.11-slim
 
-# 시스템 패키지 최소 설치
+# 시스템 패키지 최소 설치 (Node.js: SEED 복호화용)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # 작업 디렉토리

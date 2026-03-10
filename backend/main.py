@@ -111,6 +111,7 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/shipping/track"): "택배 화물추적",
     ("POST", "/api/shipping/sync"): "택배 운송장 동기화",
     ("POST", "/api/shipping/sync-excel"): "택배 엑셀 동기화",
+    ("POST", "/api/shipping/auto-fetch"): "SmartLogen 자동 가져오기",
     ("GET", "/api/shipping/search"): "택배 검색",
     ("GET", "/api/shipping/daily"): "택배 일별 조회",
 }

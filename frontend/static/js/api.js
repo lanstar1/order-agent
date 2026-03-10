@@ -338,6 +338,13 @@ const api = {
   shippingSync(slipNos) {
     return api.post("/api/shipping/sync", { slip_nos: slipNos });
   },
+  shippingAutoFetch(warehouse = "", fromDate = "", toDate = "", days = 7) {
+    const params = new URLSearchParams({ days });
+    if (warehouse) params.set("warehouse", warehouse);
+    if (fromDate) params.set("from_date", fromDate);
+    if (toDate) params.set("to_date", toDate);
+    return api.post(`/api/shipping/auto-fetch?${params}`);
+  },
   shippingDelete(id) {
     return api.request("DELETE", `/api/shipping/${id}`);
   },
