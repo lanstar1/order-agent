@@ -10,3 +10,4 @@ bcrypt>=4.2.0
 PyJWT>=2.9.0
 python-magic>=0.4.27
 openpyxl>=3.1.0
+apscheduler>=3.10.0

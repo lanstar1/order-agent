@@ -753,6 +753,25 @@ async def shipping_stats(user: dict = Depends(get_current_user)):
     }
 
 
+# ─── 자동 동기화 스케줄러 상태 ───────────────────
+@router.get("/scheduler/status")
+async def scheduler_status(user: dict = Depends(get_current_user)):
+    """자동 동기화 스케줄러 상태 조회"""
+    from services.scheduler_service import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.post("/scheduler/run-now")
+async def scheduler_run_now(
+    days: int = Query(3, description="조회 기간 (일)"),
+    user: dict = Depends(get_current_user),
+):
+    """자동 동기화 즉시 실행"""
+    from services.scheduler_service import run_auto_fetch
+    result = await run_auto_fetch(days=days)
+    return result
+
+
 # ─── 삭제 ────────────────────────────────────
 @router.delete("/{shipment_id}")
 async def delete_shipment(shipment_id: int, user: dict = Depends(get_current_user)):

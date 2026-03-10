@@ -112,6 +112,7 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/shipping/sync"): "택배 운송장 동기화",
     ("POST", "/api/shipping/sync-excel"): "택배 엑셀 동기화",
     ("POST", "/api/shipping/auto-fetch"): "SmartLogen 자동 가져오기",
+    ("POST", "/api/shipping/scheduler/run-now"): "택배 동기화 즉시 실행",
     ("GET", "/api/shipping/search"): "택배 검색",
     ("GET", "/api/shipping/daily"): "택배 일별 조회",
 }
@@ -274,6 +275,15 @@ async def startup():
 
     # 자료관리: 서버 시작 시 마지막 동기화가 오래됐으면 자동 동기화
     asyncio.create_task(_auto_sync_on_startup())
+
+    # SmartLogen 택배 자동 동기화 스케줄러 (매일 09:00 KST)
+    try:
+        from services.scheduler_service import start_scheduler, check_and_run_on_startup
+        start_scheduler()
+        asyncio.create_task(check_and_run_on_startup())
+        logger.info("SmartLogen 자동 동기화 스케줄러 등록 완료 (매일 09:00 KST)")
+    except Exception as e:
+        logger.warning(f"택배 스케줄러 시작 실패: {e}")
 
 
 # ─────────────────────────────────────────

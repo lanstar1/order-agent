@@ -2877,6 +2877,7 @@ function initShippingPage() {
 
   // 통계 로드
   loadShippingStats();
+  loadSchedulerStatus();
 }
 
 async function loadShippingStats() {
@@ -3057,6 +3058,40 @@ async function autoFetchShipments() {
   } finally {
     btn.disabled = false;
     btn.textContent = "🚀 자동 가져오기";
+  }
+}
+
+// ── 스케줄러 상태 조회 ──
+async function loadSchedulerStatus() {
+  try {
+    const data = await api.get("/api/shipping/scheduler/status");
+    const badge = document.getElementById("scheduler-status-badge");
+    const info = document.getElementById("scheduler-info");
+    if (!badge || !info) return;
+
+    badge.textContent = data.enabled ? "활성" : "비활성";
+    badge.style.background = data.enabled ? "#dcfce7" : "#fef2f2";
+    badge.style.color = data.enabled ? "#166534" : "#991b1b";
+
+    let html = "";
+    if (data.last_run) {
+      const dt = new Date(data.last_run);
+      html += `마지막 실행: <b>${dt.toLocaleString("ko-KR")}</b>`;
+      if (data.last_result) {
+        const r = data.last_result;
+        html += r.success
+          ? ` (${r.fetched}건 조회, ${r.saved}건 저장)`
+          : ` (오류: ${r.error || "실패"})`;
+      }
+      html += " &nbsp;|&nbsp; ";
+    }
+    if (data.next_run) {
+      const ndt = new Date(data.next_run);
+      html += `다음 실행: <b>${ndt.toLocaleString("ko-KR")}</b>`;
+    }
+    info.innerHTML = html || "아직 실행 기록이 없습니다.";
+  } catch (e) {
+    // 조용히 무시
   }
 }
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260310f">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260310g">
 </head>
 <body>
 
@@ -580,6 +580,21 @@ C규격품 200개
             <button onclick="autoFetchShipments()" id="ship-autofetch-btn" style="padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">🚀 자동 가져오기</button>
           </div>
           <div id="ship-autofetch-result" style="margin-top:8px"></div>
+
+          <!-- 자동 동기화 스케줄러 상태 -->
+          <div style="margin-top:12px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div>
+                <span style="font-size:13px;font-weight:600;color:#374151">⏰ 자동 동기화</span>
+                <span style="font-size:12px;color:#6b7280;margin-left:6px">매일 오전 9시 자동 실행</span>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <span id="scheduler-status-badge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#166534;font-weight:600">활성</span>
+                <button onclick="loadSchedulerStatus()" style="padding:4px 10px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer" title="상태 새로고침">🔄</button>
+              </div>
+            </div>
+            <div id="scheduler-info" style="margin-top:6px;font-size:12px;color:#6b7280"></div>
+          </div>
         </div>
 
         <!-- 수동 운송장 동기화 -->
@@ -2175,7 +2190,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </div>
 </div>
 
-<script src="/static/js/api.js?v=20260310f"></script>
-<script src="/static/js/app.js?v=20260310f"></script>
+<script src="/static/js/api.js?v=20260310g"></script>
+<script src="/static/js/app.js?v=20260310g"></script>
 </body>
 </html>
