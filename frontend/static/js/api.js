@@ -335,6 +335,9 @@ const api = {
   shippingStats() {
     return api.get("/api/shipping/stats");
   },
+  shippingSync(slipNos) {
+    return api.post("/api/shipping/sync", { slip_nos: slipNos });
+  },
   shippingDelete(id) {
     return api.request("DELETE", `/api/shipping/${id}`);
   },

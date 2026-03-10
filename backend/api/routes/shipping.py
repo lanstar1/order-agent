@@ -3,7 +3,8 @@
 - 발송 내역 등록 (수동 / 엑셀 업로드)
 - 받는사람 이름 검색
 - 날짜별 조회
-- 운송장번호 화물추적
+- 운송장번호 화물추적 (추적 결과 자동 DB 저장)
+- 대량 운송장 동기화 (운송장번호 목록 → API 추적 → DB 저장)
 """
 import logging
 import io
@@ -42,8 +43,89 @@ class TrackRequest(BaseModel):
     slip_nos: list[str]              # 운송장번호 목록
 
 
+class SyncRequest(BaseModel):
+    slip_nos: list[str]              # 동기화할 운송장번호 목록
+
+
 class ShipmentBulk(BaseModel):
     items: list[ShipmentCreate]
+
+
+def _save_tracking_to_db(tracking_items: list[dict]):
+    """
+    추적 결과를 shipments 테이블에 자동 저장.
+    이미 존재하는 운송장번호는 상태만 업데이트.
+    """
+    if not tracking_items:
+        return 0
+
+    conn = get_connection()
+    saved = 0
+    try:
+        for item in tracking_items:
+            slip_no = item.get("slipNo", "").strip()
+            if not slip_no:
+                continue
+
+            warehouse = item.get("_warehouse", "")
+            result_cd = item.get("resultCd", "")
+
+            # 추적 성공한 건만 저장
+            if result_cd != "TRUE":
+                continue
+
+            # data1에서 최신 상태, 받는사람 정보 추출
+            scans = item.get("data1", [])
+            status = "접수"
+            rcv_name = item.get("rcvNm", "") or ""
+            rcv_addr = item.get("rcvAddr", "") or ""
+            snd_name = item.get("sndNm", "") or ""
+            take_dt = ""
+            goods_nm = item.get("goodsNm", "") or ""
+
+            if scans:
+                # 최신 상태 (마지막 스캔)
+                last = scans[-1] if scans else {}
+                status = last.get("statNm", "접수")
+                # 접수일자: 첫 번째 스캔 날짜
+                first = scans[0]
+                take_dt = first.get("scanDt", "").replace("-", "")[:8]
+
+            if not take_dt:
+                take_dt = datetime.now().strftime("%Y%m%d")
+
+            if not rcv_name:
+                rcv_name = "미확인"
+
+            # UPSERT: 있으면 상태 업데이트, 없으면 삽입
+            existing = conn.execute(
+                "SELECT id FROM shipments WHERE slip_no = ? AND warehouse = ?",
+                (slip_no, warehouse)
+            ).fetchone()
+
+            if existing:
+                conn.execute(
+                    "UPDATE shipments SET status = ? WHERE slip_no = ? AND warehouse = ?",
+                    (status, slip_no, warehouse)
+                )
+            else:
+                conn.execute(
+                    """INSERT OR IGNORE INTO shipments
+                       (warehouse, slip_no, rcv_name, rcv_addr1, snd_name,
+                        goods_nm, take_dt, status)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (warehouse, slip_no, rcv_name, rcv_addr, snd_name,
+                     goods_nm, take_dt, status)
+                )
+            saved += 1
+
+        conn.commit()
+    except Exception as e:
+        logger.error(f"[Shipping] 추적결과 DB 저장 오류: {e}")
+    finally:
+        conn.close()
+
+    return saved
 
 
 # ─── 발송 내역 등록 (단건) ────────────────────────
@@ -313,7 +395,7 @@ async def daily_shipments(
     }
 
 
-# ─── 운송장번호로 화물추적 ────────────────────────
+# ─── 운송장번호로 화물추적 (결과 자동 DB 저장) ──────────
 @router.post("/track")
 async def track_shipment(req: TrackRequest, user: dict = Depends(get_current_user)):
     from services.logen_client import track_shipments_both
@@ -322,10 +404,54 @@ async def track_shipment(req: TrackRequest, user: dict = Depends(get_current_use
         return {"success": False, "message": "운송장번호를 입력하세요"}
 
     results = await track_shipments_both(req.slip_nos)
+
+    # 추적 결과를 자동으로 DB에 저장
+    saved = _save_tracking_to_db(results)
+
     return {
         "success": True,
         "total": len(results),
+        "saved_to_db": saved,
         "items": results,
+    }
+
+
+# ─── 대량 운송장번호 동기화 (API 추적 → DB 저장) ────────
+@router.post("/sync")
+async def sync_shipments(req: SyncRequest, user: dict = Depends(get_current_user)):
+    """
+    운송장번호 목록을 받아서 로젠 API로 추적 후 결과를 DB에 자동 저장.
+    한번에 최대 50건씩 처리.
+    """
+    from services.logen_client import track_shipments_both
+
+    if not req.slip_nos:
+        return {"success": False, "message": "운송장번호를 입력하세요"}
+
+    all_slip_nos = [s.strip() for s in req.slip_nos if s.strip()]
+    total_saved = 0
+    total_tracked = 0
+    errors = []
+
+    # 50건씩 배치 처리
+    batch_size = 50
+    for i in range(0, len(all_slip_nos), batch_size):
+        batch = all_slip_nos[i:i + batch_size]
+        try:
+            results = await track_shipments_both(batch)
+            total_tracked += len(results)
+            saved = _save_tracking_to_db(results)
+            total_saved += saved
+        except Exception as e:
+            logger.error(f"[Shipping] 동기화 배치 오류: {e}")
+            errors.append(str(e))
+
+    return {
+        "success": True,
+        "total_requested": len(all_slip_nos),
+        "total_tracked": total_tracked,
+        "total_saved": total_saved,
+        "errors": errors,
     }
 
 
@@ -385,6 +511,77 @@ async def register_and_send(req: ShipmentCreate, user: dict = Depends(get_curren
         "db_saved": True,
         "api_result": api_result,
     }
+
+
+# ─── 엑셀에서 운송장번호 추출 → 추적 → DB 저장 ─────────
+@router.post("/sync-excel")
+async def sync_from_excel(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """엑셀 파일에서 운송장번호를 추출하여 로젠 API 추적 후 DB에 저장"""
+    from services.logen_client import track_shipments_both
+    import openpyxl
+    import re
+
+    try:
+        content = await file.read()
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
+        ws = wb[wb.sheetnames[0]]
+
+        slip_nos = set()
+        slip_col_idx = None
+
+        for i, row_data in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0:
+                # 헤더에서 운송장번호 컬럼 찾기
+                for idx, cell in enumerate(row_data):
+                    h = str(cell or "").replace(" ", "")
+                    if "운송장" in h or "송장번호" in h or "슬립" in h or "slipNo" in h.lower():
+                        slip_col_idx = idx
+                        break
+                if slip_col_idx is None:
+                    # 헤더 없으면 첫 번째 컬럼 시도
+                    slip_col_idx = 0
+                continue
+
+            # 데이터 행
+            val = str(row_data[slip_col_idx] if slip_col_idx < len(row_data) else "").strip()
+            # 10~15자리 숫자만 유효한 운송장번호로 간주
+            cleaned = re.sub(r'\D', '', val)
+            if 10 <= len(cleaned) <= 15:
+                slip_nos.add(cleaned)
+
+        wb.close()
+
+        if not slip_nos:
+            return {"success": False, "message": "유효한 운송장번호를 찾지 못했습니다."}
+
+        slip_list = list(slip_nos)
+        total_saved = 0
+        total_tracked = 0
+
+        # 50건씩 배치 처리
+        batch_size = 50
+        for i in range(0, len(slip_list), batch_size):
+            batch = slip_list[i:i + batch_size]
+            try:
+                results = await track_shipments_both(batch)
+                total_tracked += len(results)
+                saved = _save_tracking_to_db(results)
+                total_saved += saved
+            except Exception as e:
+                logger.error(f"[Shipping] 엑셀 동기화 배치 오류: {e}")
+
+        return {
+            "success": True,
+            "total_extracted": len(slip_list),
+            "total_tracked": total_tracked,
+            "total_saved": total_saved,
+        }
+    except Exception as e:
+        logger.error(f"[Shipping] 엑셀 동기화 오류: {e}", exc_info=True)
+        return {"success": False, "message": str(e)}
 
 
 # ─── 통계 ────────────────────────────────────

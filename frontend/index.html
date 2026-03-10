@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260310c">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260310d">
 </head>
 <body>
 
@@ -481,6 +481,7 @@ C규격품 200개
         <button class="ship-tab-btn active" data-ship-tab="search" onclick="switchShipTab('search')">🔍 받는사람 검색</button>
         <button class="ship-tab-btn" data-ship-tab="daily" onclick="switchShipTab('daily')">📅 일별 조회</button>
         <button class="ship-tab-btn" data-ship-tab="track" onclick="switchShipTab('track')">📦 운송장 추적</button>
+        <button class="ship-tab-btn" data-ship-tab="sync" onclick="switchShipTab('sync')">🔄 자동 동기화</button>
         <button class="ship-tab-btn" data-ship-tab="register" onclick="switchShipTab('register')">➕ 발송 등록</button>
         <div style="flex:1"></div>
         <span id="ship-stats-badge" style="font-size:12px;color:#6b7280"></span>
@@ -547,6 +548,40 @@ C규격품 200개
           </div>
         </div>
         <div id="ship-track-result"></div>
+      </div>
+
+      <!-- 탭: 자동 동기화 -->
+      <div class="ship-tab-panel" id="ship-panel-sync">
+        <div class="card" style="margin-bottom:16px">
+          <h3 style="margin:0 0 8px 0;font-size:15px;color:#1f2937">🔄 운송장번호 대량 동기화</h3>
+          <p style="font-size:13px;color:#6b7280;margin:0 0 12px 0">
+            운송장번호를 입력하면 로젠 API로 추적하여 <b>받는사람, 접수일자, 배송상태</b>를 자동으로 가져와 DB에 저장합니다.<br>
+            저장 후 <b>받는사람 검색</b>과 <b>일별 조회</b>가 가능해집니다.
+          </p>
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;font-weight:600;color:#374151">운송장번호 입력</label>
+            <textarea id="ship-sync-input" rows="6" placeholder="운송장번호를 한 줄에 하나씩 입력하세요.&#10;예:&#10;12345678901&#10;12345678902&#10;12345678903&#10;&#10;또는 쉼표로 구분: 12345678901, 12345678902" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:monospace;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button onclick="syncShipments()" id="ship-sync-btn" style="padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">🔄 동기화 시작</button>
+            <span id="ship-sync-count" style="font-size:13px;color:#6b7280"></span>
+          </div>
+          <div id="ship-sync-result" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 8px 0;font-size:15px;color:#1f2937">📤 운송장번호 엑셀로 동기화</h3>
+          <p style="font-size:13px;color:#6b7280;margin:0 0 12px 0">
+            운송장번호가 포함된 엑셀 파일을 업로드하면 자동으로 추적 → DB 저장됩니다.
+          </p>
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div style="flex:1">
+              <input type="file" id="ship-sync-file" accept=".xlsx,.xls,.csv,.txt" style="font-size:13px">
+            </div>
+            <button onclick="syncFromExcel()" style="padding:8px 20px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">엑셀 동기화</button>
+          </div>
+          <div id="ship-sync-file-result" style="margin-top:12px"></div>
+        </div>
       </div>
 
       <!-- 탭: 발송 등록 -->
@@ -2109,7 +2144,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </div>
 </div>
 
-<script src="/static/js/api.js?v=20260310c"></script>
-<script src="/static/js/app.js?v=20260310c"></script>
+<script src="/static/js/api.js?v=20260310d"></script>
+<script src="/static/js/app.js?v=20260310d"></script>
 </body>
 </html>

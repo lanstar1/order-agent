@@ -2998,11 +2998,116 @@ async function trackShipment() {
       }
       html += '</div>';
     }
+    // 자동 저장 결과 표시
+    if (data.saved_to_db > 0) {
+      html += `<div style="margin-top:8px;padding:8px 12px;background:#ecfdf5;border-radius:6px;font-size:13px;color:#065f46">
+        ✅ ${data.saved_to_db}건이 DB에 자동 저장되었습니다. 이제 받는사람 검색/일별 조회가 가능합니다.
+      </div>`;
+    }
     container.innerHTML = html;
   } catch (e) {
     container.innerHTML = `<p style="color:#dc2626">추적 오류: ${e.message}</p>`;
   }
 }
+
+// ── 대량 운송장 동기화 ──
+async function syncShipments() {
+  const input = document.getElementById("ship-sync-input").value.trim();
+  if (!input) { alert("운송장번호를 입력하세요."); return; }
+
+  // 줄바꿈, 쉼표, 공백으로 분리
+  const slipNos = input.split(/[\n,\s]+/).map(s => s.trim()).filter(Boolean);
+  if (slipNos.length === 0) { alert("유효한 운송장번호가 없습니다."); return; }
+
+  const btn = document.getElementById("ship-sync-btn");
+  const resultEl = document.getElementById("ship-sync-result");
+  btn.disabled = true;
+  btn.textContent = "⏳ 동기화 중...";
+  resultEl.innerHTML = `<p style="color:#6b7280">총 ${slipNos.length}건 동기화 중... (50건씩 처리)</p>`;
+
+  try {
+    const data = await api.shippingSync(slipNos);
+    let html = `<div style="padding:12px;background:#ecfdf5;border-radius:8px;border:1px solid #a7f3d0">
+      <div style="font-weight:700;color:#065f46;margin-bottom:6px">✅ 동기화 완료</div>
+      <div style="font-size:13px;color:#064e3b">
+        요청: <b>${data.total_requested}</b>건 &nbsp;|&nbsp;
+        추적 성공: <b>${data.total_tracked}</b>건 &nbsp;|&nbsp;
+        DB 저장: <b>${data.total_saved}</b>건
+      </div>`;
+    if (data.errors && data.errors.length > 0) {
+      html += `<div style="margin-top:6px;font-size:12px;color:#dc2626">오류: ${data.errors.join(", ")}</div>`;
+    }
+    html += `<div style="margin-top:8px;font-size:12px;color:#6b7280">
+      💡 이제 "받는사람 검색" 및 "일별 조회" 탭에서 저장된 데이터를 검색할 수 있습니다.
+    </div></div>`;
+    resultEl.innerHTML = html;
+    loadShippingStats();
+  } catch (e) {
+    resultEl.innerHTML = `<p style="color:#dc2626">동기화 오류: ${e.message}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 동기화 시작";
+  }
+}
+
+// ── 엑셀에서 운송장번호 추출 후 동기화 ──
+async function syncFromExcel() {
+  const fileInput = document.getElementById("ship-sync-file");
+  if (!fileInput.files.length) { alert("파일을 선택하세요."); return; }
+
+  const resultEl = document.getElementById("ship-sync-file-result");
+  resultEl.innerHTML = '<p style="color:#6b7280">파일 읽는 중...</p>';
+
+  const file = fileInput.files[0];
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  try {
+    if (ext === 'txt' || ext === 'csv') {
+      // 텍스트/CSV: 직접 읽어서 운송장번호 추출
+      const text = await file.text();
+      const slipNos = text.split(/[\n,\s]+/).map(s => s.trim()).filter(s => /^\d{10,15}$/.test(s));
+      if (slipNos.length === 0) {
+        resultEl.innerHTML = '<p style="color:#dc2626">유효한 운송장번호를 찾지 못했습니다 (10~15자리 숫자).</p>';
+        return;
+      }
+      document.getElementById("ship-sync-input").value = slipNos.join("\n");
+      resultEl.innerHTML = `<p style="color:#059669">${slipNos.length}건의 운송장번호를 추출했습니다. 위 "동기화 시작" 버튼을 눌러주세요.</p>`;
+    } else {
+      // 엑셀: 서버에 업로드해서 운송장번호 컬럼 추출 후 동기화
+      const formData = new FormData();
+      formData.append("file", file);
+      resultEl.innerHTML = '<p style="color:#6b7280">엑셀 파일 처리 및 동기화 중...</p>';
+      const data = await api.postForm("/api/shipping/sync-excel", formData);
+      if (data.success) {
+        let html = `<div style="padding:12px;background:#ecfdf5;border-radius:8px;border:1px solid #a7f3d0">
+          <div style="font-weight:700;color:#065f46;margin-bottom:6px">✅ 엑셀 동기화 완료</div>
+          <div style="font-size:13px;color:#064e3b">
+            추출: <b>${data.total_extracted}</b>건 &nbsp;|&nbsp;
+            추적 성공: <b>${data.total_tracked}</b>건 &nbsp;|&nbsp;
+            DB 저장: <b>${data.total_saved}</b>건
+          </div></div>`;
+        resultEl.innerHTML = html;
+        loadShippingStats();
+      } else {
+        resultEl.innerHTML = `<p style="color:#dc2626">오류: ${data.message}</p>`;
+      }
+    }
+  } catch (e) {
+    resultEl.innerHTML = `<p style="color:#dc2626">파일 처리 오류: ${e.message}</p>`;
+  }
+}
+
+// textarea 운송장번호 개수 실시간 표시
+document.addEventListener("DOMContentLoaded", () => {
+  const syncInput = document.getElementById("ship-sync-input");
+  if (syncInput) {
+    syncInput.addEventListener("input", () => {
+      const count = syncInput.value.split(/[\n,\s]+/).filter(s => s.trim()).length;
+      const el = document.getElementById("ship-sync-count");
+      if (el) el.textContent = count > 0 ? `${count}건 입력됨` : "";
+    });
+  }
+});
 
 // ── 수동 등록 ──
 async function registerShipment() {

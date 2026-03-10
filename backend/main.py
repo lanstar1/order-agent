@@ -109,6 +109,8 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/shipping/register-bulk"): "택배 대량 등록",
     ("POST", "/api/shipping/upload-excel"): "택배 엑셀 업로드",
     ("POST", "/api/shipping/track"): "택배 화물추적",
+    ("POST", "/api/shipping/sync"): "택배 운송장 동기화",
+    ("POST", "/api/shipping/sync-excel"): "택배 엑셀 동기화",
     ("GET", "/api/shipping/search"): "택배 검색",
     ("GET", "/api/shipping/daily"): "택배 일별 조회",
 }
