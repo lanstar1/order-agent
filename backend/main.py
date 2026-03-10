@@ -23,6 +23,7 @@ from api.routes.materials import router as materials_router
 from api.routes.training import router as training_router
 from api.routes.orderlist import router as orderlist_router
 from api.routes.activity import router as activity_router
+from api.routes.shipping import router as shipping_router
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -104,6 +105,12 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/settings/models"): "AI 모델 변경",
     ("POST", "/api/training/upload"): "학습 데이터 업로드",
     ("POST", "/api/training/bulk/create-session"): "대량 학습 세션 생성",
+    ("POST", "/api/shipping/register"): "택배 발송 등록",
+    ("POST", "/api/shipping/register-bulk"): "택배 대량 등록",
+    ("POST", "/api/shipping/upload-excel"): "택배 엑셀 업로드",
+    ("POST", "/api/shipping/track"): "택배 화물추적",
+    ("GET", "/api/shipping/search"): "택배 검색",
+    ("GET", "/api/shipping/daily"): "택배 일별 조회",
 }
 
 @app.middleware("http")
@@ -193,6 +200,7 @@ app.include_router(materials_router)
 app.include_router(training_router)
 app.include_router(orderlist_router)
 app.include_router(activity_router)
+app.include_router(shipping_router)
 
 # AI 대시보드 라우터
 try:

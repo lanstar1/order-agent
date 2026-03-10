@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260305m">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260310c">
 </head>
 <body>
 
@@ -55,6 +55,11 @@
       <div class="nav-item" data-page="training" draggable="true">
         <span class="icon">🧠</span>
         <span>발주서 학습</span>
+        <span class="drag-handle">⠿</span>
+      </div>
+      <div class="nav-item" data-page="shipping" draggable="true">
+        <span class="icon">🚚</span>
+        <span>택배조회</span>
         <span class="drag-handle">⠿</span>
       </div>
       <div class="nav-item" data-page="ai_dashboard" draggable="true">
@@ -464,6 +469,154 @@ C규격품 200개
         </div>
         <!-- 페이지네이션 -->
         <div id="ol-pagination" style="margin-top:12px;text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 택배조회
+         ────────────────────────────── -->
+    <div class="page" id="page-shipping">
+      <!-- 상단: 탭 버튼 -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <button class="ship-tab-btn active" data-ship-tab="search" onclick="switchShipTab('search')">🔍 받는사람 검색</button>
+        <button class="ship-tab-btn" data-ship-tab="daily" onclick="switchShipTab('daily')">📅 일별 조회</button>
+        <button class="ship-tab-btn" data-ship-tab="track" onclick="switchShipTab('track')">📦 운송장 추적</button>
+        <button class="ship-tab-btn" data-ship-tab="register" onclick="switchShipTab('register')">➕ 발송 등록</button>
+        <div style="flex:1"></div>
+        <span id="ship-stats-badge" style="font-size:12px;color:#6b7280"></span>
+      </div>
+
+      <!-- 탭: 받는사람 검색 -->
+      <div class="ship-tab-panel active" id="ship-panel-search">
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+            <div style="flex:1;min-width:180px">
+              <label style="font-size:12px;font-weight:600;color:#374151">받는사람</label>
+              <input type="text" id="ship-search-name" placeholder="이름 입력" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" onkeydown="if(event.key==='Enter')searchShipments()">
+            </div>
+            <div style="min-width:140px">
+              <label style="font-size:12px;font-weight:600;color:#374151">접수일자</label>
+              <input type="date" id="ship-search-date" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+            </div>
+            <div style="min-width:100px">
+              <label style="font-size:12px;font-weight:600;color:#374151">창고</label>
+              <select id="ship-search-wh" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+                <option value="">전체</option>
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <button onclick="searchShipments()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">검색</button>
+          </div>
+        </div>
+        <div id="ship-search-result"></div>
+      </div>
+
+      <!-- 탭: 일별 조회 -->
+      <div class="ship-tab-panel" id="ship-panel-daily">
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div style="min-width:160px">
+              <label style="font-size:12px;font-weight:600;color:#374151">조회 날짜</label>
+              <input type="date" id="ship-daily-date" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+            </div>
+            <div style="min-width:100px">
+              <label style="font-size:12px;font-weight:600;color:#374151">창고</label>
+              <select id="ship-daily-wh" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+                <option value="">전체</option>
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <button onclick="loadDailyShipments()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">조회</button>
+          </div>
+        </div>
+        <div id="ship-daily-summary" style="margin-bottom:12px"></div>
+        <div id="ship-daily-result"></div>
+      </div>
+
+      <!-- 탭: 운송장 추적 -->
+      <div class="ship-tab-panel" id="ship-panel-track">
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <label style="font-size:12px;font-weight:600;color:#374151">운송장번호</label>
+              <input type="text" id="ship-track-no" placeholder="운송장번호 입력 (쉼표로 여러건)" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" onkeydown="if(event.key==='Enter')trackShipment()">
+            </div>
+            <button onclick="trackShipment()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">추적</button>
+          </div>
+        </div>
+        <div id="ship-track-result"></div>
+      </div>
+
+      <!-- 탭: 발송 등록 -->
+      <div class="ship-tab-panel" id="ship-panel-register">
+        <div class="card" style="margin-bottom:16px">
+          <h3 style="margin:0 0 12px 0;font-size:15px;color:#1f2937">📤 엑셀 파일 업로드</h3>
+          <p style="font-size:13px;color:#6b7280;margin:0 0 12px 0">
+            필수 컬럼: <b>운송장번호</b>, <b>받는분</b>, <b>접수일자</b><br>
+            선택 컬럼: 받는분전화, 받는분휴대폰, 받는분주소, 물품명, 수량, 비고
+          </p>
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div style="min-width:100px">
+              <label style="font-size:12px;font-weight:600;color:#374151">창고</label>
+              <select id="ship-upload-wh" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <div style="flex:1">
+              <input type="file" id="ship-upload-file" accept=".xlsx,.xls" style="font-size:13px">
+            </div>
+            <button onclick="uploadShipExcel()" style="padding:8px 20px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">업로드</button>
+          </div>
+          <div id="ship-upload-result" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 12px 0;font-size:15px;color:#1f2937">✏️ 수동 등록</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">창고</label>
+              <select id="ship-reg-wh" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">운송장번호 *</label>
+              <input type="text" id="ship-reg-slip" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="운송장번호">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">받는사람 *</label>
+              <input type="text" id="ship-reg-rcv" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="받는사람">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">받는분 연락처</label>
+              <input type="text" id="ship-reg-rcvtel" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="연락처">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">받는분 주소</label>
+              <input type="text" id="ship-reg-rcvaddr" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="주소">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">물품명</label>
+              <input type="text" id="ship-reg-goods" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="물품명">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">접수일자</label>
+              <input type="date" id="ship-reg-date" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">비고</label>
+              <input type="text" id="ship-reg-memo" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="비고">
+            </div>
+          </div>
+          <div style="margin-top:12px;text-align:right">
+            <button onclick="registerShipment()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">등록</button>
+          </div>
+          <div id="ship-reg-result" style="margin-top:8px"></div>
+        </div>
       </div>
     </div>
 
@@ -1956,7 +2109,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </div>
 </div>
 
-<script src="/static/js/api.js?v=20260310b"></script>
-<script src="/static/js/app.js?v=20260310b"></script>
+<script src="/static/js/api.js?v=20260310c"></script>
+<script src="/static/js/app.js?v=20260310c"></script>
 </body>
 </html>

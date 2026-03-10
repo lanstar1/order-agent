@@ -51,6 +51,7 @@ def _sql_to_pg(sql):
                 'po_training_items', 'bulk_training_sessions',
                 'bulk_training_extractions', 'ai_metrics',
                 'activity_log', 'orderlist_items', 'orderlist_sync_log',
+                'shipments',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -396,6 +397,33 @@ def init_db():
         PRIMARY KEY (cust_code, prod_cd)
     )""")
 
+    # ── 택배 발송 기록
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS shipments (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        warehouse       TEXT NOT NULL DEFAULT '',
+        slip_no         TEXT NOT NULL,
+        cust_cd         TEXT DEFAULT '',
+        snd_name        TEXT DEFAULT '',
+        snd_tel         TEXT DEFAULT '',
+        snd_addr        TEXT DEFAULT '',
+        rcv_name        TEXT NOT NULL,
+        rcv_tel         TEXT DEFAULT '',
+        rcv_cell        TEXT DEFAULT '',
+        rcv_addr1       TEXT DEFAULT '',
+        rcv_addr2       TEXT DEFAULT '',
+        rcv_zip         TEXT DEFAULT '',
+        goods_nm        TEXT DEFAULT '',
+        qty             INTEGER DEFAULT 1,
+        fare_type       TEXT DEFAULT '020',
+        dlv_fare        INTEGER DEFAULT 0,
+        take_dt         TEXT NOT NULL,
+        status          TEXT DEFAULT '접수',
+        memo            TEXT DEFAULT '',
+        created_at      TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(slip_no, warehouse)
+    )""")
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -407,6 +435,10 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_erp_submissions_order_id ON erp_submissions(order_id);
         CREATE INDEX IF NOT EXISTS idx_chat_sessions_emp_cd ON chat_sessions(emp_cd);
         CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_shipments_rcv_name ON shipments(rcv_name);
+        CREATE INDEX IF NOT EXISTS idx_shipments_take_dt ON shipments(take_dt);
+        CREATE INDEX IF NOT EXISTS idx_shipments_slip_no ON shipments(slip_no);
+        CREATE INDEX IF NOT EXISTS idx_shipments_warehouse ON shipments(warehouse);
     """)
 
     conn.commit()

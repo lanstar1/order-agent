@@ -366,3 +366,14 @@ textarea.form-control { resize: vertical; min-height: 120px; }
   background: rgba(0,0,0,0.15);
 }
 
+/* ── 택배조회 탭 ── */
+.ship-tab-btn {
+  padding: 6px 16px; border: 1px solid #d1d5db; border-radius: 20px;
+  background: #fff; color: #374151; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .15s;
+}
+.ship-tab-btn:hover { background: #f3f4f6; }
+.ship-tab-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.ship-tab-panel { display: none; }
+.ship-tab-panel.active { display: block; }
+

@@ -109,9 +109,12 @@ function navigateTo(pageId) {
     doc_search:   "자료검색",
     price_sheet:  "단가표 조회",
     training:     "발주서 학습",
+    shipping:     "택배조회",
     ai_dashboard: "AI 대시보드",
     settings:     "설정",
   }[pageId] || "";
+  // 택배조회 페이지 진입 시 통계 로드
+  if (pageId === "shipping") initShippingPage();
   // 주문서 페이지 진입 시 드롭존 초기화
   if (pageId === "sale_order") initSODropzone();
   // 자료검색 페이지 진입 시 카테고리 로드
@@ -2861,3 +2864,290 @@ async function loadOrderList(page = 1) {
     });
   }
 })();
+
+// ═══════════════════════════════════════════════
+//  택배조회 기능
+// ═══════════════════════════════════════════════
+
+function initShippingPage() {
+  // 오늘 날짜를 기본값으로 설정
+  const today = new Date().toISOString().slice(0, 10);
+  const dailyDate = document.getElementById("ship-daily-date");
+  if (dailyDate && !dailyDate.value) dailyDate.value = today;
+
+  // 통계 로드
+  loadShippingStats();
+}
+
+async function loadShippingStats() {
+  try {
+    const data = await api.shippingStats();
+    const badge = document.getElementById("ship-stats-badge");
+    if (badge) {
+      const whParts = (data.by_warehouse || []).map(w => `${w.warehouse} ${w.cnt}건`).join(" / ");
+      badge.textContent = `총 ${data.total || 0}건` + (whParts ? ` (${whParts})` : "");
+    }
+  } catch (e) { console.error("택배 통계 오류:", e); }
+}
+
+function switchShipTab(tabId) {
+  document.querySelectorAll(".ship-tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".ship-tab-panel").forEach(p => p.classList.remove("active"));
+  const btn = document.querySelector(`[data-ship-tab="${tabId}"]`);
+  if (btn) btn.classList.add("active");
+  const panel = document.getElementById("ship-panel-" + tabId);
+  if (panel) panel.classList.add("active");
+}
+
+// ── 받는사람 검색 ──
+async function searchShipments(page = 1) {
+  const q = document.getElementById("ship-search-name").value.trim();
+  const dateEl = document.getElementById("ship-search-date");
+  const date = dateEl ? dateEl.value.replace(/-/g, "") : "";
+  const wh = document.getElementById("ship-search-wh").value;
+
+  if (!q && !date) {
+    alert("받는사람 이름 또는 날짜를 입력하세요.");
+    return;
+  }
+
+  const container = document.getElementById("ship-search-result");
+  container.innerHTML = '<p style="color:#6b7280">검색 중...</p>';
+
+  try {
+    const data = await api.shippingSearch(q, date, wh, page, 50);
+    container.innerHTML = renderShipmentTable(data.items, data.total, data.page, data.total_pages, "searchShipments");
+  } catch (e) {
+    container.innerHTML = `<p style="color:#dc2626">검색 오류: ${e.message}</p>`;
+  }
+}
+
+// ── 일별 조회 ──
+async function loadDailyShipments() {
+  const dateEl = document.getElementById("ship-daily-date");
+  const date = dateEl ? dateEl.value : "";
+  const wh = document.getElementById("ship-daily-wh").value;
+
+  if (!date) { alert("날짜를 선택하세요."); return; }
+
+  const sumEl = document.getElementById("ship-daily-summary");
+  const resEl = document.getElementById("ship-daily-result");
+  resEl.innerHTML = '<p style="color:#6b7280">조회 중...</p>';
+
+  try {
+    const data = await api.shippingDaily(date.replace(/-/g, ""), wh);
+    // 요약
+    const sumParts = (data.summary || []).map(s =>
+      `<span style="display:inline-block;padding:4px 12px;background:${s.warehouse === '용산' ? '#dbeafe' : '#dcfce7'};color:${s.warehouse === '용산' ? '#1d4ed8' : '#166534'};border-radius:16px;font-size:13px;font-weight:600;margin-right:8px">${s.warehouse} ${s.cnt}건</span>`
+    );
+    sumEl.innerHTML = `<div style="margin-bottom:8px">
+      <span style="font-weight:700;font-size:15px">📅 ${formatTakeDt(data.date)} 발송내역</span>
+      <span style="margin-left:12px;font-size:14px;color:#374151">총 <b>${data.total}</b>건</span>
+      <span style="margin-left:8px">${sumParts.join("")}</span>
+    </div>`;
+    resEl.innerHTML = renderShipmentTable(data.items, data.total);
+  } catch (e) {
+    resEl.innerHTML = `<p style="color:#dc2626">조회 오류: ${e.message}</p>`;
+  }
+}
+
+// ── 운송장 추적 ──
+async function trackShipment() {
+  const input = document.getElementById("ship-track-no").value.trim();
+  if (!input) { alert("운송장번호를 입력하세요."); return; }
+  const slipNos = input.split(/[,\s]+/).filter(Boolean);
+
+  const container = document.getElementById("ship-track-result");
+  container.innerHTML = '<p style="color:#6b7280">추적 중...</p>';
+
+  try {
+    const data = await api.shippingTrack(slipNos);
+    if (!data.items || data.items.length === 0) {
+      container.innerHTML = '<p style="color:#6b7280">추적 결과가 없습니다.</p>';
+      return;
+    }
+    let html = '';
+    for (const item of data.items) {
+      const wh = item._warehouse || "";
+      const whBadge = wh ? `<span style="display:inline-block;padding:2px 8px;background:${wh === '용산' ? '#dbeafe' : '#dcfce7'};color:${wh === '용산' ? '#1d4ed8' : '#166534'};border-radius:10px;font-size:11px;font-weight:600">${wh}</span>` : "";
+      html += `<div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-weight:700;font-size:15px">📦 ${item.slipNo || ""}</span>
+          ${whBadge}
+          <span style="font-size:12px;color:#6b7280">${item.resultCd === 'TRUE' ? '✅ 조회 성공' : '❌ ' + (item.resultMsg || '조회 실패')}</span>
+        </div>`;
+      if (item.data1 && item.data1.length > 0) {
+        html += `<table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
+            <th style="padding:6px 10px;text-align:left">일시</th>
+            <th style="padding:6px 10px;text-align:left">상태</th>
+            <th style="padding:6px 10px;text-align:left">지점</th>
+            <th style="padding:6px 10px;text-align:left">담당</th>
+          </tr></thead><tbody>`;
+        for (const d of item.data1) {
+          const dt = formatScanDt(d.scanDt, d.scanTm);
+          const statColor = getStatusColor(d.statNm);
+          html += `<tr style="border-bottom:1px solid #f3f4f6">
+            <td style="padding:6px 10px">${dt}</td>
+            <td style="padding:6px 10px"><span style="color:${statColor};font-weight:600">${d.statNm || ""}</span></td>
+            <td style="padding:6px 10px">${d.branNm || ""}</td>
+            <td style="padding:6px 10px">${d.salesNm || ""}</td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<p style="color:#dc2626">추적 오류: ${e.message}</p>`;
+  }
+}
+
+// ── 수동 등록 ──
+async function registerShipment() {
+  const slipNo = document.getElementById("ship-reg-slip").value.trim();
+  const rcvName = document.getElementById("ship-reg-rcv").value.trim();
+  if (!slipNo || !rcvName) { alert("운송장번호와 받는사람은 필수입니다."); return; }
+
+  const dateEl = document.getElementById("ship-reg-date");
+  const takeDt = dateEl && dateEl.value ? dateEl.value.replace(/-/g, "") : new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+  try {
+    const data = await api.shippingRegister({
+      warehouse: document.getElementById("ship-reg-wh").value,
+      slip_no: slipNo,
+      rcv_name: rcvName,
+      rcv_tel: document.getElementById("ship-reg-rcvtel").value.trim(),
+      rcv_addr1: document.getElementById("ship-reg-rcvaddr").value.trim(),
+      goods_nm: document.getElementById("ship-reg-goods").value.trim(),
+      take_dt: takeDt,
+      memo: document.getElementById("ship-reg-memo").value.trim(),
+    });
+    const resEl = document.getElementById("ship-reg-result");
+    if (data.success) {
+      resEl.innerHTML = '<p style="color:#059669;font-weight:600">✅ 등록 완료</p>';
+      document.getElementById("ship-reg-slip").value = "";
+      document.getElementById("ship-reg-rcv").value = "";
+      loadShippingStats();
+    } else {
+      resEl.innerHTML = `<p style="color:#dc2626">❌ ${data.message}</p>`;
+    }
+  } catch (e) {
+    document.getElementById("ship-reg-result").innerHTML = `<p style="color:#dc2626">오류: ${e.message}</p>`;
+  }
+}
+
+// ── 엑셀 업로드 ──
+async function uploadShipExcel() {
+  const fileInput = document.getElementById("ship-upload-file");
+  if (!fileInput.files.length) { alert("파일을 선택하세요."); return; }
+
+  const wh = document.getElementById("ship-upload-wh").value;
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+  formData.append("warehouse", wh);
+
+  const resEl = document.getElementById("ship-upload-result");
+  resEl.innerHTML = '<p style="color:#6b7280">업로드 중...</p>';
+
+  try {
+    // postForm with query param
+    const resp = await fetch(`/api/shipping/upload-excel?warehouse=${encodeURIComponent(wh)}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${api.getToken()}` },
+      body: formData,
+    });
+    const data = await resp.json();
+    if (data.success) {
+      resEl.innerHTML = `<p style="color:#059669;font-weight:600">✅ ${data.inserted}건 등록 완료 (스킵: ${data.skipped || 0}건)</p>
+        <p style="font-size:12px;color:#6b7280">인식 컬럼: ${(data.columns_found || []).join(", ")}</p>`;
+      loadShippingStats();
+    } else {
+      resEl.innerHTML = `<p style="color:#dc2626">❌ ${data.message}</p>`;
+    }
+  } catch (e) {
+    resEl.innerHTML = `<p style="color:#dc2626">업로드 오류: ${e.message}</p>`;
+  }
+}
+
+// ── 유틸 함수 ──
+function renderShipmentTable(items, total, page, totalPages, paginationFn) {
+  if (!items || items.length === 0) {
+    return '<p style="color:#6b7280;text-align:center;padding:20px">조회 결과가 없습니다.</p>';
+  }
+  let html = `<div class="card" style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:700px">
+      <thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
+        <th style="padding:8px 10px;text-align:left">창고</th>
+        <th style="padding:8px 10px;text-align:left">운송장번호</th>
+        <th style="padding:8px 10px;text-align:left">받는사람</th>
+        <th style="padding:8px 10px;text-align:left">연락처</th>
+        <th style="padding:8px 10px;text-align:left">주소</th>
+        <th style="padding:8px 10px;text-align:left">물품명</th>
+        <th style="padding:8px 10px;text-align:left">접수일</th>
+        <th style="padding:8px 10px;text-align:center">추적</th>
+      </tr></thead><tbody>`;
+
+  for (const s of items) {
+    const whColor = s.warehouse === "용산" ? "#1d4ed8" : "#166534";
+    const whBg = s.warehouse === "용산" ? "#dbeafe" : "#dcfce7";
+    html += `<tr style="border-bottom:1px solid #f3f4f6">
+      <td style="padding:6px 10px"><span style="display:inline-block;padding:2px 8px;background:${whBg};color:${whColor};border-radius:10px;font-size:11px;font-weight:600">${s.warehouse || ""}</span></td>
+      <td style="padding:6px 10px;font-family:monospace">${s.slip_no || ""}</td>
+      <td style="padding:6px 10px;font-weight:600">${s.rcv_name || ""}</td>
+      <td style="padding:6px 10px">${s.rcv_cell || s.rcv_tel || ""}</td>
+      <td style="padding:6px 10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${s.rcv_addr1 || ""}">${s.rcv_addr1 || ""}</td>
+      <td style="padding:6px 10px">${s.goods_nm || ""}</td>
+      <td style="padding:6px 10px">${formatTakeDt(s.take_dt)}</td>
+      <td style="padding:6px 10px;text-align:center">
+        <button onclick="quickTrack('${s.slip_no}')" style="padding:2px 8px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer" title="배송추적">📦</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+
+  // 페이지네이션
+  if (totalPages && totalPages > 1 && paginationFn) {
+    html += `<div style="display:flex;justify-content:center;gap:4px;padding:12px 0">`;
+    for (let i = 1; i <= totalPages && i <= 10; i++) {
+      const active = i === page ? "background:#2563eb;color:#fff;" : "background:#f3f4f6;";
+      html += `<button onclick="${paginationFn}(${i})" style="${active}border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">${i}</button>`;
+    }
+    html += '</div>';
+  }
+
+  html += `<div style="text-align:right;padding:8px 10px;font-size:12px;color:#6b7280">총 ${total}건</div></div>`;
+  return html;
+}
+
+function quickTrack(slipNo) {
+  document.getElementById("ship-track-no").value = slipNo;
+  switchShipTab("track");
+  trackShipment();
+}
+
+function formatTakeDt(dt) {
+  if (!dt || dt.length < 8) return dt || "";
+  const d = dt.replace(/-/g, "");
+  return d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6, 8);
+}
+
+function formatScanDt(scanDt, scanTm) {
+  if (!scanDt) return "";
+  let result = scanDt.slice(0, 4) + "-" + scanDt.slice(4, 6) + "-" + scanDt.slice(6, 8);
+  if (scanTm && scanTm.length >= 4) {
+    result += " " + scanTm.slice(0, 2) + ":" + scanTm.slice(2, 4);
+    if (scanTm.length >= 6) result += ":" + scanTm.slice(4, 6);
+  }
+  return result;
+}
+
+function getStatusColor(statNm) {
+  if (!statNm) return "#374151";
+  if (statNm.includes("완료")) return "#059669";
+  if (statNm.includes("배송출발") || statNm.includes("배송중")) return "#2563eb";
+  if (statNm.includes("집하") || statNm.includes("접수")) return "#d97706";
+  if (statNm.includes("간선")) return "#7c3aed";
+  return "#374151";
+}

@@ -1,0 +1,437 @@
+"""
+택배 발송 조회 API
+- 발송 내역 등록 (수동 / 엑셀 업로드)
+- 받는사람 이름 검색
+- 날짜별 조회
+- 운송장번호 화물추적
+"""
+import logging
+import io
+from datetime import datetime
+from fastapi import APIRouter, Depends, Query, UploadFile, File
+from pydantic import BaseModel
+from typing import Optional
+from security import get_current_user
+from db.database import get_connection
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/shipping", tags=["shipping"])
+
+
+# ─── Request / Response 모델 ───────────────────
+class ShipmentCreate(BaseModel):
+    warehouse: str = "용산"          # 용산 / 김포
+    slip_no: str                     # 운송장번호
+    rcv_name: str                    # 받는사람
+    rcv_tel: str = ""
+    rcv_cell: str = ""
+    rcv_addr1: str = ""
+    rcv_addr2: str = ""
+    rcv_zip: str = ""
+    snd_name: str = ""               # 보내는사람
+    snd_tel: str = ""
+    snd_addr: str = ""
+    goods_nm: str = ""               # 물품명
+    qty: int = 1
+    take_dt: str = ""                # 접수일자 YYYYMMDD
+    memo: str = ""
+
+
+class TrackRequest(BaseModel):
+    slip_nos: list[str]              # 운송장번호 목록
+
+
+class ShipmentBulk(BaseModel):
+    items: list[ShipmentCreate]
+
+
+# ─── 발송 내역 등록 (단건) ────────────────────────
+@router.post("/register")
+async def register_shipment(req: ShipmentCreate, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    take_dt = req.take_dt or datetime.now().strftime("%Y%m%d")
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO shipments
+               (warehouse, slip_no, rcv_name, rcv_tel, rcv_cell,
+                rcv_addr1, rcv_addr2, rcv_zip,
+                snd_name, snd_tel, snd_addr,
+                goods_nm, qty, take_dt, memo)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (req.warehouse, req.slip_no, req.rcv_name, req.rcv_tel, req.rcv_cell,
+             req.rcv_addr1, req.rcv_addr2, req.rcv_zip,
+             req.snd_name, req.snd_tel, req.snd_addr,
+             req.goods_nm, req.qty, take_dt, req.memo)
+        )
+        conn.commit()
+        return {"success": True, "message": "등록 완료"}
+    except Exception as e:
+        logger.error(f"[Shipping] 등록 오류: {e}")
+        return {"success": False, "message": str(e)}
+    finally:
+        conn.close()
+
+
+# ─── 발송 내역 등록 (대량) ────────────────────────
+@router.post("/register-bulk")
+async def register_bulk(req: ShipmentBulk, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    inserted = 0
+    try:
+        for item in req.items:
+            take_dt = item.take_dt or datetime.now().strftime("%Y%m%d")
+            conn.execute(
+                """INSERT OR IGNORE INTO shipments
+                   (warehouse, slip_no, rcv_name, rcv_tel, rcv_cell,
+                    rcv_addr1, rcv_addr2, rcv_zip,
+                    snd_name, snd_tel, snd_addr,
+                    goods_nm, qty, take_dt, memo)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (item.warehouse, item.slip_no, item.rcv_name, item.rcv_tel, item.rcv_cell,
+                 item.rcv_addr1, item.rcv_addr2, item.rcv_zip,
+                 item.snd_name, item.snd_tel, item.snd_addr,
+                 item.goods_nm, item.qty, take_dt, item.memo)
+            )
+            inserted += 1
+        conn.commit()
+        return {"success": True, "inserted": inserted}
+    except Exception as e:
+        logger.error(f"[Shipping] 대량 등록 오류: {e}")
+        return {"success": False, "message": str(e)}
+    finally:
+        conn.close()
+
+
+# ─── 엑셀 업로드로 대량 등록 ──────────────────────
+@router.post("/upload-excel")
+async def upload_excel(
+    file: UploadFile = File(...),
+    warehouse: str = Query("용산"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    엑셀 파일 업로드로 발송내역 대량 등록
+    필수 컬럼: 운송장번호, 받는분, 접수일자
+    선택 컬럼: 받는분전화, 받는분휴대폰, 받는분주소, 물품명, 수량, 비고
+    """
+    import openpyxl
+
+    try:
+        content = await file.read()
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
+        ws = wb[wb.sheetnames[0]]
+
+        # 헤더 매핑
+        headers = []
+        col_map = {}
+        for i, row_data in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0:
+                headers = [str(c or "").strip() for c in row_data]
+                # 유연한 컬럼 매핑
+                for idx, h in enumerate(headers):
+                    h_lower = h.replace(" ", "")
+                    if "운송장" in h_lower or "송장번호" in h_lower or "슬립" in h_lower:
+                        col_map["slip_no"] = idx
+                    elif "받는" in h_lower and ("이름" in h_lower or "분" in h_lower or "사람" in h_lower or "명" in h_lower):
+                        col_map["rcv_name"] = idx
+                    elif "받는" in h_lower and "전화" in h_lower:
+                        col_map["rcv_tel"] = idx
+                    elif "받는" in h_lower and ("휴대" in h_lower or "핸드" in h_lower or "셀" in h_lower):
+                        col_map["rcv_cell"] = idx
+                    elif "받는" in h_lower and "주소" in h_lower:
+                        col_map["rcv_addr1"] = idx
+                    elif "접수일" in h_lower or "발송일" in h_lower or "일자" in h_lower:
+                        col_map["take_dt"] = idx
+                    elif "물품" in h_lower or "상품" in h_lower:
+                        col_map["goods_nm"] = idx
+                    elif "수량" in h_lower:
+                        col_map["qty"] = idx
+                    elif "비고" in h_lower or "메모" in h_lower:
+                        col_map["memo"] = idx
+                    elif "보내는" in h_lower and ("이름" in h_lower or "분" in h_lower or "명" in h_lower):
+                        col_map["snd_name"] = idx
+                    elif "수하인" in h_lower or ("수취" in h_lower and "인" in h_lower):
+                        col_map["rcv_name"] = idx
+                continue
+
+            # 데이터 행
+            slip_no = str(row_data[col_map.get("slip_no", 0)] or "").strip()
+            rcv_name = str(row_data[col_map.get("rcv_name", 1)] or "").strip()
+            if not slip_no or not rcv_name:
+                continue
+
+            take_dt_raw = row_data[col_map["take_dt"]] if "take_dt" in col_map else None
+            if take_dt_raw:
+                take_dt = str(take_dt_raw).strip().replace("-", "").replace("/", "")[:8]
+            else:
+                take_dt = datetime.now().strftime("%Y%m%d")
+
+            # DB 저장은 아래에서 일괄 처리
+            break  # 헤더만 먼저 파싱
+
+        # 실제 데이터 삽입
+        conn = get_connection()
+        inserted = 0
+        skipped = 0
+        for i, row_data in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0:
+                continue
+            slip_no = str(row_data[col_map.get("slip_no", 0)] or "").strip()
+            rcv_name = str(row_data[col_map.get("rcv_name", 1)] or "").strip()
+            if not slip_no or not rcv_name:
+                skipped += 1
+                continue
+
+            take_dt_raw = row_data[col_map["take_dt"]] if "take_dt" in col_map else None
+            if take_dt_raw:
+                take_dt = str(take_dt_raw).strip().replace("-", "").replace("/", "")[:8]
+            else:
+                take_dt = datetime.now().strftime("%Y%m%d")
+
+            rcv_tel = str(row_data[col_map["rcv_tel"]] or "").strip() if "rcv_tel" in col_map else ""
+            rcv_cell = str(row_data[col_map["rcv_cell"]] or "").strip() if "rcv_cell" in col_map else ""
+            rcv_addr1 = str(row_data[col_map["rcv_addr1"]] or "").strip() if "rcv_addr1" in col_map else ""
+            goods_nm = str(row_data[col_map["goods_nm"]] or "").strip() if "goods_nm" in col_map else ""
+            qty_raw = row_data[col_map["qty"]] if "qty" in col_map else 1
+            qty = int(qty_raw) if qty_raw else 1
+            memo = str(row_data[col_map["memo"]] or "").strip() if "memo" in col_map else ""
+            snd_name = str(row_data[col_map["snd_name"]] or "").strip() if "snd_name" in col_map else ""
+
+            conn.execute(
+                """INSERT OR IGNORE INTO shipments
+                   (warehouse, slip_no, rcv_name, rcv_tel, rcv_cell,
+                    rcv_addr1, snd_name, goods_nm, qty, take_dt, memo)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (warehouse, slip_no, rcv_name, rcv_tel, rcv_cell,
+                 rcv_addr1, snd_name, goods_nm, qty, take_dt, memo)
+            )
+            inserted += 1
+
+        conn.commit()
+        conn.close()
+        wb.close()
+
+        return {
+            "success": True,
+            "inserted": inserted,
+            "skipped": skipped,
+            "columns_found": list(col_map.keys()),
+        }
+    except Exception as e:
+        logger.error(f"[Shipping] 엑셀 업로드 오류: {e}", exc_info=True)
+        return {"success": False, "message": str(e)}
+
+
+# ─── 받는사람 이름 검색 ──────────────────────────
+@router.get("/search")
+async def search_shipments(
+    q: str = Query("", description="받는사람 이름"),
+    date: str = Query("", description="접수일자 YYYYMMDD"),
+    warehouse: str = Query("", description="창고 필터 (용산/김포/전체)"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    user: dict = Depends(get_current_user),
+):
+    conn = get_connection()
+    where_parts = ["1=1"]
+    params = []
+
+    if q:
+        where_parts.append("rcv_name LIKE ?")
+        params.append(f"%{q}%")
+    if date:
+        where_parts.append("take_dt = ?")
+        params.append(date.replace("-", ""))
+    if warehouse and warehouse != "전체":
+        where_parts.append("warehouse = ?")
+        params.append(warehouse)
+
+    where = " AND ".join(where_parts)
+
+    total = conn.execute(
+        f"SELECT COUNT(*) as cnt FROM shipments WHERE {where}", params
+    ).fetchone()["cnt"]
+
+    offset = (page - 1) * page_size
+    rows = conn.execute(
+        f"""SELECT * FROM shipments WHERE {where}
+            ORDER BY take_dt DESC, created_at DESC
+            LIMIT ? OFFSET ?""",
+        params + [page_size, offset]
+    ).fetchall()
+
+    conn.close()
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
+        "items": [dict(r) for r in rows],
+    }
+
+
+# ─── 날짜별 발송내역 조회 ────────────────────────
+@router.get("/daily")
+async def daily_shipments(
+    date: str = Query(..., description="조회 날짜 YYYYMMDD 또는 YYYY-MM-DD"),
+    warehouse: str = Query("", description="창고 필터"),
+    user: dict = Depends(get_current_user),
+):
+    clean_date = date.replace("-", "")
+    conn = get_connection()
+
+    where_parts = ["take_dt = ?"]
+    params = [clean_date]
+
+    if warehouse and warehouse != "전체":
+        where_parts.append("warehouse = ?")
+        params.append(warehouse)
+
+    where = " AND ".join(where_parts)
+
+    rows = conn.execute(
+        f"""SELECT * FROM shipments WHERE {where}
+            ORDER BY warehouse, created_at DESC""",
+        params
+    ).fetchall()
+
+    # 창고별 요약
+    summary = conn.execute(
+        f"""SELECT warehouse, COUNT(*) as cnt
+            FROM shipments WHERE {where}
+            GROUP BY warehouse""",
+        params
+    ).fetchall()
+
+    conn.close()
+    return {
+        "date": clean_date,
+        "total": len(rows),
+        "summary": [dict(r) for r in summary],
+        "items": [dict(r) for r in rows],
+    }
+
+
+# ─── 운송장번호로 화물추적 ────────────────────────
+@router.post("/track")
+async def track_shipment(req: TrackRequest, user: dict = Depends(get_current_user)):
+    from services.logen_client import track_shipments_both
+
+    if not req.slip_nos:
+        return {"success": False, "message": "운송장번호를 입력하세요"}
+
+    results = await track_shipments_both(req.slip_nos)
+    return {
+        "success": True,
+        "total": len(results),
+        "items": results,
+    }
+
+
+# ─── 단건 발송 + 로젠 API 등록 ───────────────────
+@router.post("/register-and-send")
+async def register_and_send(req: ShipmentCreate, user: dict = Depends(get_current_user)):
+    """자체 DB 저장 + 로젠 API로 송장 등록"""
+    from services.logen_client import register_slip
+
+    take_dt = req.take_dt or datetime.now().strftime("%Y%m%d")
+
+    # 1) 자체 DB 저장
+    conn = get_connection()
+    conn.execute(
+        """INSERT OR IGNORE INTO shipments
+           (warehouse, slip_no, rcv_name, rcv_tel, rcv_cell,
+            rcv_addr1, rcv_addr2, rcv_zip,
+            snd_name, snd_tel, snd_addr,
+            goods_nm, qty, take_dt, memo)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (req.warehouse, req.slip_no, req.rcv_name, req.rcv_tel, req.rcv_cell,
+         req.rcv_addr1, req.rcv_addr2, req.rcv_zip,
+         req.snd_name, req.snd_tel, req.snd_addr,
+         req.goods_nm, req.qty, take_dt, req.memo)
+    )
+    conn.commit()
+    conn.close()
+
+    # 2) 로젠 API 호출
+    slip_data = {
+        "printYn": "Y",
+        "slipNo": req.slip_no,
+        "slipTy": "100",
+        "custCd": "",
+        "sndCustNm": req.snd_name,
+        "sndTelNo": req.snd_tel,
+        "sndCustAddr1": req.snd_addr,
+        "sndCustAddr2": "",
+        "rcvCustNm": req.rcv_name,
+        "rcvTelNo": req.rcv_tel,
+        "rcvCellNo": req.rcv_cell,
+        "rcvCustAddr1": req.rcv_addr1,
+        "rcvCustAddr2": req.rcv_addr2,
+        "fareTy": req.goods_nm if req.goods_nm else "020",
+        "qty": req.qty,
+        "goodsNm": req.goods_nm,
+        "dlvFare": 0,
+        "extraFare": 0,
+        "goodsAmt": 0,
+        "takeDt": take_dt,
+        "remarks": req.memo,
+    }
+
+    api_result = await register_slip(req.warehouse, slip_data)
+    return {
+        "success": True,
+        "db_saved": True,
+        "api_result": api_result,
+    }
+
+
+# ─── 통계 ────────────────────────────────────
+@router.get("/stats")
+async def shipping_stats(user: dict = Depends(get_current_user)):
+    """택배 발송 통계"""
+    import os
+    use_pg = bool(os.getenv("DATABASE_URL", ""))
+
+    conn = get_connection()
+
+    total = conn.execute("SELECT COUNT(*) as cnt FROM shipments").fetchone()["cnt"]
+
+    # 창고별 통계
+    by_warehouse = conn.execute(
+        "SELECT warehouse, COUNT(*) as cnt FROM shipments GROUP BY warehouse"
+    ).fetchall()
+
+    # 최근 7일 일별 통계
+    if use_pg:
+        recent = conn.execute("""
+            SELECT take_dt, COUNT(*) as cnt
+            FROM shipments
+            WHERE take_dt >= to_char(NOW() - INTERVAL '7 days', 'YYYYMMDD')
+            GROUP BY take_dt ORDER BY take_dt DESC
+        """).fetchall()
+    else:
+        recent = conn.execute("""
+            SELECT take_dt, COUNT(*) as cnt
+            FROM shipments
+            WHERE take_dt >= strftime('%Y%m%d', 'now', '-7 days')
+            GROUP BY take_dt ORDER BY take_dt DESC
+        """).fetchall()
+
+    conn.close()
+    return {
+        "total": total,
+        "by_warehouse": [dict(r) for r in by_warehouse],
+        "recent_daily": [dict(r) for r in recent],
+    }
+
+
+# ─── 삭제 ────────────────────────────────────
+@router.delete("/{shipment_id}")
+async def delete_shipment(shipment_id: int, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    conn.execute("DELETE FROM shipments WHERE id = ?", (shipment_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True}

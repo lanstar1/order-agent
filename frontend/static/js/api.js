@@ -306,4 +306,36 @@ const api = {
   activityEmployees() {
     return api.get("/api/activity/employees");
   },
+
+  // ── 택배 발송 조회 ──
+  shippingSearch(q = "", date = "", warehouse = "", page = 1, pageSize = 50) {
+    const params = new URLSearchParams({ page, page_size: pageSize });
+    if (q) params.set("q", q);
+    if (date) params.set("date", date);
+    if (warehouse) params.set("warehouse", warehouse);
+    return api.get(`/api/shipping/search?${params}`);
+  },
+  shippingDaily(date, warehouse = "") {
+    const params = new URLSearchParams({ date });
+    if (warehouse) params.set("warehouse", warehouse);
+    return api.get(`/api/shipping/daily?${params}`);
+  },
+  shippingTrack(slipNos) {
+    return api.post("/api/shipping/track", { slip_nos: slipNos });
+  },
+  shippingRegister(data) {
+    return api.post("/api/shipping/register", data);
+  },
+  shippingRegisterBulk(items) {
+    return api.post("/api/shipping/register-bulk", { items });
+  },
+  shippingUploadExcel(formData) {
+    return api.postForm("/api/shipping/upload-excel", formData);
+  },
+  shippingStats() {
+    return api.get("/api/shipping/stats");
+  },
+  shippingDelete(id) {
+    return api.request("DELETE", `/api/shipping/${id}`);
+  },
 };
