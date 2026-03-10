@@ -398,12 +398,89 @@ async def daily_shipments(
 # ─── 운송장번호로 화물추적 (결과 자동 DB 저장) ──────────
 @router.post("/track")
 async def track_shipment(req: TrackRequest, user: dict = Depends(get_current_user)):
+    import re
     from services.logen_client import track_shipments_both
 
     if not req.slip_nos:
         return {"success": False, "message": "운송장번호를 입력하세요"}
 
-    results = await track_shipments_both(req.slip_nos)
+    # 운송장번호 정규화
+    clean_slips = [re.sub(r'\D', '', s.strip()) for s in req.slip_nos if s.strip()]
+    clean_slips = [s for s in clean_slips if len(s) >= 10]
+
+    if not clean_slips:
+        return {"success": False, "message": "유효한 운송장번호가 없습니다"}
+
+    # 1) 로젠 OpenAPI로 추적 시도
+    results = await track_shipments_both(clean_slips)
+
+    # 추적 성공한 운송장번호 집합
+    tracked_slips = set()
+    for item in results:
+        if item.get("resultCd") == "TRUE" and item.get("data1"):
+            tracked_slips.add(item.get("slipNo", ""))
+
+    # 2) API 추적 실패한 건은 DB 상태 정보로 보충
+    failed_slips = [s for s in clean_slips if s not in tracked_slips]
+    if failed_slips:
+        conn = get_connection()
+        try:
+            for slip in failed_slips:
+                row = conn.execute(
+                    "SELECT * FROM shipments WHERE slip_no = ?", (slip,)
+                ).fetchone()
+                if row:
+                    r = dict(row)
+                    # DB 정보를 Logen API 형식으로 변환하여 결과에 추가
+                    status = r.get("status", "접수")
+                    take_dt = r.get("take_dt", "")
+                    db_item = {
+                        "slipNo": slip,
+                        "resultCd": "DB",
+                        "resultMsg": "DB 저장 정보",
+                        "_warehouse": r.get("warehouse", ""),
+                        "_db_info": {
+                            "rcv_name": r.get("rcv_name", ""),
+                            "rcv_addr1": r.get("rcv_addr1", ""),
+                            "goods_nm": r.get("goods_nm", ""),
+                            "status": status,
+                            "take_dt": take_dt,
+                            "snd_dt": r.get("snd_dt", ""),
+                            "dlv_dt": r.get("dlv_dt", ""),
+                        },
+                        "data1": [],
+                    }
+                    # DB 상태 정보를 스캔 이력으로 변환
+                    if take_dt:
+                        db_item["data1"].append({
+                            "scanDt": take_dt,
+                            "scanTm": "000000",
+                            "statNm": "접수",
+                            "branNm": r.get("warehouse", ""),
+                            "salesNm": "",
+                        })
+                    if status and status != "접수":
+                        snd_dt = r.get("snd_dt", "") or take_dt
+                        db_item["data1"].append({
+                            "scanDt": snd_dt,
+                            "scanTm": "000000",
+                            "statNm": status,
+                            "branNm": r.get("warehouse", ""),
+                            "salesNm": "",
+                        })
+
+                    # 이미 동일 슬립 있으면 교체, 없으면 추가
+                    existing_idx = None
+                    for idx, existing in enumerate(results):
+                        if existing.get("slipNo") == slip:
+                            existing_idx = idx
+                            break
+                    if existing_idx is not None:
+                        results[existing_idx] = db_item
+                    else:
+                        results.append(db_item)
+        finally:
+            conn.close()
 
     # 추적 결과를 자동으로 DB에 저장
     saved = _save_tracking_to_db(results)

@@ -246,7 +246,7 @@ def _fetch_orders(
                 "dlv_dt": fields[37].strip() if len(fields) > 37 else "",
                 "status": fields[8].strip() if len(fields) > 8 else "",
                 "qty": fields[42].strip() if len(fields) > 42 else "1",
-                "goods_nm": "",  # OrderSelect에는 상품명 필드 없음
+                "goods_nm": fields[39].strip() if len(fields) > 39 else "",
             })
 
         logger.info(f"[SmartLogen] {warehouse} {from_date}~{to_date}: {len(records)}건 조회 완료")
@@ -344,10 +344,12 @@ def save_fetched_to_db(records: list[dict], conn) -> int:
                 conn.execute(
                     """UPDATE shipments
                        SET status = ?, rcv_tel = ?, rcv_cell = ?,
-                           rcv_addr1 = ?, rcv_addr2 = ?
+                           rcv_addr1 = ?, rcv_addr2 = ?,
+                           goods_nm = CASE WHEN ? != '' THEN ? ELSE goods_nm END
                        WHERE slip_no = ? AND warehouse = ?""",
                     (status, rcv_tel, rcv_cell,
                      rcv_addr1, rcv_addr2,
+                     goods_nm, goods_nm,
                      slip_no, warehouse)
                 )
             else:

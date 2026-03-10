@@ -2970,12 +2970,26 @@ async function trackShipment() {
     for (const item of data.items) {
       const wh = item._warehouse || "";
       const whBadge = wh ? `<span style="display:inline-block;padding:2px 8px;background:${wh === '용산' ? '#dbeafe' : '#dcfce7'};color:${wh === '용산' ? '#1d4ed8' : '#166534'};border-radius:10px;font-size:11px;font-weight:600">${wh}</span>` : "";
+      const resultLabel = item.resultCd === 'TRUE' ? '✅ API 조회 성공' :
+                          item.resultCd === 'DB' ? '📋 DB 저장 정보' :
+                          '❌ ' + (item.resultMsg || '조회 실패');
+      const resultColor = item.resultCd === 'TRUE' ? '#6b7280' : item.resultCd === 'DB' ? '#2563eb' : '#6b7280';
       html += `<div class="card" style="margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
           <span style="font-weight:700;font-size:15px">📦 ${item.slipNo || ""}</span>
           ${whBadge}
-          <span style="font-size:12px;color:#6b7280">${item.resultCd === 'TRUE' ? '✅ 조회 성공' : '❌ ' + (item.resultMsg || '조회 실패')}</span>
+          <span style="font-size:12px;color:${resultColor}">${resultLabel}</span>
         </div>`;
+      // DB 정보 표시
+      if (item._db_info) {
+        const db = item._db_info;
+        html += `<div style="margin-bottom:10px;padding:8px 12px;background:#f0f9ff;border-radius:6px;font-size:13px">
+          <div><b>받는분:</b> ${db.rcv_name || ""} &nbsp;|&nbsp; <b>물품:</b> ${db.goods_nm || "-"}</div>
+          <div><b>주소:</b> ${db.rcv_addr1 || ""}</div>
+          <div><b>상태:</b> <span style="color:${getStatusColor(db.status)};font-weight:600">${db.status || ""}</span>
+            &nbsp;|&nbsp; <b>접수일:</b> ${formatTakeDt(db.take_dt)}</div>
+        </div>`
+      }
       if (item.data1 && item.data1.length > 0) {
         html += `<table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
