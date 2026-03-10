@@ -31,3 +31,11 @@ services:
         sync: false
       - key: DEBUG
         value: "false"
+      - key: LOGEN_YONGSAN_ID
+        sync: false
+      - key: LOGEN_YONGSAN_PW
+        sync: false
+      - key: LOGEN_GIMPO_ID
+        sync: false
+      - key: LOGEN_GIMPO_PW
+        sync: false
