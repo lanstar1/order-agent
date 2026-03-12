@@ -3825,7 +3825,7 @@ async function saHandleFile(file) {
   try {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await api.upload("/api/sales-agent/upload", fd);
+    const res = await api.postForm("/api/sales-agent/upload", fd);
 
     _saCurrentFileId = res.file_id;
 
@@ -3871,7 +3871,7 @@ async function saStartAnalysis() {
   try {
     const fd = new FormData();
     fd.append("file_id", _saCurrentFileId);
-    const res = await api.upload("/api/sales-agent/analyze", fd);
+    const res = await api.postForm("/api/sales-agent/analyze", fd);
 
     _saCurrentJobId = res.job_id;
 
