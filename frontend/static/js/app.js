@@ -3780,6 +3780,9 @@ let _saCurrentResult = null;
 let _saCharts = {};
 let _saPollingTimer = null;
 let _saWebSocket = null;
+let _saLogCount = 0;
+let _saLogSeenSet = new Set();
+let _saAnalysisStartTime = null;
 
 const SA_AGENTS = {
   customer:      { name: "거래처 분석", icon: "👥" },
@@ -3880,11 +3883,27 @@ async function saStartAnalysis() {
     _saCurrentJobId = res.job_id;
 
     // 진행 상태 UI 표시
+    _saLogCount = 0;
+    _saLogSeenSet = new Set();
+    _saAnalysisStartTime = Date.now();
     document.getElementById("sa-progress").style.display = "block";
     const statusDiv = document.getElementById("sa-agent-status");
     statusDiv.innerHTML = Object.entries(SA_AGENTS).map(([k, v]) =>
-      `<div id="sa-status-${k}"><span class="sa-progress-dot pending"></span>${v.icon} ${v.name}</div>`
+      `<div class="sa-agent-chip pending" id="sa-status-${k}">
+        <span class="sa-chip-icon">${v.icon}</span>
+        <div class="sa-chip-info">
+          <div class="sa-chip-name">${v.name}</div>
+          <div class="sa-chip-status pending" id="sa-chip-status-${k}">대기 중</div>
+        </div>
+        <span class="sa-chip-indicator pending" id="sa-chip-dot-${k}"></span>
+      </div>`
     ).join("");
+    // 로그 초기화
+    const logBody = document.getElementById("sa-log-body");
+    if (logBody) logBody.innerHTML = "";
+    const logCount = document.getElementById("sa-log-count");
+    if (logCount) logCount.textContent = "";
+    _saAppendLog("system", "🚀", "AI 분석이 시작되었습니다 — 6개 에이전트 병렬 가동");
 
     // WebSocket 실시간 진행 (폴링 fallback 포함)
     _saConnectWebSocket(res.job_id);
@@ -3939,24 +3958,60 @@ function _saConnectWebSocket(jobId) {
 }
 
 function _saHandleProgressUpdate(data) {
+  const pct = data.progress || 0;
   const fill = document.getElementById("sa-progress-fill");
-  if (fill) fill.style.width = (data.progress || 0) + "%";
+  if (fill) fill.style.width = pct + "%";
+  const pctEl = document.getElementById("sa-progress-pct");
+  if (pctEl) pctEl.textContent = pct + "%";
 
-  // 에이전트별 상태 업데이트
+  // 에이전트별 상태 업데이트 (새 칩 UI)
   if (data.agents) {
     Object.entries(data.agents).forEach(([k, status]) => {
-      const el = document.getElementById("sa-status-" + k);
-      if (el) {
-        const dot = el.querySelector(".sa-progress-dot");
-        if (dot) dot.className = "sa-progress-dot " + status;
+      const chip = document.getElementById("sa-status-" + k);
+      if (chip) {
+        chip.className = "sa-agent-chip " + status;
+        const dot = document.getElementById("sa-chip-dot-" + k);
+        if (dot) dot.className = "sa-chip-indicator " + status;
+        const stEl = document.getElementById("sa-chip-status-" + k);
+        if (stEl) {
+          stEl.className = "sa-chip-status " + status;
+          stEl.textContent = status === "running" ? "분석 중..." : status === "done" ? "완료 ✓" : "대기 중";
+        }
       }
     });
   }
 
+  // 로그 메시지 처리
+  if (data.logs && Array.isArray(data.logs)) {
+    data.logs.forEach(log => {
+      const logKey = log.ts + "_" + log.agent + "_" + log.status;
+      if (_saLogSeenSet.has(logKey)) return;
+      _saLogSeenSet.add(logKey);
+
+      const agent = log.agent || "";
+      const status = log.status || "";
+      let icon = "📋";
+      let entryClass = "";
+      if (agent === "_phase") {
+        icon = "🔷"; entryClass = "phase";
+      } else if (status === "running") {
+        icon = SA_AGENTS[agent]?.icon || "⚡"; entryClass = "start";
+      } else if (status === "done") {
+        icon = "✅"; entryClass = "done";
+      } else if (agent === "_engine") {
+        icon = status === "running" ? "⚙️" : "✅";
+        entryClass = status === "running" ? "start" : "done";
+      }
+      _saAppendLog(entryClass, icon, log.message);
+    });
+  }
+
   if (data.status === "completed") {
+    _saAppendLog("done", "🎉", "모든 분석이 완료되었습니다!");
     _saCleanupProgress();
     saLoadResult(_saCurrentJobId);
   } else if (data.status === "failed") {
+    _saAppendLog("phase", "❌", "분석 중 오류가 발생했습니다.");
     _saCleanupProgress();
     document.getElementById("sa-progress").innerHTML = `
       <div class="card" style="background:#fff0f0;border:1px solid #ffc0c0">
@@ -3966,6 +4021,24 @@ function _saHandleProgressUpdate(data) {
     document.getElementById("sa-analyze-btn").disabled = false;
     document.getElementById("sa-analyze-btn").textContent = "🚀 AI 분석 시작 (6개 에이전트 병렬)";
   }
+}
+
+function _saAppendLog(entryClass, icon, message) {
+  const logBody = document.getElementById("sa-log-body");
+  if (!logBody) return;
+  _saLogCount++;
+  const elapsed = _saAnalysisStartTime ? ((Date.now() - _saAnalysisStartTime) / 1000).toFixed(1) : "0.0";
+  const entry = document.createElement("div");
+  entry.className = "sa-log-entry " + (entryClass || "");
+  entry.innerHTML = `
+    <span class="sa-log-time">${elapsed}s</span>
+    <span class="sa-log-icon">${icon}</span>
+    <span class="sa-log-msg">${_esc(message)}</span>
+  `;
+  logBody.appendChild(entry);
+  logBody.scrollTop = logBody.scrollHeight;
+  const countEl = document.getElementById("sa-log-count");
+  if (countEl) countEl.textContent = _saLogCount + "건";
 }
 
 function _saCleanupProgress() {

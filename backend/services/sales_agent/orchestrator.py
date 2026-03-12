@@ -483,6 +483,7 @@ async def run_analysis(
 
     # ── Phase 0: Python 엔진 정량 분석 (즉시, <1초) ──
     if progress_callback:
+        await progress_callback("_phase", "info", "Phase 0: RFM/ABC/CLV 정량 분석 엔진을 실행합니다")
         await progress_callback("_engine", "running", 0)
 
     engine_results = {}
@@ -504,6 +505,8 @@ async def run_analysis(
     results = {}
 
     # ── Phase 1: Claude 1차 병렬 분석 (①②④⑥) ──
+    if progress_callback:
+        await progress_callback("_phase", "info", "Phase 1: Claude AI 4개 에이전트 병렬 분석을 시작합니다")
     phase1_agents = ["customer", "product", "future", "visualization"]
 
     async def _run_agent(agent_key: str, extra_context: str = ""):
@@ -520,6 +523,8 @@ async def run_analysis(
     await asyncio.gather(*tasks1, return_exceptions=True)
 
     # ── Phase 2: Claude 2차 분석 (③전략 + ⑤파트너십) — Phase 1 결과 참조 ──
+    if progress_callback:
+        await progress_callback("_phase", "info", "Phase 2: 1차 분석 결과를 기반으로 전략/파트너십 심층 분석을 시작합니다")
     phase2_context_strategy = _build_phase2_context_for_strategy(results, engine_results)
     phase2_context_partnership = _build_phase2_context_for_partnership(results, engine_results)
 

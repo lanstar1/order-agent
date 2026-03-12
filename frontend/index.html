@@ -80,6 +80,92 @@
     .sa-progress-dot.running{background:#f59e0b;animation:sa-pulse 1s infinite}
     .sa-progress-dot.done{background:#10b981}
     @keyframes sa-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+    /* ── 실시간 분석 로그 UI ── */
+    .sa-log-container{
+      margin-top:14px;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
+      border-radius:12px;overflow:hidden;border:1px solid rgba(102,126,234,.3);
+      box-shadow:0 4px 20px rgba(0,0,0,.15);
+    }
+    .sa-log-header{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 16px;background:rgba(255,255,255,.05);
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    .sa-log-header-left{display:flex;align-items:center;gap:8px}
+    .sa-log-title{color:#e0e0e0;font-size:12px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+    .sa-log-live-badge{
+      display:inline-flex;align-items:center;gap:4px;
+      background:rgba(16,185,129,.15);color:#10b981;
+      font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;
+      letter-spacing:.3px;
+    }
+    .sa-log-live-dot{width:6px;height:6px;border-radius:50%;background:#10b981;animation:sa-live-blink 1.5s infinite}
+    @keyframes sa-live-blink{0%,100%{opacity:1;box-shadow:0 0 4px #10b981}50%{opacity:.3;box-shadow:none}}
+    .sa-log-count{color:#6b7280;font-size:11px}
+    .sa-log-body{
+      max-height:220px;overflow-y:auto;padding:8px 0;
+      scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;
+    }
+    .sa-log-body::-webkit-scrollbar{width:5px}
+    .sa-log-body::-webkit-scrollbar-track{background:transparent}
+    .sa-log-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:3px}
+    .sa-log-entry{
+      display:flex;align-items:flex-start;gap:10px;
+      padding:5px 16px;font-size:12px;
+      animation:sa-log-slide-in .4s cubic-bezier(.22,1,.36,1) both;
+      transition:background .2s;
+    }
+    .sa-log-entry:hover{background:rgba(255,255,255,.03)}
+    @keyframes sa-log-slide-in{
+      from{opacity:0;transform:translateY(8px)}
+      to{opacity:1;transform:translateY(0)}
+    }
+    .sa-log-time{color:#6b7280;font-size:10px;font-family:'SF Mono',Monaco,monospace;min-width:52px;padding-top:1px}
+    .sa-log-icon{font-size:14px;min-width:20px;text-align:center;line-height:1.2}
+    .sa-log-msg{color:#d1d5db;line-height:1.4;flex:1}
+    .sa-log-msg strong{color:#e5e7eb}
+    .sa-log-entry.phase .sa-log-msg{color:#a78bfa;font-weight:600}
+    .sa-log-entry.start .sa-log-icon{animation:sa-icon-pop .3s ease-out}
+    .sa-log-entry.done .sa-log-icon{animation:sa-icon-check .4s ease-out}
+    @keyframes sa-icon-pop{0%{transform:scale(0)}60%{transform:scale(1.3)}100%{transform:scale(1)}}
+    @keyframes sa-icon-check{0%{transform:scale(0) rotate(-45deg)}60%{transform:scale(1.2) rotate(10deg)}100%{transform:scale(1) rotate(0)}}
+
+    /* 에이전트 카드 그리드 (리디자인) */
+    .sa-agent-grid{
+      display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+      margin-top:14px;
+    }
+    .sa-agent-chip{
+      display:flex;align-items:center;gap:8px;
+      padding:10px 12px;border-radius:10px;
+      background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+      transition:all .3s ease;position:relative;overflow:hidden;
+    }
+    .sa-agent-chip.running{
+      border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.06);
+    }
+    .sa-agent-chip.running::before{
+      content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;
+      background:linear-gradient(90deg,transparent,rgba(245,158,11,.08),transparent);
+      animation:sa-shimmer 2s infinite;
+    }
+    @keyframes sa-shimmer{0%{left:-100%}100%{left:100%}}
+    .sa-agent-chip.done{
+      border-color:rgba(16,185,129,.4);background:rgba(16,185,129,.06);
+    }
+    .sa-agent-chip.done .sa-chip-icon{animation:sa-icon-check .4s ease-out}
+    .sa-chip-icon{font-size:16px;min-width:22px;text-align:center}
+    .sa-chip-info{flex:1;min-width:0}
+    .sa-chip-name{font-size:12px;color:#e0e0e0;font-weight:600}
+    .sa-chip-status{font-size:10px;margin-top:1px}
+    .sa-chip-status.pending{color:#6b7280}
+    .sa-chip-status.running{color:#f59e0b}
+    .sa-chip-status.done{color:#10b981}
+    .sa-chip-indicator{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .sa-chip-indicator.pending{background:#4b5563}
+    .sa-chip-indicator.running{background:#f59e0b;animation:sa-pulse 1s infinite;box-shadow:0 0 6px rgba(245,158,11,.5)}
+    .sa-chip-indicator.done{background:#10b981;box-shadow:0 0 6px rgba(16,185,129,.5)}
   </style>
 </head>
 <body>
@@ -891,12 +977,25 @@ C규격품 200개
 
           <!-- 분석 진행 상태 -->
           <div id="sa-progress" style="display:none;margin-top:20px">
-            <div class="card" style="background:#f5f0ff;border:1px solid #d4c5ff">
-              <h4 style="margin-top:0">⏳ AI 분석 진행 중...</h4>
-              <div id="sa-progress-bar" style="background:#e0e0e0;border-radius:8px;height:12px;margin:16px 0;overflow:hidden">
+            <div class="card" style="background:#f5f0ff;border:1px solid #d4c5ff;padding:16px 18px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h4 style="margin:0;font-size:16px">⏳ AI 분석 진행 중...</h4>
+                <span id="sa-progress-pct" style="font-size:13px;font-weight:700;color:#764ba2">0%</span>
+              </div>
+              <div id="sa-progress-bar" style="background:#e0e0e0;border-radius:8px;height:10px;overflow:hidden">
                 <div id="sa-progress-fill" style="background:linear-gradient(90deg,#667eea,#764ba2);height:100%;width:0%;transition:width .5s;border-radius:8px"></div>
               </div>
-              <div id="sa-agent-status" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:13px"></div>
+              <div id="sa-agent-status" class="sa-agent-grid"></div>
+              <div class="sa-log-container" id="sa-log-container">
+                <div class="sa-log-header">
+                  <div class="sa-log-header-left">
+                    <span class="sa-log-title">분석 로그</span>
+                    <span class="sa-log-live-badge"><span class="sa-log-live-dot"></span>LIVE</span>
+                  </div>
+                  <span class="sa-log-count" id="sa-log-count"></span>
+                </div>
+                <div class="sa-log-body" id="sa-log-body"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -2530,6 +2629,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260312e"></script>
-<script src="/static/js/app.js?v=20260312f"></script>
+<script src="/static/js/app.js?v=20260312g"></script>
 </body>
 </html>

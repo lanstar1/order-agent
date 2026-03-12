@@ -144,6 +144,7 @@ async def start_analysis(
         "status": "running",
         "agents": {k: "pending" for k in ["customer", "product", "strategy", "future", "partnership", "visualization"]},
         "progress": 0,
+        "logs": [],
     }
 
     # 비동기로 분석 실행
@@ -162,11 +163,36 @@ async def _run_analysis_task(job_id: str, file_id: str, parsed: dict, user: dict
         from services.sales_agent.orchestrator import run_analysis
         from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 
+        _agent_labels = {
+            "_engine": "Python 엔진",
+            "customer": "거래처 분석",
+            "product": "품목 관리",
+            "strategy": "판매전략",
+            "future": "미래전략",
+            "partnership": "파트너십",
+            "visualization": "KPI/시각화",
+        }
+
         async def progress_cb(agent_key, status, pct):
             if job_id in _running_jobs:
                 _running_jobs[job_id]["agents"][agent_key] = status
                 done = sum(1 for s in _running_jobs[job_id]["agents"].values() if s == "done")
                 _running_jobs[job_id]["progress"] = int(done / 6 * 100)
+                # 로그 메시지 추가
+                label = _agent_labels.get(agent_key, agent_key)
+                if status == "running":
+                    msg = f"{label} 에이전트가 분석을 시작합니다..."
+                elif status == "done":
+                    msg = f"{label} 분석이 완료되었습니다."
+                else:
+                    msg = f"{label}: {status}"
+                import time as _t
+                _running_jobs[job_id].setdefault("logs", []).append({
+                    "ts": _t.time(),
+                    "agent": agent_key,
+                    "status": status,
+                    "message": msg,
+                })
                 # WebSocket 실시간 전송
                 await _broadcast_progress(job_id, _running_jobs[job_id])
 
