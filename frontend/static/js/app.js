@@ -3837,9 +3837,9 @@ async function saHandleFile(file) {
     const amt = summary.total_amount || 0;
     document.getElementById("sa-parse-summary").innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:12px">
-        <div class="sa-kpi-card"><div class="kpi-label">거래 건수</div><div class="kpi-val">${(summary.total_rows||0).toLocaleString()}</div></div>
-        <div class="sa-kpi-card"><div class="kpi-label">거래처</div><div class="kpi-val" style="font-size:${custNames.length===1&&custNames[0].length>6?'14':'16'}px">${_esc(custDisplay)}</div></div>
-        <div class="sa-kpi-card"><div class="kpi-label">품목</div><div class="kpi-val">${(summary.total_products||0).toLocaleString()}</div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">거래 건수</div><div class="kpi-val" style="font-size:15px">${(summary.total_rows||0).toLocaleString()}</div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">거래처</div><div class="kpi-val" style="font-size:15px">${_esc(custDisplay)}</div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">품목</div><div class="kpi-val" style="font-size:15px">${(summary.total_products||0).toLocaleString()}</div></div>
         <div class="sa-kpi-card"><div class="kpi-label">총 매출액</div><div class="kpi-val" style="font-size:15px">${amt.toLocaleString()}<span style="font-size:11px">원</span></div></div>
       </div>
       <div style="font-size:13px;color:#666">
