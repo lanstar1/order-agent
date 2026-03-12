@@ -263,70 +263,82 @@ def get_connection():
 
 def _sa_init_tables(conn, cur_or_conn):
     """판매에이전트 테이블 초기화 (스키마 마이그레이션 포함)"""
-    try:
-        # 테이블이 존재하는지 확인
-        if USE_PG:
-            row = cur_or_conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_name='sa_uploads'"
-            ).fetchone()
-            table_exists = row is not None
-        else:
-            row = cur_or_conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sa_uploads'"
-            ).fetchone()
-            table_exists = row is not None
 
-        if table_exists:
-            # 컬럼 존재 여부 확인, 없으면 ALTER ADD
-            for col_name, col_def in [
-                ("analysis_mode", "TEXT DEFAULT 'multi'"),
-                ("target_customer", "TEXT DEFAULT ''"),
-                ("uploaded_by", "TEXT DEFAULT ''"),
-            ]:
-                if not column_exists(conn, 'sa_uploads', col_name):
-                    try:
-                        cur_or_conn.execute(f"ALTER TABLE sa_uploads ADD COLUMN {col_name} {col_def}")
-                        logger.info(f"[DB] sa_uploads.{col_name} 컬럼 추가")
-                    except Exception:
-                        pass
-            conn.commit()
-            return  # 기존 테이블 유지, 마이그레이션 완료
-    except Exception as e:
-        logger.warning(f"[DB] SA 테이블 검사 실패 (새로 생성): {e}")
+    def _table_exists(table_name):
+        try:
+            if USE_PG:
+                row = cur_or_conn.execute(
+                    f"SELECT 1 FROM information_schema.tables WHERE table_name='{table_name}'"
+                ).fetchone()
+            else:
+                row = cur_or_conn.execute(
+                    f"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{table_name}'"
+                ).fetchone()
+            return row is not None
+        except Exception:
+            return False
 
-    # 테이블 새로 생성
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS sa_uploads (
-        file_id         TEXT PRIMARY KEY,
-        file_name       TEXT NOT NULL,
-        file_path       TEXT NOT NULL,
-        file_size       INTEGER DEFAULT 0,
-        total_rows      INTEGER DEFAULT 0,
-        total_customers INTEGER DEFAULT 0,
-        total_products  INTEGER DEFAULT 0,
-        total_amount    INTEGER DEFAULT 0,
-        period_start    TEXT DEFAULT '',
-        period_end      TEXT DEFAULT '',
-        analysis_mode   TEXT DEFAULT 'multi',
-        target_customer TEXT DEFAULT '',
-        uploaded_by     TEXT DEFAULT '',
-        created_at      TEXT DEFAULT (datetime('now','localtime'))
-    )""")
+    # ── sa_uploads 테이블 ──
+    if _table_exists('sa_uploads'):
+        for col_name, col_def in [
+            ("analysis_mode", "TEXT DEFAULT 'multi'"),
+            ("target_customer", "TEXT DEFAULT ''"),
+            ("uploaded_by", "TEXT DEFAULT ''"),
+        ]:
+            if not column_exists(conn, 'sa_uploads', col_name):
+                try:
+                    cur_or_conn.execute(f"ALTER TABLE sa_uploads ADD COLUMN {col_name} {col_def}")
+                    logger.info(f"[DB] sa_uploads.{col_name} 컬럼 추가")
+                except Exception:
+                    pass
+    else:
+        cur_or_conn.execute("""
+        CREATE TABLE IF NOT EXISTS sa_uploads (
+            file_id         TEXT PRIMARY KEY,
+            file_name       TEXT NOT NULL,
+            file_path       TEXT NOT NULL,
+            file_size       INTEGER DEFAULT 0,
+            total_rows      INTEGER DEFAULT 0,
+            total_customers INTEGER DEFAULT 0,
+            total_products  INTEGER DEFAULT 0,
+            total_amount    INTEGER DEFAULT 0,
+            period_start    TEXT DEFAULT '',
+            period_end      TEXT DEFAULT '',
+            analysis_mode   TEXT DEFAULT 'multi',
+            target_customer TEXT DEFAULT '',
+            uploaded_by     TEXT DEFAULT '',
+            created_at      TEXT DEFAULT (datetime('now','localtime'))
+        )""")
 
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS sa_jobs (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        job_id          TEXT UNIQUE NOT NULL,
-        file_id         TEXT NOT NULL,
-        status          TEXT DEFAULT 'pending',
-        analysis_mode   TEXT DEFAULT 'multi',
-        target_customer TEXT DEFAULT '',
-        result_json     TEXT,
-        elapsed_seconds REAL DEFAULT 0,
-        created_by      TEXT DEFAULT '',
-        created_at      TEXT DEFAULT (datetime('now','localtime')),
-        updated_at      TEXT DEFAULT (datetime('now','localtime'))
-    )""")
+    # ── sa_jobs 테이블 (독립적으로 확인) ──
+    if _table_exists('sa_jobs'):
+        for col_name, col_def in [
+            ("analysis_mode", "TEXT DEFAULT 'multi'"),
+            ("target_customer", "TEXT DEFAULT ''"),
+            ("created_by", "TEXT DEFAULT ''"),
+        ]:
+            if not column_exists(conn, 'sa_jobs', col_name):
+                try:
+                    cur_or_conn.execute(f"ALTER TABLE sa_jobs ADD COLUMN {col_name} {col_def}")
+                    logger.info(f"[DB] sa_jobs.{col_name} 컬럼 추가")
+                except Exception:
+                    pass
+    else:
+        cur_or_conn.execute("""
+        CREATE TABLE IF NOT EXISTS sa_jobs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id          TEXT UNIQUE NOT NULL,
+            file_id         TEXT NOT NULL,
+            status          TEXT DEFAULT 'pending',
+            analysis_mode   TEXT DEFAULT 'multi',
+            target_customer TEXT DEFAULT '',
+            result_json     TEXT,
+            elapsed_seconds REAL DEFAULT 0,
+            created_by      TEXT DEFAULT '',
+            created_at      TEXT DEFAULT (datetime('now','localtime')),
+            updated_at      TEXT DEFAULT (datetime('now','localtime'))
+        )""")
+
     conn.commit()
 
 

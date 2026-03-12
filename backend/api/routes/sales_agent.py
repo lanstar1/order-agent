@@ -123,53 +123,64 @@ async def start_analysis(
     target_customer_code: Optional[str] = Form(None),
     user=Depends(get_current_user),
 ):
-    conn = get_connection()
     try:
-        row = conn.execute("SELECT file_path FROM sa_uploads WHERE file_id = ?", (file_id,)).fetchone()
-    finally:
-        conn.close()
-    if not row:
-        raise HTTPException(404, "업로드된 파일을 찾을 수 없습니다")
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT file_path FROM sa_uploads WHERE file_id = ?", (file_id,)).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            raise HTTPException(404, "업로드된 파일을 찾을 수 없습니다")
 
-    from services.sales_agent.xlsx_parser import parse_xlsx
-    parsed = parse_xlsx(row[0], mode=mode, target_customer_code=target_customer_code)
+        file_path = row[0] if not hasattr(row, 'get') else row.get('file_path', row[0])
+        logger.info(f"[SA Analyze] file_id={file_id}, file_path={file_path}, mode={mode}")
 
-    job_id = f"SA-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        from services.sales_agent.xlsx_parser import parse_xlsx
+        parsed = parse_xlsx(file_path, mode=mode, target_customer_code=target_customer_code)
+        logger.info(f"[SA Analyze] 파싱 완료: rows={parsed.total_rows}")
 
-    conn = get_connection()
-    try:
-        conn.execute("""
-            INSERT INTO sa_jobs (job_id, file_id, status, analysis_mode, target_customer, created_by, created_at, updated_at)
-            VALUES (?, ?, 'running', ?, ?, ?, ?, ?)
-        """, (job_id, file_id, mode, parsed.target_customer_name or "",
-              user.get("emp_cd", ""), now_kst(), now_kst()))
-        conn.commit()
-    finally:
-        conn.close()
+        job_id = f"SA-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
 
-    # 에이전트 수 결정
-    is_single = mode == "single"
-    agent_keys = ["product", "strategy", "future", "partnership", "visualization"]
-    if not is_single:
-        agent_keys = ["customer"] + agent_keys
+        conn = get_connection()
+        try:
+            conn.execute("""
+                INSERT INTO sa_jobs (job_id, file_id, status, analysis_mode, target_customer, created_by, created_at, updated_at)
+                VALUES (?, ?, 'running', ?, ?, ?, ?, ?)
+            """, (job_id, file_id, mode, parsed.target_customer_name or "",
+                  user.get("emp_cd", "") if isinstance(user, dict) else "", now_kst(), now_kst()))
+            conn.commit()
+            logger.info(f"[SA Analyze] Job 생성 완료: {job_id}")
+        finally:
+            conn.close()
 
-    _running_jobs[job_id] = {
-        "status": "running",
-        "agents": {k: "pending" for k in agent_keys},
-        "progress": 0,
-        "logs": [],
-        "mode": mode,
-    }
+        # 에이전트 수 결정
+        is_single = mode == "single"
+        agent_keys = ["product", "strategy", "future", "partnership", "visualization"]
+        if not is_single:
+            agent_keys = ["customer"] + agent_keys
 
-    asyncio.create_task(_run_analysis_task(job_id, file_id, parsed, user))
+        _running_jobs[job_id] = {
+            "status": "running",
+            "agents": {k: "pending" for k in agent_keys},
+            "progress": 0,
+            "logs": [],
+            "mode": mode,
+        }
 
-    return {
-        "job_id": job_id,
-        "status": "running",
-        "mode": mode,
-        "agent_count": len(agent_keys),
-        "message": f"{len(agent_keys)}개 AI 에이전트 분석이 시작되었습니다.",
-    }
+        asyncio.create_task(_run_analysis_task(job_id, file_id, parsed, user))
+
+        return {
+            "job_id": job_id,
+            "status": "running",
+            "mode": mode,
+            "agent_count": len(agent_keys),
+            "message": f"{len(agent_keys)}개 AI 에이전트 분석이 시작되었습니다.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SA Analyze] 오류: {e}", exc_info=True)
+        raise HTTPException(500, f"분석 시작 오류: {str(e)}")
 
 
 async def _run_analysis_task(job_id: str, file_id: str, parsed, user: dict):
