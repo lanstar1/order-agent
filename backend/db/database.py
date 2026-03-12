@@ -493,6 +493,16 @@ def init_db():
     )""")
 
 
+    # ── 판매에이전트: 테이블 마이그레이션 (스키마 불일치 시 재생성) ──
+    try:
+        # analysis_mode 컬럼이 없으면 기존 테이블 삭제 후 재생성
+        if not column_exists(conn, 'sa_uploads', 'analysis_mode'):
+            cur_or_conn.execute("DROP TABLE IF EXISTS sa_uploads")
+            cur_or_conn.execute("DROP TABLE IF EXISTS sa_jobs")
+            logger.info("[DB] SA 테이블 스키마 불일치 → 재생성")
+    except Exception:
+        pass
+
     # ── 판매에이전트: 업로드 파일 ──
     cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS sa_uploads (
