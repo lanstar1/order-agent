@@ -4,7 +4,43 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260312a">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260312b">
+  <style>
+    /* CS/RMA 파이프라인 탭 */
+    .cs-pipe-tab{padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:#6b7280;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+    .cs-pipe-tab:hover{color:#374151;background:#f9fafb}
+    .cs-pipe-tab.active{color:#2563eb;border-bottom-color:#2563eb;font-weight:600}
+    .cs-pipe-tab .cnt{display:inline-block;min-width:18px;height:18px;line-height:18px;text-align:center;background:#e5e7eb;color:#374151;border-radius:9px;font-size:11px;margin-left:4px;font-weight:600}
+    .cs-pipe-tab.active .cnt{background:#dbeafe;color:#2563eb}
+    /* CS 티켓 카드 */
+    .cs-ticket-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:all .15s}
+    .cs-ticket-card:hover{border-color:#93c5fd;box-shadow:0 2px 8px rgba(37,99,235,0.08)}
+    .cs-status-badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600}
+    .cs-status-접수완료{background:#fef3c7;color:#92400e}
+    .cs-status-물류수령{background:#dbeafe;color:#1e40af}
+    .cs-status-기술인계{background:#e0e7ff;color:#3730a3}
+    .cs-status-테스트완료{background:#d1fae5;color:#065f46}
+    .cs-status-처리종결{background:#f3f4f6;color:#374151}
+    /* CS 모달 내부 */
+    .cs-modal-header{padding:20px 24px;border-bottom:1px solid #e5e7eb}
+    .cs-modal-body{padding:20px 24px}
+    .cs-field-label{font-size:12px;color:#6b7280;margin-bottom:4px;font-weight:500}
+    .cs-field-value{font-size:14px;color:#111827;margin-bottom:12px}
+    .cs-symptom-box{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;font-size:14px;color:#991b1b;line-height:1.6;white-space:pre-wrap}
+    .cs-timeline{position:relative;padding-left:24px}
+    .cs-timeline::before{content:'';position:absolute;left:8px;top:4px;bottom:4px;width:2px;background:#e5e7eb}
+    .cs-timeline-item{position:relative;margin-bottom:12px}
+    .cs-timeline-dot{position:absolute;left:-20px;top:4px;width:12px;height:12px;border-radius:50%;border:2px solid #2563eb;background:#fff}
+    .cs-timeline-dot.done{background:#2563eb}
+    .cs-timeline-time{font-size:11px;color:#9ca3af}
+    .cs-test-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}
+    .cs-test-정상{background:#d1fae5;color:#065f46}
+    .cs-test-의심{background:#fef3c7;color:#92400e}
+    .cs-test-불량{background:#fee2e2;color:#991b1b}
+    .cs-stat-card{flex:1;min-width:100px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;text-align:center}
+    .cs-stat-card .num{font-size:24px;font-weight:700;color:#111827}
+    .cs-stat-card .label{font-size:11px;color:#6b7280;margin-top:2px}
+  </style>
 </head>
 <body>
 
@@ -60,6 +96,11 @@
       <div class="nav-item" data-page="shipping" draggable="true">
         <span class="icon">🚚</span>
         <span>택배조회</span>
+        <span class="drag-handle">⠿</span>
+      </div>
+      <div class="nav-item" data-page="cs_rma" draggable="true">
+        <span class="icon">🔧</span>
+        <span>CS/RMA</span>
         <span class="drag-handle">⠿</span>
       </div>
       <div class="nav-item" data-page="ai_dashboard" draggable="true">
@@ -701,6 +742,50 @@ C규격품 200개
           </div>
           <div id="ship-reg-result" style="margin-top:8px"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: CS/RMA
+         ────────────────────────────── -->
+    <div class="page" id="page-cs_rma">
+      <!-- 헤더: 통계 카드 -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">🔧 CS / RMA 관리</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="csShowCreateForm()" style="font-size:13px">+ 새 접수</button>
+          <div style="position:relative">
+            <input type="text" id="cs-search-input" placeholder="고객명 / 연락처 / 접수번호"
+                   style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:200px"
+                   onkeydown="if(event.key==='Enter')csSearch()">
+            <button onclick="csSearch()" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:14px">🔍</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 통계 배지 -->
+      <div id="cs-stats-bar" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"></div>
+
+      <!-- 파이프라인 탭 -->
+      <div style="display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid #e5e7eb;overflow-x:auto">
+        <button class="cs-pipe-tab active" data-status="" onclick="csSwitchTab(this,'')">전체</button>
+        <button class="cs-pipe-tab" data-status="접수완료" onclick="csSwitchTab(this,'접수완료')">📋 접수완료</button>
+        <button class="cs-pipe-tab" data-status="물류수령" onclick="csSwitchTab(this,'물류수령')">📦 물류수령</button>
+        <button class="cs-pipe-tab" data-status="기술인계" onclick="csSwitchTab(this,'기술인계')">🔬 기술인계</button>
+        <button class="cs-pipe-tab" data-status="테스트완료" onclick="csSwitchTab(this,'테스트완료')">✅ 테스트완료</button>
+        <button class="cs-pipe-tab" data-status="처리종결" onclick="csSwitchTab(this,'처리종결')">🏁 처리종결</button>
+      </div>
+
+      <!-- 티켓 리스트 -->
+      <div id="cs-ticket-list"></div>
+
+      <!-- 페이지네이션 -->
+      <div id="cs-pagination" style="display:flex;justify-content:center;gap:8px;margin-top:12px"></div>
+    </div>
+
+    <!-- CS 모달: 새 접수 / 상세 보기 -->
+    <div id="cs-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto;padding:20px" onclick="if(event.target===this)csCloseModal()">
+      <div id="cs-modal-content" style="max-width:720px;margin:40px auto;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.15);overflow:hidden" onclick="event.stopPropagation()">
       </div>
     </div>
 
@@ -2193,7 +2278,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </div>
 </div>
 
-<script src="/static/js/api.js?v=20260312a"></script>
-<script src="/static/js/app.js?v=20260312a"></script>
+<script src="/static/js/api.js?v=20260312b"></script>
+<script src="/static/js/app.js?v=20260312b"></script>
 </body>
 </html>

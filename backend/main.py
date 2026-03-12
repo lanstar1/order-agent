@@ -24,6 +24,7 @@ from api.routes.training import router as training_router
 from api.routes.orderlist import router as orderlist_router
 from api.routes.activity import router as activity_router
 from api.routes.shipping import router as shipping_router
+from api.routes.cs import router as cs_router
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -115,6 +116,9 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/shipping/scheduler/run-now"): "택배 동기화 즉시 실행",
     ("GET", "/api/shipping/search"): "택배 검색",
     ("GET", "/api/shipping/daily"): "택배 일별 조회",
+    ("POST", "/api/cs/tickets"): "CS 불량 접수",
+    ("PUT", "/api/cs/tickets"): "CS 상태 변경",
+    ("POST", "/api/cs/tickets"): "CS 테스트/파일",
 }
 
 @app.middleware("http")
@@ -205,6 +209,7 @@ app.include_router(training_router)
 app.include_router(orderlist_router)
 app.include_router(activity_router)
 app.include_router(shipping_router)
+app.include_router(cs_router)
 
 # AI 대시보드 라우터
 try:
@@ -281,7 +286,7 @@ async def startup():
         from services.scheduler_service import start_scheduler, check_and_run_on_startup
         start_scheduler()
         asyncio.create_task(check_and_run_on_startup())
-        logger.info("SmartLogen 자동 동기화 스케줄러 등록 완료 (매일 09:00 KST)")
+        logger.info("SmartLogen 자동 동기화 스케줄러 등록 완료 (1시간 간격)")
     except Exception as e:
         logger.warning(f"택배 스케줄러 시작 실패: {e}")
 

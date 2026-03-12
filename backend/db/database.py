@@ -52,6 +52,7 @@ def _sql_to_pg(sql):
                 'bulk_training_extractions', 'ai_metrics',
                 'activity_log', 'orderlist_items', 'orderlist_sync_log',
                 'shipments',
+                'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -424,6 +425,72 @@ def init_db():
         UNIQUE(slip_no, warehouse)
     )""")
 
+    # ── CS/RMA 티켓 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS cs_tickets (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id       TEXT UNIQUE NOT NULL,
+        customer_name   TEXT NOT NULL,
+        contact_info    TEXT NOT NULL,
+        product_name    TEXT NOT NULL,
+        serial_number   TEXT DEFAULT '',
+        defect_symptom  TEXT NOT NULL,
+        courier         TEXT DEFAULT '',
+        tracking_no     TEXT DEFAULT '',
+        current_status  TEXT DEFAULT '접수완료',
+        final_action    TEXT DEFAULT '',
+        created_by      TEXT DEFAULT '',
+        received_by     TEXT DEFAULT '',
+        handover_by     TEXT DEFAULT '',
+        tested_by       TEXT DEFAULT '',
+        resolved_by     TEXT DEFAULT '',
+        received_at     TEXT DEFAULT '',
+        handover_at     TEXT DEFAULT '',
+        tested_at       TEXT DEFAULT '',
+        resolved_at     TEXT DEFAULT '',
+        created_at      TEXT DEFAULT (datetime('now','localtime')),
+        updated_at      TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+    # ── CS 테스트 결과 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS cs_test_results (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id       TEXT NOT NULL,
+        test_status     TEXT NOT NULL,
+        test_comment    TEXT DEFAULT '',
+        tested_by       TEXT DEFAULT '',
+        created_at      TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (ticket_id) REFERENCES cs_tickets(ticket_id)
+    )""")
+
+    # ── CS 첨부파일 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS cs_files (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id       TEXT NOT NULL,
+        file_name       TEXT NOT NULL,
+        file_url        TEXT NOT NULL,
+        file_type       TEXT DEFAULT 'image',
+        file_size       INTEGER DEFAULT 0,
+        uploaded_by     TEXT DEFAULT '',
+        created_at      TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (ticket_id) REFERENCES cs_tickets(ticket_id)
+    )""")
+
+    # ── CS 이력 로그 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS cs_action_logs (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id       TEXT NOT NULL,
+        action_type     TEXT NOT NULL,
+        actor_cd        TEXT DEFAULT '',
+        actor_name      TEXT DEFAULT '',
+        detail          TEXT DEFAULT '',
+        created_at      TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (ticket_id) REFERENCES cs_tickets(ticket_id)
+    )""")
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -439,6 +506,10 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_shipments_take_dt ON shipments(take_dt);
         CREATE INDEX IF NOT EXISTS idx_shipments_slip_no ON shipments(slip_no);
         CREATE INDEX IF NOT EXISTS idx_shipments_warehouse ON shipments(warehouse);
+        CREATE INDEX IF NOT EXISTS idx_cs_tickets_status ON cs_tickets(current_status);
+        CREATE INDEX IF NOT EXISTS idx_cs_tickets_created ON cs_tickets(created_at);
+        CREATE INDEX IF NOT EXISTS idx_cs_tickets_customer ON cs_tickets(customer_name);
+        CREATE INDEX IF NOT EXISTS idx_cs_action_logs_ticket ON cs_action_logs(ticket_id);
     """)
 
     conn.commit()
