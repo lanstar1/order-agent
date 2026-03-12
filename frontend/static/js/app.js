@@ -3821,27 +3821,6 @@ async function saUploadFile(file) {
     document.getElementById("sa-summary-amount").textContent = (res.total_amount || 0).toLocaleString('ko-KR');
     document.getElementById("sa-upload-summary").style.display = "block";
 
-    // Mode B인 경우 거래처 드롭다운 로드
-    if (saState.mode === 'single') {
-      try {
-        const customers = await api.saCustomers(saState.fileId);
-        saState.customers = customers;
-        const dropdown = document.getElementById("sa-customer-dropdown");
-        dropdown.innerHTML = '<option value="">선택...</option>';
-        customers.forEach(c => {
-          const opt = document.createElement("option");
-          opt.value = c.code || c.name;
-          opt.textContent = `${c.name} (${c.code})`;
-          dropdown.appendChild(opt);
-        });
-        document.getElementById("sa-customer-select").style.display = "block";
-      } catch(e) {
-        console.error("거래처 목록 로드 실패:", e);
-      }
-    } else {
-      document.getElementById("sa-customer-select").style.display = "none";
-    }
-
     document.getElementById("sa-start-button").style.display = "block";
     toast("파일 업로드 완료", "success");
   } catch(e) {
@@ -3859,7 +3838,6 @@ function saSetMode(mode) {
 
   // 기존 선택 초기화
   document.getElementById("sa-upload-summary").style.display = "none";
-  document.getElementById("sa-customer-select").style.display = "none";
   document.getElementById("sa-start-button").style.display = "none";
   document.getElementById("sa-file-input").value = "";
   saState.fileId = null;
@@ -3890,19 +3868,9 @@ async function saStartAnalysis() {
     return;
   }
 
-  const targetCustomer = saState.mode === 'single'
-    ? document.getElementById("sa-customer-dropdown").value
-    : null;
-
-  if (saState.mode === 'single' && !targetCustomer) {
-    alert("거래처를 선택해주세요.");
-    return;
-  }
-
   const formData = new FormData();
   formData.append("file_id", saState.fileId);
   formData.append("mode", saState.mode);
-  if (targetCustomer) formData.append("target_customer_code", targetCustomer);
 
   try {
     showProcessing("분석 시작 중...");
