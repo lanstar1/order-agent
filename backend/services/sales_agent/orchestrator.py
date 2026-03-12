@@ -133,12 +133,13 @@ def _build_data_summary(data: SalesData) -> str:
     for i, (cn, amt) in enumerate(sorted(cust_amt.items(), key=lambda x: -x[1])[:10], 1):
         lines.append(f"  {i}. {cn}: {amt:,}원")
 
-    lines.append("\n품목별 매출 TOP 10:")
+    lines.append("\n품목별 매출 TOP 10 (모델명 기준, 부자재 제외):")
+    from .engines import _get_model_name, _is_excluded
     prod_amt = defaultdict(int)
     for tx in data.transactions[:5000]:
-        pn = tx.get("product_name", "")
+        pn = _get_model_name(tx)
         amt = int(float(str(tx.get("total_amount", tx.get("supply_price", 0)) or 0).replace(",", "")))
-        if pn:
+        if pn and not _is_excluded(pn):
             prod_amt[pn] += amt
     for i, (pn, amt) in enumerate(sorted(prod_amt.items(), key=lambda x: -x[1])[:10], 1):
         lines.append(f"  {i}. {pn}: {amt:,}원")

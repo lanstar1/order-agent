@@ -15,6 +15,24 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# 분석 제외 키워드 (수량 많지만 금액 적은 부자재/소모품)
+EXCLUDE_KEYWORDS = [
+    "커플러", "젠더", "키스톤잭", "먼지덮개", "부트", "커넥터",
+    "콘넥터", "먼지", "boot", "아울렛",
+]
+
+def _get_model_name(tx: dict) -> str:
+    """E열 모델명 우선, 없으면 품명 및 규격(D열) 사용"""
+    mn = (tx.get("model_name") or "").strip()
+    if mn:
+        return mn
+    return (tx.get("product_name") or "").strip()
+
+def _is_excluded(name: str) -> bool:
+    """제외 키워드 포함 여부"""
+    lower = name.lower()
+    return any(kw in lower for kw in EXCLUDE_KEYWORDS)
+
 
 def calculate_rfm(txs: list[dict]) -> dict:
     """RFM 분석 (Mode A: 다중 거래처 비교)"""
@@ -94,19 +112,18 @@ def _rfm_segment(r, f, m) -> str:
 
 
 def calculate_abc(txs: list[dict]) -> dict:
-    """ABC 분류 (품목별 매출 기여도)"""
+    """ABC 분류 (모델명 기반, 제외 키워드 필터링)"""
     product_sales = defaultdict(lambda: {"amount": 0, "qty": 0, "count": 0, "name": ""})
     for tx in txs:
-        pc = tx.get("product_code", "") or tx.get("product_name", "")
-        if not pc:
+        pn = _get_model_name(tx)
+        if not pn or _is_excluded(pn):
             continue
         amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
         qty = _safe_num(tx.get("quantity", 0))
-        product_sales[pc]["amount"] += amt
-        product_sales[pc]["qty"] += qty
-        product_sales[pc]["count"] += 1
-        if not product_sales[pc]["name"]:
-            product_sales[pc]["name"] = tx.get("product_name", pc)
+        product_sales[pn]["amount"] += amt
+        product_sales[pn]["qty"] += qty
+        product_sales[pn]["count"] += 1
+        product_sales[pn]["name"] = pn
 
     sorted_products = sorted(product_sales.items(), key=lambda x: x[1]["amount"], reverse=True)
     total = sum(v["amount"] for _, v in sorted_products)
@@ -292,18 +309,18 @@ def calculate_trend_matching(txs: list[dict], customers: list[dict]) -> dict:
 def calculate_product_trends(txs: list[dict]) -> dict:
     """
     상위 품목의 주간/월간/분기별 판매 추이 분석 + 특이사항 감지
-    - E열 모델명(product_name) 기반 집계
+    - E열 모델명 우선 사용, 제외 키워드 필터링
     - 수량 TOP 10 + 금액 TOP 10
     - 주간/월간/분기별 추이 + 이상치(평균 대비 ±50%) 감지
     """
     if not txs:
         return {"top10_by_qty": [], "top10_by_amount": [], "trends": {}, "anomalies": []}
 
-    # 모델명 기반 집계
+    # 모델명 기반 집계 (제외 키워드 필터링)
     product_totals = defaultdict(lambda: {"qty": 0, "amount": 0, "name": ""})
     for tx in txs:
-        pn = tx.get("product_name", "")
-        if not pn:
+        pn = _get_model_name(tx)
+        if not pn or _is_excluded(pn):
             continue
         qty = _safe_num(tx.get("quantity", 0))
         amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
@@ -329,7 +346,7 @@ def calculate_product_trends(txs: list[dict]) -> dict:
     quarterly = defaultdict(lambda: defaultdict(lambda: {"qty": 0, "amount": 0}))
 
     for tx in txs:
-        pn = tx.get("product_name", "")
+        pn = _get_model_name(tx)
         d = tx.get("transaction_date", "")
         if not pn or not d or pn not in top_products:
             continue

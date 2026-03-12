@@ -86,10 +86,11 @@
     .sa-result-title{font-size:14px;font-weight:600;color:#111827;margin-bottom:12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;background:#f9fafb;padding:12px;border-radius:8px}
     .sa-result-title:hover{background:#f3f4f6}
     .sa-result-content{padding:12px;background:#fafafa;border-radius:8px;border:1px solid #f0f0f0}
-    .sa-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px}
-    .sa-kpi-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;text-align:center}
-    .sa-kpi-card .label{font-size:11px;color:#6b7280;margin-bottom:4px}
-    .sa-kpi-card .value{font-size:20px;font-weight:700;color:#2563eb}
+    .sa-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+    .sa-kpi-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 8px;text-align:center;overflow:hidden;min-width:0}
+    .sa-kpi-card .label{font-size:11px;color:#6b7280;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .sa-kpi-card .value{font-size:16px;font-weight:700;color:#2563eb;word-break:break-all;line-height:1.3}
+    @media(max-width:768px){.sa-kpi-grid{grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}.sa-kpi-card .value{font-size:14px}}
     .sa-recommend-list{list-style:none;padding:0;margin:0}
     .sa-recommend-list li{padding:8px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:6px;font-size:13px;color:#374151;line-height:1.5}
     /* SA 테이블 */
@@ -99,6 +100,7 @@
     .sa-table tr:hover{background:#f9fafb}
     /* SA 대시보드 */
     .sa-dashboard-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+    @media(max-width:640px){.sa-dashboard-grid{grid-template-columns:1fr}}
     .sa-chart-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px}
     .sa-chart-title{font-size:14px;font-weight:600;color:#111827;margin-bottom:12px}
     .sa-bar-chart{display:flex;align-items:flex-end;gap:8px;height:120px}
@@ -2480,6 +2482,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260312f"></script>
-<script src="/static/js/app.js?v=20260312m"></script>
+<script src="/static/js/app.js?v=20260312n"></script>
 </body>
 </html>
