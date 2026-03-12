@@ -3831,12 +3831,28 @@ async function saHandleFile(file) {
 
     // 파싱 결과 표시
     const summary = res.summary;
+    // 거래처명 추출 (customers_preview에서 이름 목록)
+    const custNames = (res.customers_preview || []).map(c => c.customer_name || "").filter(Boolean);
+    const custDisplay = custNames.length > 0 ? custNames.join(", ") : `${summary.total_customers||0}개`;
+    // 매출액 축약 (억/만 단위)
+    const amt = summary.total_amount || 0;
+    let amtDisplay;
+    if (amt >= 100000000) {
+      amtDisplay = `${(amt / 100000000).toFixed(1).replace(/\.0$/, "")}억`;
+      const remainder = amt % 100000000;
+      if (remainder >= 10000) amtDisplay += ` ${Math.floor(remainder / 10000).toLocaleString()}만`;
+    } else if (amt >= 10000) {
+      amtDisplay = `${Math.floor(amt / 10000).toLocaleString()}만`;
+    } else {
+      amtDisplay = amt.toLocaleString();
+    }
     document.getElementById("sa-parse-summary").innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:12px">
         <div class="sa-kpi-card"><div class="kpi-label">거래 건수</div><div class="kpi-val">${(summary.total_rows||0).toLocaleString()}</div></div>
-        <div class="sa-kpi-card"><div class="kpi-label">거래처</div><div class="kpi-val">${summary.total_customers||0}</div></div>
-        <div class="sa-kpi-card"><div class="kpi-label">품목</div><div class="kpi-val">${summary.total_products||0}</div></div>
-        <div class="sa-kpi-card"><div class="kpi-label">총 매출액</div><div class="kpi-val">${(summary.total_amount||0).toLocaleString()}<span style="font-size:12px">원</span></div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">거래처</div><div class="kpi-val" style="font-size:${custNames.length===1&&custNames[0].length>6?'14':'16'}px">${_esc(custDisplay)}</div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">품목</div><div class="kpi-val">${(summary.total_products||0).toLocaleString()}</div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">총 매출액</div><div class="kpi-val" style="font-size:16px;white-space:nowrap">${amtDisplay}<span style="font-size:11px">원</span></div>
+          <div style="font-size:10px;color:#888">${amt.toLocaleString()}원</div></div>
       </div>
       <div style="font-size:13px;color:#666">
         📅 기간: ${res.period_start || "?"} ~ ${res.period_end || "?"}<br>
