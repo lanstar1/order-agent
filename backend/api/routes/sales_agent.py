@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from api.deps import get_current_user
+from security import get_current_user
 from db.database import get_connection
 
 logger = logging.getLogger(__name__)
