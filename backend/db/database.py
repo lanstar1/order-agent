@@ -53,7 +53,6 @@ def _sql_to_pg(sql):
                 'activity_log', 'orderlist_items', 'orderlist_sync_log',
                 'shipments',
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
-                'sa_uploads', 'sa_jobs',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -492,38 +491,6 @@ def init_db():
         FOREIGN KEY (ticket_id) REFERENCES cs_tickets(ticket_id)
     )""")
 
-    # ── 판매 에이전트: 업로드 ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS sa_uploads (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        file_id         TEXT UNIQUE NOT NULL,
-        file_name       TEXT NOT NULL,
-        file_path       TEXT NOT NULL,
-        file_size       INTEGER DEFAULT 0,
-        total_rows      INTEGER DEFAULT 0,
-        total_customers INTEGER DEFAULT 0,
-        total_products  INTEGER DEFAULT 0,
-        total_amount    INTEGER DEFAULT 0,
-        period_start    TEXT DEFAULT '',
-        period_end      TEXT DEFAULT '',
-        uploaded_by     TEXT DEFAULT '',
-        created_at      TEXT DEFAULT (datetime('now','localtime'))
-    )""")
-
-    # ── 판매 에이전트: 분석 작업 ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS sa_jobs (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        job_id          TEXT UNIQUE NOT NULL,
-        file_id         TEXT NOT NULL,
-        status          TEXT DEFAULT 'pending',
-        result_json     TEXT DEFAULT '',
-        elapsed_seconds REAL DEFAULT 0,
-        created_by      TEXT DEFAULT '',
-        created_at      TEXT DEFAULT (datetime('now','localtime')),
-        updated_at      TEXT DEFAULT (datetime('now','localtime')),
-        FOREIGN KEY (file_id) REFERENCES sa_uploads(file_id)
-    )""")
 
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
@@ -544,8 +511,6 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_created ON cs_tickets(created_at);
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_customer ON cs_tickets(customer_name);
         CREATE INDEX IF NOT EXISTS idx_cs_action_logs_ticket ON cs_action_logs(ticket_id);
-        CREATE INDEX IF NOT EXISTS idx_sa_jobs_file_id ON sa_jobs(file_id);
-        CREATE INDEX IF NOT EXISTS idx_sa_jobs_created ON sa_jobs(created_at);
     """)
 
     conn.commit()
