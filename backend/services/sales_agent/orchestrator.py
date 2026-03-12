@@ -12,6 +12,7 @@ from .schemas import SalesData, AnalysisResult, AnalysisMode
 from .engines import (
     calculate_rfm, calculate_abc, calculate_forecast,
     calculate_safety_stock, calculate_clv_acv, calculate_trend_matching,
+    calculate_product_trends,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ async def run_analysis(
         engine_results["safety_stock"] = calculate_safety_stock(txs)
         engine_results["clv"] = calculate_clv_acv(txs)
         engine_results["trends"] = calculate_trend_matching(txs, sales_data.customers)
+        engine_results["product_trends"] = calculate_product_trends(txs)
         logger.info("[SalesAgent] Python 엔진 분석 완료")
     except Exception as e:
         logger.error(f"[SalesAgent] Python 엔진 오류: {e}")
@@ -174,6 +176,21 @@ def _build_engine_context(engine_results: dict) -> str:
         lines.append("\n[트렌드 매칭]")
         for t in trends["trends"]:
             lines.append(f"  {t['trend_name']}: score={t['score']}, 기회={t['opportunity_level']}")
+
+    pt = engine_results.get("product_trends")
+    if pt:
+        lines.append("\n[품목 판매 TOP 10 (수량 기준)]")
+        for i, p in enumerate(pt.get("top10_by_qty", [])[:10], 1):
+            lines.append(f"  {i}. {p['product_name']}: {p['quantity']:,}개, {p['amount']:,}원")
+        lines.append("\n[품목 판매 TOP 10 (금액 기준)]")
+        for i, p in enumerate(pt.get("top10_by_amount", [])[:10], 1):
+            lines.append(f"  {i}. {p['product_name']}: {p['amount']:,}원, {p['quantity']:,}개")
+        anomalies = pt.get("anomalies", [])
+        if anomalies:
+            lines.append(f"\n[판매 특이사항 ({len(anomalies)}건)]")
+            for a in anomalies[:10]:
+                lines.append(f"  ⚠ {a['product_name']} ({a['period']}, {a['period_type']}): "
+                             f"{a['metric']} {a['type']} ({a['change_pct']:+.1f}%, 평균 {a['average']:,} → 실제 {a['value']:,})")
 
     return "\n".join(lines)
 

@@ -289,6 +289,139 @@ def calculate_trend_matching(txs: list[dict], customers: list[dict]) -> dict:
     return {"trends": sorted(results, key=lambda x: x["score"], reverse=True)}
 
 
+def calculate_product_trends(txs: list[dict]) -> dict:
+    """
+    상위 품목의 주간/월간/분기별 판매 추이 분석 + 특이사항 감지
+    - E열 모델명(product_name) 기반 집계
+    - 수량 TOP 10 + 금액 TOP 10
+    - 주간/월간/분기별 추이 + 이상치(평균 대비 ±50%) 감지
+    """
+    if not txs:
+        return {"top10_by_qty": [], "top10_by_amount": [], "trends": {}, "anomalies": []}
+
+    # 모델명 기반 집계
+    product_totals = defaultdict(lambda: {"qty": 0, "amount": 0, "name": ""})
+    for tx in txs:
+        pn = tx.get("product_name", "")
+        if not pn:
+            continue
+        qty = _safe_num(tx.get("quantity", 0))
+        amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
+        product_totals[pn]["qty"] += qty
+        product_totals[pn]["amount"] += amt
+        product_totals[pn]["name"] = pn
+
+    # TOP 10
+    top10_qty = sorted(product_totals.items(), key=lambda x: x[1]["qty"], reverse=True)[:10]
+    top10_amt = sorted(product_totals.items(), key=lambda x: x[1]["amount"], reverse=True)[:10]
+
+    top10_by_qty = [{"product_name": k, "quantity": v["qty"], "amount": v["amount"]} for k, v in top10_qty]
+    top10_by_amount = [{"product_name": k, "amount": v["amount"], "quantity": v["qty"]} for k, v in top10_amt]
+
+    # 상위 품목 리스트 (합집합, 최대 15개)
+    top_products = list(dict.fromkeys([k for k, _ in top10_qty] + [k for k, _ in top10_amt]))[:15]
+
+    # 주간/월간/분기별 집계
+    from datetime import datetime as _dt
+
+    weekly = defaultdict(lambda: defaultdict(lambda: {"qty": 0, "amount": 0}))
+    monthly = defaultdict(lambda: defaultdict(lambda: {"qty": 0, "amount": 0}))
+    quarterly = defaultdict(lambda: defaultdict(lambda: {"qty": 0, "amount": 0}))
+
+    for tx in txs:
+        pn = tx.get("product_name", "")
+        d = tx.get("transaction_date", "")
+        if not pn or not d or pn not in top_products:
+            continue
+        qty = _safe_num(tx.get("quantity", 0))
+        amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
+
+        try:
+            dt = _dt.strptime(d[:10], "%Y-%m-%d")
+            # 주차 키: YYYY-Wxx
+            week_key = f"{dt.year}-W{dt.isocalendar()[1]:02d}"
+            month_key = d[:7]
+            q = (dt.month - 1) // 3 + 1
+            quarter_key = f"{dt.year}-Q{q}"
+
+            weekly[pn][week_key]["qty"] += qty
+            weekly[pn][week_key]["amount"] += amt
+            monthly[pn][month_key]["qty"] += qty
+            monthly[pn][month_key]["amount"] += amt
+            quarterly[pn][quarter_key]["qty"] += qty
+            quarterly[pn][quarter_key]["amount"] += amt
+        except (ValueError, TypeError):
+            continue
+
+    # 추이 데이터 구성 + 이상치 감지
+    trends = {}
+    anomalies = []
+
+    for pn in top_products:
+        pn_trend = {"weekly": [], "monthly": [], "quarterly": []}
+
+        for period_type, period_data in [("weekly", weekly), ("monthly", monthly), ("quarterly", quarterly)]:
+            if pn not in period_data:
+                continue
+            sorted_keys = sorted(period_data[pn].keys())
+            values = []
+            for k in sorted_keys:
+                v = period_data[pn][k]
+                values.append({"period": k, "qty": v["qty"], "amount": v["amount"]})
+            pn_trend[period_type] = values
+
+            # 이상치 감지: 평균 대비 ±50%
+            if len(values) >= 3:
+                avg_qty = sum(v["qty"] for v in values) / len(values)
+                avg_amt = sum(v["amount"] for v in values) / len(values)
+                for v in values:
+                    if avg_qty > 0:
+                        qty_ratio = v["qty"] / avg_qty
+                        if qty_ratio >= 1.5:
+                            anomalies.append({
+                                "product_name": pn, "period": v["period"],
+                                "period_type": period_type, "metric": "수량",
+                                "value": v["qty"], "average": round(avg_qty, 1),
+                                "change_pct": round((qty_ratio - 1) * 100, 1),
+                                "type": "급증"
+                            })
+                        elif qty_ratio <= 0.5:
+                            anomalies.append({
+                                "product_name": pn, "period": v["period"],
+                                "period_type": period_type, "metric": "수량",
+                                "value": v["qty"], "average": round(avg_qty, 1),
+                                "change_pct": round((qty_ratio - 1) * 100, 1),
+                                "type": "급감"
+                            })
+                    if avg_amt > 0:
+                        amt_ratio = v["amount"] / avg_amt
+                        if amt_ratio >= 1.5:
+                            anomalies.append({
+                                "product_name": pn, "period": v["period"],
+                                "period_type": period_type, "metric": "금액",
+                                "value": v["amount"], "average": round(avg_amt),
+                                "change_pct": round((amt_ratio - 1) * 100, 1),
+                                "type": "급증"
+                            })
+                        elif amt_ratio <= 0.5:
+                            anomalies.append({
+                                "product_name": pn, "period": v["period"],
+                                "period_type": period_type, "metric": "금액",
+                                "value": v["amount"], "average": round(avg_amt),
+                                "change_pct": round((amt_ratio - 1) * 100, 1),
+                                "type": "급감"
+                            })
+
+        trends[pn] = pn_trend
+
+    return {
+        "top10_by_qty": top10_by_qty,
+        "top10_by_amount": top10_by_amount,
+        "trends": trends,
+        "anomalies": sorted(anomalies, key=lambda x: abs(x["change_pct"]), reverse=True),
+    }
+
+
 def _safe_num(val) -> int:
     """안전하게 숫자 변환"""
     if val is None:

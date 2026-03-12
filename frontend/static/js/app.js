@@ -4126,15 +4126,24 @@ function saShowResult(result) {
   document.getElementById("sa-results-section").style.display = "block";
 }
 
+function _fmtKrw(n) {
+  if (n == null) return "0";
+  n = Number(n);
+  if (n >= 1e8) return (n / 1e8).toFixed(1).replace(/\.0$/, "") + "억";
+  if (n >= 1e4) return (n / 1e4).toFixed(0).toLocaleString() + "만";
+  return n.toLocaleString();
+}
+
 function saShowDashboard(result) {
   if (!result) return;
   const content = document.getElementById("sa-dashboard-content");
   const agents = result.agent_results || {};
   const engine = result.engine_results || {};
   const viz = agents.visualization || {};
+  const pt = engine.product_trends || {};
   let html = "";
 
-  // KPI
+  // ═══ KPI ═══
   const kpis = viz.kpis || [];
   if (kpis.length) {
     html += `<div class="sa-kpi-grid" style="margin-bottom:20px">`;
@@ -4148,57 +4157,183 @@ function saShowDashboard(result) {
     html += `</div>`;
   }
 
-  // 월별 매출 차트 (CSS bar chart)
+  // ═══ 월별 매출 차트 (FIX #1: 비례 높이 + 금액 라벨) ═══
   const monthly = viz.monthly_revenue || [];
   if (monthly.length) {
     const maxAmt = Math.max(...monthly.map(d => d.amount || 0), 1);
+    const chartH = 180;
     html += `<div class="sa-chart-card" style="margin-bottom:20px">
       <div class="sa-chart-title">📈 월별 매출 추이</div>
-      <div class="sa-bar-chart">`;
+      <div style="display:flex;align-items:flex-end;gap:6px;height:${chartH + 40}px;padding-top:30px;position:relative">`;
     monthly.forEach(d => {
-      const h = Math.max(4, Math.round((d.amount || 0) / maxAmt * 120));
-      html += `<div class="sa-bar-item" style="height:${h}px" title="${d.month}: ${(d.amount||0).toLocaleString()}원">
-        <div class="sa-bar-label">${(d.month||"").slice(5)}</div>
+      const amt = d.amount || 0;
+      const h = Math.max(6, Math.round(amt / maxAmt * chartH));
+      const pct = maxAmt > 0 ? Math.round(amt / maxAmt * 100) : 0;
+      const barColor = pct >= 80 ? "#2563eb" : pct >= 50 ? "#3b82f6" : "#93c5fd";
+      html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative">
+        <div style="font-size:10px;font-weight:600;color:#374151;margin-bottom:4px;white-space:nowrap">${_fmtKrw(amt)}원</div>
+        <div style="width:100%;height:${h}px;background:${barColor};border-radius:4px 4px 0 0;min-width:20px;transition:height 0.3s" title="${d.month}: ${amt.toLocaleString()}원"></div>
+        <div style="font-size:11px;color:#6b7280;margin-top:4px;white-space:nowrap">${(d.month||"").slice(5)}</div>
       </div>`;
     });
     html += `</div></div>`;
   }
 
-  // ABC 분류
+  // ═══ ABC 분류 (FIX #2: 설명 + TOP 10 수량/금액) ═══
   const abc = engine.abc || {};
   if (abc.grade_summary) {
     html += `<div class="sa-chart-card" style="margin-bottom:20px">
-      <div class="sa-chart-title">📊 ABC 분류</div>
-      <div style="display:flex;gap:16px">`;
+      <div class="sa-chart-title">📊 ABC 분류 분석</div>
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#0369a1;line-height:1.6">
+        <strong>ABC 분류란?</strong> 매출 기여도에 따라 품목을 3등급으로 분류하는 분석법입니다.<br>
+        <b style="color:#10b981">A등급</b>: 매출의 70%를 차지하는 핵심 품목 (최우선 관리) ·
+        <b style="color:#f59e0b">B등급</b>: 매출의 70~90% 구간 품목 (성장 잠재력) ·
+        <b style="color:#6b7280">C등급</b>: 나머지 품목 (효율적 관리)
+      </div>
+      <div style="display:flex;gap:16px;margin-bottom:16px">`;
     Object.entries(abc.grade_summary).forEach(([g, info]) => {
       const color = g === "A" ? "#10b981" : g === "B" ? "#f59e0b" : "#6b7280";
-      html += `<div style="flex:1;text-align:center;padding:12px;background:#f9fafb;border-radius:8px">
-        <div style="font-size:24px;font-weight:700;color:${color}">${g}</div>
-        <div style="font-size:12px;color:#6b7280">${info.count}개 품목</div>
-        <div style="font-size:12px;color:#6b7280">${info.pct}%</div>
+      html += `<div style="flex:1;text-align:center;padding:12px;background:#f9fafb;border-radius:8px;border-left:4px solid ${color}">
+        <div style="font-size:28px;font-weight:700;color:${color}">${g}</div>
+        <div style="font-size:13px;font-weight:600;color:#374151">${info.count}개 품목</div>
+        <div style="font-size:12px;color:#6b7280">매출 비중 ${info.pct}%</div>
+        <div style="font-size:11px;color:#9ca3af">${_fmtKrw(info.amount)}원</div>
       </div>`;
     });
-    html += `</div></div>`;
+    html += `</div>`;
+
+    // TOP 10 수량 + TOP 10 금액 (product_trends 엔진 결과 사용)
+    const top10Qty = pt.top10_by_qty || [];
+    const top10Amt = pt.top10_by_amount || [];
+    if (top10Qty.length || top10Amt.length) {
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">`;
+
+      // 수량 TOP 10
+      if (top10Qty.length) {
+        const maxQ = top10Qty[0]?.quantity || 1;
+        html += `<div>
+          <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:8px">🏆 판매수량 TOP 10</div>`;
+        top10Qty.forEach((p, i) => {
+          const w = Math.max(8, Math.round((p.quantity / maxQ) * 100));
+          html += `<div style="margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+              <span style="color:#374151;font-weight:${i < 3 ? '600' : '400'}">${i+1}. ${_esc((p.product_name||"").substring(0,25))}</span>
+              <span style="color:#2563eb;font-weight:600">${(p.quantity||0).toLocaleString()}개</span>
+            </div>
+            <div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden">
+              <div style="width:${w}%;height:100%;background:#3b82f6;border-radius:3px"></div>
+            </div>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+
+      // 금액 TOP 10
+      if (top10Amt.length) {
+        const maxA = top10Amt[0]?.amount || 1;
+        html += `<div>
+          <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:8px">💰 판매금액 TOP 10</div>`;
+        top10Amt.forEach((p, i) => {
+          const w = Math.max(8, Math.round((p.amount / maxA) * 100));
+          html += `<div style="margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+              <span style="color:#374151;font-weight:${i < 3 ? '600' : '400'}">${i+1}. ${_esc((p.product_name||"").substring(0,25))}</span>
+              <span style="color:#059669;font-weight:600">${_fmtKrw(p.amount)}원</span>
+            </div>
+            <div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden">
+              <div style="width:${w}%;height:100%;background:#10b981;border-radius:3px"></div>
+            </div>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
   }
 
-  // 에이전트 요약 카드
+  // ═══ 판매 추이 분석 + 특이사항 (FIX #4) ═══
+  const anomalies = pt.anomalies || [];
+  const trendData = pt.trends || {};
+  const topNames = (pt.top10_by_amount || []).slice(0, 5).map(p => p.product_name);
+
+  if (anomalies.length || topNames.length) {
+    html += `<div class="sa-chart-card" style="margin-bottom:20px">
+      <div class="sa-chart-title">📉 판매 추이 분석 & 특이사항</div>`;
+
+    // 특이사항 테이블
+    if (anomalies.length) {
+      html += `<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="font-size:13px;font-weight:600;color:#92400e;margin-bottom:8px">⚠️ 특이사항 감지 (${anomalies.length}건)</div>
+        <div style="max-height:240px;overflow-y:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="background:#fef9c3">
+            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #fbbf24">품목</th>
+            <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #fbbf24">구간</th>
+            <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #fbbf24">지표</th>
+            <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #fbbf24">유형</th>
+            <th style="padding:6px 8px;text-align:right;border-bottom:1px solid #fbbf24">변동률</th>
+            <th style="padding:6px 8px;text-align:right;border-bottom:1px solid #fbbf24">평균→실제</th>
+          </tr></thead><tbody>`;
+      anomalies.slice(0, 15).forEach(a => {
+        const typeColor = a.type === "급증" ? "#059669" : "#dc2626";
+        const typeIcon = a.type === "급증" ? "📈" : "📉";
+        html += `<tr style="border-bottom:1px solid #fde68a">
+          <td style="padding:4px 8px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_esc(a.product_name)}">${_esc((a.product_name||"").substring(0,20))}</td>
+          <td style="padding:4px 8px;text-align:center">${a.period}</td>
+          <td style="padding:4px 8px;text-align:center">${a.metric}</td>
+          <td style="padding:4px 8px;text-align:center;color:${typeColor};font-weight:600">${typeIcon} ${a.type}</td>
+          <td style="padding:4px 8px;text-align:right;color:${typeColor};font-weight:600">${a.change_pct > 0 ? "+" : ""}${a.change_pct}%</td>
+          <td style="padding:4px 8px;text-align:right;font-size:10px">${typeof a.average === 'number' ? a.average.toLocaleString() : a.average} → ${(a.value||0).toLocaleString()}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div></div>`;
+    }
+
+    // 상위 5개 품목 월별 추이 미니 차트
+    if (topNames.length) {
+      html += `<div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">📊 상위 품목 월별 판매 추이</div>`;
+      topNames.forEach(pn => {
+        const pnTrend = trendData[pn];
+        if (!pnTrend || !pnTrend.monthly || pnTrend.monthly.length < 2) return;
+        const monthlyData = pnTrend.monthly;
+        const maxVal = Math.max(...monthlyData.map(m => m.amount || 0), 1);
+
+        html += `<div style="margin-bottom:12px;padding:10px;background:#f9fafb;border-radius:8px">
+          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px">${_esc((pn||"").substring(0,40))}</div>
+          <div style="display:flex;align-items:flex-end;gap:3px;height:50px">`;
+        monthlyData.forEach(m => {
+          const h = Math.max(3, Math.round((m.amount || 0) / maxVal * 45));
+          html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center">
+            <div style="width:100%;height:${h}px;background:#6366f1;border-radius:2px 2px 0 0;min-width:12px" title="${m.period}: ${(m.amount||0).toLocaleString()}원, ${(m.qty||0).toLocaleString()}개"></div>
+            <div style="font-size:9px;color:#9ca3af;margin-top:2px">${(m.period||"").slice(5)}</div>
+          </div>`;
+        });
+        html += `</div></div>`;
+      });
+    }
+    html += `</div>`;
+  }
+
+  // ═══ 에이전트 요약 카드 (FIX #3: 텍스트 제한 제거, 전체 출력) ═══
   html += `<div style="margin-bottom:20px"><div class="sa-chart-title">🤖 에이전트 분석 요약</div><div class="sa-dashboard-grid">`;
   Object.entries(agents).forEach(([k, data]) => {
     const ag = SA_AGENTS[k] || { name: k, icon: "🤖" };
+    const summary = data?.summary || "";
     html += `<div class="sa-chart-card">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">${ag.icon} ${ag.name}</div>
-      <div style="font-size:12px;color:#374151;line-height:1.5">${_esc((data?.summary || "").slice(0, 200))}</div>
+      <div style="font-size:12px;color:#374151;line-height:1.6;white-space:pre-wrap">${_esc(summary)}</div>
     </div>`;
   });
   html += `</div></div>`;
 
-  // 전체 추천
+  // ═══ 전체 추천 ═══
   const allRecs = [];
   Object.values(agents).forEach(a => { if (a?.recommendations) allRecs.push(...a.recommendations); });
   if (allRecs.length) {
     html += `<div class="sa-chart-card">
       <div class="sa-chart-title">💡 핵심 추천사항</div>
-      <ul class="sa-recommend-list">${allRecs.slice(0, 10).map(r => `<li>• ${_esc(r)}</li>`).join("")}</ul>
+      <ul class="sa-recommend-list">${allRecs.slice(0, 15).map(r => `<li>• ${_esc(r)}</li>`).join("")}</ul>
     </div>`;
   }
 
