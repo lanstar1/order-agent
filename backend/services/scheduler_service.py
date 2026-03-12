@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
 
+# 메인 이벤트 루프 참조 (startup에서 설정)
+_main_loop = None
+
 # 스케줄러 상태
 _scheduler_state = {
     "enabled": True,
@@ -65,22 +68,38 @@ async def run_auto_fetch(days: int = 3) -> dict:
 
 
 def _sync_job():
-    """APScheduler에서 호출되는 동기 함수 (내부에서 asyncio 실행)"""
+    """APScheduler에서 호출되는 동기 함수 (메인 이벤트 루프에 코루틴 예약)"""
+    global _main_loop
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(run_auto_fetch(days=3))
+        if _main_loop and _main_loop.is_running():
+            # 메인 asyncio 루프에 안전하게 코루틴 예약 (thread-safe)
+            future = asyncio.run_coroutine_threadsafe(run_auto_fetch(days=3), _main_loop)
+            try:
+                future.result(timeout=120)  # 2분 타임아웃
+            except Exception as e:
+                logger.error(f"[스케줄러] 자동 동기화 실행 오류: {e}")
         else:
-            loop.run_until_complete(run_auto_fetch(days=3))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(run_auto_fetch(days=3))
+            # 루프 없으면 새로 생성
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(run_auto_fetch(days=3))
+            finally:
+                loop.close()
+    except Exception as e:
+        logger.error(f"[스케줄러] _sync_job 오류: {e}", exc_info=True)
 
 
 def start_scheduler():
     """APScheduler 시작 - 1시간마다 실행"""
+    global _main_loop
     try:
+        # 메인 이벤트 루프 캡처
+        try:
+            _main_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            _main_loop = asyncio.get_event_loop()
+
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.interval import IntervalTrigger
 
@@ -129,20 +148,20 @@ async def check_and_run_on_startup():
         from db.database import get_connection
         conn = get_connection()
 
-        # shipments 테이블의 최근 updated_at 확인
+        # shipments 테이블의 최근 created_at 확인 (updated_at 컬럼 없음)
         row = conn.execute(
-            "SELECT MAX(updated_at) as last_update FROM shipments"
+            "SELECT MAX(created_at) as last_update FROM shipments"
         ).fetchone()
         conn.close()
 
-        last_update = row["last_update"] if row and row["last_update"] else None
+        last_update = row[0] if row else None
         need_sync = True
 
         if last_update:
             try:
                 last_dt = datetime.strptime(str(last_update)[:19], "%Y-%m-%d %H:%M:%S")
                 hours_ago = (datetime.now() - last_dt).total_seconds() / 3600
-                logger.info(f"[스케줄러] 택배 마지막 업데이트: {last_update} ({hours_ago:.1f}시간 전)")
+                logger.info(f"[스케줄러] 택배 마지막 등록: {last_update} ({hours_ago:.1f}시간 전)")
                 if hours_ago < 2:
                     need_sync = False
                     logger.info("[스케줄러] 최근 동기화됨 → 시작 시 자동 가져오기 스킵")
