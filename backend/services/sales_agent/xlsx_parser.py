@@ -113,7 +113,32 @@ def parse_xlsx(file_path: str) -> dict:
     if not fp.exists():
         raise FileNotFoundError(f"파일을 찾을 수 없습니다: {file_path}")
 
-    wb = openpyxl.load_workbook(str(fp), data_only=True, read_only=True)
+    # 스타일시트가 손상된 xlsx 파일 대응 (ECOUNT 등 일부 ERP 내보내기)
+    try:
+        wb = openpyxl.load_workbook(str(fp), data_only=True, read_only=True)
+    except Exception:
+        import warnings
+        warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+        from zipfile import ZipFile, BadZipFile
+        import shutil, tempfile
+        try:
+            # 손상된 스타일시트 제거 후 재시도
+            tmp_dir = tempfile.mkdtemp()
+            tmp_path = Path(tmp_dir) / fp.name
+            with ZipFile(str(fp), 'r') as zin:
+                with ZipFile(str(tmp_path), 'w') as zout:
+                    for item in zin.infolist():
+                        data = zin.read(item.filename)
+                        if item.filename == 'xl/styles.xml':
+                            # 최소한의 유효한 스타일시트로 대체
+                            data = b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>'
+                        zout.writestr(item, data)
+            wb = openpyxl.load_workbook(str(tmp_path), data_only=True, read_only=True)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            logger.info("[xlsx_parser] 손상된 스타일시트 복구 후 파싱 진행")
+        except Exception as e2:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise ValueError(f"xlsx 파일을 열 수 없습니다 (스타일시트 복구 실패): {e2}")
     result = {
         "transactions": [],
         "customers": {},
