@@ -894,6 +894,29 @@ C규격품 200개
             <div class="hint">포함 컬럼: 거래처, 품목, 수량, 단가, 거래일시</div>
           </div>
           <input type="file" id="sa-file-input" accept=".xlsx,.xls" style="display:none" onchange="saUploadFile(this.files[0])">
+
+          <div style="margin-top:14px;border:1px solid #bfdbfe;border-radius:10px;overflow:hidden">
+            <div style="display:flex">
+              <div style="flex:1;padding:12px 14px;background:#eff6ff;border-right:1px solid #bfdbfe">
+                <div style="font-size:12px;font-weight:700;color:#1d4ed8;margin-bottom:6px">📋 다중 거래처 비교 (Mode A)</div>
+                <div style="font-size:11px;color:#374151;line-height:1.7">
+                  이카운트ERP <b>판매현황</b> → 기준일자 선택 →<br>
+                  복수의 거래처 선택 또는 <b>거래처 미선택</b>(전체 조회) →<br>
+                  하단 <b style="color:#1d4ed8">검색(F8) 화살표버튼</b> 클릭 →<br>
+                  <b style="color:#1d4ed8">Excel</b> 클릭 후 여기에 업로드
+                </div>
+              </div>
+              <div style="flex:1;padding:12px 14px;background:#f0fdf4">
+                <div style="font-size:12px;font-weight:700;color:#059669;margin-bottom:6px">🔍 단일 거래처 심층 (Mode B)</div>
+                <div style="font-size:11px;color:#374151;line-height:1.7">
+                  이카운트ERP <b>판매현황</b> → 기준일자 선택 →<br>
+                  <b style="color:#059669">거래처 입력</b> →<br>
+                  하단 <b style="color:#059669">검색(F8) 화살표버튼</b> 클릭 →<br>
+                  <b style="color:#059669">Excel</b> 클릭 후 여기에 업로드
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div id="sa-upload-summary" style="display:none">
@@ -2482,6 +2505,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260312f"></script>
-<script src="/static/js/app.js?v=20260312p"></script>
+<script src="/static/js/app.js?v=20260312q"></script>
 </body>
 </html>
