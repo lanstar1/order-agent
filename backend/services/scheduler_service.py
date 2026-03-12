@@ -1,7 +1,7 @@
 """
 SmartLogen 자동 동기화 스케줄러
-- 매일 오전 9시(KST) SmartLogen에서 발송 내역 자동 가져오기
-- 서버 시작 시 마지막 동기화가 오래됐으면 즉시 실행
+- 1시간마다 SmartLogen에서 발송 내역 자동 가져오기 (최근 3일, 전체 창고)
+- 서버 시작 시 마지막 동기화가 2시간 이상 지났으면 즉시 실행
 """
 import asyncio
 import logging
@@ -60,6 +60,7 @@ async def run_auto_fetch(days: int = 3) -> dict:
 
     _scheduler_state["last_run"] = now_kst.isoformat()
     _scheduler_state["last_result"] = result
+    _scheduler_state["next_run"] = _get_next_run_time()
     return result
 
 
@@ -78,22 +79,22 @@ def _sync_job():
 
 
 def start_scheduler():
-    """APScheduler 시작 - 매일 오전 9시(KST) 실행"""
+    """APScheduler 시작 - 1시간마다 실행"""
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
-        from apscheduler.triggers.cron import CronTrigger
+        from apscheduler.triggers.interval import IntervalTrigger
 
         scheduler = BackgroundScheduler()
 
-        # 매일 오전 9시 KST (= UTC 0시)
-        trigger = CronTrigger(hour=0, minute=0, timezone="UTC")
-        scheduler.add_job(_sync_job, trigger, id="smartlogen_daily_sync", replace_existing=True)
+        # 1시간마다 실행 (최근 3일, 전체 창고)
+        trigger = IntervalTrigger(hours=1)
+        scheduler.add_job(_sync_job, trigger, id="smartlogen_hourly_sync", replace_existing=True)
 
         scheduler.start()
         _scheduler_state["scheduler"] = scheduler
         _scheduler_state["next_run"] = _get_next_run_time()
 
-        logger.info("[스케줄러] APScheduler 시작 - 매일 09:00 KST SmartLogen 자동 동기화")
+        logger.info("[스케줄러] APScheduler 시작 - 1시간 간격 SmartLogen 자동 동기화 (최근 3일, 전체 창고)")
         return True
 
     except Exception as e:
@@ -111,17 +112,15 @@ def stop_scheduler():
 
 
 def _get_next_run_time() -> str:
-    """다음 실행 시각 계산 (KST 기준)"""
+    """다음 실행 시각 계산 (KST 기준) - 1시간 후"""
     now_kst = datetime.now(KST)
-    next_9am = now_kst.replace(hour=9, minute=0, second=0, microsecond=0)
-    if now_kst >= next_9am:
-        next_9am += timedelta(days=1)
-    return next_9am.isoformat()
+    next_run = now_kst + timedelta(hours=1)
+    return next_run.replace(second=0, microsecond=0).isoformat()
 
 
 async def check_and_run_on_startup():
     """
-    서버 시작 시 마지막 동기화가 12시간 이상 지났으면 즉시 실행.
+    서버 시작 시 마지막 동기화가 2시간 이상 지났으면 즉시 실행.
     Render 무료 플랜에서 서버가 꺼졌다 켜질 때를 대비.
     """
     await asyncio.sleep(8)  # DB 초기화 완료 대기
@@ -144,14 +143,14 @@ async def check_and_run_on_startup():
                 last_dt = datetime.strptime(str(last_update)[:19], "%Y-%m-%d %H:%M:%S")
                 hours_ago = (datetime.now() - last_dt).total_seconds() / 3600
                 logger.info(f"[스케줄러] 택배 마지막 업데이트: {last_update} ({hours_ago:.1f}시간 전)")
-                if hours_ago < 12:
+                if hours_ago < 2:
                     need_sync = False
                     logger.info("[스케줄러] 최근 동기화됨 → 시작 시 자동 가져오기 스킵")
             except (ValueError, TypeError) as e:
                 logger.warning(f"[스케줄러] 날짜 파싱 실패: {e}")
 
         if need_sync:
-            logger.info("[스케줄러] 12시간 이상 동기화 안됨 → 자동 가져오기 실행")
+            logger.info("[스케줄러] 2시간 이상 동기화 안됨 → 자동 가져오기 실행")
             await run_auto_fetch(days=3)
 
     except Exception as e:
