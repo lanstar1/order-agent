@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 COLUMN_MAP = {
     "transaction_date": ["월/일", "일자", "날짜", "거래일"],
     "product_code":     ["품목코드", "품목 코드", "자재코드"],
-    "customer_name":    ["판1매처명", "거래처명", "판매처명", "고객명"],
+    "customer_name":    ["판매처명", "거래처명", "고객명", "거래처"],
     "product_name":     ["품명 및 규격", "품명", "품목명", "상품명"],
     "quantity":         ["수량", "판매수량", "출고수량"],
     "unit_price":       ["단가", "판매단가"],
@@ -33,7 +33,7 @@ def _safe_load_workbook(path: str):
     """openpyxl 스타일시트 손상 자동 복구"""
     import openpyxl
     try:
-        return openpyxl.load_workbook(path, data_only=True, read_only=True)
+        return openpyxl.load_workbook(path, data_only=True)
     except Exception:
         logger.warning("[xlsx_parser] 스타일시트 복구 시도")
         tmp = tempfile.mktemp(suffix=".xlsx")
@@ -44,7 +44,7 @@ def _safe_load_workbook(path: str):
                     if item.filename == "xl/styles.xml":
                         data = _minimal_styles_xml()
                     zout.writestr(item, data)
-            return openpyxl.load_workbook(tmp, data_only=True, read_only=True)
+            return openpyxl.load_workbook(tmp, data_only=True)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
