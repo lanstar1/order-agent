@@ -111,11 +111,13 @@ function navigateTo(pageId) {
     training:     "발주서 학습",
     shipping:     "택배조회",
     cs_rma:       "CS/RMA",
+    sales_agent:  "판매에이전트",
     ai_dashboard: "AI 대시보드",
     settings:     "설정",
   }[pageId] || "";
   // CS/RMA 페이지 진입 시 초기화
   if (pageId === "cs_rma") csInit();
+  if (pageId === "sales_agent") saInit();
   // 택배조회 페이지 진입 시 통계 로드
   if (pageId === "shipping") initShippingPage();
   // 주문서 페이지 진입 시 드롭존 초기화
@@ -3766,4 +3768,563 @@ async function csAddMemo(ticketId) {
     await api.post(`/api/cs/tickets/${ticketId}/memo`, { memo });
     csShowDetail(ticketId);
   } catch(e) { alert("오류: " + (e.message || e)); }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  판매 에이전트 (Sales Agent)
+// ═══════════════════════════════════════════════════════════════
+let _saCurrentFileId = null;
+let _saCurrentJobId = null;
+let _saCurrentResult = null;
+let _saCharts = {};
+let _saPollingTimer = null;
+
+const SA_AGENTS = {
+  customer:      { name: "거래처 분석", icon: "👥" },
+  product:       { name: "품목 관리", icon: "📦" },
+  strategy:      { name: "판매전략",   icon: "🎯" },
+  future:        { name: "미래전략",   icon: "🔮" },
+  partnership:   { name: "파트너십",   icon: "🤝" },
+  visualization: { name: "KPI/시각화", icon: "📊" },
+};
+
+function saInit() {
+  // 초기화: 업로드 탭 표시
+  saSwitchTab("upload");
+}
+
+function saSwitchTab(tab) {
+  document.querySelectorAll(".sa-tab-content").forEach(el => el.style.display = "none");
+  document.querySelectorAll(".sa-tab").forEach(el => el.classList.remove("active"));
+  const content = document.getElementById("sa-tab-" + tab);
+  if (content) content.style.display = "block";
+  const btn = document.querySelector(`.sa-tab[data-tab="${tab}"]`);
+  if (btn) btn.classList.add("active");
+}
+
+function saHandleDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor = "#ccc";
+  e.currentTarget.style.background = "#fafbfc";
+  const files = e.dataTransfer.files;
+  if (files.length > 0) saHandleFile(files[0]);
+}
+
+async function saHandleFile(file) {
+  if (!file) return;
+  if (!file.name.match(/\.xlsx?$/i)) {
+    alert("xlsx 또는 xls 파일만 업로드할 수 있습니다.");
+    return;
+  }
+
+  const area = document.getElementById("sa-upload-area");
+  area.innerHTML = `<div style="font-size:32px">⏳</div><div>업로드 중... ${_esc(file.name)}</div>`;
+
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await api.upload("/api/sales-agent/upload", fd);
+
+    _saCurrentFileId = res.file_id;
+
+    // 파싱 결과 표시
+    const summary = res.summary;
+    document.getElementById("sa-parse-summary").innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:12px">
+        <div class="sa-kpi-card"><div class="kpi-label">거래 건수</div><div class="kpi-val">${(summary.total_rows||0).toLocaleString()}</div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">거래처</div><div class="kpi-val">${summary.total_customers||0}</div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">품목</div><div class="kpi-val">${summary.total_products||0}</div></div>
+        <div class="sa-kpi-card"><div class="kpi-label">총 매출액</div><div class="kpi-val">${(summary.total_amount||0).toLocaleString()}<span style="font-size:12px">원</span></div></div>
+      </div>
+      <div style="font-size:13px;color:#666">
+        📅 기간: ${res.period_start || "?"} ~ ${res.period_end || "?"}<br>
+        📄 파일: ${_esc(res.file_name)}
+      </div>
+    `;
+    document.getElementById("sa-parse-result").style.display = "block";
+
+    // 업로드 영역 복원
+    area.innerHTML = `
+      <div style="font-size:48px;margin-bottom:12px">✅</div>
+      <div style="font-size:16px;font-weight:600;color:#10b981">${_esc(file.name)} 업로드 완료</div>
+      <div style="font-size:13px;color:#888;margin-top:6px">다른 파일을 업로드하려면 클릭</div>
+    `;
+  } catch (e) {
+    area.innerHTML = `
+      <div style="font-size:48px;margin-bottom:12px">❌</div>
+      <div style="font-size:16px;font-weight:600;color:#ef4444">업로드 실패</div>
+      <div style="font-size:13px;color:#888;margin-top:6px">${_esc(e.message || "알 수 없는 오류")}</div>
+    `;
+    alert("업로드 실패: " + (e.message || e));
+  }
+}
+
+async function saStartAnalysis() {
+  if (!_saCurrentFileId) { alert("먼저 파일을 업로드해주세요."); return; }
+
+  const btn = document.getElementById("sa-analyze-btn");
+  btn.disabled = true;
+  btn.textContent = "⏳ 분석 시작 중...";
+
+  try {
+    const fd = new FormData();
+    fd.append("file_id", _saCurrentFileId);
+    const res = await api.upload("/api/sales-agent/analyze", fd);
+
+    _saCurrentJobId = res.job_id;
+
+    // 진행 상태 UI 표시
+    document.getElementById("sa-progress").style.display = "block";
+    const statusDiv = document.getElementById("sa-agent-status");
+    statusDiv.innerHTML = Object.entries(SA_AGENTS).map(([k, v]) =>
+      `<div id="sa-status-${k}"><span class="sa-progress-dot pending"></span>${v.icon} ${v.name}</div>`
+    ).join("");
+
+    // 폴링 시작
+    _saPollingTimer = setInterval(() => saPollStatus(), 3000);
+    saPollStatus();
+
+  } catch (e) {
+    alert("분석 시작 실패: " + (e.message || e));
+    btn.disabled = false;
+    btn.textContent = "🚀 AI 분석 시작 (6개 에이전트 병렬)";
+  }
+}
+
+async function saPollStatus() {
+  if (!_saCurrentJobId) return;
+  try {
+    const res = await api.get(`/api/sales-agent/status/${_saCurrentJobId}`);
+    const fill = document.getElementById("sa-progress-fill");
+    if (fill) fill.style.width = (res.progress || 0) + "%";
+
+    // 에이전트별 상태 업데이트
+    if (res.agents) {
+      Object.entries(res.agents).forEach(([k, status]) => {
+        const el = document.getElementById("sa-status-" + k);
+        if (el) {
+          const dot = el.querySelector(".sa-progress-dot");
+          if (dot) {
+            dot.className = "sa-progress-dot " + status;
+          }
+        }
+      });
+    }
+
+    if (res.status === "completed") {
+      clearInterval(_saPollingTimer);
+      _saPollingTimer = null;
+      // 결과 로드
+      await saLoadResult(_saCurrentJobId);
+    } else if (res.status === "failed") {
+      clearInterval(_saPollingTimer);
+      _saPollingTimer = null;
+      document.getElementById("sa-progress").innerHTML = `
+        <div class="card" style="background:#fff0f0;border:1px solid #ffc0c0">
+          <h4 style="margin-top:0;color:#ef4444">❌ 분석 실패</h4>
+          <p>분석 중 오류가 발생했습니다. 다시 시도해주세요.</p>
+        </div>`;
+      document.getElementById("sa-analyze-btn").disabled = false;
+      document.getElementById("sa-analyze-btn").textContent = "🚀 AI 분석 시작 (6개 에이전트 병렬)";
+    }
+  } catch (e) {
+    console.error("Poll error:", e);
+  }
+}
+
+async function saLoadResult(jobId) {
+  try {
+    const result = await api.get(`/api/sales-agent/result/${jobId}`);
+    _saCurrentResult = result;
+
+    // 진행 UI 업데이트
+    const elapsed = result.elapsed_seconds || 0;
+    document.getElementById("sa-progress").innerHTML = `
+      <div class="card" style="background:#f0fff4;border:1px solid #b3ffb3">
+        <h4 style="margin-top:0;color:#10b981">✅ 분석 완료! (${elapsed.toFixed(1)}초)</h4>
+        <p>6개 AI 에이전트 분석이 완료되었습니다. 대시보드와 리포트 탭에서 결과를 확인하세요.</p>
+        <button class="btn btn-primary" onclick="saSwitchTab('dashboard')" style="margin-right:8px">📊 대시보드 보기</button>
+        <button class="btn btn-outline" onclick="saSwitchTab('reports')">📝 리포트 보기</button>
+      </div>`;
+
+    // 대시보드 & 리포트 렌더링
+    saRenderDashboard(result);
+    saRenderReports(result);
+
+  } catch (e) {
+    alert("결과 로드 실패: " + (e.message || e));
+  }
+}
+
+function saRenderDashboard(result) {
+  const agents = result.agents || {};
+  const vizResult = agents.visualization?.result || {};
+
+  // KPI 카드
+  const kpiCards = vizResult.kpi_cards || [];
+  const kpiHtml = kpiCards.map(k => {
+    const val = typeof k.value === "number" ? k.value.toLocaleString() : k.value;
+    const trendClass = k.trend === "up" ? "up" : k.trend === "down" ? "down" : "";
+    return `<div class="sa-kpi-card">
+      <div class="kpi-label">${_esc(k.label)}</div>
+      <div class="kpi-val">${val}<span style="font-size:12px">${_esc(k.unit||"")}</span></div>
+      ${k.change ? `<div class="kpi-change ${trendClass}">${_esc(k.change)}</div>` : ""}
+    </div>`;
+  }).join("");
+  document.getElementById("sa-kpi-cards").innerHTML = kpiHtml;
+
+  // 차트 렌더링
+  const charts = vizResult.charts || {};
+  _saDestroyCharts();
+
+  // 월별 매출 차트
+  if (charts.monthly_revenue?.length) {
+    _saCharts.monthly = new Chart(document.getElementById("sa-chart-monthly"), {
+      type: "line",
+      data: {
+        labels: charts.monthly_revenue.map(d => d.month),
+        datasets: [{
+          label: "매출액",
+          data: charts.monthly_revenue.map(d => d.amount),
+          borderColor: "#4A90D9",
+          backgroundColor: "rgba(74,144,217,0.1)",
+          fill: true,
+          tension: 0.3,
+        }],
+      },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => (v/10000).toLocaleString() + "만" } } } },
+    });
+  }
+
+  // 거래처 Top 10
+  if (charts.top_customers?.length) {
+    const top10 = charts.top_customers.slice(0, 10);
+    _saCharts.customers = new Chart(document.getElementById("sa-chart-customers"), {
+      type: "bar",
+      data: {
+        labels: top10.map(d => d.name?.length > 10 ? d.name.slice(0,10)+"…" : d.name),
+        datasets: [{
+          label: "매출액",
+          data: top10.map(d => d.amount),
+          backgroundColor: "#667eea",
+        }],
+      },
+      options: { indexAxis: "y", responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: v => (v/10000).toLocaleString() + "만" } } } },
+    });
+  }
+
+  // 카테고리 파이
+  if (charts.category_share?.length) {
+    const colors = ["#667eea","#764ba2","#f093fb","#4facfe","#43e97b","#fa709a","#fee140","#30cfd0","#a8edea","#fed6e3"];
+    _saCharts.category = new Chart(document.getElementById("sa-chart-category"), {
+      type: "doughnut",
+      data: {
+        labels: charts.category_share.map(d => d.category),
+        datasets: [{
+          data: charts.category_share.map(d => d.amount),
+          backgroundColor: colors,
+        }],
+      },
+      options: { responsive: true, plugins: { legend: { position: "right", labels: { font: { size: 11 } } } } },
+    });
+  }
+
+  // 월별 거래 건수
+  if (charts.monthly_count?.length) {
+    _saCharts.count = new Chart(document.getElementById("sa-chart-count"), {
+      type: "bar",
+      data: {
+        labels: charts.monthly_count.map(d => d.month),
+        datasets: [{
+          label: "거래 건수",
+          data: charts.monthly_count.map(d => d.count),
+          backgroundColor: "rgba(118,75,162,0.6)",
+        }],
+      },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+    });
+  }
+
+  // 에이전트 요약 카드
+  const summariesDiv = document.getElementById("sa-agent-summaries");
+  summariesDiv.innerHTML = Object.entries(agents).map(([k, ag]) => {
+    const res = ag.result || {};
+    const summary = res.summary || "분석 결과 없음";
+    return `<div class="sa-agent-card">
+      <h4>${ag.icon} ${ag.name}</h4>
+      <div class="agent-summary">${_esc(summary)}</div>
+      ${ag.status === "error" ? '<div style="color:#ef4444;font-size:12px;margin-top:4px">⚠️ 오류 발생</div>' : ""}
+    </div>`;
+  }).join("");
+
+  // 권고사항
+  const recs = result.top_recommendations || [];
+  document.getElementById("sa-recommendations").innerHTML = recs.length
+    ? recs.map(r => `<div style="padding:6px 0;border-bottom:1px solid #f0e0c0;font-size:13px">💡 ${_esc(r)}</div>`).join("")
+    : '<div style="color:#888">권고사항이 없습니다.</div>';
+
+  // 대시보드 표시
+  document.getElementById("sa-no-data").style.display = "none";
+  document.getElementById("sa-dashboard-content").style.display = "block";
+}
+
+function _saDestroyCharts() {
+  Object.values(_saCharts).forEach(c => { try { c.destroy(); } catch(e){} });
+  _saCharts = {};
+}
+
+function saRenderReports(result) {
+  document.getElementById("sa-no-report").style.display = "none";
+  document.getElementById("sa-report-content").style.display = "block";
+  saShowReport("customer");
+}
+
+function saShowReport(agentKey) {
+  document.querySelectorAll(".sa-report-tab").forEach(el => el.classList.remove("active"));
+  event?.target?.classList?.add("active");
+
+  const agents = _saCurrentResult?.agents || {};
+  const agent = agents[agentKey];
+  if (!agent) {
+    document.getElementById("sa-report-detail").innerHTML = '<p style="color:#888">리포트가 없습니다.</p>';
+    return;
+  }
+
+  const res = agent.result || {};
+  const detail = document.getElementById("sa-report-detail");
+  let html = `<h3>${agent.icon} ${agent.name} 분석 리포트</h3>`;
+  html += `<p style="color:#666;font-style:italic;margin-bottom:16px">${_esc(res.summary || "")}</p>`;
+
+  // 에이전트별 상세 렌더링
+  if (agentKey === "customer") {
+    html += _saRenderCustomerReport(res);
+  } else if (agentKey === "product") {
+    html += _saRenderProductReport(res);
+  } else if (agentKey === "strategy") {
+    html += _saRenderStrategyReport(res);
+  } else if (agentKey === "future") {
+    html += _saRenderFutureReport(res);
+  } else if (agentKey === "partnership") {
+    html += _saRenderPartnershipReport(res);
+  }
+
+  // 권고사항
+  const recs = res.recommendations || [];
+  if (recs.length) {
+    html += `<h4 style="margin-top:20px">💡 핵심 권고사항</h4>`;
+    html += recs.map(r => `<div style="padding:6px 0;font-size:13px">• ${_esc(r)}</div>`).join("");
+  }
+
+  detail.innerHTML = html;
+}
+
+function _saRenderCustomerReport(res) {
+  let html = "";
+  // 세그먼트 요약
+  const segments = res.segments || {};
+  if (Object.keys(segments).length) {
+    html += `<h4>📊 RFM 세그먼트 분포</h4>`;
+    html += `<table class="table" style="font-size:13px"><thead><tr><th>세그먼트</th><th>거래처 수</th><th>총 매출</th><th>주요 거래처</th></tr></thead><tbody>`;
+    for (const [seg, data] of Object.entries(segments)) {
+      const custs = (data.customers || []).slice(0, 3).join(", ");
+      html += `<tr><td><strong>${_esc(seg)}</strong></td><td>${data.count || 0}</td><td>${(data.total_amount||0).toLocaleString()}원</td><td style="font-size:12px">${_esc(custs)}</td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  // 이탈 위험
+  const churn = res.churn_risk || [];
+  if (churn.length) {
+    html += `<h4 style="margin-top:16px">⚠️ 이탈 위험 거래처</h4>`;
+    html += churn.map(c => `<div style="padding:6px 10px;margin:4px 0;background:${c.risk_level==="높음"?"#fff0f0":"#fffaf0"};border-radius:6px;font-size:13px">
+      <strong>${_esc(c.customer_name)}</strong> <span style="color:${c.risk_level==="높음"?"#ef4444":"#f59e0b"}">[${_esc(c.risk_level)}]</span> — ${_esc(c.reason||"")}
+    </div>`).join("");
+  }
+  // 전략
+  const strategies = res.strategies || [];
+  if (strategies.length) {
+    html += `<h4 style="margin-top:16px">🎯 세그먼트별 전략</h4>`;
+    strategies.forEach(s => {
+      html += `<div style="margin:8px 0;padding:10px;background:#f5f5f5;border-radius:8px;font-size:13px">
+        <strong>${_esc(s.segment)}</strong>: ${_esc(s.strategy||"")}
+        ${(s.actions||[]).length ? `<ul style="margin:4px 0 0;padding-left:20px">${s.actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
+      </div>`;
+    });
+  }
+  return html;
+}
+
+function _saRenderProductReport(res) {
+  let html = "";
+  // ABC 등급 요약
+  const grades = res.grade_summary || {};
+  if (Object.keys(grades).length) {
+    html += `<h4>📊 ABC 등급 분포</h4>`;
+    html += `<div style="display:flex;gap:12px;margin-bottom:16px">`;
+    for (const [g, data] of Object.entries(grades)) {
+      const colors = { A: "#10b981", B: "#f59e0b", C: "#6b7280" };
+      html += `<div class="sa-kpi-card" style="flex:1;border-left:4px solid ${colors[g]||"#ccc"}">
+        <div class="kpi-label">${g}등급 (${data.count||0}개)</div>
+        <div class="kpi-val" style="font-size:18px">${(data.pct||0).toFixed(1)}%</div>
+        <div style="font-size:11px;color:#888">${(data.amount||0).toLocaleString()}원</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  // 수요 예측
+  const forecast = res.forecast || [];
+  if (forecast.length) {
+    html += `<h4>📈 수요 예측 (상위 품목)</h4>`;
+    html += `<table class="table" style="font-size:13px"><thead><tr><th>품목</th><th>월평균</th><th>3개월 예측</th><th>추세</th></tr></thead><tbody>`;
+    forecast.slice(0, 10).forEach(f => {
+      const trend = f.trend === "증가" ? "📈" : f.trend === "감소" ? "📉" : "➡️";
+      html += `<tr><td>${_esc(f.product_name)}</td><td>${(f.current_monthly_avg||0).toLocaleString()}</td><td>${(f.forecast_3m||[]).join(", ")}</td><td>${trend} ${_esc(f.trend||"")}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  return html;
+}
+
+function _saRenderStrategyReport(res) {
+  let html = "";
+  // 교차판매
+  const cross = res.cross_sell || [];
+  if (cross.length) {
+    html += `<h4>🔄 교차판매 기회</h4>`;
+    cross.slice(0, 10).forEach(c => {
+      html += `<div style="margin:8px 0;padding:10px;background:#f0f8ff;border-radius:8px;font-size:13px">
+        <strong>${_esc(c.customer_name)}</strong><br>
+        현재: ${(c.current_products||[]).map(p=>_esc(p)).join(", ")}<br>
+        추천: <strong style="color:#4A90D9">${(c.recommended||[]).map(p=>_esc(p)).join(", ")}</strong><br>
+        ${c.expected_revenue ? `예상 매출: ${c.expected_revenue.toLocaleString()}원` : ""}
+      </div>`;
+    });
+  }
+  // HaaS 후보
+  const haas = res.haas_candidates || [];
+  if (haas.length) {
+    html += `<h4 style="margin-top:16px">🔄 HaaS 전환 후보</h4>`;
+    haas.forEach(h => {
+      html += `<div style="margin:4px 0;padding:8px;font-size:13px;background:#f5f0ff;border-radius:6px">
+        <strong>${_esc(h.customer_name)}</strong> — 월 구독료: ${(h.monthly_subscription||0).toLocaleString()}원 (${_esc(h.reason||"")})
+      </div>`;
+    });
+  }
+  // 거래처별 전략
+  const strategies = res.customer_strategies || [];
+  if (strategies.length) {
+    html += `<h4 style="margin-top:16px">🎯 거래처별 전략</h4>`;
+    html += `<table class="table" style="font-size:13px"><thead><tr><th>거래처</th><th>등급</th><th>전략</th></tr></thead><tbody>`;
+    strategies.slice(0, 15).forEach(s => {
+      html += `<tr><td>${_esc(s.customer_name)}</td><td>${_esc(s.tier||"")}</td><td>${_esc(s.strategy||"")}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  return html;
+}
+
+function _saRenderFutureReport(res) {
+  let html = "";
+  // 3년 시나리오
+  const scenarios = res.growth_scenarios || {};
+  if (scenarios.current_annual) {
+    html += `<h4>📈 3년 성장 시나리오</h4>`;
+    html += `<div style="margin-bottom:12px;font-size:14px">현재 연 매출: <strong>${(scenarios.current_annual||0).toLocaleString()}원</strong></div>`;
+    html += `<table class="table" style="font-size:13px"><thead><tr><th>시나리오</th><th>성장률</th><th>1년차</th><th>2년차</th><th>3년차</th></tr></thead><tbody>`;
+    for (const [key, label] of [["conservative","보수적"],["moderate","기본"],["aggressive","공격적"]]) {
+      const s = scenarios[key] || {};
+      html += `<tr><td>${label}</td><td>${((s.rate||0)*100).toFixed(0)}%</td>
+        <td>${(s.year1||0).toLocaleString()}원</td><td>${(s.year2||0).toLocaleString()}원</td><td>${(s.year3||0).toLocaleString()}원</td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  // 신규 기회
+  const opps = res.new_opportunities || [];
+  if (opps.length) {
+    html += `<h4 style="margin-top:16px">🌟 신규 시장 기회</h4>`;
+    opps.forEach(o => {
+      html += `<div style="margin:8px 0;padding:10px;background:#f0fff4;border-radius:8px;font-size:13px">
+        <strong>${_esc(o.trend)}</strong> — 진입 난이도: ${_esc(o.entry_difficulty||"")}
+        ${o.estimated_market ? ` / 시장 규모: ${o.estimated_market.toLocaleString()}원` : ""}
+        ${(o.target_customers||[]).length ? `<br>타겟: ${o.target_customers.map(c=>_esc(c)).join(", ")}` : ""}
+      </div>`;
+    });
+  }
+  return html;
+}
+
+function _saRenderPartnershipReport(res) {
+  let html = "";
+  // 티어 요약
+  const tiers = res.tier_summary || {};
+  if (Object.keys(tiers).length) {
+    html += `<h4>🏆 거래처 티어 분류</h4>`;
+    html += `<div style="display:flex;gap:12px;margin-bottom:16px">`;
+    const colors = { "Tier 1": "#10b981", "Tier 2": "#f59e0b", "Tier 3": "#6b7280" };
+    for (const [t, data] of Object.entries(tiers)) {
+      html += `<div class="sa-kpi-card" style="flex:1;border-top:3px solid ${colors[t]||"#ccc"}">
+        <div class="kpi-label">${_esc(t)} (${data.count||0}개)</div>
+        <div class="kpi-val" style="font-size:16px">${(data.total_clv||0).toLocaleString()}<span style="font-size:10px">원</span></div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  // ABM 타겟
+  const abm = res.abm_targets || [];
+  if (abm.length) {
+    html += `<h4>🎯 ABM 타겟 (Top ${abm.length})</h4>`;
+    html += `<table class="table" style="font-size:13px"><thead><tr><th>#</th><th>거래처</th><th>점수</th><th>사유</th></tr></thead><tbody>`;
+    abm.slice(0, 15).forEach(a => {
+      html += `<tr><td>${a.rank||""}</td><td><strong>${_esc(a.customer_name)}</strong></td><td>${a.score||0}</td><td style="font-size:12px">${_esc(a.reason||"")}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  // 관계 강화
+  const programs = res.relationship_programs || [];
+  if (programs.length) {
+    html += `<h4 style="margin-top:16px">🤝 관계 강화 프로그램</h4>`;
+    programs.slice(0, 10).forEach(p => {
+      html += `<div style="margin:6px 0;padding:10px;background:#f5f0ff;border-radius:8px;font-size:13px">
+        <strong>${_esc(p.customer_name)}</strong>: ${_esc(p.current_level||"")} → ${_esc(p.target_level||"")}
+        ${(p.actions||[]).length ? `<ul style="margin:4px 0 0;padding-left:18px">${p.actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
+      </div>`;
+    });
+  }
+  return html;
+}
+
+async function saShowHistory() {
+  const panel = document.getElementById("sa-history-panel");
+  panel.style.display = panel.style.display === "none" ? "block" : "none";
+  if (panel.style.display === "none") return;
+
+  try {
+    const res = await api.get("/api/sales-agent/history?size=20");
+    const jobs = res.jobs || [];
+    if (!jobs.length) {
+      document.getElementById("sa-history-list").innerHTML = '<p style="color:#888">분석 이력이 없습니다.</p>';
+      return;
+    }
+    document.getElementById("sa-history-list").innerHTML = `
+      <table class="table" style="font-size:13px">
+        <thead><tr><th>분석 ID</th><th>파일명</th><th>상태</th><th>거래건수</th><th>소요시간</th><th>일시</th><th></th></tr></thead>
+        <tbody>${jobs.map(j => `<tr>
+          <td><code style="font-size:11px">${_esc(j.job_id)}</code></td>
+          <td>${_esc(j.file_name||"")}</td>
+          <td>${j.status==="completed"?"✅":"⏳"} ${_esc(j.status)}</td>
+          <td>${(j.total_rows||0).toLocaleString()}</td>
+          <td>${(j.elapsed_seconds||0).toFixed(1)}초</td>
+          <td style="font-size:11px">${_esc((j.created_at||"").slice(0,16))}</td>
+          <td>${j.status==="completed"?`<button class="btn btn-sm" onclick="saLoadFromHistory('${_esc(j.job_id)}')">보기</button>`:""}</td>
+        </tr>`).join("")}</tbody>
+      </table>`;
+  } catch (e) {
+    document.getElementById("sa-history-list").innerHTML = `<p style="color:#ef4444">이력 조회 실패: ${_esc(e.message||"")}</p>`;
+  }
+}
+
+async function saLoadFromHistory(jobId) {
+  _saCurrentJobId = jobId;
+  await saLoadResult(jobId);
+  saSwitchTab("dashboard");
 }
