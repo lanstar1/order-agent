@@ -41,52 +41,57 @@ async def upload_xlsx(
     target_customer_code: Optional[str] = Form(None),
     user=Depends(get_current_user),
 ):
-    if not file.filename.endswith((".xlsx", ".xls")):
-        raise HTTPException(400, "xlsx 파일만 업로드 가능합니다")
-
-    file_id = f"SAF-{uuid.uuid4().hex[:8].upper()}"
-    save_path = os.path.join(UPLOAD_DIR, f"{file_id}_{file.filename}")
-    content = await file.read()
-    with open(save_path, "wb") as f:
-        f.write(content)
-
     try:
+        if not file.filename.endswith((".xlsx", ".xls")):
+            raise HTTPException(400, "xlsx 파일만 업로드 가능합니다")
+
+        file_id = f"SAF-{uuid.uuid4().hex[:8].upper()}"
+        save_path = os.path.join(UPLOAD_DIR, f"{file_id}_{file.filename}")
+        content = await file.read()
+        logger.info(f"[SA Upload] 파일 저장: {save_path} ({len(content)} bytes)")
+        with open(save_path, "wb") as f:
+            f.write(content)
+
+        logger.info(f"[SA Upload] 파싱 시작: mode={mode}")
         from services.sales_agent.xlsx_parser import parse_xlsx
         parsed = parse_xlsx(save_path, mode=mode, target_customer_code=target_customer_code)
-    except Exception as e:
-        logger.error(f"파싱 실패: {e}", exc_info=True)
-        raise HTTPException(400, f"파일 파싱 실패: {str(e)}")
+        logger.info(f"[SA Upload] 파싱 완료: rows={parsed.total_rows}, customers={parsed.total_customers}")
 
-    # DB 저장
-    conn = get_connection()
-    try:
-        conn.execute("""
-            INSERT INTO sa_uploads (file_id, file_name, file_path, file_size,
-                total_rows, total_customers, total_products, total_amount,
-                period_start, period_end, analysis_mode, target_customer, uploaded_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (file_id, file.filename, save_path, len(content),
-              parsed.total_rows, parsed.total_customers, parsed.total_products, parsed.total_amount,
-              parsed.period_start, parsed.period_end, mode,
-              parsed.target_customer_name or "", user.get("emp_cd", ""), now_kst()))
-        conn.commit()
-    finally:
-        conn.close()
+        # DB 저장
+        emp_cd = user.get("emp_cd", "") if isinstance(user, dict) else ""
+        conn = get_connection()
+        try:
+            conn.execute("""
+                INSERT INTO sa_uploads (file_id, file_name, file_path, file_size,
+                    total_rows, total_customers, total_products, total_amount,
+                    period_start, period_end, analysis_mode, target_customer, uploaded_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (file_id, file.filename, save_path, len(content),
+                  parsed.total_rows, parsed.total_customers, parsed.total_products, int(parsed.total_amount),
+                  parsed.period_start, parsed.period_end, mode,
+                  parsed.target_customer_name or "", emp_cd, now_kst()))
+            conn.commit()
+            logger.info(f"[SA Upload] DB 저장 완료: {file_id}")
+        finally:
+            conn.close()
 
-    return {
-        "file_id": file_id,
-        "file_name": file.filename,
-        "mode": mode,
-        "summary": {
+        return {
+            "file_id": file_id,
+            "file_name": file.filename,
+            "mode": mode,
             "total_rows": parsed.total_rows,
             "total_customers": parsed.total_customers,
             "total_products": parsed.total_products,
             "total_amount": parsed.total_amount,
-        },
-        "customers_preview": parsed.customers[:20],
-        "period_start": parsed.period_start,
-        "period_end": parsed.period_end,
-    }
+            "customers_preview": parsed.customers[:20],
+            "period_start": parsed.period_start,
+            "period_end": parsed.period_end,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SA Upload] 오류: {e}", exc_info=True)
+        raise HTTPException(500, f"업로드 처리 오류: {str(e)}")
 
 
 # ═══════════════════════════════════════════
