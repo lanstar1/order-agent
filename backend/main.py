@@ -25,6 +25,7 @@ from api.routes.orderlist import router as orderlist_router
 from api.routes.activity import router as activity_router
 from api.routes.shipping import router as shipping_router
 from api.routes.cs import router as cs_router
+from api.routes.sales_agent import router as sales_agent_router
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -119,6 +120,9 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/cs/tickets"): "CS 불량 접수",
     ("PUT", "/api/cs/tickets"): "CS 상태 변경",
     ("POST", "/api/cs/tickets"): "CS 테스트/파일",
+    ("POST", "/api/sales-agent/upload"): "판매에이전트 파일 업로드",
+    ("POST", "/api/sales-agent/analyze"): "판매에이전트 AI 분석",
+    ("GET", "/api/sales-agent/history"): "판매에이전트 이력 조회",
 }
 
 @app.middleware("http")
@@ -210,6 +214,7 @@ app.include_router(orderlist_router)
 app.include_router(activity_router)
 app.include_router(shipping_router)
 app.include_router(cs_router)
+app.include_router(sales_agent_router)
 
 # AI 대시보드 라우터
 try:

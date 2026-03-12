@@ -1,0 +1,299 @@
+"""
+Python 정량 분석 엔진 (Claude 호출 없이 즉시 실행)
+- RFM 분석 (Mode A only)
+- ABC 분류
+- CLV/ACV 계산
+- 수요 예측
+- 안전재고
+- 트렌드 매칭
+"""
+from __future__ import annotations
+import logging
+from datetime import datetime, timedelta
+from collections import defaultdict
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+def calculate_rfm(txs: list[dict]) -> dict:
+    """RFM 분석 (Mode A: 다중 거래처 비교)"""
+    if not txs:
+        return {"segments": {}, "scores": [], "churn_risk": []}
+
+    cust_data = defaultdict(lambda: {"dates": [], "amounts": [], "count": 0})
+    for tx in txs:
+        cn = tx.get("customer_name", "")
+        if not cn:
+            continue
+        cust_data[cn]["count"] += 1
+        amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
+        cust_data[cn]["amounts"].append(amt)
+        d = tx.get("transaction_date", "")
+        if d:
+            cust_data[cn]["dates"].append(d)
+
+    today = datetime.now()
+    scores = []
+    for cust, d in cust_data.items():
+        last_date = max(d["dates"]) if d["dates"] else ""
+        recency_days = 999
+        if last_date:
+            try:
+                ld = datetime.strptime(last_date[:10], "%Y-%m-%d")
+                recency_days = (today - ld).days
+            except Exception:
+                pass
+
+        total = sum(d["amounts"])
+        freq = d["count"]
+        r_score = 5 if recency_days < 30 else 4 if recency_days < 60 else 3 if recency_days < 90 else 2 if recency_days < 180 else 1
+        f_score = min(5, max(1, freq // 5 + 1))
+        m_score = 5 if total > 100_000_000 else 4 if total > 50_000_000 else 3 if total > 10_000_000 else 2 if total > 1_000_000 else 1
+
+        segment = _rfm_segment(r_score, f_score, m_score)
+        scores.append({
+            "customer_name": cust,
+            "recency_days": recency_days,
+            "frequency": freq,
+            "monetary": total,
+            "r": r_score, "f": f_score, "m": m_score,
+            "segment": segment,
+        })
+
+    # 세그먼트 집계
+    segments = defaultdict(lambda: {"count": 0, "total_monetary": 0, "customers": []})
+    churn_risk = []
+    for s in scores:
+        seg = s["segment"]
+        segments[seg]["count"] += 1
+        segments[seg]["total_monetary"] += s["monetary"]
+        segments[seg]["customers"].append(s["customer_name"])
+        if s["r"] <= 2 and s["f"] >= 3:
+            churn_risk.append({"customer_name": s["customer_name"], "recency_days": s["recency_days"], "monetary": s["monetary"]})
+
+    return {
+        "segments": dict(segments),
+        "scores": sorted(scores, key=lambda x: x["monetary"], reverse=True),
+        "churn_risk": churn_risk,
+    }
+
+
+def _rfm_segment(r, f, m) -> str:
+    if r >= 4 and f >= 4 and m >= 4:
+        return "Champions"
+    if r >= 3 and f >= 3:
+        return "Loyal"
+    if r >= 4 and f <= 2:
+        return "New Customers"
+    if r <= 2 and f >= 3:
+        return "At Risk"
+    if r <= 2 and f <= 2 and m >= 3:
+        return "Hibernating"
+    return "Others"
+
+
+def calculate_abc(txs: list[dict]) -> dict:
+    """ABC 분류 (품목별 매출 기여도)"""
+    product_sales = defaultdict(lambda: {"amount": 0, "qty": 0, "count": 0, "name": ""})
+    for tx in txs:
+        pc = tx.get("product_code", "") or tx.get("product_name", "")
+        if not pc:
+            continue
+        amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
+        qty = _safe_num(tx.get("quantity", 0))
+        product_sales[pc]["amount"] += amt
+        product_sales[pc]["qty"] += qty
+        product_sales[pc]["count"] += 1
+        if not product_sales[pc]["name"]:
+            product_sales[pc]["name"] = tx.get("product_name", pc)
+
+    sorted_products = sorted(product_sales.items(), key=lambda x: x[1]["amount"], reverse=True)
+    total = sum(v["amount"] for _, v in sorted_products)
+
+    results = []
+    cumulative = 0
+    for pc, data in sorted_products:
+        cumulative += data["amount"]
+        pct = (cumulative / total * 100) if total else 0
+        grade = "A" if pct <= 70 else "B" if pct <= 90 else "C"
+        results.append({
+            "product_code": pc,
+            "product_name": data["name"],
+            "amount": data["amount"],
+            "quantity": data["qty"],
+            "tx_count": data["count"],
+            "cumulative_pct": round(pct, 1),
+            "grade": grade,
+        })
+
+    grade_summary = {}
+    for g in ["A", "B", "C"]:
+        items = [r for r in results if r["grade"] == g]
+        grade_summary[g] = {
+            "count": len(items),
+            "amount": sum(i["amount"] for i in items),
+            "pct": round(sum(i["amount"] for i in items) / total * 100, 1) if total else 0,
+        }
+
+    return {"products": results, "grade_summary": grade_summary, "total_amount": total}
+
+
+def calculate_forecast(txs: list[dict]) -> dict:
+    """수요 예측 (월별 이동평균)"""
+    monthly = defaultdict(lambda: {"amount": 0, "qty": 0, "count": 0})
+    for tx in txs:
+        d = tx.get("transaction_date", "")
+        if not d:
+            continue
+        month_key = d[:7]  # YYYY-MM
+        amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
+        qty = _safe_num(tx.get("quantity", 0))
+        monthly[month_key]["amount"] += amt
+        monthly[month_key]["qty"] += qty
+        monthly[month_key]["count"] += 1
+
+    sorted_months = sorted(monthly.keys())
+    history = [{"month": m, **monthly[m]} for m in sorted_months]
+
+    # 3개월 이동평균 예측
+    forecast = []
+    if len(history) >= 2:
+        window = min(3, len(history))
+        recent = history[-window:]
+        avg_amount = sum(h["amount"] for h in recent) // window
+        avg_qty = sum(h["qty"] for h in recent) // window
+        for i in range(1, 4):
+            try:
+                last = datetime.strptime(sorted_months[-1] + "-01", "%Y-%m-%d")
+                next_m = last + timedelta(days=32 * i)
+                forecast.append({
+                    "month": next_m.strftime("%Y-%m"),
+                    "predicted_amount": avg_amount,
+                    "predicted_qty": avg_qty,
+                })
+            except Exception:
+                pass
+
+    return {"history": history, "forecast": forecast}
+
+
+def calculate_safety_stock(txs: list[dict]) -> dict:
+    """안전재고 산출"""
+    product_monthly = defaultdict(lambda: defaultdict(int))
+    for tx in txs:
+        pc = tx.get("product_code", "") or tx.get("product_name", "")
+        d = tx.get("transaction_date", "")
+        if not pc or not d:
+            continue
+        month_key = d[:7]
+        qty = _safe_num(tx.get("quantity", 0))
+        product_monthly[pc][month_key] += qty
+
+    results = []
+    for pc, monthly in product_monthly.items():
+        values = list(monthly.values())
+        if not values:
+            continue
+        avg = sum(values) / len(values)
+        variance = sum((v - avg) ** 2 for v in values) / max(len(values) - 1, 1)
+        std_dev = variance ** 0.5
+        safety = round(std_dev * 1.65)  # 95% 서비스 수준
+        results.append({
+            "product_code": pc,
+            "avg_monthly_qty": round(avg, 1),
+            "std_dev": round(std_dev, 1),
+            "safety_stock": safety,
+            "reorder_point": round(avg + safety),
+        })
+
+    return {"products": sorted(results, key=lambda x: x["avg_monthly_qty"], reverse=True)}
+
+
+def calculate_clv_acv(txs: list[dict]) -> dict:
+    """CLV/ACV 계산 (거래처별 생애가치)"""
+    cust_data = defaultdict(lambda: {"amounts": [], "dates": []})
+    for tx in txs:
+        cn = tx.get("customer_name", "")
+        if not cn:
+            continue
+        amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
+        cust_data[cn]["amounts"].append(amt)
+        d = tx.get("transaction_date", "")
+        if d:
+            cust_data[cn]["dates"].append(d)
+
+    results = []
+    tier_summary = {"Tier 1": {"count": 0, "total_clv": 0, "total_acv": 0},
+                    "Tier 2": {"count": 0, "total_clv": 0, "total_acv": 0},
+                    "Tier 3": {"count": 0, "total_clv": 0, "total_acv": 0}}
+
+    for cust, d in cust_data.items():
+        total = sum(d["amounts"])
+        dates = sorted(d["dates"])
+        months_active = 1
+        if len(dates) >= 2:
+            try:
+                first = datetime.strptime(dates[0][:10], "%Y-%m-%d")
+                last = datetime.strptime(dates[-1][:10], "%Y-%m-%d")
+                months_active = max(1, (last - first).days / 30)
+            except Exception:
+                pass
+        acv = round(total / max(months_active / 12, 0.1))
+        clv = round(acv * 3)  # 3년 추정
+        tier = "Tier 1" if clv >= 300_000_000 else "Tier 2" if clv >= 50_000_000 else "Tier 3"
+
+        results.append({
+            "customer_name": cust,
+            "total_revenue": total,
+            "months_active": round(months_active, 1),
+            "acv": acv,
+            "clv": clv,
+            "tier": tier,
+        })
+        tier_summary[tier]["count"] += 1
+        tier_summary[tier]["total_clv"] += clv
+        tier_summary[tier]["total_acv"] += acv
+
+    return {
+        "clv_results": sorted(results, key=lambda x: x["clv"], reverse=True),
+        "tier_summary": tier_summary,
+    }
+
+
+def calculate_trend_matching(txs: list[dict], customers: list[dict]) -> dict:
+    """5대 메가트렌드 매칭 분석"""
+    TRENDS = [
+        {"id": "ai_infra", "name": "Private AI 인프라", "keywords": ["gpu", "ai", "서버", "딥러닝", "hpc", "nvidia"], "growth": 35},
+        {"id": "edge", "name": "엣지 컴퓨팅", "keywords": ["edge", "엣지", "iot", "산업용", "소형"], "growth": 28},
+        {"id": "zero_trust", "name": "제로트러스트 보안", "keywords": ["방화벽", "보안", "firewall", "vpn", "fortinet", "ips"], "growth": 22},
+        {"id": "sbom", "name": "SBOM/공급망 보안", "keywords": ["sbom", "공급망", "인증", "컴플라이언스"], "growth": 40},
+        {"id": "haas", "name": "HaaS 구독 모델", "keywords": ["구독", "월정액", "렌탈", "as-a-service", "haas"], "growth": 30},
+    ]
+
+    product_names = [tx.get("product_name", "").lower() for tx in txs]
+    all_text = " ".join(product_names)
+
+    results = []
+    for trend in TRENDS:
+        hits = sum(1 for kw in trend["keywords"] if kw in all_text)
+        score = min(100, hits * 20)
+        results.append({
+            "trend_id": trend["id"],
+            "trend_name": trend["name"],
+            "score": score,
+            "annual_growth": trend["growth"],
+            "opportunity_level": "높음" if score >= 60 else "보통" if score >= 30 else "낮음",
+        })
+
+    return {"trends": sorted(results, key=lambda x: x["score"], reverse=True)}
+
+
+def _safe_num(val) -> int:
+    """안전하게 숫자 변환"""
+    if val is None:
+        return 0
+    try:
+        return int(float(str(val).replace(",", "")))
+    except (ValueError, TypeError):
+        return 0

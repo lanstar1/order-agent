@@ -111,11 +111,14 @@ function navigateTo(pageId) {
     training:     "발주서 학습",
     shipping:     "택배조회",
     cs_rma:       "CS/RMA",
+    sales_agent:  "판매에이전트",
     ai_dashboard: "AI 대시보드",
     settings:     "설정",
   }[pageId] || "";
   // CS/RMA 페이지 진입 시 초기화
   if (pageId === "cs_rma") csInit();
+  // 판매에이전트 페이지 진입 시 초기화
+  if (pageId === "sales_agent") saInit();
   // 택배조회 페이지 진입 시 통계 로드
   if (pageId === "shipping") initShippingPage();
   // 주문서 페이지 진입 시 드롭존 초기화
@@ -3766,6 +3769,406 @@ async function csAddMemo(ticketId) {
     await api.post(`/api/cs/tickets/${ticketId}/memo`, { memo });
     csShowDetail(ticketId);
   } catch(e) { alert("오류: " + (e.message || e)); }
+}
+
+// ═══════════════════════════════════════════
+//  판매에이전트 (Sales Agent)
+// ═══════════════════════════════════════════
+let saState = { fileId: null, jobId: null, mode: 'multi', ws: null, result: null, customers: [] };
+
+function saInit() {
+  saLoadHistory().catch(e => console.error("saLoadHistory 실패:", e));
+}
+
+function saSwitchTab(tab) {
+  document.querySelectorAll(".sa-tab").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll("[id^='sa-tab-']").forEach(el => el.style.display = "none");
+
+  if (tab === 'analysis') {
+    document.querySelectorAll(".sa-tab")[0].classList.add("active");
+    document.getElementById("sa-tab-analysis").style.display = "block";
+  } else if (tab === 'dashboard') {
+    document.querySelectorAll(".sa-tab")[1].classList.add("active");
+    document.getElementById("sa-tab-dashboard").style.display = "block";
+    if (saState.result) saShowDashboard(saState.result);
+  } else if (tab === 'history') {
+    document.querySelectorAll(".sa-tab")[2].classList.add("active");
+    document.getElementById("sa-tab-history").style.display = "block";
+    saLoadHistory().catch(e => console.error("사용 이력 로드 실패:", e));
+  }
+}
+
+async function saUploadFile(file) {
+  if (!file) return;
+  if (!file.name.match(/\.(xlsx|xls)$/i)) {
+    alert("XLSX 파일만 업로드 가능합니다.");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("mode", saState.mode);
+
+  try {
+    showProcessing("파일 업로드 중...");
+    const res = await api.saUpload(formData);
+    saState.fileId = res.file_id;
+
+    // 업로드 요약 표시
+    document.getElementById("sa-summary-rows").textContent = res.total_rows || "-";
+    document.getElementById("sa-summary-customers").textContent = res.total_customers || "-";
+    document.getElementById("sa-summary-products").textContent = res.total_products || "-";
+    document.getElementById("sa-summary-amount").textContent = (res.total_amount || 0).toLocaleString('ko-KR');
+    document.getElementById("sa-upload-summary").style.display = "block";
+
+    // Mode B인 경우 거래처 드롭다운 로드
+    if (saState.mode === 'single') {
+      try {
+        const customers = await api.saCustomers(saState.fileId);
+        saState.customers = customers;
+        const dropdown = document.getElementById("sa-customer-dropdown");
+        dropdown.innerHTML = '<option value="">선택...</option>';
+        customers.forEach(c => {
+          const opt = document.createElement("option");
+          opt.value = c.code || c.name;
+          opt.textContent = `${c.name} (${c.code})`;
+          dropdown.appendChild(opt);
+        });
+        document.getElementById("sa-customer-select").style.display = "block";
+      } catch(e) {
+        console.error("거래처 목록 로드 실패:", e);
+      }
+    } else {
+      document.getElementById("sa-customer-select").style.display = "none";
+    }
+
+    document.getElementById("sa-start-button").style.display = "block";
+    toast("파일 업로드 완료", "success");
+  } catch(e) {
+    alert("업로드 오류: " + (e.message || e));
+  } finally {
+    hideProcessing();
+  }
+}
+
+function saSetMode(mode) {
+  saState.mode = mode;
+  document.querySelectorAll(".sa-mode-btn").forEach(el => el.classList.remove("active"));
+  document.querySelector(`[data-mode="${mode}"]`).classList.add("active");
+  document.getElementById("sa-mode-label").textContent = mode === 'multi' ? '다중 거래처 비교' : '단일 거래처 심층';
+
+  // 기존 선택 초기화
+  document.getElementById("sa-upload-summary").style.display = "none";
+  document.getElementById("sa-customer-select").style.display = "none";
+  document.getElementById("sa-start-button").style.display = "none";
+  document.getElementById("sa-file-input").value = "";
+  saState.fileId = null;
+}
+
+function saDragOver(e) {
+  e.preventDefault();
+  document.getElementById("sa-dropzone").classList.add("dragover");
+}
+
+function saDragLeave(e) {
+  e.preventDefault();
+  document.getElementById("sa-dropzone").classList.remove("dragover");
+}
+
+function saDropFile(e) {
+  e.preventDefault();
+  document.getElementById("sa-dropzone").classList.remove("dragover");
+  const files = e.dataTransfer.files;
+  if (files.length > 0) {
+    saUploadFile(files[0]);
+  }
+}
+
+async function saStartAnalysis() {
+  if (!saState.fileId) {
+    alert("먼저 파일을 업로드해주세요.");
+    return;
+  }
+
+  const targetCustomer = saState.mode === 'single'
+    ? document.getElementById("sa-customer-dropdown").value
+    : null;
+
+  if (saState.mode === 'single' && !targetCustomer) {
+    alert("거래처를 선택해주세요.");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file_id", saState.fileId);
+  formData.append("mode", saState.mode);
+  if (targetCustomer) formData.append("target_customer_code", targetCustomer);
+
+  try {
+    showProcessing("분석 시작 중...");
+    const res = await api.saAnalyze(formData);
+    saState.jobId = res.job_id;
+
+    // UI 변경
+    document.getElementById("sa-start-button").style.display = "none";
+    document.getElementById("sa-progress-section").style.display = "block";
+    document.getElementById("sa-results-section").style.display = "none";
+    document.getElementById("sa-log-window").innerHTML = "";
+
+    // 에이전트 카드 생성
+    saInitAgents();
+
+    // WebSocket 연결
+    saConnectWS(saState.jobId);
+
+    hideProcessing();
+    toast("분석이 시작되었습니다.", "success");
+  } catch(e) {
+    alert("분석 시작 실패: " + (e.message || e));
+    hideProcessing();
+  }
+}
+
+function saInitAgents() {
+  const agentNames = saState.mode === 'multi'
+    ? ['거래처', '품목', '전략', '미래', '협력', '시각화']
+    : ['거래처', '품목', '전략', '미래', '협력'];
+
+  const grid = document.getElementById("sa-agent-grid");
+  grid.innerHTML = agentNames.map((name, i) => `
+    <div class="sa-agent-card">
+      <div class="name">${name}</div>
+      <div class="status sa-agent-status-pending" data-agent="${i}">대기 중</div>
+    </div>
+  `).join("");
+}
+
+function saConnectWS(jobId) {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/api/sales-agent/ws/${jobId}`;
+
+  saState.ws = new WebSocket(wsUrl);
+
+  saState.ws.onopen = () => {
+    console.log("WebSocket 연결됨");
+  };
+
+  saState.ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      saUpdateProgress(data);
+    } catch(e) {
+      console.error("WebSocket 메시지 파싱 실패:", e);
+    }
+  };
+
+  saState.ws.onerror = (error) => {
+    console.error("WebSocket 에러:", error);
+    saAddLog("❌ WebSocket 에러 발생", "error");
+  };
+
+  saState.ws.onclose = () => {
+    console.log("WebSocket 연결 종료");
+  };
+}
+
+function saUpdateProgress(data) {
+  // 로그 추가
+  if (data.message) saAddLog(data.message, data.level || "info");
+
+  // 진행률 업데이트
+  if (data.progress !== undefined) {
+    const percent = Math.round(data.progress * 100);
+    document.getElementById("sa-progress-fill").style.width = percent + "%";
+    document.getElementById("sa-progress-percent").textContent = percent;
+  }
+
+  // 에이전트 상태 업데이트
+  if (data.agent_status !== undefined) {
+    const cards = document.querySelectorAll(".sa-agent-card");
+    const statusMap = { pending: "대기 중", running: "실행 중", done: "완료" };
+    cards.forEach((card, i) => {
+      if (i < data.agent_statuses?.length) {
+        const status = data.agent_statuses[i];
+        const statusEl = card.querySelector(".status");
+        statusEl.textContent = statusMap[status] || status;
+        statusEl.className = `status sa-agent-status-${status}`;
+      }
+    });
+  }
+
+  // 분석 완료
+  if (data.status === "completed") {
+    saState.ws?.close();
+    saShowResult(data.result);
+    toast("분석이 완료되었습니다.", "success");
+  }
+
+  if (data.status === "failed") {
+    saState.ws?.close();
+    alert("분석 중 오류가 발생했습니다: " + (data.error || "알 수 없는 오류"));
+    document.getElementById("sa-progress-section").style.display = "none";
+  }
+}
+
+function saAddLog(message, level = "info") {
+  const logWindow = document.getElementById("sa-log-window");
+  const entry = document.createElement("div");
+  entry.className = `sa-log-entry sa-log-${level}`;
+  entry.textContent = `[${new Date().toLocaleTimeString('ko-KR')}] ${message}`;
+  logWindow.appendChild(entry);
+  logWindow.scrollTop = logWindow.scrollHeight;
+}
+
+function saShowResult(result) {
+  saState.result = result;
+  document.getElementById("sa-progress-section").style.display = "none";
+
+  const content = document.getElementById("sa-results-content");
+  let html = "";
+
+  // KPI 카드
+  if (result.kpis) {
+    html += `
+      <div style="margin-bottom:20px">
+        <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:12px">📊 핵심 지표</div>
+        <div class="sa-kpi-grid">
+    `;
+    Object.entries(result.kpis).forEach(([key, value]) => {
+      html += `
+        <div class="sa-kpi-card">
+          <div class="label">${key}</div>
+          <div class="value">${typeof value === 'number' ? value.toLocaleString('ko-KR') : value}</div>
+        </div>
+      `;
+    });
+    html += `</div></div>`;
+  }
+
+  // 에이전트별 결과
+  if (result.agents) {
+    html += `<div style="margin-bottom:20px">`;
+    Object.entries(result.agents).forEach(([agentName, agentResult]) => {
+      html += `
+        <div class="sa-result-section">
+          <div class="sa-result-title" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+            <span>🤖 ${agentName} 에이전트</span>
+            <span style="font-size:14px">▼</span>
+          </div>
+          <div class="sa-result-content">
+            <p style="white-space:pre-wrap;line-height:1.6;margin:0;font-size:13px;color:#374151">${agentResult}</p>
+          </div>
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+
+  // 추천사항
+  if (result.recommendations) {
+    html += `
+      <div style="margin-bottom:20px">
+        <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:12px">💡 추천사항</div>
+        <ul class="sa-recommend-list">
+    `;
+    result.recommendations.forEach(rec => {
+      html += `<li>• ${rec}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+
+  content.innerHTML = html;
+  document.getElementById("sa-results-section").style.display = "block";
+}
+
+function saShowDashboard(result) {
+  if (!result) return;
+
+  const content = document.getElementById("sa-dashboard-content");
+  let html = "";
+
+  // KPI 요약
+  html += `<div style="margin-bottom:20px">`;
+  if (result.kpis) {
+    html += `<div class="sa-kpi-grid">`;
+    Object.entries(result.kpis).forEach(([key, value]) => {
+      html += `
+        <div class="sa-kpi-card">
+          <div class="label">${key}</div>
+          <div class="value">${typeof value === 'number' ? value.toLocaleString('ko-KR') : value}</div>
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  // 간단한 요약
+  html += `
+    <div style="padding:12px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px">
+      <div style="font-size:14px;color:#374151">
+        <strong>최종 분석 결과</strong><br><br>
+        파일 기반 분석이 완료되었습니다. 상세한 결과는 <strong>분석</strong> 탭에서 확인하세요.
+      </div>
+    </div>
+  `;
+
+  content.innerHTML = html;
+}
+
+async function saLoadHistory() {
+  try {
+    const history = await api.saHistory(50);
+    const tbody = document.getElementById("sa-history-tbody");
+
+    if (!history || history.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:#9ca3af">분석 이력이 없습니다.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = history.map(item => {
+      const statusBadge = {
+        pending: '⏳ 대기',
+        running: '▶️ 실행',
+        completed: '✅ 완료',
+        failed: '❌ 실패'
+      }[item.status] || item.status;
+
+      return `
+        <tr>
+          <td style="font-family:monospace;font-size:12px">${item.job_id.substring(0, 8)}</td>
+          <td>${item.file_name || '-'}</td>
+          <td>${item.mode === 'multi' ? '다중' : '단일'}</td>
+          <td>${statusBadge}</td>
+          <td>${item.target_customer || '-'}</td>
+          <td>${item.elapsed_seconds ? item.elapsed_seconds + 's' : '-'}</td>
+          <td>${new Date(item.created_at).toLocaleString('ko-KR')}</td>
+          <td>
+            ${item.status === 'completed' ? `<button onclick="saViewResult('${item.job_id}')" style="padding:4px 10px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">보기</button>` : '-'}
+          </td>
+        </tr>
+      `;
+    }).join("");
+  } catch(e) {
+    const tbody = document.getElementById("sa-history-tbody");
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:#ef4444">이력 로드 실패</td></tr>';
+    console.error("사용 이력 로드 오류:", e);
+  }
+}
+
+async function saViewResult(jobId) {
+  try {
+    showProcessing("결과 로드 중...");
+    const result = await api.saResult(jobId);
+    saState.result = result;
+    hideProcessing();
+    saShowResult(result);
+    saSwitchTab('analysis');
+    toast("결과를 불러왔습니다.", "success");
+  } catch(e) {
+    hideProcessing();
+    alert("결과 로드 실패: " + (e.message || e));
+  }
 }
 
 
