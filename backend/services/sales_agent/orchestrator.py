@@ -12,7 +12,7 @@ from .schemas import SalesData, AnalysisResult, AnalysisMode
 from .engines import (
     calculate_rfm, calculate_abc, calculate_forecast,
     calculate_safety_stock, calculate_clv_acv, calculate_trend_matching,
-    calculate_product_trends,
+    calculate_product_trends, calculate_customer_ranking,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,8 @@ async def run_analysis(
         engine_results["clv"] = calculate_clv_acv(txs)
         engine_results["trends"] = calculate_trend_matching(txs, sales_data.customers)
         engine_results["product_trends"] = calculate_product_trends(txs)
+        if not is_single:
+            engine_results["customer_ranking"] = calculate_customer_ranking(txs)
         logger.info("[SalesAgent] Python 엔진 분석 완료")
     except Exception as e:
         logger.error(f"[SalesAgent] Python 엔진 오류: {e}")
@@ -134,12 +136,14 @@ def _build_data_summary(data: SalesData) -> str:
         lines.append(f"  {i}. {cn}: {amt:,}원")
 
     lines.append("\n품목별 매출 TOP 10 (모델명 기준, 부자재 제외):")
-    from .engines import _get_model_name, _is_excluded
+    from .engines import _get_model_name, _is_excluded_tx
     prod_amt = defaultdict(int)
     for tx in data.transactions[:5000]:
+        if _is_excluded_tx(tx):
+            continue
         pn = _get_model_name(tx)
         amt = int(float(str(tx.get("total_amount", tx.get("supply_price", 0)) or 0).replace(",", "")))
-        if pn and not _is_excluded(pn):
+        if pn:
             prod_amt[pn] += amt
     for i, (pn, amt) in enumerate(sorted(prod_amt.items(), key=lambda x: -x[1])[:10], 1):
         lines.append(f"  {i}. {pn}: {amt:,}원")

@@ -15,10 +15,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# 분석 제외 키워드 (수량 많지만 금액 적은 부자재/소모품)
+# 분석 제외 키워드 (수량 많지만 금액 적은 부자재/소모품 + 비매출 항목)
 EXCLUDE_KEYWORDS = [
     "커플러", "젠더", "키스톤잭", "먼지덮개", "부트", "커넥터",
-    "콘넥터", "먼지", "boot", "아울렛",
+    "콘넥터", "먼지", "boot", "아울렛", "매입", "업체직송", "택배",
 ]
 
 def _get_model_name(tx: dict) -> str:
@@ -28,8 +28,13 @@ def _get_model_name(tx: dict) -> str:
         return mn
     return (tx.get("product_name") or "").strip()
 
+def _is_excluded_tx(tx: dict) -> bool:
+    """D열(품명 및 규격) 기준으로 제외 키워드 체크"""
+    d_col = (tx.get("product_name") or "").lower()
+    return any(kw in d_col for kw in EXCLUDE_KEYWORDS)
+
 def _is_excluded(name: str) -> bool:
-    """제외 키워드 포함 여부"""
+    """이름 문자열 기준 제외 키워드 체크 (하위 호환)"""
     lower = name.lower()
     return any(kw in lower for kw in EXCLUDE_KEYWORDS)
 
@@ -112,11 +117,13 @@ def _rfm_segment(r, f, m) -> str:
 
 
 def calculate_abc(txs: list[dict]) -> dict:
-    """ABC 분류 (모델명 기반, 제외 키워드 필터링)"""
+    """ABC 분류 (모델명 기반, D열 키워드 제외 필터링)"""
     product_sales = defaultdict(lambda: {"amount": 0, "qty": 0, "count": 0, "name": ""})
     for tx in txs:
+        if _is_excluded_tx(tx):
+            continue
         pn = _get_model_name(tx)
-        if not pn or _is_excluded(pn):
+        if not pn:
             continue
         amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
         qty = _safe_num(tx.get("quantity", 0))
@@ -306,6 +313,39 @@ def calculate_trend_matching(txs: list[dict], customers: list[dict]) -> dict:
     return {"trends": sorted(results, key=lambda x: x["score"], reverse=True)}
 
 
+def calculate_customer_ranking(txs: list[dict]) -> dict:
+    """거래처별 매출액 순위 TOP 10 (C열 거래처명, J열 합계 기준)"""
+    if not txs:
+        return {"top10": [], "total_customers": 0}
+
+    cust_totals = defaultdict(lambda: {"amount": 0, "qty": 0, "tx_count": 0})
+    for tx in txs:
+        cn = (tx.get("customer_name") or "").strip()
+        if not cn:
+            continue
+        amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
+        qty = _safe_num(tx.get("quantity", 0))
+        cust_totals[cn]["amount"] += amt
+        cust_totals[cn]["qty"] += qty
+        cust_totals[cn]["tx_count"] += 1
+
+    sorted_custs = sorted(cust_totals.items(), key=lambda x: x[1]["amount"], reverse=True)
+    total_amount = sum(v["amount"] for _, v in sorted_custs)
+
+    top10 = []
+    for i, (cn, data) in enumerate(sorted_custs[:10]):
+        pct = round(data["amount"] / total_amount * 100, 1) if total_amount else 0
+        top10.append({
+            "customer_name": cn,
+            "amount": data["amount"],
+            "quantity": data["qty"],
+            "tx_count": data["tx_count"],
+            "pct": pct,
+        })
+
+    return {"top10": top10, "total_customers": len(cust_totals), "total_amount": total_amount}
+
+
 def calculate_product_trends(txs: list[dict]) -> dict:
     """
     상위 품목의 주간/월간/분기별 판매 추이 분석 + 특이사항 감지
@@ -316,11 +356,13 @@ def calculate_product_trends(txs: list[dict]) -> dict:
     if not txs:
         return {"top10_by_qty": [], "top10_by_amount": [], "trends": {}, "anomalies": []}
 
-    # 모델명 기반 집계 (제외 키워드 필터링)
+    # 모델명 기반 집계 (D열 키워드 제외 필터링)
     product_totals = defaultdict(lambda: {"qty": 0, "amount": 0, "name": ""})
     for tx in txs:
+        if _is_excluded_tx(tx):
+            continue
         pn = _get_model_name(tx)
-        if not pn or _is_excluded(pn):
+        if not pn:
             continue
         qty = _safe_num(tx.get("quantity", 0))
         amt = _safe_num(tx.get("total_amount", tx.get("supply_price", 0)))
@@ -346,6 +388,8 @@ def calculate_product_trends(txs: list[dict]) -> dict:
     quarterly = defaultdict(lambda: defaultdict(lambda: {"qty": 0, "amount": 0}))
 
     for tx in txs:
+        if _is_excluded_tx(tx):
+            continue
         pn = _get_model_name(tx)
         d = tx.get("transaction_date", "")
         if not pn or not d or pn not in top_products:
