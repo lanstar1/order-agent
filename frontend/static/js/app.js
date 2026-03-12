@@ -3779,6 +3779,7 @@ let _saCurrentJobId = null;
 let _saCurrentResult = null;
 let _saCharts = {};
 let _saPollingTimer = null;
+let _saWebSocket = null;
 
 const SA_AGENTS = {
   customer:      { name: "거래처 분석", icon: "👥" },
@@ -3881,9 +3882,8 @@ async function saStartAnalysis() {
       `<div id="sa-status-${k}"><span class="sa-progress-dot pending"></span>${v.icon} ${v.name}</div>`
     ).join("");
 
-    // 폴링 시작
-    _saPollingTimer = setInterval(() => saPollStatus(), 3000);
-    saPollStatus();
+    // WebSocket 실시간 진행 (폴링 fallback 포함)
+    _saConnectWebSocket(res.job_id);
 
   } catch (e) {
     alert("분석 시작 실패: " + (e.message || e));
@@ -3892,42 +3892,88 @@ async function saStartAnalysis() {
   }
 }
 
+function _saConnectWebSocket(jobId) {
+  // WebSocket 연결 시도
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${protocol}//${location.host}/api/sales-agent/ws/${jobId}`;
+
+  try {
+    _saWebSocket = new WebSocket(wsUrl);
+
+    _saWebSocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        _saHandleProgressUpdate(data);
+      } catch(e) { console.error("WS parse error:", e); }
+    };
+
+    _saWebSocket.onerror = (e) => {
+      console.warn("WebSocket 연결 실패, 폴링으로 전환:", e);
+      _saWebSocket = null;
+      // 폴링 fallback
+      if (!_saPollingTimer) {
+        _saPollingTimer = setInterval(() => saPollStatus(), 3000);
+        saPollStatus();
+      }
+    };
+
+    _saWebSocket.onclose = () => {
+      // 분석 완료 전에 닫히면 폴링으로 전환
+      if (_saCurrentJobId && !_saCurrentResult) {
+        if (!_saPollingTimer) {
+          _saPollingTimer = setInterval(() => saPollStatus(), 3000);
+          saPollStatus();
+        }
+      }
+      _saWebSocket = null;
+    };
+  } catch(e) {
+    console.warn("WebSocket 미지원, 폴링 사용:", e);
+    _saPollingTimer = setInterval(() => saPollStatus(), 3000);
+    saPollStatus();
+  }
+}
+
+function _saHandleProgressUpdate(data) {
+  const fill = document.getElementById("sa-progress-fill");
+  if (fill) fill.style.width = (data.progress || 0) + "%";
+
+  // 에이전트별 상태 업데이트
+  if (data.agents) {
+    Object.entries(data.agents).forEach(([k, status]) => {
+      const el = document.getElementById("sa-status-" + k);
+      if (el) {
+        const dot = el.querySelector(".sa-progress-dot");
+        if (dot) dot.className = "sa-progress-dot " + status;
+      }
+    });
+  }
+
+  if (data.status === "completed") {
+    _saCleanupProgress();
+    saLoadResult(_saCurrentJobId);
+  } else if (data.status === "failed") {
+    _saCleanupProgress();
+    document.getElementById("sa-progress").innerHTML = `
+      <div class="card" style="background:#fff0f0;border:1px solid #ffc0c0">
+        <h4 style="margin-top:0;color:#ef4444">❌ 분석 실패</h4>
+        <p>분석 중 오류가 발생했습니다. 다시 시도해주세요.</p>
+      </div>`;
+    document.getElementById("sa-analyze-btn").disabled = false;
+    document.getElementById("sa-analyze-btn").textContent = "🚀 AI 분석 시작 (6개 에이전트 병렬)";
+  }
+}
+
+function _saCleanupProgress() {
+  if (_saPollingTimer) { clearInterval(_saPollingTimer); _saPollingTimer = null; }
+  if (_saWebSocket) { try { _saWebSocket.close(); } catch(e){} _saWebSocket = null; }
+}
+
 async function saPollStatus() {
   if (!_saCurrentJobId) return;
   try {
     const res = await api.get(`/api/sales-agent/status/${_saCurrentJobId}`);
-    const fill = document.getElementById("sa-progress-fill");
-    if (fill) fill.style.width = (res.progress || 0) + "%";
-
-    // 에이전트별 상태 업데이트
-    if (res.agents) {
-      Object.entries(res.agents).forEach(([k, status]) => {
-        const el = document.getElementById("sa-status-" + k);
-        if (el) {
-          const dot = el.querySelector(".sa-progress-dot");
-          if (dot) {
-            dot.className = "sa-progress-dot " + status;
-          }
-        }
-      });
-    }
-
-    if (res.status === "completed") {
-      clearInterval(_saPollingTimer);
-      _saPollingTimer = null;
-      // 결과 로드
-      await saLoadResult(_saCurrentJobId);
-    } else if (res.status === "failed") {
-      clearInterval(_saPollingTimer);
-      _saPollingTimer = null;
-      document.getElementById("sa-progress").innerHTML = `
-        <div class="card" style="background:#fff0f0;border:1px solid #ffc0c0">
-          <h4 style="margin-top:0;color:#ef4444">❌ 분석 실패</h4>
-          <p>분석 중 오류가 발생했습니다. 다시 시도해주세요.</p>
-        </div>`;
-      document.getElementById("sa-analyze-btn").disabled = false;
-      document.getElementById("sa-analyze-btn").textContent = "🚀 AI 분석 시작 (6개 에이전트 병렬)";
-    }
+    _saHandleProgressUpdate(res);
   } catch (e) {
     console.error("Poll error:", e);
   }
@@ -3960,101 +4006,98 @@ async function saLoadResult(jobId) {
 function saRenderDashboard(result) {
   const agents = result.agents || {};
   const vizResult = agents.visualization?.result || {};
+  const engine = result.engine_results || {};
 
-  // KPI 카드
+  // KPI 카드 (카운트업 애니메이션)
   const kpiCards = vizResult.kpi_cards || [];
-  const kpiHtml = kpiCards.map(k => {
-    const val = typeof k.value === "number" ? k.value.toLocaleString() : k.value;
+  const kpiHtml = kpiCards.map((k, i) => {
     const trendClass = k.trend === "up" ? "up" : k.trend === "down" ? "down" : "";
-    return `<div class="sa-kpi-card">
+    return `<div class="sa-kpi-card sa-animate-count" style="animation-delay:${i*0.1}s">
       <div class="kpi-label">${_esc(k.label)}</div>
-      <div class="kpi-val">${val}<span style="font-size:12px">${_esc(k.unit||"")}</span></div>
+      <div class="kpi-val" data-countup="${k.value||0}">0<span style="font-size:12px">${_esc(k.unit||"")}</span></div>
       ${k.change ? `<div class="kpi-change ${trendClass}">${_esc(k.change)}</div>` : ""}
     </div>`;
   }).join("");
   document.getElementById("sa-kpi-cards").innerHTML = kpiHtml;
+  // 카운트업 애니메이션
+  document.querySelectorAll("[data-countup]").forEach(el => {
+    const target = parseInt(el.dataset.countup) || 0;
+    const unit = el.querySelector("span")?.outerHTML || "";
+    let current = 0;
+    const step = Math.max(Math.ceil(target / 40), 1);
+    const timer = setInterval(() => {
+      current += step;
+      if (current >= target) { current = target; clearInterval(timer); }
+      el.innerHTML = current.toLocaleString() + unit;
+    }, 30);
+  });
 
   // 차트 렌더링
   const charts = vizResult.charts || {};
   _saDestroyCharts();
 
-  // 월별 매출 차트
   if (charts.monthly_revenue?.length) {
     _saCharts.monthly = new Chart(document.getElementById("sa-chart-monthly"), {
       type: "line",
       data: {
         labels: charts.monthly_revenue.map(d => d.month),
         datasets: [{
-          label: "매출액",
-          data: charts.monthly_revenue.map(d => d.amount),
-          borderColor: "#4A90D9",
-          backgroundColor: "rgba(74,144,217,0.1)",
-          fill: true,
-          tension: 0.3,
+          label: "매출액", data: charts.monthly_revenue.map(d => d.amount),
+          borderColor: "#4A90D9", backgroundColor: "rgba(74,144,217,0.1)", fill: true, tension: 0.3,
         }],
       },
-      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => (v/10000).toLocaleString() + "만" } } } },
+      options: { responsive: true, animation: { duration: 1200 }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => (v/10000).toLocaleString() + "만" } } } },
     });
   }
 
-  // 거래처 Top 10
   if (charts.top_customers?.length) {
     const top10 = charts.top_customers.slice(0, 10);
     _saCharts.customers = new Chart(document.getElementById("sa-chart-customers"), {
       type: "bar",
       data: {
         labels: top10.map(d => d.name?.length > 10 ? d.name.slice(0,10)+"…" : d.name),
-        datasets: [{
-          label: "매출액",
-          data: top10.map(d => d.amount),
-          backgroundColor: "#667eea",
-        }],
+        datasets: [{ label: "매출액", data: top10.map(d => d.amount), backgroundColor: "#667eea" }],
       },
-      options: { indexAxis: "y", responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: v => (v/10000).toLocaleString() + "만" } } } },
+      options: { indexAxis: "y", responsive: true, animation: { duration: 1000 }, plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: v => (v/10000).toLocaleString() + "만" } } } },
     });
   }
 
-  // 카테고리 파이
   if (charts.category_share?.length) {
     const colors = ["#667eea","#764ba2","#f093fb","#4facfe","#43e97b","#fa709a","#fee140","#30cfd0","#a8edea","#fed6e3"];
     _saCharts.category = new Chart(document.getElementById("sa-chart-category"), {
       type: "doughnut",
       data: {
         labels: charts.category_share.map(d => d.category),
-        datasets: [{
-          data: charts.category_share.map(d => d.amount),
-          backgroundColor: colors,
-        }],
+        datasets: [{ data: charts.category_share.map(d => d.amount), backgroundColor: colors }],
       },
-      options: { responsive: true, plugins: { legend: { position: "right", labels: { font: { size: 11 } } } } },
+      options: { responsive: true, animation: { duration: 1000 }, plugins: { legend: { position: "right", labels: { font: { size: 11 } } } } },
     });
   }
 
-  // 월별 거래 건수
   if (charts.monthly_count?.length) {
     _saCharts.count = new Chart(document.getElementById("sa-chart-count"), {
       type: "bar",
       data: {
         labels: charts.monthly_count.map(d => d.month),
-        datasets: [{
-          label: "거래 건수",
-          data: charts.monthly_count.map(d => d.count),
-          backgroundColor: "rgba(118,75,162,0.6)",
-        }],
+        datasets: [{ label: "거래 건수", data: charts.monthly_count.map(d => d.count), backgroundColor: "rgba(118,75,162,0.6)" }],
       },
-      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+      options: { responsive: true, animation: { duration: 1000 }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
     });
   }
 
-  // 에이전트 요약 카드
+  // ── Python 엔진 결과 렌더링 ──
+  _saRenderEngineResults(engine);
+
+  // ── Mermaid 다이어그램 ──
+  _saRenderMermaid(engine, agents);
+
+  // ── 에이전트 요약 카드 ──
   const summariesDiv = document.getElementById("sa-agent-summaries");
   summariesDiv.innerHTML = Object.entries(agents).map(([k, ag]) => {
-    const res = ag.result || {};
-    const summary = res.summary || "분석 결과 없음";
-    return `<div class="sa-agent-card">
-      <h4>${ag.icon} ${ag.name}</h4>
-      <div class="agent-summary">${_esc(summary)}</div>
-      ${ag.status === "error" ? '<div style="color:#ef4444;font-size:12px;margin-top:4px">⚠️ 오류 발생</div>' : ""}
+    const r = ag.result || {};
+    return `<div class="sa-agent-card sa-animate-in">
+      <h4>${ag.icon} ${ag.name} ${ag.status==="error"?'<span style="color:#ef4444;font-size:12px">오류</span>':''}</h4>
+      <div class="agent-summary">${_esc(r.summary || "분석 결과 없음")}</div>
     </div>`;
   }).join("");
 
@@ -4064,9 +4107,164 @@ function saRenderDashboard(result) {
     ? recs.map(r => `<div style="padding:6px 0;border-bottom:1px solid #f0e0c0;font-size:13px">💡 ${_esc(r)}</div>`).join("")
     : '<div style="color:#888">권고사항이 없습니다.</div>';
 
-  // 대시보드 표시
   document.getElementById("sa-no-data").style.display = "none";
   document.getElementById("sa-dashboard-content").style.display = "block";
+}
+
+function _saRenderEngineResults(engine) {
+  // RFM 세그먼트 바 차트
+  const rfm = engine.rfm || {};
+  const segsDiv = document.getElementById("sa-rfm-segments");
+  if (segsDiv && rfm.segments) {
+    const segColors = {Champions:"#10b981",Loyal:"#3b82f6",Potential:"#8b5cf6","At Risk":"#f59e0b",Hibernating:"#6b7280"};
+    const totalCust = Object.values(rfm.segments).reduce((s,v) => s+v.count, 0) || 1;
+    segsDiv.innerHTML = Object.entries(rfm.segments).map(([name,data]) => {
+      const pct = Math.round(data.count / totalCust * 100);
+      return `<div style="margin:6px 0;display:flex;align-items:center;gap:8px">
+        <div style="width:100px;font-size:12px;font-weight:600">${name}</div>
+        <div class="sa-seg-bar" style="width:${Math.max(pct*3,40)}px;background:${segColors[name]||'#999'}">${data.count}</div>
+        <div style="font-size:11px;color:#888">${pct}% / ${data.total_amount.toLocaleString()}원</div>
+      </div>`;
+    }).join("");
+    // RFM 파이 차트
+    const rfmCanvas = document.getElementById("sa-chart-rfm-pie");
+    if (rfmCanvas) {
+      _saCharts.rfmPie = new Chart(rfmCanvas, {
+        type: "doughnut",
+        data: {
+          labels: Object.keys(rfm.segments),
+          datasets: [{data: Object.values(rfm.segments).map(s=>s.count), backgroundColor: Object.keys(rfm.segments).map(k=>segColors[k]||"#999")}],
+        },
+        options: { responsive: true, animation:{duration:1000}, plugins: { legend: { position: "bottom", labels: { font: { size: 10 } } } } },
+      });
+    }
+  }
+
+  // ABC 요약
+  const abc = engine.abc || {};
+  const abcDiv = document.getElementById("sa-abc-summary");
+  if (abcDiv && abc.grade_summary) {
+    const gColors = {A:"#10b981",B:"#f59e0b",C:"#6b7280"};
+    abcDiv.innerHTML = Object.entries(abc.grade_summary).map(([g,d]) =>
+      `<div style="display:inline-flex;align-items:center;gap:6px;margin:4px 8px 4px 0">
+        <span class="sa-grade-${g}" style="padding:2px 10px;border-radius:12px;font-size:12px;font-weight:700">${g}</span>
+        <span style="font-size:12px">${d.count}개 품목 (${d.pct}%, ${d.amount.toLocaleString()}원)</span>
+      </div>`
+    ).join("");
+    const abcCanvas = document.getElementById("sa-chart-abc");
+    if (abcCanvas) {
+      _saCharts.abcBar = new Chart(abcCanvas, {
+        type: "bar",
+        data: {
+          labels: Object.keys(abc.grade_summary),
+          datasets: [{label: "매출액", data: Object.values(abc.grade_summary).map(d=>d.amount), backgroundColor: Object.keys(abc.grade_summary).map(g=>gColors[g]||"#999")}],
+        },
+        options: { responsive: true, animation:{duration:800}, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => (v/10000).toLocaleString()+"만" } } } },
+      });
+    }
+  }
+
+  // 이탈 위험
+  const churnDiv = document.getElementById("sa-churn-risk");
+  if (churnDiv && rfm.churn_risk?.length) {
+    churnDiv.innerHTML = rfm.churn_risk.slice(0,8).map(c =>
+      `<div style="padding:6px 10px;margin:4px 0;background:${c.risk_level==="높음"?"#fff0f0":"#fffaf0"};border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center">
+        <span><strong>${_esc(c.customer_name)}</strong> <span class="sa-risk-badge sa-risk-${c.risk_level}">${c.risk_level}</span></span>
+        <span style="color:#888">${_esc(c.reason||"")}</span>
+      </div>`
+    ).join("") + (rfm.churn_risk.length > 8 ? `<div style="font-size:11px;color:#888;margin-top:4px">외 ${rfm.churn_risk.length-8}건</div>` : "");
+  } else if (churnDiv) {
+    churnDiv.innerHTML = '<div style="color:#888;font-size:13px;padding:20px;text-align:center">이탈 위험 거래처가 감지되지 않았습니다.</div>';
+  }
+
+  // 3년 시나리오 차트
+  const trends = engine.trends || {};
+  const scenarioCanvas = document.getElementById("sa-chart-scenario");
+  if (scenarioCanvas && trends.growth_scenarios) {
+    const gs = trends.growth_scenarios;
+    _saCharts.scenario = new Chart(scenarioCanvas, {
+      type: "line",
+      data: {
+        labels: ["현재","1년차","2년차","3년차"],
+        datasets: [
+          {label:"보수적(10%)", data:[gs.current_annual, gs.conservative.year1, gs.conservative.year2, gs.conservative.year3], borderColor:"#6b7280", borderDash:[5,5], tension:.3},
+          {label:"기본(20%)", data:[gs.current_annual, gs.moderate.year1, gs.moderate.year2, gs.moderate.year3], borderColor:"#3b82f6", borderWidth:2, tension:.3},
+          {label:"공격적(35%)", data:[gs.current_annual, gs.aggressive.year1, gs.aggressive.year2, gs.aggressive.year3], borderColor:"#10b981", borderWidth:2, tension:.3},
+        ],
+      },
+      options: { responsive: true, animation:{duration:1200}, plugins: { legend: { position: "bottom" } }, scales: { y: { ticks: { callback: v => (v/100000000).toFixed(1)+"억" } } } },
+    });
+  }
+
+  // CLV 티어
+  const clv = engine.clv || {};
+  const clvDiv = document.getElementById("sa-clv-tiers");
+  if (clvDiv && clv.tier_summary) {
+    clvDiv.innerHTML = Object.entries(clv.tier_summary).map(([tier, data]) => {
+      const tClass = tier.replace("Tier ","");
+      return `<div style="margin:6px 0;padding:8px 12px;background:#f9fafb;border-radius:8px;border-left:4px solid ${tClass==="1"?"#3b82f6":tClass==="2"?"#8b5cf6":"#9ca3af"};display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <div><span class="sa-tier-badge sa-tier-${tClass}">${tier}</span> <strong>${data.count}</strong>개 거래처</div>
+        <div>CLV ${data.total_clv.toLocaleString()}원 / ACV ${(data.total_acv||0).toLocaleString()}원</div>
+      </div>`;
+    }).join("") +
+    (clv.clv_results?.length ? `<details style="margin-top:8px"><summary style="font-size:12px;color:#666;cursor:pointer">전체 ${clv.clv_results.length}개 거래처 보기</summary>
+      <table class="table" style="font-size:11px;margin-top:6px"><thead><tr><th>거래처</th><th>티어</th><th>CLV</th><th>ACV</th></tr></thead><tbody>
+      ${clv.clv_results.slice(0,20).map(r=>`<tr><td>${_esc(r.customer_name)}</td><td><span class="sa-tier-badge sa-tier-${r.tier.replace('Tier ','')}">${r.tier}</span></td><td>${r.clv.toLocaleString()}</td><td>${r.acv.toLocaleString()}</td></tr>`).join("")}
+      </tbody></table></details>` : "");
+  }
+
+  // 수요 예측
+  const forecast = engine.forecast || {};
+  const fcDiv = document.getElementById("sa-forecast-table");
+  if (fcDiv && forecast.forecast?.length) {
+    fcDiv.innerHTML = `<table class="table" style="font-size:12px"><thead><tr><th>품목</th><th>월평균</th><th>트렌드</th><th>3개월 예측</th></tr></thead><tbody>
+    ${forecast.forecast.slice(0,10).map(f => {
+      const icon = f.trend==="증가"?"📈":f.trend==="감소"?"📉":"➡️";
+      return `<tr><td>${_esc(f.product_name)}</td><td>${f.current_monthly_avg.toLocaleString()}</td><td>${icon} ${f.trend}</td><td>${(f.forecast_3m||[]).map(v=>v.toLocaleString()).join(" → ")}</td></tr>`;
+    }).join("")}
+    </tbody></table>`;
+  }
+}
+
+function _saRenderMermaid(engine, agents) {
+  // 어카운트 스쿼드 구성도
+  const clv = engine.clv || {};
+  const squadDiv = document.getElementById("sa-mermaid-squad");
+  if (squadDiv && clv.tier_summary) {
+    const t1 = clv.tier_summary["Tier 1"]?.count || 0;
+    const t2 = clv.tier_summary["Tier 2"]?.count || 0;
+    const t3 = clv.tier_summary["Tier 3"]?.count || 0;
+    const mermaidDef = `graph TD
+    A[영업팀 조직] --> T1["Tier 1 전략 거래처<br/>${t1}개사"]
+    A --> T2["Tier 2 성장 거래처<br/>${t2}개사"]
+    A --> T3["Tier 3 일반 거래처<br/>${t3}개사"]
+    T1 --> S1["전담 AM + SE + CS<br/>3인 스쿼드"]
+    T2 --> S2["담당 AM + 공유 SE"]
+    T3 --> S3["인사이드 세일즈<br/>+ 셀프서비스"]
+    style T1 fill:#dbeafe,stroke:#2563eb
+    style T2 fill:#e0e7ff,stroke:#4338ca
+    style T3 fill:#f3f4f6,stroke:#6b7280`;
+    try {
+      mermaid.render("sa-mermaid-squad-svg", mermaidDef).then(({svg}) => { squadDiv.innerHTML = svg; });
+    } catch(e) { squadDiv.innerHTML = `<pre style="font-size:11px;text-align:left">${mermaidDef}</pre>`; }
+  }
+
+  // 분석 프로세스 플로우
+  const flowDiv = document.getElementById("sa-mermaid-flow");
+  if (flowDiv) {
+    const flowDef = `graph LR
+    U["xlsx 업로드"] --> P["Python 엔진<br/>RFM/ABC/CLV/예측"]
+    P --> C1["Phase 1<br/>4개 에이전트 병렬"]
+    C1 --> C2["Phase 2<br/>전략+파트너십<br/>연동 분석"]
+    C2 --> D["KPI 대시보드<br/>+ 전략 리포트"]
+    style P fill:#306998,color:#fff
+    style C1 fill:#d97706,color:#fff
+    style C2 fill:#dc2626,color:#fff
+    style D fill:#10b981,color:#fff`;
+    try {
+      mermaid.render("sa-mermaid-flow-svg", flowDef).then(({svg}) => { flowDiv.innerHTML = svg; });
+    } catch(e) { flowDiv.innerHTML = `<pre style="font-size:11px;text-align:left">${flowDef}</pre>`; }
+  }
 }
 
 function _saDestroyCharts() {
@@ -4084,32 +4282,31 @@ function saShowReport(agentKey) {
   document.querySelectorAll(".sa-report-tab").forEach(el => el.classList.remove("active"));
   event?.target?.classList?.add("active");
 
+  const detail = document.getElementById("sa-report-detail");
+
+  // 종합 리포트
+  if (agentKey === "summary") {
+    detail.innerHTML = _saRenderSummaryReport();
+    return;
+  }
+
   const agents = _saCurrentResult?.agents || {};
   const agent = agents[agentKey];
   if (!agent) {
-    document.getElementById("sa-report-detail").innerHTML = '<p style="color:#888">리포트가 없습니다.</p>';
+    detail.innerHTML = '<p style="color:#888">리포트가 없습니다.</p>';
     return;
   }
 
   const res = agent.result || {};
-  const detail = document.getElementById("sa-report-detail");
-  let html = `<h3>${agent.icon} ${agent.name} 분석 리포트</h3>`;
+  let html = `<h3>${agent.icon} ${agent.name} 분석 리포트 <span class="sa-engine-badge claude">Claude AI</span></h3>`;
   html += `<p style="color:#666;font-style:italic;margin-bottom:16px">${_esc(res.summary || "")}</p>`;
 
-  // 에이전트별 상세 렌더링
-  if (agentKey === "customer") {
-    html += _saRenderCustomerReport(res);
-  } else if (agentKey === "product") {
-    html += _saRenderProductReport(res);
-  } else if (agentKey === "strategy") {
-    html += _saRenderStrategyReport(res);
-  } else if (agentKey === "future") {
-    html += _saRenderFutureReport(res);
-  } else if (agentKey === "partnership") {
-    html += _saRenderPartnershipReport(res);
-  }
+  if (agentKey === "customer") html += _saRenderCustomerReport(res);
+  else if (agentKey === "product") html += _saRenderProductReport(res);
+  else if (agentKey === "strategy") html += _saRenderStrategyReport(res);
+  else if (agentKey === "future") html += _saRenderFutureReport(res);
+  else if (agentKey === "partnership") html += _saRenderPartnershipReport(res);
 
-  // 권고사항
   const recs = res.recommendations || [];
   if (recs.length) {
     html += `<h4 style="margin-top:20px">💡 핵심 권고사항</h4>`;
@@ -4119,176 +4316,344 @@ function saShowReport(agentKey) {
   detail.innerHTML = html;
 }
 
+function _saRenderSummaryReport() {
+  if (!_saCurrentResult) return '<p>결과가 없습니다.</p>';
+  const r = _saCurrentResult;
+  const agents = r.agents || {};
+  const engine = r.engine_results || {};
+  let html = `<h3>📑 종합 분석 리포트</h3>`;
+  html += `<p style="color:#666">분석 기간: ${r.period?.start||""} ~ ${r.period?.end||""} / 소요 시간: ${(r.elapsed_seconds||0).toFixed(1)}초</p>`;
+
+  // 엔진 요약
+  const rfm = engine.rfm || {};
+  const abc = engine.abc || {};
+  const clv = engine.clv || {};
+  const trends = engine.trends || {};
+
+  html += `<h4>🔢 Python 엔진 정량 분석 요약</h4>`;
+  html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:16px">`;
+  if (rfm.segments) {
+    const total = Object.values(rfm.segments).reduce((s,v)=>s+v.count,0);
+    const champs = rfm.segments.Champions?.count || 0;
+    html += `<div class="sa-kpi-card"><div class="kpi-label">분석 거래처</div><div class="kpi-val" style="font-size:20px">${total}</div><div style="font-size:11px;color:#10b981">Champions ${champs}개</div></div>`;
+  }
+  if (abc.grade_summary) {
+    html += `<div class="sa-kpi-card"><div class="kpi-label">A등급 품목</div><div class="kpi-val" style="font-size:20px">${abc.grade_summary.A?.count||0}</div><div style="font-size:11px;color:#10b981">${abc.grade_summary.A?.pct||0}% 매출 비중</div></div>`;
+  }
+  if (clv.clv_results) {
+    html += `<div class="sa-kpi-card"><div class="kpi-label">Tier 1 거래처</div><div class="kpi-val" style="font-size:20px">${clv.tier_summary?.["Tier 1"]?.count||0}</div></div>`;
+  }
+  if (rfm.churn_risk) {
+    html += `<div class="sa-kpi-card"><div class="kpi-label">이탈 위험</div><div class="kpi-val" style="font-size:20px;color:#ef4444">${rfm.churn_risk.length}</div></div>`;
+  }
+  html += `</div>`;
+
+  // 성장 시나리오
+  if (trends.growth_scenarios) {
+    const gs = trends.growth_scenarios;
+    html += `<h4>📈 3년 성장 시나리오</h4>`;
+    html += `<p style="font-size:13px">현재 연매출 <strong>${gs.current_annual?.toLocaleString()||0}원</strong> → 3년 후 기본 시나리오 <strong>${gs.moderate?.year3?.toLocaleString()||0}원</strong> (연 20% 성장)</p>`;
+  }
+
+  // 에이전트별 요약
+  html += `<h4 style="margin-top:20px">🤖 에이전트별 AI 분석 핵심</h4>`;
+  Object.entries(agents).forEach(([k, ag]) => {
+    const summary = ag.result?.summary || "분석 결과 없음";
+    html += `<div style="padding:8px 12px;margin:6px 0;background:#f9fafb;border-radius:8px;border-left:3px solid #4A90D9;font-size:13px">
+      <strong>${ag.icon} ${ag.name}</strong>: ${_esc(summary)}
+    </div>`;
+  });
+
+  // 전체 권고사항
+  const recs = r.top_recommendations || [];
+  if (recs.length) {
+    html += `<h4 style="margin-top:20px">💡 핵심 권고사항 (전체)</h4>`;
+    html += recs.map((rec, i) => `<div style="padding:4px 0;font-size:13px"><strong>${i+1}.</strong> ${_esc(rec)}</div>`).join("");
+  }
+
+  return html;
+}
+
+// PDF 내보내기 (브라우저 인쇄 기능 활용)
+function saExportPDF() {
+  const detail = document.getElementById("sa-report-detail");
+  if (!detail || !detail.innerHTML.trim()) { alert("리포트를 먼저 확인해주세요."); return; }
+
+  const win = window.open("", "_blank", "width=900,height=700");
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>판매 AI 에이전트 리포트</title>
+    <style>
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:40px;color:#333;line-height:1.6}
+      h3{color:#1e40af;border-bottom:2px solid #dbeafe;padding-bottom:8px}
+      h4{color:#374151;margin-top:20px}
+      table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
+      th,td{border:1px solid #e5e7eb;padding:6px 8px;text-align:left}
+      th{background:#f9fafb;font-weight:600}
+      .sa-kpi-card{display:inline-block;border:1px solid #e5e7eb;border-radius:8px;padding:8px 16px;margin:4px;text-align:center}
+      .kpi-val{font-size:18px;font-weight:700}
+      .kpi-label{font-size:11px;color:#6b7280}
+      @media print{body{padding:20px}}
+    </style></head><body>
+    <h2>🤖 판매 AI 에이전트 분석 리포트</h2>
+    <p style="color:#666;font-size:12px">생성일: ${new Date().toLocaleString("ko-KR")} | 분석 소요: ${(_saCurrentResult?.elapsed_seconds||0).toFixed(1)}초</p>
+    <hr>
+    ${detail.innerHTML}
+  </body></html>`);
+  win.document.close();
+  setTimeout(() => { win.print(); }, 500);
+}
+
 function _saRenderCustomerReport(res) {
   let html = "";
-  // 세그먼트 요약
-  const segments = res.segments || {};
-  if (Object.keys(segments).length) {
-    html += `<h4>📊 RFM 세그먼트 분포</h4>`;
-    html += `<table class="table" style="font-size:13px"><thead><tr><th>세그먼트</th><th>거래처 수</th><th>총 매출</th><th>주요 거래처</th></tr></thead><tbody>`;
-    for (const [seg, data] of Object.entries(segments)) {
-      const custs = (data.customers || []).slice(0, 3).join(", ");
-      html += `<tr><td><strong>${_esc(seg)}</strong></td><td>${data.count || 0}</td><td>${(data.total_amount||0).toLocaleString()}원</td><td style="font-size:12px">${_esc(custs)}</td></tr>`;
-    }
-    html += `</tbody></table>`;
-  }
-  // 이탈 위험
-  const churn = res.churn_risk || [];
-  if (churn.length) {
-    html += `<h4 style="margin-top:16px">⚠️ 이탈 위험 거래처</h4>`;
-    html += churn.map(c => `<div style="padding:6px 10px;margin:4px 0;background:${c.risk_level==="높음"?"#fff0f0":"#fffaf0"};border-radius:6px;font-size:13px">
-      <strong>${_esc(c.customer_name)}</strong> <span style="color:${c.risk_level==="높음"?"#ef4444":"#f59e0b"}">[${_esc(c.risk_level)}]</span> — ${_esc(c.reason||"")}
-    </div>`).join("");
-  }
-  // 전략
-  const strategies = res.strategies || [];
-  if (strategies.length) {
-    html += `<h4 style="margin-top:16px">🎯 세그먼트별 전략</h4>`;
-    strategies.forEach(s => {
-      html += `<div style="margin:8px 0;padding:10px;background:#f5f5f5;border-radius:8px;font-size:13px">
-        <strong>${_esc(s.segment)}</strong>: ${_esc(s.strategy||"")}
+  // 세그먼트 전략 (v2)
+  const segStrategies = res.segment_strategies || res.strategies || [];
+  if (segStrategies.length) {
+    html += `<h4>🎯 세그먼트별 전략</h4>`;
+    segStrategies.forEach(s => {
+      html += `<div style="margin:8px 0;padding:12px;background:#f5f5f5;border-radius:8px;font-size:13px;border-left:3px solid #4A90D9">
+        <strong>${_esc(s.segment)}</strong> ${s.count?`(${s.count}개 거래처)`:""}: ${_esc(s.strategy||"")}
+        ${s.kpi ? `<div style="font-size:11px;color:#666;margin-top:4px">KPI: ${_esc(s.kpi)}</div>` : ""}
         ${(s.actions||[]).length ? `<ul style="margin:4px 0 0;padding-left:20px">${s.actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
       </div>`;
     });
+  }
+  // 이탈 위험 액션 (v2)
+  const churnActions = res.churn_actions || res.churn_risk || [];
+  if (churnActions.length) {
+    html += `<h4 style="margin-top:16px">⚠️ 이탈 위험 대응</h4>`;
+    html += churnActions.map(c => `<div style="padding:8px 10px;margin:4px 0;background:${c.risk_level==="높음"?"#fff0f0":"#fffaf0"};border-radius:6px;font-size:13px">
+      <strong>${_esc(c.customer_name)}</strong> <span class="sa-risk-badge sa-risk-${c.risk_level||'주의'}">${_esc(c.risk_level||"")}</span>
+      ${c.action_plan ? `<div style="margin-top:4px">${_esc(c.action_plan)}</div>` : c.reason ? `<div style="margin-top:4px">${_esc(c.reason)}</div>` : ""}
+      ${c.timeline ? `<div style="font-size:11px;color:#888">기한: ${_esc(c.timeline)}</div>` : ""}
+    </div>`).join("");
+  }
+  // 기업학적 인사이트 (v2)
+  const firmographic = res.firmographic_insights || [];
+  if (firmographic.length) {
+    html += `<h4 style="margin-top:16px">🏢 기업학적 세분화 인사이트</h4>`;
+    firmographic.forEach(f => {
+      html += `<div style="margin:6px 0;padding:10px;background:#f0f8ff;border-radius:8px;font-size:13px">
+        <strong>${_esc(f.dimension||"")}</strong>: ${_esc(f.insight||"")}
+        ${f.recommendation ? `<div style="color:#4A90D9;margin-top:4px">→ ${_esc(f.recommendation)}</div>` : ""}
+      </div>`;
+    });
+  }
+  // 포트폴리오 건강도 (v2)
+  const health = res.portfolio_health;
+  if (health) {
+    const score = health.score || 0;
+    const color = score >= 70 ? "#10b981" : score >= 50 ? "#f59e0b" : "#ef4444";
+    html += `<h4 style="margin-top:16px">❤️ 고객 포트폴리오 건강도</h4>`;
+    html += `<div style="display:flex;align-items:center;gap:16px;padding:12px;background:#f9fafb;border-radius:8px">
+      <div style="width:60px;height:60px;border-radius:50%;border:4px solid ${color};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:${color}">${score}</div>
+      <div><div style="font-size:14px;font-weight:600">${_esc(health.assessment||"")}</div>
+      ${(health.improvement_areas||[]).length ? `<div style="font-size:12px;color:#666;margin-top:4px">개선 영역: ${health.improvement_areas.map(a=>_esc(a)).join(", ")}</div>` : ""}
+      </div>
+    </div>`;
   }
   return html;
 }
 
 function _saRenderProductReport(res) {
   let html = "";
-  // ABC 등급 요약
-  const grades = res.grade_summary || {};
-  if (Object.keys(grades).length) {
-    html += `<h4>📊 ABC 등급 분포</h4>`;
-    html += `<div style="display:flex;gap:12px;margin-bottom:16px">`;
-    for (const [g, data] of Object.entries(grades)) {
-      const colors = { A: "#10b981", B: "#f59e0b", C: "#6b7280" };
-      html += `<div class="sa-kpi-card" style="flex:1;border-left:4px solid ${colors[g]||"#ccc"}">
-        <div class="kpi-label">${g}등급 (${data.count||0}개)</div>
-        <div class="kpi-val" style="font-size:18px">${(data.pct||0).toFixed(1)}%</div>
-        <div style="font-size:11px;color:#888">${(data.amount||0).toLocaleString()}원</div>
+  // 등급별 관리 전략 (v2)
+  const gradeStrategies = res.grade_strategies || [];
+  if (gradeStrategies.length) {
+    html += `<h4>📊 등급별 관리 전략</h4>`;
+    gradeStrategies.forEach(gs => {
+      const gColor = {A:"#10b981",B:"#f59e0b",C:"#6b7280"}[gs.grade] || "#999";
+      html += `<div style="margin:8px 0;padding:12px;background:#f9fafb;border-radius:8px;border-left:4px solid ${gColor};font-size:13px">
+        <strong><span class="sa-grade-${gs.grade}" style="padding:2px 8px;border-radius:8px;font-size:11px">${gs.grade}</span> ${_esc(gs.strategy||"")}</strong>
+        <div style="margin-top:4px;font-size:12px;color:#666">점검 주기: ${_esc(gs.check_cycle||"")} / 재고 모델: ${_esc(gs.inventory_model||"")}</div>
+        ${(gs.actions||[]).length ? `<ul style="margin:4px 0 0;padding-left:20px;font-size:12px">${gs.actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
       </div>`;
-    }
-    html += `</div>`;
+    });
   }
-  // 수요 예측
-  const forecast = res.forecast || [];
-  if (forecast.length) {
-    html += `<h4>📈 수요 예측 (상위 품목)</h4>`;
-    html += `<table class="table" style="font-size:13px"><thead><tr><th>품목</th><th>월평균</th><th>3개월 예측</th><th>추세</th></tr></thead><tbody>`;
-    forecast.slice(0, 10).forEach(f => {
-      const trend = f.trend === "증가" ? "📈" : f.trend === "감소" ? "📉" : "➡️";
-      html += `<tr><td>${_esc(f.product_name)}</td><td>${(f.current_monthly_avg||0).toLocaleString()}</td><td>${(f.forecast_3m||[]).join(", ")}</td><td>${trend} ${_esc(f.trend||"")}</td></tr>`;
+  // 예측 인사이트 (v2)
+  const insights = res.forecast_insights || [];
+  if (insights.length) {
+    html += `<h4 style="margin-top:16px">📈 수요 예측 인사이트</h4>`;
+    html += `<table class="table" style="font-size:13px"><thead><tr><th>품목</th><th>추세</th><th>해석</th><th>대응</th></tr></thead><tbody>`;
+    insights.slice(0,10).forEach(f => {
+      const icon = f.trend==="증가"?"📈":f.trend==="감소"?"📉":"➡️";
+      html += `<tr><td>${_esc(f.product_name||"")}</td><td>${icon} ${_esc(f.trend||"")}</td><td style="font-size:12px">${_esc(f.interpretation||"")}</td><td style="font-size:12px">${_esc(f.action||"")}</td></tr>`;
     });
     html += `</tbody></table>`;
+  }
+  // 재고 권고 (v2)
+  const invRecs = res.inventory_recommendations || [];
+  if (invRecs.length) {
+    html += `<h4 style="margin-top:16px">📦 재고 관리 권고</h4>`;
+    invRecs.forEach(r => {
+      html += `<div style="margin:6px 0;padding:10px;background:#f0f8ff;border-radius:8px;font-size:13px">
+        <strong>${_esc(r.product_name||"")}</strong>: ${_esc(r.current_issue||"")} → ${_esc(r.recommendation||"")}
+        ${r.expected_benefit ? `<div style="color:#10b981;font-size:12px;margin-top:2px">기대효과: ${_esc(r.expected_benefit)}</div>` : ""}
+      </div>`;
+    });
   }
   return html;
 }
 
 function _saRenderStrategyReport(res) {
   let html = "";
-  // 교차판매
-  const cross = res.cross_sell || [];
-  if (cross.length) {
-    html += `<h4>🔄 교차판매 기회</h4>`;
-    cross.slice(0, 10).forEach(c => {
-      html += `<div style="margin:8px 0;padding:10px;background:#f0f8ff;border-radius:8px;font-size:13px">
-        <strong>${_esc(c.customer_name)}</strong><br>
-        현재: ${(c.current_products||[]).map(p=>_esc(p)).join(", ")}<br>
-        추천: <strong style="color:#4A90D9">${(c.recommended||[]).map(p=>_esc(p)).join(", ")}</strong><br>
-        ${c.expected_revenue ? `예상 매출: ${c.expected_revenue.toLocaleString()}원` : ""}
-      </div>`;
-    });
-  }
-  // HaaS 후보
-  const haas = res.haas_candidates || [];
-  if (haas.length) {
-    html += `<h4 style="margin-top:16px">🔄 HaaS 전환 후보</h4>`;
-    haas.forEach(h => {
-      html += `<div style="margin:4px 0;padding:8px;font-size:13px;background:#f5f0ff;border-radius:6px">
-        <strong>${_esc(h.customer_name)}</strong> — 월 구독료: ${(h.monthly_subscription||0).toLocaleString()}원 (${_esc(h.reason||"")})
-      </div>`;
-    });
-  }
-  // 거래처별 전략
+  // 거래처별 전략 (v2: segment 포함)
   const strategies = res.customer_strategies || [];
   if (strategies.length) {
-    html += `<h4 style="margin-top:16px">🎯 거래처별 전략</h4>`;
-    html += `<table class="table" style="font-size:13px"><thead><tr><th>거래처</th><th>등급</th><th>전략</th></tr></thead><tbody>`;
+    html += `<h4>🎯 거래처별 맞춤 전략</h4>`;
+    html += `<table class="table" style="font-size:12px"><thead><tr><th>거래처</th><th>등급</th><th>세그먼트</th><th>전략</th><th>성장 기대</th></tr></thead><tbody>`;
     strategies.slice(0, 15).forEach(s => {
-      html += `<tr><td>${_esc(s.customer_name)}</td><td>${_esc(s.tier||"")}</td><td>${_esc(s.strategy||"")}</td></tr>`;
+      html += `<tr><td><strong>${_esc(s.customer_name)}</strong></td><td>${_esc(s.tier||"")}</td><td>${_esc(s.segment||"")}</td><td style="font-size:11px">${_esc(s.strategy||"")}</td><td>${_esc(s.expected_growth||"")}</td></tr>`;
     });
     html += `</tbody></table>`;
+  }
+  // 교차판매 (v2)
+  const cross = res.cross_sell || [];
+  if (cross.length) {
+    html += `<h4 style="margin-top:16px">🔄 교차판매 기회</h4>`;
+    cross.slice(0, 10).forEach(c => {
+      html += `<div style="margin:8px 0;padding:10px;background:#f0f8ff;border-radius:8px;font-size:13px">
+        <strong>${_esc(c.customer_name)}</strong>: ${(c.current_products||[]).map(p=>_esc(p)).join(", ")} → <strong style="color:#4A90D9">${(c.recommended||[]).map(p=>_esc(p)).join(", ")}</strong>
+        ${c.expected_revenue ? ` (예상 ${c.expected_revenue.toLocaleString()}원)` : ""}<br>
+        <span style="font-size:12px;color:#666">${_esc(c.reason||"")}</span>
+      </div>`;
+    });
+  }
+  // HaaS 후보 (v2: roi_for_customer 포함)
+  const haas = res.haas_candidates || [];
+  if (haas.length) {
+    html += `<h4 style="margin-top:16px">📋 HaaS 전환 후보</h4>`;
+    haas.forEach(h => {
+      html += `<div style="margin:6px 0;padding:10px;font-size:13px;background:#f5f0ff;border-radius:8px">
+        <strong>${_esc(h.customer_name)}</strong> — 월 ${(h.monthly_subscription||0).toLocaleString()}원 / 연 MRR ${(h.annual_mrr||0).toLocaleString()}원
+        <div style="font-size:12px;color:#666">${_esc(h.reason||"")}${h.roi_for_customer ? ` | 고객 ROI: ${_esc(h.roi_for_customer)}` : ""}</div>
+      </div>`;
+    });
+  }
+  // 파이프라인 (v2)
+  const pipe = res.pipeline;
+  if (pipe) {
+    html += `<h4 style="margin-top:16px">📊 파이프라인 분석</h4>`;
+    html += `<div style="padding:12px;background:#f9fafb;border-radius:8px;font-size:13px">
+      총 매출: ${(pipe.total_revenue||0).toLocaleString()}원 / Top3 집중도: ${((pipe.top3_concentration||0)*100).toFixed(1)}%
+      / 트렌드: ${_esc(pipe.monthly_trend||"")}
+      ${pipe.velocity_assessment ? `<div style="margin-top:4px">${_esc(pipe.velocity_assessment)}</div>` : ""}
+      ${(pipe.risk_factors||[]).length ? `<div style="margin-top:4px;color:#ef4444">리스크: ${pipe.risk_factors.map(r=>_esc(r)).join(", ")}</div>` : ""}
+    </div>`;
   }
   return html;
 }
 
 function _saRenderFutureReport(res) {
   let html = "";
-  // 3년 시나리오
-  const scenarios = res.growth_scenarios || {};
-  if (scenarios.current_annual) {
-    html += `<h4>📈 3년 성장 시나리오</h4>`;
-    html += `<div style="margin-bottom:12px;font-size:14px">현재 연 매출: <strong>${(scenarios.current_annual||0).toLocaleString()}원</strong></div>`;
-    html += `<table class="table" style="font-size:13px"><thead><tr><th>시나리오</th><th>성장률</th><th>1년차</th><th>2년차</th><th>3년차</th></tr></thead><tbody>`;
-    for (const [key, label] of [["conservative","보수적"],["moderate","기본"],["aggressive","공격적"]]) {
-      const s = scenarios[key] || {};
-      html += `<tr><td>${label}</td><td>${((s.rate||0)*100).toFixed(0)}%</td>
-        <td>${(s.year1||0).toLocaleString()}원</td><td>${(s.year2||0).toLocaleString()}원</td><td>${(s.year3||0).toLocaleString()}원</td></tr>`;
-    }
-    html += `</tbody></table>`;
-  }
-  // 신규 기회
-  const opps = res.new_opportunities || [];
-  if (opps.length) {
-    html += `<h4 style="margin-top:16px">🌟 신규 시장 기회</h4>`;
-    opps.forEach(o => {
-      html += `<div style="margin:8px 0;padding:10px;background:#f0fff4;border-radius:8px;font-size:13px">
-        <strong>${_esc(o.trend)}</strong> — 진입 난이도: ${_esc(o.entry_difficulty||"")}
-        ${o.estimated_market ? ` / 시장 규모: ${o.estimated_market.toLocaleString()}원` : ""}
-        ${(o.target_customers||[]).length ? `<br>타겟: ${o.target_customers.map(c=>_esc(c)).join(", ")}` : ""}
+  // 트렌드별 전략 (v2)
+  const trendStrategies = res.trend_strategies || [];
+  if (trendStrategies.length) {
+    html += `<h4>🚀 메가트렌드별 영업 전략</h4>`;
+    trendStrategies.forEach(t => {
+      const lvlColor = {높음:"#10b981",보통:"#f59e0b",낮음:"#6b7280"}[t.opportunity_level] || "#999";
+      html += `<div style="margin:8px 0;padding:12px;background:#f0fff4;border-radius:8px;border-left:4px solid ${lvlColor};font-size:13px">
+        <strong>${_esc(t.trend||"")}</strong> <span style="color:${lvlColor};font-size:11px;font-weight:600">[기회: ${_esc(t.opportunity_level||"")}]</span>
+        <div style="margin-top:4px">${_esc(t.strategy||"")}</div>
+        ${(t.target_customers||[]).length ? `<div style="font-size:12px;color:#666;margin-top:4px">타겟 거래처: ${t.target_customers.map(c=>_esc(c)).join(", ")}</div>` : ""}
+        ${(t.actions||[]).length ? `<ul style="margin:4px 0 0;padding-left:20px;font-size:12px">${t.actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
+        ${t.timeline ? `<div style="font-size:11px;color:#888;margin-top:4px">기한: ${_esc(t.timeline)}</div>` : ""}
       </div>`;
     });
+  }
+  // 신규 시장 진입 (v2)
+  const market = res.market_entry || [];
+  if (market.length) {
+    html += `<h4 style="margin-top:16px">🌟 신규 시장 진입 전략</h4>`;
+    html += `<table class="table" style="font-size:12px"><thead><tr><th>시장</th><th>진입 전략</th><th>필요 역량</th><th>예상 기간</th><th>예상 매출</th></tr></thead><tbody>`;
+    market.forEach(m => {
+      html += `<tr><td><strong>${_esc(m.market||"")}</strong></td><td style="font-size:11px">${_esc(m.entry_strategy||"")}</td>
+        <td style="font-size:11px">${(m.required_capabilities||[]).map(c=>_esc(c)).join(", ")}</td>
+        <td>${_esc(m.expected_timeline||"")}</td><td>${m.estimated_revenue ? m.estimated_revenue.toLocaleString()+"원" : "-"}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  // 시나리오별 실행 전략 (v2)
+  const scenarios = res.scenario_strategies || {};
+  if (Object.keys(scenarios).length) {
+    html += `<h4 style="margin-top:16px">📈 시나리오별 실행 전략</h4>`;
+    const labels = {conservative:"🔵 보수적",moderate:"🟢 기본",aggressive:"🔴 공격적"};
+    const colors = {conservative:"#3b82f6",moderate:"#10b981",aggressive:"#ef4444"};
+    for (const [key, label] of Object.entries(labels)) {
+      const s = scenarios[key];
+      if (!s) continue;
+      html += `<div style="margin:8px 0;padding:12px;background:#f9fafb;border-radius:8px;border-left:4px solid ${colors[key]};font-size:13px">
+        <strong>${label}</strong>: ${_esc(s.focus||"")}
+        ${(s.key_actions||[]).length ? `<ul style="margin:4px 0 0;padding-left:20px;font-size:12px">${s.key_actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
+      </div>`;
+    }
+  }
+  // 역량 강화 로드맵 (v2)
+  const roadmap = res.capability_roadmap || [];
+  if (roadmap.length) {
+    html += `<h4 style="margin-top:16px">🗓️ 기술 역량 강화 로드맵</h4>`;
+    html += `<div style="display:flex;gap:8px;flex-wrap:wrap">`;
+    roadmap.forEach(r => {
+      html += `<div style="flex:1;min-width:180px;padding:12px;background:#f0f8ff;border-radius:8px;font-size:13px;border-top:3px solid #4A90D9">
+        <div style="font-weight:700;color:#4A90D9;margin-bottom:4px">${_esc(r.quarter||"")}</div>
+        <div style="font-weight:600;margin-bottom:4px">${_esc(r.focus_area||"")}</div>
+        ${(r.actions||[]).length ? `<ul style="margin:0;padding-left:16px;font-size:11px">${r.actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
+      </div>`;
+    });
+    html += `</div>`;
   }
   return html;
 }
 
 function _saRenderPartnershipReport(res) {
   let html = "";
-  // 티어 요약
-  const tiers = res.tier_summary || {};
-  if (Object.keys(tiers).length) {
-    html += `<h4>🏆 거래처 티어 분류</h4>`;
-    html += `<div style="display:flex;gap:12px;margin-bottom:16px">`;
-    const colors = { "Tier 1": "#10b981", "Tier 2": "#f59e0b", "Tier 3": "#6b7280" };
-    for (const [t, data] of Object.entries(tiers)) {
-      html += `<div class="sa-kpi-card" style="flex:1;border-top:3px solid ${colors[t]||"#ccc"}">
-        <div class="kpi-label">${_esc(t)} (${data.count||0}개)</div>
-        <div class="kpi-val" style="font-size:16px">${(data.total_clv||0).toLocaleString()}<span style="font-size:10px">원</span></div>
+  // 스쿼드 편성 (v2)
+  const squads = res.squad_formation || [];
+  if (squads.length) {
+    html += `<h4>👥 어카운트 스쿼드 편성</h4>`;
+    const tierColors = {"Tier 1":"#10b981","Tier 2":"#f59e0b","Tier 3":"#6b7280"};
+    squads.forEach(sq => {
+      html += `<div style="margin:8px 0;padding:12px;background:#f9fafb;border-radius:8px;border-left:4px solid ${tierColors[sq.tier]||"#ccc"};font-size:13px">
+        <strong style="color:${tierColors[sq.tier]||"#333"}">${_esc(sq.tier||"")}</strong> (${sq.count||0}개 거래처) — <span style="color:#4A90D9">${_esc(sq.structure||"")}</span>
+        ${(sq.customers||[]).length ? `<div style="font-size:12px;color:#666;margin-top:4px">대상: ${sq.customers.map(c=>_esc(c)).join(", ")}</div>` : ""}
       </div>`;
-    }
-    html += `</div>`;
+    });
   }
-  // ABM 타겟
+  // ABM 타겟 (v2: CLV, 성장잠재력, 전략적 가치 포함)
   const abm = res.abm_targets || [];
   if (abm.length) {
-    html += `<h4>🎯 ABM 타겟 (Top ${abm.length})</h4>`;
-    html += `<table class="table" style="font-size:13px"><thead><tr><th>#</th><th>거래처</th><th>점수</th><th>사유</th></tr></thead><tbody>`;
+    html += `<h4 style="margin-top:16px">🎯 ABM 2.0 타겟 (Top ${abm.length})</h4>`;
+    html += `<table class="table" style="font-size:12px"><thead><tr><th>#</th><th>거래처</th><th>점수</th><th>CLV</th><th>성장잠재력</th><th>전략적 가치</th><th>사유</th></tr></thead><tbody>`;
     abm.slice(0, 15).forEach(a => {
-      html += `<tr><td>${a.rank||""}</td><td><strong>${_esc(a.customer_name)}</strong></td><td>${a.score||0}</td><td style="font-size:12px">${_esc(a.reason||"")}</td></tr>`;
+      const gpColor = {높음:"#10b981",보통:"#f59e0b",낮음:"#6b7280"}[a.growth_potential] || "#999";
+      html += `<tr><td>${a.rank||""}</td><td><strong>${_esc(a.customer_name||"")}</strong></td><td>${a.score||0}</td>
+        <td>${a.clv ? a.clv.toLocaleString()+"원" : "-"}</td>
+        <td><span style="color:${gpColor};font-weight:600">${_esc(a.growth_potential||"")}</span></td>
+        <td style="font-size:11px">${_esc(a.strategic_value||"")}</td>
+        <td style="font-size:11px">${_esc(a.reason||"")}</td></tr>`;
     });
     html += `</tbody></table>`;
   }
-  // 관계 강화
+  // 관계 강화 프로그램 (v2: timeline 포함)
   const programs = res.relationship_programs || [];
   if (programs.length) {
     html += `<h4 style="margin-top:16px">🤝 관계 강화 프로그램</h4>`;
     programs.slice(0, 10).forEach(p => {
       html += `<div style="margin:6px 0;padding:10px;background:#f5f0ff;border-radius:8px;font-size:13px">
-        <strong>${_esc(p.customer_name)}</strong>: ${_esc(p.current_level||"")} → ${_esc(p.target_level||"")}
-        ${(p.actions||[]).length ? `<ul style="margin:4px 0 0;padding-left:18px">${p.actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
+        <strong>${_esc(p.customer_name||"")}</strong>: <span style="color:#6b7280">${_esc(p.current_level||"")}</span> → <span style="color:#4A90D9;font-weight:600">${_esc(p.target_level||"")}</span>
+        ${p.timeline ? `<span style="font-size:11px;color:#888;margin-left:8px">기한: ${_esc(p.timeline)}</span>` : ""}
+        ${(p.actions||[]).length ? `<ul style="margin:4px 0 0;padding-left:18px;font-size:12px">${p.actions.map(a=>`<li>${_esc(a)}</li>`).join("")}</ul>` : ""}
       </div>`;
     });
+  }
+  // 디지털 마케팅 (v2)
+  const marketing = res.digital_marketing || [];
+  if (marketing.length) {
+    html += `<h4 style="margin-top:16px">📢 디지털 마케팅 전략</h4>`;
+    html += `<table class="table" style="font-size:12px"><thead><tr><th>프로그램</th><th>대상</th><th>빈도</th><th>기대 효과</th></tr></thead><tbody>`;
+    marketing.forEach(m => {
+      html += `<tr><td><strong>${_esc(m.program||"")}</strong></td><td>${_esc(m.target_audience||"")}</td>
+        <td>${_esc(m.frequency||"")}</td><td style="font-size:11px">${_esc(m.expected_outcome||"")}</td></tr>`;
+    });
+    html += `</tbody></table>`;
   }
   return html;
 }

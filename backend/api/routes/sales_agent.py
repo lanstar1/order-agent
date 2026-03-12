@@ -12,7 +12,7 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
-from fastapi import APIRouter, Depends, UploadFile, File, Form, Query, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, Query, HTTPException, WebSocket, WebSocketDisconnect
 from typing import Optional
 
 from security import get_current_user
@@ -28,6 +28,9 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # 진행 중인 분석 작업 상태 (메모리)
 _running_jobs = {}
+
+# WebSocket 연결 관리 (job_id → set of WebSocket connections)
+_ws_connections: dict[str, set[WebSocket]] = {}
 
 
 # ═══════════════════════════════════════════
@@ -164,6 +167,8 @@ async def _run_analysis_task(job_id: str, file_id: str, parsed: dict, user: dict
                 _running_jobs[job_id]["agents"][agent_key] = status
                 done = sum(1 for s in _running_jobs[job_id]["agents"].values() if s == "done")
                 _running_jobs[job_id]["progress"] = int(done / 6 * 100)
+                # WebSocket 실시간 전송
+                await _broadcast_progress(job_id, _running_jobs[job_id])
 
         result = await run_analysis(
             sales_data=parsed,
@@ -197,6 +202,7 @@ async def _run_analysis_task(job_id: str, file_id: str, parsed: dict, user: dict
         if job_id in _running_jobs:
             _running_jobs[job_id]["status"] = "completed"
             _running_jobs[job_id]["progress"] = 100
+            await _broadcast_progress(job_id, _running_jobs[job_id])
 
         logger.info(f"[SalesAgent] 분석 완료: {job_id} ({result.get('elapsed_seconds', 0)}초)")
 
@@ -214,6 +220,7 @@ async def _run_analysis_task(job_id: str, file_id: str, parsed: dict, user: dict
 
         if job_id in _running_jobs:
             _running_jobs[job_id]["status"] = "failed"
+            await _broadcast_progress(job_id, _running_jobs[job_id])
 
 
 # ═══════════════════════════════════════════
@@ -350,3 +357,59 @@ async def delete_job(job_id: str, user=Depends(get_current_user)):
         del _running_jobs[job_id]
 
     return {"message": "삭제되었습니다."}
+
+
+# ═══════════════════════════════════════════
+#  WebSocket 실시간 진행 상태
+# ═══════════════════════════════════════════
+@router.websocket("/ws/{job_id}")
+async def ws_analysis_progress(websocket: WebSocket, job_id: str):
+    """WebSocket으로 분석 진행 상태를 실시간 전송"""
+    await websocket.accept()
+
+    # 연결 등록
+    if job_id not in _ws_connections:
+        _ws_connections[job_id] = set()
+    _ws_connections[job_id].add(websocket)
+
+    try:
+        # 초기 상태 전송
+        if job_id in _running_jobs:
+            await websocket.send_json(_running_jobs[job_id])
+        else:
+            # DB에서 확인
+            conn = get_connection()
+            try:
+                row = conn.execute("SELECT status, elapsed_seconds FROM sa_jobs WHERE job_id = ?", (job_id,)).fetchone()
+            finally:
+                conn.close()
+            if row and row["status"] == "completed":
+                await websocket.send_json({"status": "completed", "progress": 100})
+            elif row and row["status"] == "failed":
+                await websocket.send_json({"status": "failed", "progress": 0})
+
+        # 클라이언트가 연결 종료할 때까지 대기
+        while True:
+            try:
+                await websocket.receive_text()
+            except WebSocketDisconnect:
+                break
+    except Exception:
+        pass
+    finally:
+        _ws_connections.get(job_id, set()).discard(websocket)
+        if job_id in _ws_connections and not _ws_connections[job_id]:
+            del _ws_connections[job_id]
+
+
+async def _broadcast_progress(job_id: str, data: dict):
+    """특정 job의 모든 WebSocket 클라이언트에게 진행 상태 전송"""
+    conns = _ws_connections.get(job_id, set()).copy()
+    dead = set()
+    for ws in conns:
+        try:
+            await ws.send_json(data)
+        except Exception:
+            dead.add(ws)
+    for ws in dead:
+        _ws_connections.get(job_id, set()).discard(ws)
