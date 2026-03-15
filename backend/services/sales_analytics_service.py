@@ -563,14 +563,14 @@ class SalesAnalyticsService:
         conn = get_connection()
         try:
             rows = conn.execute(f"""
-                SELECT customer_name, customer_group,
+                SELECT customer_name, MAX(customer_group) as customer_group,
                     COALESCE(SUM(supply_amount),0) as supply,
                     COALESCE(SUM(gross_profit),0) as profit,
                     COUNT(*) as slip_count,
                     COUNT(DISTINCT item_code) as item_count
                 FROM sales_records {where}
                 GROUP BY customer_name
-                ORDER BY supply DESC
+                ORDER BY COALESCE(SUM(supply_amount),0) DESC
                 LIMIT ?
             """, params + [limit]).fetchall()
             result = []
@@ -612,9 +612,8 @@ class SalesAnalyticsService:
             summary = conn.execute(f"""
                 SELECT COALESCE(SUM(supply_amount),0) as supply,
                        COALESCE(SUM(gross_profit),0) as profit,
-                       COUNT(*) as cnt, customer_group
+                       COUNT(*) as cnt, MAX(customer_group) as customer_group
                 FROM sales_records {where}
-                GROUP BY customer_group
             """, params).fetchone()
             # 월별 추이
             monthly = conn.execute(f"""
@@ -626,11 +625,11 @@ class SalesAnalyticsService:
             """, params).fetchall()
             # 품목별 TOP
             products = conn.execute(f"""
-                SELECT item_code, model_name,
+                SELECT item_code, MAX(model_name) as model_name,
                     COALESCE(SUM(supply_amount),0) as supply,
                     COALESCE(SUM(quantity),0) as qty
                 FROM sales_records {where}
-                GROUP BY item_code ORDER BY supply DESC LIMIT 20
+                GROUP BY item_code ORDER BY COALESCE(SUM(supply_amount),0) DESC LIMIT 20
             """, params).fetchall()
             s = (summary["supply"] or 0) if summary else 0
             p = (summary["profit"] or 0) if summary else 0
@@ -678,13 +677,13 @@ class SalesAnalyticsService:
         conn = get_connection()
         try:
             rows = conn.execute(f"""
-                SELECT item_code, model_name, item_group,
+                SELECT item_code, MAX(model_name) as model_name, MAX(item_group) as item_group,
                     COALESCE(SUM(quantity),0) as qty,
                     COALESCE(SUM(supply_amount),0) as supply,
                     COALESCE(SUM(gross_profit),0) as profit,
                     COUNT(*) as cnt
                 FROM sales_records {where}
-                GROUP BY item_code ORDER BY supply DESC LIMIT ?
+                GROUP BY item_code ORDER BY COALESCE(SUM(supply_amount),0) DESC LIMIT ?
             """, params + [limit]).fetchall()
             return [{
                 "item_code": r["item_code"], "model_name": r["model_name"] or "",
@@ -719,14 +718,14 @@ class SalesAnalyticsService:
                 SELECT COALESCE(SUM(supply_amount),0) as supply,
                        COALESCE(SUM(gross_profit),0) as profit,
                        COALESCE(SUM(quantity),0) as qty,
-                       COUNT(*) as cnt, model_name
+                       COUNT(*) as cnt, MAX(model_name) as model_name
                 FROM sales_records {where}
             """, params).fetchone()
             customers = conn.execute(f"""
                 SELECT customer_name, COALESCE(SUM(supply_amount),0) as supply,
                        COALESCE(SUM(quantity),0) as qty
                 FROM sales_records {where}
-                GROUP BY customer_name ORDER BY supply DESC LIMIT 20
+                GROUP BY customer_name ORDER BY COALESCE(SUM(supply_amount),0) DESC LIMIT 20
             """, params).fetchall()
             monthly = conn.execute(f"""
                 SELECT SUBSTR(slip_date,1,6) as month,
@@ -863,13 +862,13 @@ class SalesAnalyticsService:
         conn = get_connection()
         try:
             rows = conn.execute(f"""
-                SELECT customer_name, item_code, model_name,
+                SELECT customer_name, item_code, MAX(model_name) as model_name,
                     COALESCE(SUM(supply_amount),0) as supply,
                     COALESCE(SUM(gross_profit),0) as profit
                 FROM sales_records {where}
                 GROUP BY customer_name, item_code
-                HAVING supply != 0
-                ORDER BY (CAST(profit AS REAL) / CAST(supply AS REAL)) ASC
+                HAVING COALESCE(SUM(supply_amount),0) != 0
+                ORDER BY (COALESCE(SUM(gross_profit),0) * 1.0 / COALESCE(SUM(supply_amount),1)) ASC
                 LIMIT 200
             """, params).fetchall()
             return [{
@@ -1016,7 +1015,7 @@ class SalesAnalyticsService:
             n = _now_kst()
             start = (n - timedelta(days=30 * months_back)).strftime("%Y%m%d")
             rows = conn.execute("""
-                SELECT item_code, model_name,
+                SELECT item_code, MAX(model_name) as model_name,
                     MAX(safety_stock) as safety_stock,
                     COALESCE(SUM(CASE WHEN quantity>0 THEN quantity ELSE 0 END),0) as total_qty
                 FROM sales_records WHERE slip_date >= ? AND safety_stock > 0
@@ -1080,7 +1079,7 @@ class SalesAnalyticsService:
                     COUNT(DISTINCT customer_name) as cust_count,
                     COALESCE(SUM(CASE WHEN quantity<0 THEN 1 ELSE 0 END),0) as return_count
                 FROM sales_records {where}
-                GROUP BY staff_name ORDER BY supply DESC
+                GROUP BY staff_name ORDER BY COALESCE(SUM(supply_amount),0) DESC
             """, params).fetchall()
 
             total_supply = sum(r["supply"] or 0 for r in rows)
@@ -1203,14 +1202,13 @@ class SalesAnalyticsService:
         conn = get_connection()
         try:
             rows = conn.execute(f"""
-                SELECT customer_name, item_code, model_name,
+                SELECT customer_name, item_code, MAX(model_name) as model_name,
                     MIN(unit_price) as min_price, MAX(unit_price) as max_price,
-                    COUNT(*) as cnt,
-                    GROUP_CONCAT(DISTINCT CAST(unit_price AS TEXT)) as prices
+                    COUNT(*) as cnt
                 FROM sales_records {where}
                 GROUP BY customer_name, item_code
-                HAVING min_price != max_price
-                ORDER BY (max_price - min_price) DESC
+                HAVING MIN(unit_price) != MAX(unit_price)
+                ORDER BY (MAX(unit_price) - MIN(unit_price)) DESC
             """, params).fetchall()
 
             result = []
@@ -1218,7 +1216,7 @@ class SalesAnalyticsService:
                 mn = r["min_price"] or 0
                 mx = r["max_price"] or 0
                 var = round((mx - mn) / mn * 100, 1) if mn else 0
-                prices = sorted(set(str(r["prices"] or "").split(",")))
+                prices = [str(mn), str(mx)]
                 result.append({
                     "customer_name": r["customer_name"],
                     "item_code": r["item_code"],
@@ -1275,7 +1273,7 @@ class SalesAnalyticsService:
             by_wh = conn.execute(f"""
                 SELECT warehouse, COALESCE(SUM(supply_amount),0) as supply, COUNT(*) as cnt
                 FROM sales_records {where}
-                GROUP BY warehouse ORDER BY supply DESC
+                GROUP BY warehouse ORDER BY COALESCE(SUM(supply_amount),0) DESC
             """, params).fetchall()
 
             # 교차 매트릭스
@@ -1283,7 +1281,7 @@ class SalesAnalyticsService:
                 SELECT warehouse, customer_group, COALESCE(SUM(supply_amount),0) as supply
                 FROM sales_records {where}
                 GROUP BY warehouse, customer_group
-                ORDER BY warehouse, supply DESC
+                ORDER BY warehouse, COALESCE(SUM(supply_amount),0) DESC
             """, params).fetchall()
 
             # 배송 관련 (shipments 테이블)
@@ -1301,7 +1299,7 @@ class SalesAnalyticsService:
                     # 거래처별 배송 건수
                     ship_cust = conn.execute("""
                         SELECT rcv_name, COUNT(*) as cnt
-                        FROM shipments GROUP BY rcv_name ORDER BY cnt DESC LIMIT 10
+                        FROM shipments GROUP BY rcv_name ORDER BY COUNT(*) DESC LIMIT 10
                     """).fetchall()
                     shipping_by_cust = [{"customer_name": r["rcv_name"], "count": r["cnt"]} for r in ship_cust]
             except Exception:
@@ -1486,7 +1484,11 @@ class SalesAnalyticsService:
         from db.database import get_connection
         conn = get_connection()
         try:
-            conn.execute("DELETE FROM sales_alerts WHERE is_read=0 AND created_at < datetime('now','-7 days')")
+            from db.database import USE_PG
+            if USE_PG:
+                conn.execute("DELETE FROM sales_alerts WHERE is_read=0 AND created_at < CURRENT_TIMESTAMP - INTERVAL '7 days'")
+            else:
+                conn.execute("DELETE FROM sales_alerts WHERE is_read=0 AND created_at < datetime('now','-7 days')")
             conn.commit()
         except Exception:
             pass
