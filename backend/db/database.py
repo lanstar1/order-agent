@@ -54,6 +54,7 @@ def _sql_to_pg(sql):
                 'shipments',
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
                 'sa_uploads', 'sa_jobs',
+                'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -577,6 +578,67 @@ def init_db():
     # ── 판매에이전트: 업로드 파일 + 분석 작업 ──
     _sa_init_tables(conn, cur_or_conn)
 
+    # ── 판매현황 분석 테이블 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS sales_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slip_date TEXT NOT NULL,
+        slip_no TEXT,
+        item_code TEXT,
+        customer_name TEXT,
+        item_name TEXT,
+        model_name TEXT,
+        quantity REAL DEFAULT 0,
+        unit_price REAL DEFAULT 0,
+        supply_amount REAL DEFAULT 0,
+        vat REAL DEFAULT 0,
+        total_amount REAL DEFAULT 0,
+        cost_price REAL DEFAULT 0,
+        warehouse TEXT,
+        account_date TEXT,
+        item_group TEXT,
+        note TEXT,
+        staff_name TEXT,
+        customer_group TEXT,
+        safety_stock REAL DEFAULT 0,
+        display_code TEXT,
+        gross_profit REAL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS sales_fetch_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fetch_type TEXT,
+        status TEXT,
+        message TEXT,
+        rows_imported INTEGER DEFAULT 0,
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        finished_at TIMESTAMP
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS sales_price_standards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_code TEXT NOT NULL,
+        customer_name TEXT,
+        standard_price REAL NOT NULL,
+        tolerance_pct REAL DEFAULT 10.0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(item_code, customer_name)
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS sales_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        alert_type TEXT NOT NULL,
+        target_name TEXT,
+        message TEXT,
+        severity TEXT DEFAULT 'warning',
+        is_read INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -599,6 +661,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_sa_jobs_file_id ON sa_jobs(file_id);
         CREATE INDEX IF NOT EXISTS idx_sa_jobs_status ON sa_jobs(status);
         CREATE INDEX IF NOT EXISTS idx_sa_jobs_created_at ON sa_jobs(created_at);
+        CREATE INDEX IF NOT EXISTS idx_sr_date ON sales_records(slip_date);
+        CREATE INDEX IF NOT EXISTS idx_sr_customer ON sales_records(customer_name);
+        CREATE INDEX IF NOT EXISTS idx_sr_item ON sales_records(item_code);
+        CREATE INDEX IF NOT EXISTS idx_sr_cgrp ON sales_records(customer_group);
+        CREATE INDEX IF NOT EXISTS idx_sr_igrp ON sales_records(item_group);
+        CREATE INDEX IF NOT EXISTS idx_sr_staff ON sales_records(staff_name);
+        CREATE INDEX IF NOT EXISTS idx_sr_qty ON sales_records(quantity);
+        CREATE INDEX IF NOT EXISTS idx_alert_read ON sales_alerts(is_read);
     """)
 
     conn.commit()

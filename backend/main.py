@@ -26,6 +26,7 @@ from api.routes.activity import router as activity_router
 from api.routes.shipping import router as shipping_router
 from api.routes.cs import router as cs_router
 from api.routes.sales_agent import router as sales_agent_router
+from api.routes.sales_analytics import router as sales_analytics_router
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -123,6 +124,11 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/sales-agent/upload"): "판매에이전트 파일 업로드",
     ("POST", "/api/sales-agent/analyze"): "판매에이전트 AI 분석",
     ("GET", "/api/sales-agent/history"): "판매에이전트 이력 조회",
+    ("POST", "/api/sales/upload-csv"): "판매현황 CSV 업로드",
+    ("POST", "/api/sales/fetch-ecount"): "판매현황 이카운트 수집",
+    ("POST", "/api/sales/scheduler/run-now"): "판매현황 즉시 수집",
+    ("POST", "/api/sales/agents/run"): "판매현황 에이전트 실행",
+    ("GET", "/api/sales/agents/ai-analysis"): "판매현황 AI 거래처 분석",
 }
 
 @app.middleware("http")
@@ -215,6 +221,7 @@ app.include_router(activity_router)
 app.include_router(shipping_router)
 app.include_router(cs_router)
 app.include_router(sales_agent_router)
+app.include_router(sales_analytics_router)
 
 # AI 대시보드 라우터
 try:
@@ -294,6 +301,45 @@ async def startup():
         logger.info("SmartLogen 자동 동기화 스케줄러 등록 완료 (1시간 간격)")
     except Exception as e:
         logger.warning(f"택배 스케줄러 시작 실패: {e}")
+
+    # 판매현황 자동 수집 + 에이전트 스케줄러
+    try:
+        from services.sales_analytics_service import SalesAnalyticsService
+        _sales_svc = SalesAnalyticsService()
+
+        def _sales_sync_wrapper(coro_func):
+            """비동기 함수를 동기 래핑 (APScheduler용)"""
+            def wrapper():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(coro_func())
+                    finally:
+                        loop.close()
+                except Exception as e:
+                    logger.error(f"[판매현황 스케줄러] 오류: {e}", exc_info=True)
+            return wrapper
+
+        from services.scheduler_service import _scheduler_state
+        scheduler = _scheduler_state.get("scheduler")
+        if scheduler:
+            from apscheduler.triggers.cron import CronTrigger
+            # 매시간 정각 — 이카운트 자동 수집
+            scheduler.add_job(
+                _sales_sync_wrapper(_sales_svc.auto_fetch_from_ecount),
+                CronTrigger(minute=0, timezone="Asia/Seoul"),
+                id="sales_auto_fetch", replace_existing=True
+            )
+            # 매시간 5분 — 에이전트 3종 실행
+            scheduler.add_job(
+                _sales_sync_wrapper(_sales_svc.run_all_agents),
+                CronTrigger(minute=5, timezone="Asia/Seoul"),
+                id="sales_agents", replace_existing=True
+            )
+            logger.info("판매현황 스케줄러 등록 완료 (매시간 자동수집 + 에이전트)")
+    except Exception as e:
+        logger.warning(f"판매현황 스케줄러 시작 실패: {e}")
 
 
 # ─────────────────────────────────────────

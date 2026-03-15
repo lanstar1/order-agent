@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260312b">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260315a">
   <style>
     /* CS/RMA 파이프라인 탭 */
     .cs-pipe-tab{padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:#6b7280;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
@@ -175,8 +175,13 @@
         <span>판매에이전트</span>
         <span class="drag-handle">⠿</span>
       </div>
-      <div class="nav-item" data-page="ai_dashboard" draggable="true">
+      <div class="nav-item" data-page="sales_analytics" draggable="true">
         <span class="icon">📊</span>
+        <span>판매현황</span>
+        <span class="drag-handle">⠿</span>
+      </div>
+      <div class="nav-item" data-page="ai_dashboard" draggable="true">
+        <span class="icon">🤖</span>
         <span>AI 대시보드</span>
         <span class="drag-handle">⠿</span>
       </div>
@@ -1010,6 +1015,13 @@ C규격품 200개
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 판매현황 분석
+         ────────────────────────────── -->
+    <div class="page" id="page-sales_analytics">
+      <div id="salesAnalyticsContainer"></div>
     </div>
 
     <!-- ──────────────────────────────
@@ -2505,6 +2517,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260312f"></script>
-<script src="/static/js/app.js?v=20260312r"></script>
+<script src="/static/js/app.js?v=20260315a"></script>
 </body>
 </html>

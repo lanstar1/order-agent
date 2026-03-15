@@ -6,7 +6,7 @@ services:
   - type: web
     name: order-agent
     runtime: python
-    buildCommand: pip install -r backend/requirements.txt python-dotenv
+    buildCommand: pip install -r backend/requirements.txt python-dotenv && playwright install chromium --with-deps
     startCommand: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
