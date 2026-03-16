@@ -356,4 +356,32 @@ const api = {
   saStatus: (jobId) => api.get(`/api/sales-agent/status/${jobId}`),
   saResult: (jobId) => api.get(`/api/sales-agent/result/${jobId}`),
   saHistory: (size = 20) => api.get(`/api/sales-agent/history?size=${size}`),
+
+  // ── 구매입력 ──
+  processPurchase:    (body) => api.post("/api/purchases/process", body),
+  confirmPurchase:    (body) => api.post("/api/purchases/confirm", body),
+  submitPurchaseERP:  (orderId, empCd = "") => api.post(`/api/purchases/submit-erp/${orderId}?emp_cd=${encodeURIComponent(empCd)}`),
+  listPurchases:      (limit = 20) => api.get(`/api/purchases/list?limit=${limit}`),
+  getPurchase:        (orderId) => api.get(`/api/purchases/${orderId}`),
+  async processPurchaseImage(formData) {
+    const headers = {};
+    const token = this.getToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(API_BASE + "/api/purchases/process-image", {
+      method: "POST",
+      body: formData,
+      headers,
+    });
+    if (res.status === 401) {
+      this.clearToken();
+      if (typeof window.onAuthRequired === "function") window.onAuthRequired();
+      throw new Error("인증이 만료되었습니다.");
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "OCR 처리 오류");
+    }
+    return res.json();
+  },
 };

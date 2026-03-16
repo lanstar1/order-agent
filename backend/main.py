@@ -27,6 +27,7 @@ from api.routes.shipping import router as shipping_router
 from api.routes.cs import router as cs_router
 from api.routes.sales_agent import router as sales_agent_router
 from api.routes.sales_analytics import router as sales_analytics_router
+from api.routes.purchases import router as purchases_router
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -129,6 +130,10 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/sales/scheduler/run-now"): "판매현황 즉시 수집",
     ("POST", "/api/sales/agents/run"): "판매현황 에이전트 실행",
     ("GET", "/api/sales/agents/ai-analysis"): "판매현황 AI 거래처 분석",
+    ("POST", "/api/purchases/process"): "구매입력 텍스트 분석",
+    ("POST", "/api/purchases/process-image"): "구매입력 이미지 분석",
+    ("POST", "/api/purchases/confirm"): "구매입력 확정",
+    ("POST", "/api/purchases/submit-erp"): "구매입력 ERP 전송",
 }
 
 @app.middleware("http")
@@ -222,6 +227,7 @@ app.include_router(shipping_router)
 app.include_router(cs_router)
 app.include_router(sales_agent_router)
 app.include_router(sales_analytics_router)
+app.include_router(purchases_router)
 
 # AI 대시보드 라우터
 try:

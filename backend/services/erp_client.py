@@ -577,6 +577,123 @@ class ERPClient:
         return await self.save_quotation(**kwargs)
 
     # ─────────────────────────────────────────
+    #  SavePurchases (구매입력)
+    #  POST https://oapi{ZONE}.ecount.com/OAPI/V2/Purchases/SavePurchases?SESSION_ID={session_id}
+    #  Body: {"PurchasesList": [{"BulkDatas": {...}}]}
+    # ─────────────────────────────────────────
+    async def save_purchase(
+        self,
+        cust_code:  str,
+        lines:      list,    # [{"prod_cd": str, "qty": float, "unit": str, "price": float}]
+        upload_ser: str = "1",
+        wh_cd:      str = "",
+        emp_cd:     str = "",
+        doc_no:     str = "",   # 구매No.
+        io_date:    str = "",   # 일자 YYYYMMDD
+    ) -> dict:
+        """
+        구매 전표를 ERP에 저장합니다. (구매입력 SavePurchases)
+        lines 예시: [{"prod_cd": "A001", "qty": 10, "unit": "EA", "price": 1000}]
+        """
+        if not self._session_id:
+            await self.ensure_session()
+
+        wh = wh_cd or ERP_WH_CD
+        zone = (self._zone or ERP_ZONE).lower()
+
+        url = f"https://oapi{zone}.ecount.com/OAPI/V2/Purchases/SavePurchases?SESSION_ID={self._session_id}"
+
+        ser_no = str(int(upload_ser))[-4:] if upload_ser else "1"
+
+        # 일자 기본값: 오늘
+        if not io_date:
+            from datetime import datetime as _dt
+            io_date = _dt.now().strftime("%Y%m%d")
+
+        purchases_list = []
+        for line in lines:
+            qty_val = line["qty"]
+            if qty_val is not None:
+                qty_val = float(qty_val)
+                qty_str = str(int(qty_val)) if qty_val == int(qty_val) else str(qty_val)
+            else:
+                qty_str = "0"
+
+            bulk = {
+                "UPLOAD_SER_NO": ser_no,
+                "IO_DATE":       io_date,
+                "CUST":          cust_code,
+                "PROD_CD":       line["prod_cd"],
+                "QTY":           qty_str,
+                "WH_CD":         wh,
+            }
+            # 담당자 코드
+            effective_emp = emp_cd or ERP_EMP_CD
+            if effective_emp:
+                bulk["EMP_CD"] = effective_emp
+            # 구매No.
+            if doc_no:
+                bulk["DOC_NO"] = doc_no
+            # 단위
+            unit = line.get("unit", "")
+            if unit:
+                bulk["UNIT"] = unit
+            # 단가 및 공급가 (price > 0 일 때만)
+            price_val = line.get("price") or 0
+            try:
+                price_val = float(price_val)
+            except (ValueError, TypeError):
+                price_val = 0.0
+            if price_val > 0:
+                qty_f = float(qty_val) if qty_val is not None else 0.0
+                supply = round(price_val * qty_f, 2)
+                bulk["PRICE"]      = str(int(price_val)) if price_val == int(price_val) else str(price_val)
+                bulk["SUPPLY_AMT"] = str(int(supply))    if supply    == int(supply)    else str(supply)
+                vat = round(supply * 0.1)
+                bulk["VAT_AMT"]    = str(vat)
+
+            purchases_list.append({"BulkDatas": bulk})
+
+        payload = {"PurchasesList": purchases_list}
+
+        logger.info(f"[ERP SavePurchases] URL: {url}")
+        logger.debug(f"[ERP SavePurchases] 페이로드: {payload}")
+
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(url, json=payload, timeout=15)
+                    r.raise_for_status()
+                    data = r.json()
+
+                logger.info(f"[ERP SavePurchases] 응답: {data}")
+
+                if str(data.get("Status", "")) == "200":
+                    return {"success": True, "data": data}
+
+                if str(data.get("Status", "")) in ("301", "302"):
+                    logger.warning("[ERP] 세션 만료, 재로그인 시도")
+                    await self.ensure_session()
+                    zone = (self._zone or ERP_ZONE).lower()
+                    url = f"https://oapi{zone}.ecount.com/OAPI/V2/Purchases/SavePurchases?SESSION_ID={self._session_id}"
+                    continue
+
+                err = data.get("Error") or data.get("error") or data
+                logger.error(f"[ERP SavePurchases] 실패 응답: {data}")
+                return {"success": False, "error": err}
+
+            except httpx.HTTPStatusError as e:
+                logger.error(f"[ERP] HTTP 상태 오류 (시도 {attempt+1}): {e.response.status_code} {e.response.text}")
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+            except httpx.HTTPError as e:
+                logger.error(f"[ERP] HTTP 오류 (시도 {attempt+1}): {e}")
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+
+        return {"success": False, "error": "최대 재시도 횟수 초과"}
+
+    # ─────────────────────────────────────────
     #  세션 초기화 (로그아웃/재연결 시)
     # ─────────────────────────────────────────
     def reset(self):

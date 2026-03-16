@@ -105,6 +105,9 @@ function navigateTo(pageId) {
     sale_order:   "견적서입력",
     so_result:    "견적서 결과",
     so_history:   "견적서 이력",
+    purchase:     "구매입력",
+    po_result:    "구매입력 결과",
+    po_history:   "구매입력 이력",
     inventory:    "재고 조회",
     doc_search:   "자료검색",
     price_sheet:  "단가표 조회",
@@ -126,6 +129,8 @@ function navigateTo(pageId) {
   if (pageId === "shipping") initShippingPage();
   // 주문서 페이지 진입 시 드롭존 초기화
   if (pageId === "sale_order") initSODropzone();
+  // 구매입력 페이지 진입 시 드롭존 초기화
+  if (pageId === "purchase") initPODropzone();
   // 자료검색 페이지 진입 시 카테고리 로드
   if (pageId === "doc_search") initDocSearchPage().catch(e => console.error("initDocSearchPage 실패:", e));
   // 단가표 조회 페이지 진입 시 거래처 로드
@@ -579,6 +584,7 @@ function initSidebarNav() {
       navigateTo(page);
       if (page === "history") loadHistory();
       if (page === "sale_order") initSODropzone();
+      if (page === "purchase") initPODropzone();
     });
   });
 
@@ -1397,6 +1403,513 @@ function renderSOOrderDetail(data) {
   `;
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  구매입력 (Purchase Input)
+// ═══════════════════════════════════════════════════════
+
+const poState = {
+  currentOrder: null,
+  currentTab: "text",
+};
+
+// ─── 거래처 검색 (구매입력용) ───
+let _poCustSearchTimer = null;
+async function onPOCustSearch(query) {
+  const dd = document.getElementById("po-cust-dropdown");
+  if (!query.trim()) { dd.style.display = "none"; return; }
+  clearTimeout(_poCustSearchTimer);
+  _poCustSearchTimer = setTimeout(async () => {
+    try {
+      const data = await api.get(`/api/customers/?q=${encodeURIComponent(query.trim())}`);
+      const matches = data.customers || [];
+      if (!matches.length) {
+        dd.innerHTML = `<div style="padding:10px 14px;color:#a0aec0;font-size:13px">검색 결과 없음</div>`;
+      } else {
+        dd.innerHTML = matches.map(c =>
+          `<div onclick="selectPOCust('${c.cust_code.replace(/'/g,"\\'")}','${c.cust_name.replace(/'/g,"\\'")}');"
+            style="padding:8px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f7fafc"
+            onmouseover="this.style.background='#ebf8ff'" onmouseout="this.style.background=''">
+            <strong>${c.cust_name}</strong>
+            <span style="color:#a0aec0;margin-left:6px;font-size:12px">${c.cust_code}</span>
+          </div>`
+        ).join("");
+      }
+      dd.style.display = "block";
+      if (_dropdownNav["po-cust-search"]) _dropdownNav["po-cust-search"].idx = -1;
+    } catch(e) { console.warn("거래처 검색 오류:", e); }
+  }, 200);
+}
+
+function showPOCustDropdown() {
+  const q = document.getElementById("po-cust-search").value.trim();
+  if (q) onPOCustSearch(q);
+}
+
+function selectPOCust(code, name) {
+  document.getElementById("po-cust-select").value = code;
+  document.getElementById("po-cust-search").value = `${name} (${code})`;
+  document.getElementById("po-cust-dropdown").style.display = "none";
+  const info = document.getElementById("po-cust-selected-info");
+  info.textContent = `✓ 선택됨: ${name} [${code}]`;
+  info.style.display = "block";
+}
+
+document.addEventListener("click", e => {
+  const dd = document.getElementById("po-cust-dropdown");
+  if (dd && !dd.contains(e.target) && e.target.id !== "po-cust-search") {
+    dd.style.display = "none";
+  }
+});
+
+// ─── 탭 전환 ───
+function switchPOTab(tab) {
+  poState.currentTab = tab;
+  document.querySelectorAll("[data-po-tab]").forEach(b => b.classList.remove("active"));
+  const btn = document.querySelector(`[data-po-tab="${tab}"]`);
+  if (btn) btn.classList.add("active");
+  document.getElementById("po-tab-text").style.display  = tab === "text"  ? "block" : "none";
+  document.getElementById("po-tab-image").style.display = tab === "image" ? "block" : "none";
+}
+
+// ─── 드롭존 초기화 ───
+let _poDropzoneInitialized = false;
+function initPODropzone() {
+  if (_poDropzoneInitialized) return;
+  const dropzone = document.getElementById("po-image-dropzone");
+  if (!dropzone) return;
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag-over"); });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag-over"));
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) handlePOImageFile(file);
+  });
+  dropzone.addEventListener("click", () => document.getElementById("po-image-input").click());
+  _poDropzoneInitialized = true;
+}
+
+// ─── 이미지 파일 처리 ───
+function handlePOImageFile(file) {
+  const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+  if (!allowed.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|gif|webp|pdf)$/i)) {
+    toast("JPG, PNG, GIF, WebP, PDF 파일만 지원합니다.", "error");
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    toast("파일 크기가 10MB를 초과합니다.", "error");
+    return;
+  }
+
+  const dropzone = document.getElementById("po-image-dropzone");
+  const isPDF = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+  if (isPDF) {
+    dropzone.innerHTML = `
+      <div style="font-size:36px">📄</div>
+      <p style="font-weight:600;margin:6px 0 2px">${file.name}</p>
+      <p style="font-size:12px;color:var(--gray-400)">${(file.size / 1024).toFixed(0)} KB · PDF</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="clearPOImageFile()">✕ 다시 선택</button>`;
+  } else {
+    const url = URL.createObjectURL(file);
+    dropzone.innerHTML = `
+      <img src="${url}" style="max-height:160px;max-width:100%;border-radius:6px;object-fit:contain">
+      <p style="font-size:12px;color:var(--gray-500);margin-top:6px">${file.name} · ${(file.size / 1024).toFixed(0)} KB</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:4px" onclick="clearPOImageFile()">✕ 다시 선택</button>`;
+  }
+
+  const old = document.getElementById("btn-po-analyze-image");
+  if (old) old.remove();
+  const btn = document.createElement("button");
+  btn.id = "btn-po-analyze-image";
+  btn.className = "btn btn-primary";
+  btn.style.cssText = "margin-top:12px;display:block;width:100%";
+  btn.textContent = "🔍 AI 분석 시작 →";
+  btn.onclick = () => submitPOImageOrder(file);
+  dropzone.after(btn);
+}
+
+function clearPOImageFile() {
+  const dropzone = document.getElementById("po-image-dropzone");
+  dropzone.innerHTML = `
+    <div class="upload-icon">📎</div>
+    <p><strong>이미지를 드래그하거나 클릭하여 업로드</strong></p>
+    <p style="font-size:12px;margin-top:6px;color:var(--gray-400)">JPG, PNG, PDF 지원 · 최대 10MB</p>`;
+  const btn = document.getElementById("btn-po-analyze-image");
+  if (btn) btn.remove();
+  document.getElementById("po-image-input").value = "";
+}
+
+// ─── 구매서 제출 (텍스트) ───
+async function submitPurchase() {
+  const custCode = document.getElementById("po-cust-select").value;
+  const searchVal = document.getElementById("po-cust-search")?.value || "";
+  const custName = searchVal.replace(/\s*\([^)]*\)\s*$/, "").trim() || custCode;
+  const rawText  = document.getElementById("po-raw-text").value.trim();
+
+  if (!custCode) { toast("거래처를 선택해주세요.", "error"); return; }
+  if (!rawText)  { toast("구매서 내용을 입력해주세요.", "error"); return; }
+
+  showProcessing("구매 라인 추출 중...");
+
+  try {
+    updateStep("AI 분석 중...");
+    const result = await api.processPurchase({ cust_code: custCode, cust_name: custName, raw_text: rawText });
+    poState.currentOrder = result;
+    hideProcessing();
+    renderPOResult(result);
+    navigateTo("po_result");
+  } catch (e) {
+    hideProcessing();
+    toast("처리 실패: " + e.message, "error");
+  }
+}
+
+// ─── 구매서 이미지 제출 ───
+async function submitPOImageOrder(file) {
+  const custCode = document.getElementById("po-cust-select").value;
+  const searchVal = document.getElementById("po-cust-search")?.value || "";
+  const custName = searchVal.replace(/\s*\([^)]*\)\s*$/, "").trim() || custCode;
+
+  if (!custCode) {
+    toast("먼저 거래처를 선택해주세요.", "error");
+    return;
+  }
+
+  showProcessing("이미지 분석 중...");
+
+  try {
+    updateStep("Claude Vision이 이미지를 읽는 중...");
+    const formData = new FormData();
+    formData.append("cust_code", custCode);
+    formData.append("cust_name", custName);
+    formData.append("file", file);
+
+    const result = await api.processPurchaseImage(formData);
+    poState.currentOrder = result;
+    hideProcessing();
+    renderPOResult(result);
+    navigateTo("po_result");
+    clearPOImageFile();
+  } catch (e) {
+    hideProcessing();
+    toast("OCR 처리 실패: " + e.message, "error");
+  }
+}
+
+// ─── 구매서 결과 렌더링 ───
+function renderPOResult(order) {
+  const container = document.getElementById("po-result-container");
+  const needsReview = order.lines.some(l => !l.is_confirmed);
+
+  container.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--primary)">
+            🛒 구매입력 처리 결과
+          </div>
+          <div style="font-size:13px;color:var(--gray-600);margin-top:4px">
+            주문번호: <strong>${order.order_id}</strong> &nbsp;|&nbsp;
+            거래처: <strong>${order.cust_name}</strong> &nbsp;|&nbsp;
+            ${statusBadge(order.status)}
+          </div>
+        </div>
+        ${needsReview ? '<span style="color:var(--warning);font-size:13px;font-weight:600">⚠ 검토 필요 항목이 있습니다</span>' : '<span style="color:var(--success);font-size:13px;font-weight:600">✓ 모든 항목 자동 매칭</span>'}
+      </div>
+
+      <table class="result-table">
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th>원문 내용</th>
+            <th style="width:200px">상품 선택</th>
+            <th style="width:110px">모델명</th>
+            <th style="width:80px">수량</th>
+            <th style="width:60px">단위</th>
+            <th style="width:100px">단가</th>
+            <th style="width:80px">신뢰도</th>
+          </tr>
+        </thead>
+        <tbody id="po-result-tbody">
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;gap:12px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="navigateTo('purchase')">← 돌아가기</button>
+      <button class="btn btn-success" onclick="confirmAndSubmitPO()" id="btn-po-confirm">
+        ✓ 확인 후 ERP 구매현황 전송
+      </button>
+    </div>
+  `;
+
+  const tbody = document.getElementById("po-result-tbody");
+  order.lines.forEach(line => {
+    const row = document.createElement("tr");
+    row.id = `po-line-row-${line.line_no}`;
+
+    const candidateOptions = line.candidates.map(c =>
+      `<option value="${c.prod_cd}" ${c.prod_cd === line.selected_cd ? "selected" : ""}>
+        [${c.prod_cd}] ${c.prod_name} (${Math.round(c.score * 100)}%)
+      </option>`
+    ).join("");
+
+    const modelMap = {};
+    line.candidates.forEach(c => { if (c.model_name) modelMap[c.prod_cd] = c.model_name; });
+    row.dataset.modelMap = JSON.stringify(modelMap);
+
+    const initModel = line.model_name || modelMap[line.selected_cd] || "";
+
+    row.innerHTML = `
+      <td style="color:var(--gray-400);font-size:12px">${line.line_no}</td>
+      <td>
+        <div style="font-weight:500">${line.raw_text}</div>
+        ${line.qty ? `<div class="raw-text">수량: ${line.qty} ${line.unit || ""}</div>` : ""}
+      </td>
+      <td>
+        <select class="candidate-select" id="po-sel-${line.line_no}" onchange="onPOCandidateChange(${line.line_no})">
+          ${candidateOptions || '<option value="">-- 매칭 없음 --</option>'}
+        </select>
+      </td>
+      <td id="po-model-${line.line_no}" style="font-size:12px;color:var(--gray-700);font-weight:500;padding:0 6px">
+        ${initModel ? `<span title="${initModel}">${initModel}</span>` : '<span style="color:var(--gray-300)">-</span>'}
+      </td>
+      <td>
+        <input type="number" class="form-control" style="padding:5px 8px"
+          id="po-qty-${line.line_no}" value="${line.qty || ''}" min="0" step="0.1">
+      </td>
+      <td>
+        <input type="text" class="form-control" style="padding:5px 8px"
+          id="po-unit-${line.line_no}" value="${line.unit || ''}" placeholder="EA">
+      </td>
+      <td>
+        <input type="number" class="form-control" style="padding:5px 8px"
+          id="po-price-${line.line_no}" value="${line.price || ''}" min="0" placeholder="단가">
+      </td>
+      <td>
+        ${line.candidates[0] ? confidenceBadge(line.candidates[0].confidence) : '<span class="badge badge-low">없음</span>'}
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+function onPOCandidateChange(lineNo) {
+  const row = document.getElementById(`po-line-row-${lineNo}`);
+  row.style.background = "#fffbeb";
+  setTimeout(() => row.style.background = "", 800);
+  const selEl = document.getElementById(`po-sel-${lineNo}`);
+  const modelEl = document.getElementById(`po-model-${lineNo}`);
+  if (selEl && modelEl) {
+    try {
+      const modelMap = JSON.parse(row.dataset.modelMap || "{}");
+      const model = modelMap[selEl.value] || "";
+      modelEl.innerHTML = model
+        ? `<span title="${model}">${model}</span>`
+        : '<span style="color:var(--gray-300)">-</span>';
+    } catch(e) {}
+  }
+}
+
+// ─── 구매서 확인 후 ERP 전송 ───
+async function confirmAndSubmitPO() {
+  const order = poState.currentOrder;
+  if (!order) return;
+
+  const lines = order.lines.map(line => ({
+    line_no:  line.line_no,
+    prod_cd:  document.getElementById(`po-sel-${line.line_no}`)?.value || "",
+    qty:      parseFloat(document.getElementById(`po-qty-${line.line_no}`)?.value) || 0,
+    unit:     document.getElementById(`po-unit-${line.line_no}`)?.value || "",
+    price:    parseFloat(document.getElementById(`po-price-${line.line_no}`)?.value) || 0,
+  }));
+
+  const invalid = lines.filter(l => !l.prod_cd || !l.qty);
+  if (invalid.length > 0) {
+    toast(`${invalid.length}개 라인에 상품코드 또는 수량이 없습니다.`, "error");
+    return;
+  }
+
+  showProcessing("ERP 구매현황 전송 중...");
+
+  try {
+    await api.confirmPurchase({ order_id: order.order_id, lines });
+    updateStep("구매현황 생성 중...");
+
+    const user = getCurrentUser ? getCurrentUser() : null;
+    const empCd = user ? user.emp_cd : "";
+    const result = await api.submitPurchaseERP(order.order_id, empCd);
+    hideProcessing();
+
+    if (result.success) {
+      toast(`ERP 구매현황 전송 완료! 전표번호: ${result.erp_slip_no || "생성됨"}`, "success");
+      setTimeout(() => {
+        loadPOHistory();
+        navigateTo("po_history");
+      }, 1500);
+    } else {
+      toast("ERP 전송 실패: " + result.message, "error");
+    }
+  } catch (e) {
+    hideProcessing();
+    toast("오류: " + e.message, "error");
+  }
+}
+
+// ─── 구매서 이력 로드 ───
+async function loadPOHistory() {
+  try {
+    const res = await api.listPurchases(30);
+    const container = document.getElementById("po-history-list");
+    if (!res.orders.length) {
+      container.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:32px">처리된 구매입력이 없습니다.</p>';
+      return;
+    }
+    container.innerHTML = res.orders.map(o => `
+      <div class="order-item" onclick="viewPOOrder('${o.order_id}')">
+        <div>
+          <div class="order-cust">${o.cust_name || o.cust_code}</div>
+          <div class="order-id">주문번호: ${o.order_id}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px">
+          ${statusBadge(o.status)}
+          <div class="order-date">${o.created_at?.slice(0, 16) || ""}</div>
+        </div>
+      </div>
+    `).join("");
+  } catch (e) {
+    toast("이력 로드 실패: " + e.message, "error");
+  }
+}
+
+async function viewPOOrder(orderId) {
+  try {
+    const res = await api.getPurchase(orderId);
+    renderPOOrderDetail(res);
+  } catch (e) {
+    toast("조회 실패: " + e.message, "error");
+  }
+}
+
+function renderPOOrderDetail(data) {
+  const order = data.order;
+  const lines = data.lines || [];
+  const submissions = data.submissions || [];
+  const container = document.getElementById("po-history-list");
+
+  let erpHtml = "";
+  if (submissions.length) {
+    erpHtml = submissions.map(s => `
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--gray-100);font-size:12px">
+        <span style="font-size:14px">${s.success ? "✅" : "❌"}</span>
+        <div style="flex:1">
+          <span style="font-weight:500">${s.success ? "전송 성공" : "전송 실패"}</span>
+          ${s.erp_slip_no ? `<span style="margin-left:6px;color:var(--primary);font-weight:600">전표: ${s.erp_slip_no}</span>` : ""}
+        </div>
+        <span style="font-size:11px;color:var(--gray-400)">${s.submitted_at?.slice(0, 16) || ""}</span>
+      </div>
+    `).join("");
+  } else {
+    erpHtml = '<p style="color:var(--gray-400);font-size:13px">ERP 전송 이력 없음</p>';
+  }
+
+  const linesHtml = lines.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
+      <thead>
+        <tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500)">
+          <th style="text-align:left;padding:5px 6px;width:32px">#</th>
+          <th style="text-align:left;padding:5px 6px">원문 내용</th>
+          <th style="text-align:left;padding:5px 6px;width:140px">선택 상품코드</th>
+          <th style="text-align:center;padding:5px 6px;width:60px">수량</th>
+          <th style="text-align:center;padding:5px 6px;width:45px">단위</th>
+          <th style="text-align:right;padding:5px 6px;width:80px">단가</th>
+          <th style="text-align:center;padding:5px 6px;width:50px">상태</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lines.map(l => {
+          const selCand = (l.candidates || []).find(c => c.was_selected);
+          const selectedName = selCand ? selCand.prod_name : "";
+          return `
+          <tr style="border-bottom:1px solid var(--gray-100)">
+            <td style="padding:4px 6px;color:var(--gray-400)">${l.line_no}</td>
+            <td style="padding:4px 6px">
+              <div style="font-weight:500">${l.raw_text || ""}</div>
+              ${selectedName ? '<div style="font-size:11px;color:var(--gray-400);margin-top:1px">' + selectedName + '</div>' : ""}
+            </td>
+            <td style="padding:4px 6px;font-family:monospace;font-size:11px;color:var(--primary)">${l.selected_cd || '<span style="color:var(--danger)">미선택</span>'}</td>
+            <td style="padding:4px 6px;text-align:center">${l.qty || "-"}</td>
+            <td style="padding:4px 6px;text-align:center">${l.unit || "-"}</td>
+            <td style="padding:4px 6px;text-align:right">${l.price ? l.price.toLocaleString() : "-"}</td>
+            <td style="padding:4px 6px;text-align:center">${l.is_confirmed ? '<span style="color:var(--success);font-weight:600">확인</span>' : '<span style="color:var(--warning)">미확인</span>'}</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  ` : '<p style="color:var(--gray-400);font-size:12px">라인 데이터 없음</p>';
+
+  const rawText = order.raw_text || "";
+
+  container.innerHTML = `
+    <div style="margin-bottom:10px">
+      <button class="btn btn-outline btn-sm" onclick="loadPOHistory()">← 목록으로</button>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div>
+          <span style="font-size:15px;font-weight:700;color:var(--primary)">구매입력 상세</span>
+          <span style="font-size:12px;color:var(--gray-500);margin-left:10px">
+            주문번호: <strong>${order.order_id}</strong>
+          </span>
+        </div>
+        ${statusBadge(order.status)}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;font-size:12px;padding:10px 14px;background:var(--gray-50);border-radius:6px;margin-bottom:12px">
+        <div>
+          <span style="color:var(--gray-400);font-size:11px">거래처</span>
+          <div style="font-weight:600;margin-top:1px">${order.cust_name || "-"} <span style="color:var(--gray-400);font-weight:400;font-size:11px">(${order.cust_code || "-"})</span></div>
+        </div>
+        <div>
+          <span style="color:var(--gray-400);font-size:11px">처리일시</span>
+          <div style="font-weight:600;margin-top:1px">${order.created_at?.slice(0, 16) || "-"}</div>
+        </div>
+        <div>
+          <span style="color:var(--gray-400);font-size:11px">라인 수</span>
+          <div style="font-weight:600;margin-top:1px">${lines.length}건</div>
+        </div>
+        <div>
+          <span style="color:var(--gray-400);font-size:11px">최종 수정</span>
+          <div style="font-weight:600;margin-top:1px">${order.updated_at?.slice(0, 16) || "-"}</div>
+        </div>
+      </div>
+
+      ${rawText ? `
+      <div>
+        <div style="font-size:12px;color:var(--gray-400);margin-bottom:6px;font-weight:600">구매서 원문</div>
+        <div style="font-size:12px;color:var(--gray-600);background:#f7fafc;padding:10px 14px;border-radius:6px;white-space:pre-wrap;max-height:120px;overflow-y:auto;border:1px solid var(--gray-100)">${rawText}</div>
+      </div>` : ""}
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">구매 라인 (${lines.length}건)</div>
+      ${linesHtml}
+    </div>
+
+    <div class="card">
+      <div class="card-title">ERP 전송 이력</div>
+      ${erpHtml}
+    </div>
+  `;
+}
+
+// ─── 구매 nav 클릭 시 이력 로드 ───
+function onPurchaseNavClick() {
+  loadPOHistory();
+}
 
 function renderInventoryResults(results, query) {
   const container = document.getElementById("inv-results");
