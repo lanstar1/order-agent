@@ -130,7 +130,7 @@ async def extract_order_lines(raw_text: str, cust_name: str = "", cust_code: str
         # 프롬프트 캐싱 활용 (시스템 프롬프트 캐시)
         response = await client.messages.create(
             model=model,
-            max_tokens=4096,
+            max_tokens=8192,
             system=[{
                 "type": "text",
                 "text": system_prompt,
@@ -174,8 +174,8 @@ async def extract_order_lines(raw_text: str, cust_name: str = "", cust_code: str
         return lines
 
     except json.JSONDecodeError as e:
-        logger.error(f"[Extraction] JSON 파싱 실패: {e}\n원문: {text[:200]}")
+        logger.error(f"[Extraction] JSON 파싱 실패: {e}\n원문(전체): {text}")
         return []
     except Exception as e:
-        logger.error(f"[Extraction] 오류: {e}")
+        logger.error(f"[Extraction] 오류: {e}", exc_info=True)
         return []
