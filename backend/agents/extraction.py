@@ -130,7 +130,7 @@ async def extract_order_lines(raw_text: str, cust_name: str = "", cust_code: str
         # 프롬프트 캐싱 활용 (시스템 프롬프트 캐시)
         response = await client.messages.create(
             model=model,
-            max_tokens=2000,
+            max_tokens=4096,
             system=[{
                 "type": "text",
                 "text": system_prompt,
