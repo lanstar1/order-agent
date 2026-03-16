@@ -38,6 +38,7 @@ EXTRACT_SYSTEM = """당신은 B2B 발주서 텍스트에서 상품 주문 정보
     "normalized_hints": ["정규화된 모델명 변형1", "변형2"],
     "qty": 숫자 또는 null,
     "unit": "단위 또는 null",
+    "price": 단가(숫자) 또는 null,
     "implicit_notes": "암묵적 속성 추론 (없으면 빈 문자열)",
     "detected_specs": {
       "manufacturer": "제조사명 또는 null (불분명하면 null)",

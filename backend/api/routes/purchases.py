@@ -86,141 +86,45 @@ _ensure_purchase_tables()
 
 
 # ─────────────────────────────────────────
-#  구매입력 생성 및 처리 (텍스트)
+#  헬퍼: 엑셀/CSV → 텍스트 변환
 # ─────────────────────────────────────────
-@router.post("/process", response_model=OrderProcessResponse)
-async def process_purchase(req: OrderCreateRequest, user: dict = Depends(get_current_user)):
-    """텍스트를 받아 AI 처리 후 구매 라인 반환"""
-    order_id = "PO-" + str(uuid.uuid4())[:8].upper()
-
-    if not req.raw_text or not req.raw_text.strip():
-        raise HTTPException(400, "발주서 텍스트를 입력해주세요.")
-
-    conn = get_connection()
-    conn.execute(
-        "INSERT INTO purchase_orders(order_id,cust_code,cust_name,raw_text,status) VALUES(?,?,?,?,?)",
-        (order_id, req.cust_code, req.cust_name, req.raw_text, OrderStatus.PROCESSING)
-    )
-    conn.commit()
-
-    # 1. 주문 라인 추출
-    extracted = await extract_order_lines(req.raw_text, req.cust_name, cust_code=req.cust_code)
-
-    # 2. 각 라인 상품 매칭
-    result_lines = []
-    for item in extracted:
-        candidates_raw = await resolve_product(
-            item.get("product_hint", item.get("raw_text", "")),
-            item.get("implicit_notes", ""),
-            cust_code=req.cust_code,
-            normalized_hints=item.get("normalized_hints", []),
-            detected_specs=item.get("detected_specs"),
-        )
-        candidates = [ProductCandidate(**c) for c in candidates_raw]
-        auto_select = None
-        if candidates and candidates[0].score >= CONFIDENCE_THRESHOLD:
-            auto_select = candidates[0].prod_cd
-
-        selected_model = ""
-        if auto_select and candidates:
-            sel_cand = next((c for c in candidates if c.prod_cd == auto_select), None)
-            if sel_cand:
-                selected_model = sel_cand.model_name or ""
-
-        line = OrderLineExtracted(
-            line_no=item["line_no"],
-            raw_text=item.get("raw_text", ""),
-            qty=item.get("qty"),
-            unit=item.get("unit"),
-            candidates=candidates,
-            selected_cd=auto_select,
-            is_confirmed=bool(auto_select),
-            model_name=selected_model or None,
-        )
-        result_lines.append(line)
-
-        cur = conn.execute(
-            "INSERT INTO purchase_order_lines(order_id,line_no,raw_text,qty,unit,selected_cd,is_confirmed) VALUES(?,?,?,?,?,?,?)",
-            (order_id, line.line_no, line.raw_text, line.qty, line.unit, line.selected_cd, int(line.is_confirmed))
-        )
-        line_id = cur.lastrowid
-        for c in candidates:
-            conn.execute(
-                "INSERT INTO purchase_order_candidates(line_id,prod_cd,prod_name,score,match_reason,was_selected) VALUES(?,?,?,?,?,?)",
-                (line_id, c.prod_cd, c.prod_name, c.score, c.match_reason, 1 if c.prod_cd == auto_select else 0)
-            )
-        conn.commit()
-
-    needs_review = any(not l.is_confirmed for l in result_lines)
-    new_status = OrderStatus.REVIEWING if needs_review else OrderStatus.CONFIRMED
-    conn.execute("UPDATE purchase_orders SET status=?,updated_at=datetime('now','localtime') WHERE order_id=?",
-                 (new_status, order_id))
-    conn.commit()
-    conn.close()
-
-    return OrderProcessResponse(
-        order_id=order_id,
-        cust_code=req.cust_code,
-        cust_name=req.cust_name,
-        status=new_status,
-        lines=result_lines,
-        created_at=datetime.now(),
-        message="검토 필요 항목이 있습니다." if needs_review else "모든 항목 자동 매칭 완료",
-    )
+def _spreadsheet_to_text(file_path: str, suffix: str) -> str:
+    """엑셀(.xlsx/.xls) 또는 CSV 파일을 AI가 읽을 수 있는 텍스트로 변환"""
+    if suffix == ".csv":
+        import csv
+        rows = []
+        for enc in ("utf-8-sig", "cp949", "euc-kr"):
+            try:
+                with open(file_path, encoding=enc, errors="replace") as f:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        cells = [str(c).strip() for c in row if str(c).strip()]
+                        if cells:
+                            rows.append(" | ".join(cells))
+                break
+            except Exception:
+                continue
+        return "\n".join(rows)
+    else:
+        import openpyxl
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        rows = []
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                if cells:
+                    rows.append(" | ".join(cells))
+        wb.close()
+        return "\n".join(rows)
 
 
 # ─────────────────────────────────────────
-#  이미지 업로드 + OCR 처리
+#  헬퍼: 추출된 라인 → DB 저장 + ERP 단가 조회
 # ─────────────────────────────────────────
-@router.post("/process-image", response_model=OrderProcessResponse)
-async def process_purchase_image(
-    cust_code: str = Form(...),
-    cust_name: str = Form(...),
-    file: UploadFile = File(...),
-    user: dict = Depends(get_current_user),
-):
-    """이미지/PDF 발주서를 업로드하고 Claude Vision OCR 후 구매입력 처리"""
-    from agents.ocr import ocr_and_extract
-
-    allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"}
-    suffix = Path(file.filename).suffix.lower() if file.filename else ".jpg"
-    if suffix not in allowed_exts:
-        raise HTTPException(400, f"지원하지 않는 파일 형식: {suffix}")
-
-    order_id = "PO-" + str(uuid.uuid4())[:8].upper()
-    save_path = UPLOAD_DIR / f"{order_id}{suffix}"
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-    content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(400, "파일 크기가 10MB를 초과합니다.")
-    with open(save_path, "wb") as f:
-        f.write(content)
-
-    conn = get_connection()
-    conn.execute(
-        "INSERT INTO purchase_orders(order_id,cust_code,cust_name,raw_text,status) VALUES(?,?,?,?,?)",
-        (order_id, cust_code, cust_name, f"[이미지: {file.filename}]", OrderStatus.PROCESSING)
-    )
-    conn.commit()
-
-    try:
-        extracted, raw_text = await ocr_and_extract(str(save_path), cust_name)
-    except Exception as e:
-        conn.execute("UPDATE purchase_orders SET status='failed',updated_at=datetime('now','localtime') WHERE order_id=?", (order_id,))
-        conn.commit()
-        conn.close()
-        raise HTTPException(500, f"OCR 처리 실패: {e}")
-
-    if not extracted:
-        conn.execute("UPDATE purchase_orders SET status='failed',updated_at=datetime('now','localtime') WHERE order_id=?", (order_id,))
-        conn.commit()
-        conn.close()
-        raise HTTPException(422, "이미지에서 발주 항목을 인식할 수 없습니다.")
-
-    conn.execute("UPDATE purchase_orders SET raw_text=? WHERE order_id=?", (raw_text, order_id))
-    conn.commit()
-
+async def _build_and_save_lines(
+    conn, order_id: str, cust_code: str, extracted: list
+) -> list:
+    """AI 추출 결과를 상품 매칭 → ERP 단가 조회 → DB 저장 순으로 처리"""
     result_lines = []
     for item in extracted:
         candidates_raw = await resolve_product(
@@ -241,11 +145,16 @@ async def process_purchase_image(
             if sel_cand:
                 selected_model = sel_cand.model_name or ""
 
+        # AI가 텍스트에서 단가를 직접 추출한 경우 사용
+        ai_price = item.get("price")
+        price_val = float(ai_price) if ai_price else None
+
         line = OrderLineExtracted(
             line_no=item["line_no"],
             raw_text=item.get("raw_text", ""),
             qty=item.get("qty"),
             unit=item.get("unit"),
+            price=price_val,
             candidates=candidates,
             selected_cd=auto_select,
             is_confirmed=bool(auto_select),
@@ -253,17 +162,166 @@ async def process_purchase_image(
         )
         result_lines.append(line)
 
+    # ERP에서 OUT_PRICE 일괄 조회 (단가가 없는 자동선택 품목)
+    no_price_cds = list({l.selected_cd for l in result_lines if l.selected_cd and not l.price})
+    if no_price_cds:
+        try:
+            erp_prices = await erp_client.get_product_prices(no_price_cds)
+            logger.info(f"[purchase process] ERP 단가 조회: {len(erp_prices)}건")
+            for line in result_lines:
+                if line.selected_cd and not line.price:
+                    line.price = erp_prices.get(line.selected_cd)
+        except Exception as pe:
+            logger.warning(f"[purchase process] ERP 단가 조회 실패 (무시): {pe}")
+
+    # DB 저장
+    for line in result_lines:
         cur = conn.execute(
-            "INSERT INTO purchase_order_lines(order_id,line_no,raw_text,qty,unit,selected_cd,is_confirmed) VALUES(?,?,?,?,?,?,?)",
-            (order_id, line.line_no, line.raw_text, line.qty, line.unit, line.selected_cd, int(line.is_confirmed))
+            "INSERT INTO purchase_order_lines(order_id,line_no,raw_text,qty,unit,price,selected_cd,is_confirmed) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (order_id, line.line_no, line.raw_text, line.qty, line.unit,
+             line.price or 0, line.selected_cd, int(line.is_confirmed))
         )
         line_id = cur.lastrowid
-        for c in candidates:
+        for c in line.candidates:
             conn.execute(
-                "INSERT INTO purchase_order_candidates(line_id,prod_cd,prod_name,score,match_reason,was_selected) VALUES(?,?,?,?,?,?)",
-                (line_id, c.prod_cd, c.prod_name, c.score, c.match_reason, 1 if c.prod_cd == auto_select else 0)
+                "INSERT INTO purchase_order_candidates(line_id,prod_cd,prod_name,score,match_reason,was_selected) "
+                "VALUES(?,?,?,?,?,?)",
+                (line_id, c.prod_cd, c.prod_name, c.score, c.match_reason,
+                 1 if c.prod_cd == line.selected_cd else 0)
             )
         conn.commit()
+
+    return result_lines
+
+
+# ─────────────────────────────────────────
+#  구매입력 생성 및 처리 (텍스트)
+# ─────────────────────────────────────────
+@router.post("/process", response_model=OrderProcessResponse)
+async def process_purchase(req: OrderCreateRequest, user: dict = Depends(get_current_user)):
+    """텍스트를 받아 AI 처리 후 구매 라인 반환"""
+    order_id = "PO-" + str(uuid.uuid4())[:8].upper()
+
+    if not req.raw_text or not req.raw_text.strip():
+        raise HTTPException(400, "발주서 텍스트를 입력해주세요.")
+
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO purchase_orders(order_id,cust_code,cust_name,raw_text,status) VALUES(?,?,?,?,?)",
+        (order_id, req.cust_code, req.cust_name, req.raw_text, OrderStatus.PROCESSING)
+    )
+    conn.commit()
+
+    extracted = await extract_order_lines(req.raw_text, req.cust_name, cust_code=req.cust_code)
+    result_lines = await _build_and_save_lines(conn, order_id, req.cust_code, extracted)
+
+    needs_review = any(not l.is_confirmed for l in result_lines)
+    new_status = OrderStatus.REVIEWING if needs_review else OrderStatus.CONFIRMED
+    conn.execute("UPDATE purchase_orders SET status=?,updated_at=datetime('now','localtime') WHERE order_id=?",
+                 (new_status, order_id))
+    conn.commit()
+    conn.close()
+
+    return OrderProcessResponse(
+        order_id=order_id,
+        cust_code=req.cust_code,
+        cust_name=req.cust_name,
+        status=new_status,
+        lines=result_lines,
+        created_at=datetime.now(),
+        message="검토 필요 항목이 있습니다." if needs_review else "모든 항목 자동 매칭 완료",
+    )
+
+
+# ─────────────────────────────────────────
+#  이미지/PDF/엑셀/CSV 업로드 처리
+# ─────────────────────────────────────────
+@router.post("/process-image", response_model=OrderProcessResponse)
+async def process_purchase_image(
+    cust_code: str = Form(...),
+    cust_name: str = Form(...),
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """이미지/PDF/엑셀/CSV 파일 업로드 후 AI 분석 → 구매입력 처리
+    - 이미지/PDF: Claude Vision OCR
+    - 엑셀(.xlsx/.xls) / CSV: 텍스트 변환 후 AI 추출
+    """
+    EXCEL_EXTS = {".xlsx", ".xls", ".csv"}
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    ALL_EXTS = EXCEL_EXTS | IMAGE_EXTS | {".pdf"}
+
+    suffix = Path(file.filename).suffix.lower() if file.filename else ".jpg"
+    if suffix not in ALL_EXTS:
+        raise HTTPException(400, f"지원하지 않는 파일 형식: {suffix} (지원: 이미지, PDF, XLSX, XLS, CSV)")
+
+    order_id = "PO-" + str(uuid.uuid4())[:8].upper()
+    save_path = UPLOAD_DIR / f"{order_id}{suffix}"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "파일 크기가 10MB를 초과합니다.")
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO purchase_orders(order_id,cust_code,cust_name,raw_text,status) VALUES(?,?,?,?,?)",
+        (order_id, cust_code, cust_name, f"[파일: {file.filename}]", OrderStatus.PROCESSING)
+    )
+    conn.commit()
+
+    # 파일 종류별 분기 처리
+    if suffix in EXCEL_EXTS:
+        # ── 엑셀/CSV: 텍스트로 변환 후 AI 추출 ──
+        try:
+            raw_text = _spreadsheet_to_text(str(save_path), suffix)
+        except Exception as e:
+            conn.execute("UPDATE purchase_orders SET status='failed',updated_at=datetime('now','localtime') WHERE order_id=?", (order_id,))
+            conn.commit()
+            conn.close()
+            raise HTTPException(500, f"파일 읽기 실패: {e}")
+
+        if not raw_text.strip():
+            conn.execute("UPDATE purchase_orders SET status='failed',updated_at=datetime('now','localtime') WHERE order_id=?", (order_id,))
+            conn.commit()
+            conn.close()
+            raise HTTPException(422, "파일에서 내용을 읽을 수 없습니다.")
+
+        conn.execute("UPDATE purchase_orders SET raw_text=? WHERE order_id=?", (raw_text, order_id))
+        conn.commit()
+
+        try:
+            extracted = await extract_order_lines(raw_text, cust_name, cust_code=cust_code)
+        except Exception as e:
+            conn.execute("UPDATE purchase_orders SET status='failed',updated_at=datetime('now','localtime') WHERE order_id=?", (order_id,))
+            conn.commit()
+            conn.close()
+            raise HTTPException(500, f"AI 분석 실패: {e}")
+
+    else:
+        # ── 이미지/PDF: Claude Vision OCR ──
+        from agents.ocr import ocr_and_extract
+        try:
+            extracted, raw_text = await ocr_and_extract(str(save_path), cust_name)
+        except Exception as e:
+            conn.execute("UPDATE purchase_orders SET status='failed',updated_at=datetime('now','localtime') WHERE order_id=?", (order_id,))
+            conn.commit()
+            conn.close()
+            raise HTTPException(500, f"OCR 처리 실패: {e}")
+
+        conn.execute("UPDATE purchase_orders SET raw_text=? WHERE order_id=?", (raw_text, order_id))
+        conn.commit()
+
+    if not extracted:
+        conn.execute("UPDATE purchase_orders SET status='failed',updated_at=datetime('now','localtime') WHERE order_id=?", (order_id,))
+        conn.commit()
+        conn.close()
+        raise HTTPException(422, "파일에서 발주 항목을 인식할 수 없습니다.")
+
+    result_lines = await _build_and_save_lines(conn, order_id, cust_code, extracted)
 
     needs_review = any(not l.is_confirmed for l in result_lines)
     new_status = OrderStatus.REVIEWING if needs_review else OrderStatus.CONFIRMED

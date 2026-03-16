@@ -65,6 +65,7 @@ function _highlightDropdownItem(items, activeIdx) {
 document.addEventListener("DOMContentLoaded", () => {
   initDropdownKeyNav("cust-search", "cust-dropdown", "selectCust");
   initDropdownKeyNav("so-cust-search", "so-cust-dropdown", "selectSOCust");
+  initDropdownKeyNav("po-cust-search", "po-cust-dropdown", "selectPOCust");
   initDropdownKeyNav("tr-cust-search", "tr-cust-dropdown", "selectTrainingCust");
 });
 
@@ -115,12 +116,9 @@ function navigateTo(pageId) {
     shipping:     "택배조회",
     cs_rma:       "CS/RMA",
     sales_agent:  "판매에이전트",
-    sales_analytics: "판매현황",
     ai_dashboard: "AI 대시보드",
     settings:     "설정",
   }[pageId] || "";
-  // 판매현황 페이지 진입 시 초기화
-  if (pageId === "sales_analytics") loadSalesAnalytics();
   // CS/RMA 페이지 진입 시 초기화
   if (pageId === "cs_rma") csInit();
   // 판매에이전트 페이지 진입 시 초기화
@@ -646,8 +644,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // 네비게이션 (클릭 + 드래그 정렬)
   initSidebarNav();
 
-  // 탭 버튼
-  document.querySelectorAll(".tab-btn").forEach(btn => {
+  // 탭 버튼 (data-tab 속성이 있는 판매입력 탭만 처리)
+  document.querySelectorAll(".tab-btn[data-tab]").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
@@ -1478,6 +1476,7 @@ function initPODropzone() {
   if (_poDropzoneInitialized) return;
   const dropzone = document.getElementById("po-image-dropzone");
   if (!dropzone) return;
+  // dragover/drop 이벤트만 처리 (click은 HTML onclick으로 직접 처리)
   dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag-over"); });
   dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag-over"));
   dropzone.addEventListener("drop", e => {
@@ -1486,15 +1485,20 @@ function initPODropzone() {
     const file = e.dataTransfer.files[0];
     if (file) handlePOImageFile(file);
   });
-  dropzone.addEventListener("click", () => document.getElementById("po-image-input").click());
   _poDropzoneInitialized = true;
 }
 
-// ─── 이미지 파일 처리 ───
+// ─── 파일 처리 (이미지/PDF/엑셀/CSV) ───
 function handlePOImageFile(file) {
-  const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
-  if (!allowed.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|gif|webp|pdf)$/i)) {
-    toast("JPG, PNG, GIF, WebP, PDF 파일만 지원합니다.", "error");
+  if (!file) return;
+  const name = file.name.toLowerCase();
+  const isExcel = name.endsWith(".xlsx") || name.endsWith(".xls");
+  const isCSV   = name.endsWith(".csv");
+  const isPDF   = file.type === "application/pdf" || name.endsWith(".pdf");
+  const isImage = file.type.startsWith("image/") || name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+
+  if (!isExcel && !isCSV && !isPDF && !isImage) {
+    toast("지원 형식: 이미지(JPG/PNG), PDF, 엑셀(XLSX/XLS), CSV", "error");
     return;
   }
   if (file.size > 10 * 1024 * 1024) {
@@ -1503,21 +1507,35 @@ function handlePOImageFile(file) {
   }
 
   const dropzone = document.getElementById("po-image-dropzone");
-  const isPDF = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 
-  if (isPDF) {
-    dropzone.innerHTML = `
-      <div style="font-size:36px">📄</div>
-      <p style="font-weight:600;margin:6px 0 2px">${file.name}</p>
+  // 파일 종류별 미리보기
+  let previewHtml = "";
+  if (isExcel || isCSV) {
+    const icon = isCSV ? "📊" : "📗";
+    const label = isCSV ? "CSV" : "Excel";
+    previewHtml = `
+      <div style="font-size:40px">${icon}</div>
+      <p style="font-weight:600;margin:6px 0 2px">${escapeHtml(file.name)}</p>
+      <p style="font-size:12px;color:var(--gray-400)">${(file.size / 1024).toFixed(0)} KB · ${label}</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="clearPOImageFile()">✕ 다시 선택</button>`;
+  } else if (isPDF) {
+    previewHtml = `
+      <div style="font-size:40px">📄</div>
+      <p style="font-weight:600;margin:6px 0 2px">${escapeHtml(file.name)}</p>
       <p style="font-size:12px;color:var(--gray-400)">${(file.size / 1024).toFixed(0)} KB · PDF</p>
       <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="clearPOImageFile()">✕ 다시 선택</button>`;
   } else {
     const url = URL.createObjectURL(file);
-    dropzone.innerHTML = `
+    previewHtml = `
       <img src="${url}" style="max-height:160px;max-width:100%;border-radius:6px;object-fit:contain">
-      <p style="font-size:12px;color:var(--gray-500);margin-top:6px">${file.name} · ${(file.size / 1024).toFixed(0)} KB</p>
+      <p style="font-size:12px;color:var(--gray-500);margin-top:6px">${escapeHtml(file.name)} · ${(file.size / 1024).toFixed(0)} KB</p>
       <button class="btn btn-outline btn-sm" style="margin-top:4px" onclick="clearPOImageFile()">✕ 다시 선택</button>`;
   }
+
+  // onclick은 HTML에 직접 있으므로 여기서 다시 달지 않음 (이미 열려있으므로)
+  dropzone.style.cursor = "default";
+  dropzone.onclick = null; // 파일 선택 후 재클릭 방지
+  dropzone.innerHTML = previewHtml;
 
   const old = document.getElementById("btn-po-analyze-image");
   if (old) old.remove();
@@ -1532,10 +1550,12 @@ function handlePOImageFile(file) {
 
 function clearPOImageFile() {
   const dropzone = document.getElementById("po-image-dropzone");
+  dropzone.style.cursor = "pointer";
+  dropzone.onclick = () => document.getElementById("po-image-input").click();
   dropzone.innerHTML = `
     <div class="upload-icon">📎</div>
-    <p><strong>이미지를 드래그하거나 클릭하여 업로드</strong></p>
-    <p style="font-size:12px;margin-top:6px;color:var(--gray-400)">JPG, PNG, PDF 지원 · 최대 10MB</p>`;
+    <p><strong>파일을 드래그하거나 클릭하여 업로드</strong></p>
+    <p style="font-size:12px;margin-top:6px;color:var(--gray-400)">이미지·PDF·엑셀·CSV 지원 · 최대 10MB</p>`;
   const btn = document.getElementById("btn-po-analyze-image");
   if (btn) btn.remove();
   document.getElementById("po-image-input").value = "";
@@ -4933,981 +4953,6 @@ async function saViewResult(jobId) {
     hideProcessing();
     alert("결과 로드 실패: " + (e.message || e));
   }
-}
-
-/* =============================================
-   판매현황 분석 대시보드
-   ============================================= */
-
-const salesState = {
-  view: 'dashboard',
-  dateFrom: '', dateTo: '',
-  selectedCustomers: [],
-  customerGroup: '', productGroup: '',
-  chartInstances: {},
-  customerList: [],
-  alerts: [],
-  alertsPanelOpen: false,
-};
-
-// ── 유틸 ──
-function fmtAmt(v) {
-  if (v == null) return '0';
-  return Math.round(Number(v)).toLocaleString('ko-KR');
-}
-function fmtBillM(v) {
-  const n = Number(v) || 0;
-  if (Math.abs(n) >= 100000000) return (n / 100000000).toFixed(1) + '억';
-  if (Math.abs(n) >= 10000) return (n / 10000).toFixed(0) + '만';
-  return fmtAmt(n);
-}
-function fmtPRate(s, p) {
-  if (!s) return '0.0%';
-  return ((p / s) * 100).toFixed(1) + '%';
-}
-function profitClass(rate) {
-  if (rate < 0) return 'profit-neg';
-  if (rate < 10) return 'profit-low';
-  if (rate < 25) return 'profit-mid';
-  return 'profit-high';
-}
-
-async function salesApi(path, params, method = 'GET') {
-  let url = '/api/sales' + path;
-  if (params && method === 'GET') {
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(params)) {
-      if (v !== null && v !== undefined && v !== '') qs.set(k, v);
-    }
-    const s = qs.toString();
-    if (s) url += '?' + s;
-    return api.get(url);
-  }
-  if (method === 'POST') return api.post(url, params);
-  return api.get(url);
-}
-
-function destroySalesCharts() {
-  for (const [k, c] of Object.entries(salesState.chartInstances)) {
-    try { c.destroy(); } catch(e) {}
-  }
-  salesState.chartInstances = {};
-}
-
-function setSalesPeriod(period) {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-  const pad = (n) => String(n).padStart(2, '0');
-  if (period === 'month') {
-    salesState.dateFrom = `${y}${pad(m+1)}01`;
-    salesState.dateTo = `${y}${pad(m+1)}${pad(d)}`;
-  } else if (period === '3month') {
-    const dt = new Date(y, m - 2, 1);
-    salesState.dateFrom = `${dt.getFullYear()}${pad(dt.getMonth()+1)}01`;
-    salesState.dateTo = `${y}${pad(m+1)}${pad(d)}`;
-  } else if (period === 'year') {
-    salesState.dateFrom = `${y}0101`;
-    salesState.dateTo = `${y}${pad(m+1)}${pad(d)}`;
-  } else {
-    salesState.dateFrom = '';
-    salesState.dateTo = '';
-  }
-  // UI 업데이트
-  const fi = document.getElementById('sales-date-from');
-  const ti = document.getElementById('sales-date-to');
-  if (fi) fi.value = salesState.dateFrom;
-  if (ti) ti.value = salesState.dateTo;
-  onSalesSearch();
-}
-
-function switchSalesView(view) {
-  salesState.view = view;
-  document.querySelectorAll('.sales-tab-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.sview === view);
-  });
-  destroySalesCharts();
-  const viewLoaders = {
-    dashboard: loadSalesDashboard,
-    profit: loadProfitView,
-    health: loadHealthView,
-    inventory: loadInventoryView,
-    staff: loadStaffView,
-    returns: loadReturnsView,
-    price: loadPriceView,
-    warehouse: loadWarehouseView,
-  };
-  (viewLoaders[view] || loadSalesDashboard)();
-}
-
-function onSalesSearch() {
-  const fi = document.getElementById('sales-date-from');
-  const ti = document.getElementById('sales-date-to');
-  if (fi) salesState.dateFrom = fi.value;
-  if (ti) salesState.dateTo = ti.value;
-  destroySalesCharts();
-  switchSalesView(salesState.view);
-}
-
-function _sp() {
-  return { date_from: salesState.dateFrom, date_to: salesState.dateTo };
-}
-
-// ── 진입점 ──
-async function loadSalesAnalytics() {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-  const pad = (n) => String(n).padStart(2, '0');
-  if (!salesState.dateFrom) {
-    salesState.dateFrom = `${y}${pad(m+1)}01`;
-    salesState.dateTo = `${y}${pad(m+1)}${pad(d)}`;
-  }
-  renderSalesLayout();
-  try {
-    const [, , custList] = await Promise.all([
-      loadSalesDashboard(),
-      loadSalesFetchStatus(),
-      salesApi('/customers/list', {}),
-    ]);
-    salesState.customerList = custList || [];
-    loadAlerts();
-  } catch(e) {
-    console.error('loadSalesAnalytics 오류:', e);
-  }
-}
-
-// ── 레이아웃 ──
-function renderSalesLayout() {
-  const c = document.getElementById('salesAnalyticsContainer');
-  if (!c) return;
-  const views = [
-    {id:'dashboard', label:'전체현황'},
-    {id:'profit', label:'이익률'},
-    {id:'health', label:'거래처건강도'},
-    {id:'inventory', label:'재고위험'},
-    {id:'staff', label:'담당자'},
-    {id:'returns', label:'반품이슈'},
-    {id:'price', label:'단가관리'},
-    {id:'warehouse', label:'창고채널'},
-  ];
-
-  c.innerHTML = `
-    <div class="sales-ctrl-bar">
-      <div class="sales-views-row">
-        ${views.map(v => `<button class="sales-tab-btn ${v.id===salesState.view?'active':''}"
-          data-sview="${v.id}" onclick="switchSalesView('${v.id}')">${v.label}</button>`).join('')}
-      </div>
-      <div class="sales-filters-row">
-        <input type="text" id="sales-date-from" placeholder="시작(YYYYMMDD)" value="${salesState.dateFrom}"
-          style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:12px">
-        <span style="color:var(--text-muted)">~</span>
-        <input type="text" id="sales-date-to" placeholder="종료(YYYYMMDD)" value="${salesState.dateTo}"
-          style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:12px">
-        <button onclick="onSalesSearch()" style="padding:6px 12px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">조회</button>
-        <button onclick="setSalesPeriod('month')" class="sales-period-btn">이번달</button>
-        <button onclick="setSalesPeriod('3month')" class="sales-period-btn">3개월</button>
-        <button onclick="setSalesPeriod('year')" class="sales-period-btn">올해</button>
-        <div style="flex:1"></div>
-        <div style="position:relative;display:inline-block">
-          <button onclick="toggleAlertsPanel()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:16px;position:relative">
-            🔔<span id="alerts-badge" class="alerts-badge" style="display:none">0</span>
-          </button>
-        </div>
-        <span id="sales-fetch-status" style="font-size:11px;color:var(--text-muted);margin-left:8px"></span>
-        <button onclick="triggerManualFetch()" style="padding:4px 10px;background:#065f46;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;margin-left:4px">수집</button>
-        <label style="padding:4px 10px;background:#1e40af;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;margin-left:4px">
-          CSV<input type="file" accept=".csv,.xlsx" onchange="uploadSalesCsv(this)" style="display:none">
-        </label>
-      </div>
-    </div>
-    <div id="salesViewContent" style="margin-top:12px"></div>
-    <div id="salesAlertsPanel" class="alerts-panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h3 style="margin:0;color:var(--text)">알림</h3>
-        <button onclick="toggleAlertsPanel()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted)">✕</button>
-      </div>
-      <button onclick="runAgentsNow()" style="width:100%;padding:8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:12px">에이전트 즉시 실행</button>
-      <div id="alertsList"></div>
-    </div>
-  `;
-}
-
-// ── 알림 ──
-function toggleAlertsPanel() {
-  const p = document.getElementById('salesAlertsPanel');
-  if (!p) return;
-  salesState.alertsPanelOpen = !salesState.alertsPanelOpen;
-  p.classList.toggle('open', salesState.alertsPanelOpen);
-  if (salesState.alertsPanelOpen) loadAlerts();
-}
-
-async function loadAlerts() {
-  try {
-    const data = await salesApi('/agents/alerts', {is_read: false, limit: 99});
-    salesState.alerts = data || [];
-    const badge = document.getElementById('alerts-badge');
-    if (badge) {
-      badge.textContent = data.length;
-      badge.style.display = data.length > 0 ? 'flex' : 'none';
-    }
-    const list = document.getElementById('alertsList');
-    if (list) {
-      list.innerHTML = data.length ? data.map(a => `
-        <div class="alert-card alert-${a.severity}" onclick="markAlertAndNav(${a.id},'${a.alert_type}')">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span class="badge-${a.severity}" style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600">${a.severity}</span>
-            <span style="font-size:10px;color:var(--text-muted)">${(a.created_at||'').slice(0,16)}</span>
-          </div>
-          <div style="font-size:12px;color:var(--text);line-height:1.4">${a.message}</div>
-        </div>
-      `).join('') : '<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px">알림이 없습니다</div>';
-    }
-  } catch(e) { console.error('loadAlerts:', e); }
-}
-
-async function markAlertAndNav(id, type) {
-  try { await salesApi(`/agents/alerts/${id}/read`, {}, 'POST'); } catch(e) {}
-  const viewMap = {churn_risk:'health', stockout_risk:'inventory', price_anomaly:'price'};
-  switchSalesView(viewMap[type] || 'dashboard');
-  toggleAlertsPanel();
-  loadAlerts();
-}
-
-async function runAgentsNow() {
-  try {
-    await salesApi('/agents/run', {}, 'POST');
-    toast('에이전트 실행 시작', 'success');
-    setTimeout(loadAlerts, 5000);
-  } catch(e) { toast('에이전트 실행 실패', 'error'); }
-}
-
-// ── 수집 ──
-async function uploadSalesCsv(input) {
-  if (!input.files.length) return;
-  const file = input.files[0];
-  const formData = new FormData();
-  formData.append('file', file);
-  try {
-    const res = await fetch('/api/sales/upload-csv', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${api.getToken()}` },
-      body: formData,
-    });
-    const data = await res.json();
-    if (data.success) {
-      toast(`CSV 업로드 완료: ${data.rows}행`, 'success');
-      onSalesSearch();
-    } else {
-      toast('CSV 업로드 실패: ' + (data.error || ''), 'error');
-    }
-  } catch(e) { toast('CSV 업로드 오류: ' + e.message, 'error'); }
-  input.value = '';
-}
-
-async function triggerManualFetch() {
-  try {
-    await salesApi('/fetch-ecount', {}, 'POST');
-    toast('이카운트 수집 시작 (백그라운드)', 'success');
-    setTimeout(loadSalesFetchStatus, 10000);
-  } catch(e) { toast('수집 시작 실패', 'error'); }
-}
-
-async function loadSalesFetchStatus() {
-  try {
-    const d = await salesApi('/fetch-status', {});
-    const el = document.getElementById('sales-fetch-status');
-    if (el && d) {
-      const st = d.status === 'success' ? '✅' : d.status === 'running' ? '⏳' : d.status === 'error' ? '❌' : 'ℹ️';
-      el.textContent = `${st} ${d.rows_imported || 0}행 | ${(d.finished_at || d.started_at || '').slice(0,16)}`;
-    }
-  } catch(e) {}
-}
-
-// ══════════════════════════════════════════
-//  뷰1: 전체 대시보드
-// ══════════════════════════════════════════
-async function loadSalesDashboard() {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">로딩 중...</div>';
-  try {
-    const p = _sp();
-    const [summary, trend, customers, products] = await Promise.all([
-      salesApi('/summary', p),
-      salesApi('/monthly-trend', {months: 6}),
-      salesApi('/customers/ranking', {...p, limit: 15}),
-      salesApi('/products/ranking', {...p, limit: 10}),
-    ]);
-
-    vc.innerHTML = `
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">총매출</div><div class="kpi-value">${fmtBillM(summary.total_supply)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">총이익</div><div class="kpi-value">${fmtBillM(summary.total_profit)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">이익률</div><div class="kpi-value ${profitClass(summary.profit_rate)}">${summary.profit_rate}%</div></div>
-        <div class="kpi-card"><div class="kpi-label">활성거래처</div><div class="kpi-value">${summary.customer_count}</div></div>
-      </div>
-      <div class="chart-grid-2" style="margin-top:16px">
-        <div class="chart-card"><canvas id="salesMonthlyChart"></canvas></div>
-        <div class="chart-card"><canvas id="salesCustBarChart"></canvas></div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:8px">거래처 TOP15</h3>
-        <div class="sales-table-wrap">
-          <table class="sales-table">
-            <thead><tr><th>#</th><th>거래처</th><th>그룹</th><th>매출</th><th>이익</th><th>이익률</th><th>전표수</th></tr></thead>
-            <tbody>${customers.map((c,i) => `
-              <tr onclick="drillCustomer('${c.customer_name.replace(/'/g,"\\'")}')">
-                <td>${i<3 ? ['🥇','🥈','🥉'][i] : i+1}</td>
-                <td>${c.customer_name}</td>
-                <td>${c.customer_group}</td>
-                <td style="text-align:right">${fmtAmt(c.supply)}</td>
-                <td style="text-align:right" class="${profitClass(c.profit_rate)}">${fmtAmt(c.profit)}</td>
-                <td class="${profitClass(c.profit_rate)}">${c.profit_rate}%</td>
-                <td style="text-align:right">${c.slip_count}</td>
-              </tr>
-            `).join('')}</tbody>
-          </table>
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:8px">품목 TOP10</h3>
-        <div class="sales-table-wrap">
-          <table class="sales-table">
-            <thead><tr><th>품목코드</th><th>모델명</th><th>수량</th><th>매출</th><th>이익률</th></tr></thead>
-            <tbody>${products.map(p => `
-              <tr>
-                <td>${p.item_code}</td><td>${p.model_name}</td>
-                <td style="text-align:right">${fmtAmt(p.qty)}</td>
-                <td style="text-align:right">${fmtAmt(p.supply)}</td>
-                <td class="${profitClass(p.profit_rate)}">${p.profit_rate}%</td>
-              </tr>
-            `).join('')}</tbody>
-          </table>
-        </div>
-      </div>
-    `;
-
-    // 월별 추이 차트
-    if (trend.length) {
-      const ctx = document.getElementById('salesMonthlyChart');
-      if (ctx) {
-        salesState.chartInstances.monthly = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: trend.map(t => t.month.slice(0,4)+'/'+t.month.slice(4)),
-            datasets: [
-              {label:'매출', data:trend.map(t=>t.supply), borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.1)', fill:true, tension:0.3},
-              {label:'이익', data:trend.map(t=>t.profit), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.1)', fill:true, tension:0.3},
-            ]
-          },
-          options:{responsive:true, plugins:{title:{display:true,text:'월별 매출/이익 추이',color:'#e2e8f0'}},
-            scales:{y:{ticks:{callback:v=>fmtBillM(v),color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}},x:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}}}}
-        });
-      }
-    }
-
-    // 거래처 TOP10 바차트
-    if (customers.length) {
-      const top10 = customers.slice(0, 10);
-      const ctx2 = document.getElementById('salesCustBarChart');
-      if (ctx2) {
-        salesState.chartInstances.custBar = new Chart(ctx2, {
-          type: 'bar',
-          data: {
-            labels: top10.map(c => c.customer_name.length > 8 ? c.customer_name.slice(0,8)+'..' : c.customer_name),
-            datasets: [{label:'매출', data:top10.map(c=>c.supply), backgroundColor:'#6366f1'}]
-          },
-          options:{indexAxis:'y', responsive:true, plugins:{title:{display:true,text:'거래처 TOP10',color:'#e2e8f0'},legend:{display:false}},
-            scales:{x:{ticks:{callback:v=>fmtBillM(v),color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}},y:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}}}}
-        });
-      }
-    }
-  } catch(e) {
-    vc.innerHTML = `<div style="text-align:center;padding:40px;color:#f87171">데이터 로드 실패: ${e.message}</div>`;
-  }
-}
-
-function drillCustomer(name) {
-  salesState.selectedCustomers = [name];
-  switchSalesView('health');
-  loadCustomerDetailView(name);
-}
-
-async function loadCustomerDetailView(name) {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">거래처 상세 로딩 중...</div>';
-  try {
-    const p = _sp();
-    const detail = await salesApi('/customers/detail', {...p, customer_name: name});
-    vc.innerHTML = `
-      <div style="margin-bottom:12px"><button onclick="switchSalesView('dashboard')" style="background:none;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:12px">← 목록</button></div>
-      <h3 style="color:var(--text);margin-bottom:12px">${detail.customer_name} <span style="font-size:13px;color:var(--text-muted)">${detail.customer_group}</span></h3>
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">매출</div><div class="kpi-value">${fmtBillM(detail.supply)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">이익</div><div class="kpi-value">${fmtBillM(detail.profit)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">이익률</div><div class="kpi-value ${profitClass(detail.profit_rate)}">${detail.profit_rate}%</div></div>
-        <div class="kpi-card"><div class="kpi-label">전표수</div><div class="kpi-value">${detail.slip_count}</div></div>
-      </div>
-      <div class="chart-grid-2" style="margin-top:16px">
-        <div class="chart-card"><canvas id="custDetailChart"></canvas></div>
-        <div class="chart-card">
-          <h4 style="color:var(--text);margin-bottom:8px">주요 품목</h4>
-          <table class="sales-table"><thead><tr><th>품목</th><th>모델명</th><th>수량</th><th>매출</th></tr></thead>
-          <tbody>${(detail.products||[]).slice(0,10).map(p=>`<tr><td>${p.item_code}</td><td>${p.model_name}</td><td style="text-align:right">${fmtAmt(p.qty)}</td><td style="text-align:right">${fmtAmt(p.supply)}</td></tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <button onclick="requestAiAnalysis('${name.replace(/'/g,"\\'")}');" style="padding:8px 20px;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px">🤖 AI 분석 요청</button>
-        <div id="aiAnalysisResult" style="margin-top:12px"></div>
-      </div>
-    `;
-    if (detail.monthly && detail.monthly.length) {
-      const ctx = document.getElementById('custDetailChart');
-      if (ctx) {
-        salesState.chartInstances.custDetail = new Chart(ctx, {
-          type:'line',
-          data:{labels:detail.monthly.map(m=>m.month.slice(0,4)+'/'+m.month.slice(4)),
-            datasets:[{label:'매출',data:detail.monthly.map(m=>m.supply),borderColor:'#3b82f6',fill:false,tension:0.3},
-                      {label:'이익',data:detail.monthly.map(m=>m.profit),borderColor:'#10b981',fill:false,tension:0.3}]},
-          options:{responsive:true,plugins:{title:{display:true,text:'월별 추이',color:'#e2e8f0'}},
-            scales:{y:{ticks:{callback:v=>fmtBillM(v),color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}},x:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}}}}
-        });
-      }
-    }
-  } catch(e) { vc.innerHTML = `<div style="color:#f87171;padding:20px">상세 로드 실패: ${e.message}</div>`; }
-}
-
-async function requestAiAnalysis(name) {
-  const el = document.getElementById('aiAnalysisResult');
-  if (!el) return;
-  el.innerHTML = '<div style="color:var(--text-muted);padding:12px">🤖 AI 분석 중... (10~30초 소요)</div>';
-  try {
-    const data = await salesApi('/agents/ai-analysis', {customer_name: name});
-    if (data.error) { el.innerHTML = `<div style="color:#f87171">${data.error}</div>`; return; }
-    el.innerHTML = `
-      <div class="chart-card" style="margin-top:8px">
-        <h4 style="color:var(--text);margin-bottom:8px">AI 분석 결과</h4>
-        <p style="color:var(--text);line-height:1.6;margin-bottom:12px">${data.summary || ''}</p>
-        ${data.cross_sell && data.cross_sell.length ? `<div style="margin-bottom:8px"><strong style="color:var(--text-muted)">교차판매 추천:</strong> ${data.cross_sell.map(s=>`<span class="customer-tag">${s}</span>`).join(' ')}</div>` : ''}
-        <div style="margin-bottom:8px"><strong style="color:var(--text-muted)">리스크:</strong> <span class="badge-${data.risk_level==='high'?'critical':data.risk_level==='medium'?'warning':'normal'}" style="padding:2px 10px;border-radius:8px;font-size:11px">${data.risk_level}</span></div>
-        ${data.action_items && data.action_items.length ? `<div><strong style="color:var(--text-muted)">액션 제안:</strong><ol style="color:var(--text);margin:4px 0 0 16px;line-height:1.8">${data.action_items.map(a=>`<li>${a}</li>`).join('')}</ol></div>` : ''}
-      </div>
-    `;
-  } catch(e) { el.innerHTML = `<div style="color:#f87171">AI 분석 오류: ${e.message}</div>`; }
-}
-
-// ══════════════════════════════════════════
-//  뷰2: 이익률 분석
-// ══════════════════════════════════════════
-async function loadProfitView() {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">로딩 중...</div>';
-  try {
-    const [analysis, heatmap] = await Promise.all([
-      salesApi('/profit/analysis', _sp()),
-      salesApi('/profit/heatmap', _sp()),
-    ]);
-
-    vc.innerHTML = `
-      <div class="chart-grid-2">
-        <div class="chart-card"><canvas id="profitDonutChart"></canvas></div>
-        <div class="chart-card"><canvas id="profitGroupChart"></canvas></div>
-      </div>
-      <div class="chart-grid-2" style="margin-top:16px">
-        <div class="chart-card">
-          <h4 style="color:var(--text);margin-bottom:8px">할인품목 vs 일반품목</h4>
-          <div class="kpi-grid" style="grid-template-columns:1fr 1fr 1fr">
-            <div class="kpi-card"><div class="kpi-label">3%할인</div><div class="kpi-value ${profitClass(analysis.discount_compare.discount3.rate)}">${analysis.discount_compare.discount3.rate}%</div><div style="font-size:11px;color:var(--text-muted)">${fmtBillM(analysis.discount_compare.discount3.supply)}</div></div>
-            <div class="kpi-card"><div class="kpi-label">5%할인</div><div class="kpi-value ${profitClass(analysis.discount_compare.discount5.rate)}">${analysis.discount_compare.discount5.rate}%</div><div style="font-size:11px;color:var(--text-muted)">${fmtBillM(analysis.discount_compare.discount5.supply)}</div></div>
-            <div class="kpi-card"><div class="kpi-label">일반</div><div class="kpi-value ${profitClass(analysis.discount_compare.normal.rate)}">${analysis.discount_compare.normal.rate}%</div><div style="font-size:11px;color:var(--text-muted)">${fmtBillM(analysis.discount_compare.normal.supply)}</div></div>
-          </div>
-        </div>
-        <div class="chart-card">
-          <h4 style="color:var(--text);margin-bottom:8px">품목그룹별 이익률</h4>
-          <table class="sales-table"><thead><tr><th>그룹</th><th>매출</th><th>이익률</th></tr></thead>
-          <tbody>${(analysis.by_item_group||[]).map(g=>`<tr><td>${g.group}</td><td style="text-align:right">${fmtAmt(g.supply)}</td><td class="${profitClass(g.rate)}">${g.rate}%</td></tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:8px">역마진 전표 (${(analysis.low_margin_records||[]).length}건)</h3>
-        <div class="sales-table-wrap">
-          <table class="sales-table"><thead><tr><th>거래처</th><th>품목</th><th>일자</th><th>공급가</th><th>이익률</th></tr></thead>
-          <tbody>${(analysis.low_margin_records||[]).slice(0,50).map(r=>`<tr>
-            <td>${r.customer_name}</td><td>${r.item_code}</td><td>${r.slip_date}</td>
-            <td style="text-align:right">${fmtAmt(r.supply)}</td>
-            <td class="profit-neg">${r.profit_rate}%</td>
-          </tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:8px">이익률 히트맵 (낮은 순)</h3>
-        <div class="sales-table-wrap">
-          <table class="sales-table"><thead><tr><th>거래처</th><th>품목</th><th>모델명</th><th>매출</th><th>이익률</th></tr></thead>
-          <tbody>${(heatmap||[]).slice(0,50).map(h=>`<tr class="${h.profit_rate<0?'hm-neg':h.profit_rate<10?'hm-low':h.profit_rate<25?'hm-mid':'hm-high'}">
-            <td>${h.customer_name}</td><td>${h.item_code}</td><td>${h.model_name}</td>
-            <td style="text-align:right">${fmtAmt(h.supply)}</td>
-            <td class="${profitClass(h.profit_rate)}">${h.profit_rate}%</td>
-          </tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-    `;
-
-    // 도넛 차트
-    const buckets = analysis.buckets || [];
-    const donutCtx = document.getElementById('profitDonutChart');
-    if (donutCtx && buckets.length) {
-      salesState.chartInstances.profitDonut = new Chart(donutCtx, {
-        type:'doughnut',
-        data:{labels:buckets.map(b=>b.range), datasets:[{data:buckets.map(b=>b.cnt),
-          backgroundColor:['#ef4444','#fb923c','#facc15','#60a5fa','#34d399','#4ade80']}]},
-        options:{responsive:true, plugins:{title:{display:true,text:'이익률 구간별 분포',color:'#e2e8f0'}}}
-      });
-    }
-
-    // 그룹별 바차트
-    const byCg = analysis.by_customer_group || [];
-    const grpCtx = document.getElementById('profitGroupChart');
-    if (grpCtx && byCg.length) {
-      salesState.chartInstances.profitGroup = new Chart(grpCtx, {
-        type:'bar',
-        data:{labels:byCg.map(g=>g.group),
-          datasets:[{label:'이익률%',data:byCg.map(g=>g.rate),
-            backgroundColor:byCg.map(g=>g.rate<0?'#ef4444':'#6366f1')}]},
-        options:{indexAxis:'y',responsive:true,plugins:{title:{display:true,text:'그룹별 이익률',color:'#e2e8f0'},legend:{display:false}},
-          scales:{x:{ticks:{callback:v=>v+'%',color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}},y:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}}}}
-      });
-    }
-  } catch(e) { vc.innerHTML = `<div style="color:#f87171;padding:20px">이익률 분석 실패: ${e.message}</div>`; }
-}
-
-// ══════════════════════════════════════════
-//  뷰3: 거래처 건강도
-// ══════════════════════════════════════════
-async function loadHealthView() {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">로딩 중...</div>';
-  try {
-    const [health, growth] = await Promise.all([
-      salesApi('/health/customers', _sp()),
-      salesApi('/health/growth', _sp()),
-    ]);
-    const s = health.summary || {};
-    const topGrowth = (growth||[]).slice(0, 5);
-    const topDecline = (growth||[]).filter(g=>g.growth_rate<0).slice(-5).reverse();
-
-    vc.innerHTML = `
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">활성 (3개월 연속)</div><div class="kpi-value" style="color:#4ade80">${s.active}</div></div>
-        <div class="kpi-card"><div class="kpi-label">위험 (급감)</div><div class="kpi-value" style="color:#fb923c">${s.at_risk}</div></div>
-        <div class="kpi-card"><div class="kpi-label">이탈 (미거래)</div><div class="kpi-value" style="color:#f87171">${s.churned}</div></div>
-        <div class="kpi-card"><div class="kpi-label">신규</div><div class="kpi-value" style="color:#60a5fa">${s.new}</div></div>
-      </div>
-      <div class="sales-health-tabs" style="margin-top:16px;display:flex;gap:8px">
-        <button class="sales-tab-btn active" onclick="showHealthTab('at_risk',this)">위험</button>
-        <button class="sales-tab-btn" onclick="showHealthTab('active',this)">활성</button>
-        <button class="sales-tab-btn" onclick="showHealthTab('churned',this)">이탈</button>
-        <button class="sales-tab-btn" onclick="showHealthTab('new_customers',this)">신규</button>
-      </div>
-      <div id="healthTabContent" style="margin-top:12px"></div>
-      <div class="chart-grid-2" style="margin-top:16px">
-        <div class="chart-card"><h4 style="color:var(--text);margin-bottom:8px">성장 TOP5</h4>
-          <table class="sales-table"><thead><tr><th>거래처</th><th>전월</th><th>이번달</th><th>성장률</th></tr></thead>
-          <tbody>${topGrowth.map(g=>`<tr onclick="drillCustomer('${g.customer_name.replace(/'/g,"\\'")}')">
-            <td>${g.customer_name}</td><td style="text-align:right">${fmtAmt(g.prev_supply)}</td>
-            <td style="text-align:right">${fmtAmt(g.curr_supply)}</td>
-            <td style="color:#4ade80">${g.growth_rate>0?'+':''}${g.growth_rate}%</td>
-          </tr>`).join('')}</tbody></table>
-        </div>
-        <div class="chart-card"><h4 style="color:var(--text);margin-bottom:8px">감소 TOP5</h4>
-          <table class="sales-table"><thead><tr><th>거래처</th><th>전월</th><th>이번달</th><th>변화율</th></tr></thead>
-          <tbody>${topDecline.map(g=>`<tr onclick="drillCustomer('${g.customer_name.replace(/'/g,"\\'")}')">
-            <td>${g.customer_name}</td><td style="text-align:right">${fmtAmt(g.prev_supply)}</td>
-            <td style="text-align:right">${fmtAmt(g.curr_supply)}</td>
-            <td style="color:#f87171">${g.growth_rate}%</td>
-          </tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-    `;
-    window._healthData = health;
-    showHealthTab('at_risk');
-  } catch(e) { vc.innerHTML = `<div style="color:#f87171;padding:20px">건강도 로드 실패: ${e.message}</div>`; }
-}
-
-function showHealthTab(tab, btn) {
-  if (btn) {
-    btn.parentElement.querySelectorAll('.sales-tab-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-  }
-  const el = document.getElementById('healthTabContent');
-  if (!el || !window._healthData) return;
-  const data = window._healthData[tab] || [];
-  if (tab === 'at_risk') {
-    el.innerHTML = `<div class="sales-table-wrap"><table class="sales-table"><thead><tr><th>거래처</th><th>전월매출</th><th>이번달</th><th>변화율</th></tr></thead>
-      <tbody>${data.map(r=>`<tr onclick="drillCustomer('${r.customer_name.replace(/'/g,"\\'")}')">
-        <td>${r.customer_name}</td><td style="text-align:right">${fmtAmt(r.prev_supply)}</td>
-        <td style="text-align:right">${fmtAmt(r.curr_supply)}</td>
-        <td style="color:${r.change_rate<=-80?'#f87171':'#fb923c'}">${r.change_rate}%</td>
-      </tr>`).join('')}</tbody></table></div>`;
-  } else if (tab === 'active') {
-    el.innerHTML = `<div class="sales-table-wrap"><table class="sales-table"><thead><tr><th>거래처</th><th>이번달 매출</th></tr></thead>
-      <tbody>${data.map(r=>`<tr onclick="drillCustomer('${r.customer_name.replace(/'/g,"\\'")}')"><td>${r.customer_name}</td><td style="text-align:right">${fmtAmt(r.supply)}</td></tr>`).join('')}</tbody></table></div>`;
-  } else if (tab === 'churned') {
-    el.innerHTML = `<div class="sales-table-wrap"><table class="sales-table"><thead><tr><th>거래처</th><th>마지막 매출</th></tr></thead>
-      <tbody>${data.map(r=>`<tr><td>${r.customer_name}</td><td style="text-align:right">${fmtAmt(r.last_supply)}</td></tr>`).join('')}</tbody></table></div>`;
-  } else {
-    el.innerHTML = `<div class="sales-table-wrap"><table class="sales-table"><thead><tr><th>거래처</th><th>첫 거래일</th><th>매출</th></tr></thead>
-      <tbody>${data.map(r=>`<tr><td>${r.customer_name}</td><td>${r.first_date||''}</td><td style="text-align:right">${fmtAmt(r.supply)}</td></tr>`).join('')}</tbody></table></div>`;
-  }
-}
-
-// ══════════════════════════════════════════
-//  뷰4: 재고 위험도
-// ══════════════════════════════════════════
-async function loadInventoryView() {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">로딩 중...</div>';
-  try {
-    const [items, summary] = await Promise.all([
-      salesApi('/inventory/risk', {months_back: 1}),
-      salesApi('/inventory/summary', {}),
-    ]);
-
-    vc.innerHTML = `
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">즉시발주 (1.5x+)</div><div class="kpi-value" style="color:#f87171">${summary.critical}</div></div>
-        <div class="kpi-card"><div class="kpi-label">주의 (1.0~1.5x)</div><div class="kpi-value" style="color:#fb923c">${summary.warning}</div></div>
-        <div class="kpi-card"><div class="kpi-label">정상</div><div class="kpi-value" style="color:#4ade80">${summary.normal}</div></div>
-        <div class="kpi-card"><div class="kpi-label">모니터링 품목</div><div class="kpi-value">${summary.total}</div></div>
-      </div>
-      <div style="margin-top:12px;display:flex;gap:8px">
-        <button class="sales-tab-btn active" onclick="filterInvTab('all',this)">전체</button>
-        <button class="sales-tab-btn" onclick="filterInvTab('critical',this)">즉시발주</button>
-        <button class="sales-tab-btn" onclick="filterInvTab('warning',this)">주의</button>
-        <button class="sales-tab-btn" onclick="filterInvTab('normal',this)">정상</button>
-      </div>
-      <div class="sales-table-wrap" style="margin-top:12px">
-        <table class="sales-table"><thead><tr><th>품목코드</th><th>모델명</th><th>안전재고</th><th>월판매</th><th>회전율</th><th>예상소진</th><th>위험도</th><th>추천발주</th><th></th></tr></thead>
-        <tbody id="invTableBody">${items.map(i=>`
-          <tr class="inv-row" data-risk="${i.risk_level}">
-            <td>${i.item_code}</td><td>${i.model_name}</td>
-            <td style="text-align:right">${fmtAmt(i.safety_stock)}</td>
-            <td style="text-align:right">${i.monthly_qty}</td>
-            <td style="text-align:right">${i.turnover_rate}x</td>
-            <td style="text-align:right">${i.days_to_stockout}일</td>
-            <td><span class="badge-${i.risk_level}">${i.risk_level}</span></td>
-            <td style="text-align:right">${fmtAmt(i.recommended_order)}</td>
-            <td>${i.risk_level!=='normal'?`<button onclick="createOrderFromInventory('${i.item_code}','${(i.model_name||'').replace(/'/g,"\\'")}',${i.recommended_order})" style="padding:2px 8px;background:#1e40af;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">발주</button>`:''}</td>
-          </tr>
-        `).join('')}</tbody></table>
-      </div>
-      <div class="chart-card" style="margin-top:16px"><canvas id="invTurnoverChart"></canvas></div>
-    `;
-
-    // 회전율 TOP10 차트
-    const top10 = items.slice(0, 10);
-    if (top10.length) {
-      const ctx = document.getElementById('invTurnoverChart');
-      if (ctx) {
-        salesState.chartInstances.invTurnover = new Chart(ctx, {
-          type:'bar',
-          data:{labels:top10.map(i=>i.model_name||i.item_code),
-            datasets:[{label:'회전율',data:top10.map(i=>i.turnover_rate),
-              backgroundColor:top10.map(i=>i.turnover_rate>=1.5?'#ef4444':i.turnover_rate>=1.0?'#fb923c':'#4ade80')}]},
-          options:{indexAxis:'y',responsive:true,plugins:{title:{display:true,text:'회전율 TOP10',color:'#e2e8f0'},legend:{display:false},
-            annotation:{annotations:{line1:{type:'line',xMin:1.0,xMax:1.0,borderColor:'#ef4444',borderDash:[5,5]}}}},
-            scales:{x:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}},y:{ticks:{color:'#9ca3af',font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'}}}}
-        });
-      }
-    }
-  } catch(e) { vc.innerHTML = `<div style="color:#f87171;padding:20px">재고 위험도 로드 실패: ${e.message}</div>`; }
-}
-
-function filterInvTab(level, btn) {
-  if (btn) {
-    btn.parentElement.querySelectorAll('.sales-tab-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-  }
-  document.querySelectorAll('.inv-row').forEach(r => {
-    r.style.display = (level === 'all' || r.dataset.risk === level) ? '' : 'none';
-  });
-}
-
-function createOrderFromInventory(itemCode, modelName, qty) {
-  navigateTo('new_order');
-  setTimeout(() => {
-    const input = document.getElementById('orderItemInput') || document.querySelector('[name="item_name"]');
-    const qtyInput = document.getElementById('orderQtyInput') || document.querySelector('[name="qty"]');
-    if (input) input.value = modelName;
-    if (qtyInput) qtyInput.value = qty;
-  }, 300);
-}
-
-// ══════════════════════════════════════════
-//  뷰5: 담당자 성과
-// ══════════════════════════════════════════
-async function loadStaffView() {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">로딩 중...</div>';
-  try {
-    const staff = await salesApi('/staff/performance', _sp());
-    vc.innerHTML = `
-      <div class="kpi-grid">${staff.slice(0,5).map(s=>`
-        <div class="kpi-card">
-          <div class="kpi-label">${s.staff_name}</div>
-          <div class="kpi-value">${fmtBillM(s.supply)}</div>
-          <div style="font-size:11px;color:var(--text-muted)">이익률 <span class="${profitClass(s.profit_rate)}">${s.profit_rate}%</span> · 거래처 ${s.customer_count}개 · 점유 ${s.share_pct}%</div>
-        </div>
-      `).join('')}</div>
-      <div class="chart-grid-2" style="margin-top:16px">
-        <div class="chart-card"><canvas id="staffRadarChart"></canvas></div>
-        <div class="chart-card">
-          <h4 style="color:var(--text);margin-bottom:8px">편중도 경고</h4>
-          ${staff.filter(s=>s.share_pct>30).map(s=>`<div style="background:rgba(251,146,60,0.15);border:1px solid #fb923c;border-radius:8px;padding:12px;margin-bottom:8px"><strong>${s.staff_name}</strong> — 매출 점유 ${s.share_pct}% (주의)</div>`).join('') || '<div style="color:var(--text-muted);padding:12px">편중도 경고 없음</div>'}
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:8px">담당자별 상세</h3>
-        <div class="sales-table-wrap">
-          <table class="sales-table"><thead><tr><th>담당자</th><th>매출</th><th>이익</th><th>이익률</th><th>거래처수</th><th>전표수</th><th>반품</th><th>반품률</th><th>거래처당 매출</th><th>점유율</th></tr></thead>
-          <tbody>${staff.map(s=>`<tr>
-            <td>${s.staff_name}</td>
-            <td style="text-align:right">${fmtAmt(s.supply)}</td>
-            <td style="text-align:right" class="${profitClass(s.profit_rate)}">${fmtAmt(s.profit)}</td>
-            <td class="${profitClass(s.profit_rate)}">${s.profit_rate}%</td>
-            <td style="text-align:right">${s.customer_count}</td>
-            <td style="text-align:right">${s.slip_count}</td>
-            <td style="text-align:right">${s.return_count}</td>
-            <td>${s.return_rate}%</td>
-            <td style="text-align:right">${fmtAmt(s.avg_per_customer)}</td>
-            <td>${s.share_pct}%</td>
-          </tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-    `;
-
-    // 레이더 차트
-    if (staff.length >= 2) {
-      const top = staff.slice(0, 4);
-      const maxSupply = Math.max(...top.map(s=>s.supply)) || 1;
-      const maxCust = Math.max(...top.map(s=>s.customer_count)) || 1;
-      const ctx = document.getElementById('staffRadarChart');
-      if (ctx) {
-        const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444'];
-        salesState.chartInstances.staffRadar = new Chart(ctx, {
-          type:'radar',
-          data:{
-            labels:['매출','이익률','거래처수','반품률(역)'],
-            datasets: top.map((s,i)=>({
-              label:s.staff_name,
-              data:[s.supply/maxSupply*100, s.profit_rate, s.customer_count/maxCust*100, Math.max(0,10-s.return_rate)*10],
-              borderColor:colors[i], backgroundColor:colors[i]+'22', pointRadius:3,
-            }))
-          },
-          options:{responsive:true, plugins:{title:{display:true,text:'담당자 비교',color:'#e2e8f0'}},
-            scales:{r:{ticks:{display:false},grid:{color:'rgba(255,255,255,0.1)'},pointLabels:{color:'#9ca3af'}}}}
-        });
-      }
-    }
-  } catch(e) { vc.innerHTML = `<div style="color:#f87171;padding:20px">담당자 성과 로드 실패: ${e.message}</div>`; }
-}
-
-// ══════════════════════════════════════════
-//  뷰6: 반품·이슈 관리
-// ══════════════════════════════════════════
-async function loadReturnsView() {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">로딩 중...</div>';
-  try {
-    const data = await salesApi('/returns/analysis', _sp());
-    const s = data.summary || {};
-
-    vc.innerHTML = `
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">반품 건수</div><div class="kpi-value" style="color:#f87171">${s.total_cnt}</div></div>
-        <div class="kpi-card"><div class="kpi-label">반품 금액</div><div class="kpi-value">${fmtBillM(s.total_amt)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">반품율</div><div class="kpi-value">${s.return_rate}%</div></div>
-      </div>
-      <div class="chart-grid-2" style="margin-top:16px">
-        <div class="chart-card"><canvas id="returnsCustChart"></canvas></div>
-        <div class="chart-card"><canvas id="returnsTrendChart"></canvas></div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:8px">반품 전표 목록</h3>
-        <div class="sales-table-wrap">
-          <table class="sales-table"><thead><tr><th>전표번호</th><th>거래처</th><th>품목</th><th>수량</th><th>금액</th><th>비고</th><th>일자</th><th>담당</th></tr></thead>
-          <tbody>${(data.records||[]).map(r=>`<tr>
-            <td>${r.slip_no}</td><td>${r.customer_name}</td><td>${r.item_code}</td>
-            <td style="text-align:right;color:#f87171">${r.quantity}</td>
-            <td style="text-align:right">${fmtAmt(r.supply_amount)}</td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${r.note}</td>
-            <td>${r.slip_date}</td><td>${r.staff_name}</td>
-          </tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-    `;
-
-    // 거래처별 반품 바차트
-    const byCust = (data.by_customer||[]).slice(0, 10);
-    if (byCust.length) {
-      const ctx = document.getElementById('returnsCustChart');
-      if (ctx) {
-        salesState.chartInstances.retCust = new Chart(ctx, {
-          type:'bar',
-          data:{labels:byCust.map(c=>c.customer_name.length>8?c.customer_name.slice(0,8)+'..':c.customer_name),
-            datasets:[{label:'반품 건수',data:byCust.map(c=>c.count),backgroundColor:'#ef4444'}]},
-          options:{indexAxis:'y',responsive:true,plugins:{title:{display:true,text:'반품 많은 거래처 TOP10',color:'#e2e8f0'},legend:{display:false}},
-            scales:{x:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}},y:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}}}}
-        });
-      }
-    }
-
-    // 월별 반품 추이
-    const monthly = data.monthly_trend || [];
-    if (monthly.length) {
-      const ctx2 = document.getElementById('returnsTrendChart');
-      if (ctx2) {
-        salesState.chartInstances.retTrend = new Chart(ctx2, {
-          type:'line',
-          data:{labels:monthly.map(m=>m.month.slice(0,4)+'/'+m.month.slice(4)),
-            datasets:[{label:'반품건수',data:monthly.map(m=>m.count),borderColor:'#ef4444',fill:false,tension:0.3}]},
-          options:{responsive:true,plugins:{title:{display:true,text:'월별 반품 추이',color:'#e2e8f0'}},
-            scales:{y:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}},x:{ticks:{color:'#9ca3af'},grid:{color:'rgba(255,255,255,0.06)'}}}}
-        });
-      }
-    }
-  } catch(e) { vc.innerHTML = `<div style="color:#f87171;padding:20px">반품 분석 로드 실패: ${e.message}</div>`; }
-}
-
-// ══════════════════════════════════════════
-//  뷰7: 단가 관리
-// ══════════════════════════════════════════
-async function loadPriceView() {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">로딩 중...</div>';
-  try {
-    const [inconsistency, standards] = await Promise.all([
-      salesApi('/price/inconsistency', _sp()),
-      salesApi('/price/standards', {}),
-    ]);
-
-    vc.innerHTML = `
-      <div class="kpi-grid" style="grid-template-columns:1fr 1fr">
-        <div class="kpi-card"><div class="kpi-label">단가 불일치 케이스</div><div class="kpi-value" style="color:#fb923c">${inconsistency.length}</div></div>
-        <div class="kpi-card"><div class="kpi-label">표준단가 등록</div><div class="kpi-value">${standards.length}</div></div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:8px">단가 불일치 목록</h3>
-        <div class="sales-table-wrap">
-          <table class="sales-table"><thead><tr><th>거래처</th><th>품목코드</th><th>모델명</th><th>최저단가</th><th>최고단가</th><th>편차%</th><th>거래수</th></tr></thead>
-          <tbody>${inconsistency.slice(0,50).map(r=>`<tr>
-            <td>${r.customer_name}</td><td>${r.item_code}</td><td>${r.model_name}</td>
-            <td style="text-align:right">${fmtAmt(r.min_price)}</td>
-            <td style="text-align:right">${fmtAmt(r.max_price)}</td>
-            <td style="color:${r.variance_pct>30?'#f87171':r.variance_pct>10?'#fb923c':'var(--text)'}">${r.variance_pct}%</td>
-            <td style="text-align:right">${r.count}</td>
-          </tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:12px">표준단가 등록</h3>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <input id="ps-item" placeholder="품목코드" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:12px;width:120px">
-          <input id="ps-cust" placeholder="거래처(선택)" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:12px;width:120px">
-          <input id="ps-price" type="number" placeholder="표준단가" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:12px;width:100px">
-          <input id="ps-tol" type="number" placeholder="허용편차%" value="10" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:12px;width:80px">
-          <button onclick="savePriceStandard()" style="padding:6px 14px;background:#065f46;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">저장</button>
-        </div>
-        <div class="sales-table-wrap">
-          <table class="sales-table"><thead><tr><th>품목코드</th><th>거래처</th><th>표준단가</th><th>허용편차</th></tr></thead>
-          <tbody>${standards.map(s=>`<tr>
-            <td>${s.item_code}</td><td>${s.customer_name || '전체'}</td>
-            <td style="text-align:right">${fmtAmt(s.standard_price)}</td><td>${s.tolerance_pct}%</td>
-          </tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-    `;
-  } catch(e) { vc.innerHTML = `<div style="color:#f87171;padding:20px">단가 관리 로드 실패: ${e.message}</div>`; }
-}
-
-async function savePriceStandard() {
-  const itemCode = document.getElementById('ps-item')?.value?.trim();
-  const custName = document.getElementById('ps-cust')?.value?.trim() || '';
-  const price = parseFloat(document.getElementById('ps-price')?.value) || 0;
-  const tol = parseFloat(document.getElementById('ps-tol')?.value) || 10;
-  if (!itemCode || !price) { toast('품목코드와 표준단가를 입력해주세요', 'error'); return; }
-  try {
-    await salesApi('/price/standards', {item_code: itemCode, customer_name: custName, standard_price: price, tolerance_pct: tol}, 'POST');
-    toast('표준단가 저장 완료', 'success');
-    loadPriceView();
-  } catch(e) { toast('저장 실패: ' + e.message, 'error'); }
-}
-
-// ══════════════════════════════════════════
-//  뷰8: 창고×채널 분석
-// ══════════════════════════════════════════
-async function loadWarehouseView() {
-  const vc = document.getElementById('salesViewContent');
-  if (!vc) return;
-  vc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">로딩 중...</div>';
-  try {
-    const data = await salesApi('/warehouse/channel', _sp());
-    const byWh = data.by_warehouse || [];
-    const cross = data.cross_matrix || [];
-    const delivery = data.delivery_breakdown || {};
-
-    // 교차 매트릭스 구성
-    const whSet = [...new Set(cross.map(c=>c.warehouse))];
-    const cgSet = [...new Set(cross.map(c=>c.customer_group))];
-    const crossMap = {};
-    cross.forEach(c => { crossMap[c.warehouse+'|'+c.customer_group] = c.supply; });
-
-    vc.innerHTML = `
-      <div class="kpi-grid">${byWh.map(w=>`
-        <div class="kpi-card"><div class="kpi-label">${w.warehouse || '미지정'}</div><div class="kpi-value">${fmtBillM(w.supply)}</div><div style="font-size:11px;color:var(--text-muted)">${w.slip_count}건</div></div>
-      `).join('')}</div>
-      <div class="chart-grid-2" style="margin-top:16px">
-        <div class="chart-card">
-          <h4 style="color:var(--text);margin-bottom:8px">창고 × 거래처그룹 매트릭스</h4>
-          <div class="sales-table-wrap">
-            <table class="sales-table"><thead><tr><th>창고</th>${cgSet.map(g=>`<th>${g}</th>`).join('')}</tr></thead>
-            <tbody>${whSet.map(w=>`<tr><td><strong>${w}</strong></td>${cgSet.map(g=>{
-              const v = crossMap[w+'|'+g] || 0;
-              const cls = v<=0?'':v<1000000?'hm-low':v<5000000?'hm-mid':v<20000000?'hm-high':'hm-vhigh';
-              return `<td class="${cls}" style="text-align:right">${v?fmtAmt(v):'-'}</td>`;
-            }).join('')}</tr>`).join('')}</tbody></table>
-          </div>
-        </div>
-        <div class="chart-card"><canvas id="deliveryPieChart"></canvas></div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);margin-bottom:8px">배송료 거래처 TOP10</h3>
-        <div class="sales-table-wrap">
-          <table class="sales-table"><thead><tr><th>거래처</th><th>배송 건수</th></tr></thead>
-          <tbody>${(data.shipping_cost||[]).map(s=>`<tr><td>${s.customer_name}</td><td style="text-align:right">${s.count}</td></tr>`).join('')}</tbody></table>
-        </div>
-      </div>
-    `;
-
-    // 배송 수단 파이차트
-    const dCtx = document.getElementById('deliveryPieChart');
-    if (dCtx) {
-      const labels = ['로젠택배','경동택배','사무실수령','기타'];
-      const values = [delivery.logen||0, delivery.kyungdong||0, delivery.office||0, delivery.other||0];
-      if (values.some(v=>v>0)) {
-        salesState.chartInstances.deliveryPie = new Chart(dCtx, {
-          type:'pie',
-          data:{labels, datasets:[{data:values, backgroundColor:['#3b82f6','#10b981','#f59e0b','#6b7280']}]},
-          options:{responsive:true, plugins:{title:{display:true,text:'배송 수단 분포',color:'#e2e8f0'}}}
-        });
-      }
-    }
-  } catch(e) { vc.innerHTML = `<div style="color:#f87171;padding:20px">창고 분석 로드 실패: ${e.message}</div>`; }
 }
 
 
