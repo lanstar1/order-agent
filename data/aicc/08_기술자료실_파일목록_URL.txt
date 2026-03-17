@@ -1,0 +1,493 @@
+================================================================================
+    랜스타 기술자료실 파일 목록 & 모델별 검색 URL
+================================================================================
+
+생성일: 2026-03-16
+기술자료실 메인: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload
+
+[URL 생성 규칙]
+  기본 URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord={모델명}
+  예시: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-UH319-W
+
+  → AI 챗봇에서 고객 문의 모델명을 변수로 치환하여 안내
+
+================================================================================
+[분류별 파일 목록]
+================================================================================
+
+--- USB동글 (2건) ---
+  [LS-WINFG] LS-WINFG 드라이버 (FpmDevAd16)
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-WINFG
+  [LS-WINFG] LS-WINFG USB 지문인식 동글 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-WINFG
+
+--- USB랜카드 (11건) ---
+  [LS-LAN20C] LS-LAN20C USB2.0 랜카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN20C
+  [LS-LAN20R, LS-GLAN30R, LS-GLAN31] LS-LAN20R, LS-GLAN30R, LS-GLAN31 맥 OS 카탈리나 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN20R
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN30R
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN31
+  [LS-GLAN25] LS-GLAN25 USB랜카드 드라이버 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN25
+  [LS-GLAN31] LS-GLAN31 USB 랜카드 WIN10 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN31
+  [LS-LAN20R, LS-GLAN30R] LS-LAN20R, LS-GLAN30R USB 랜카드 겸용 드라이버 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN20R
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN30R
+  [LS-LAN20] LS-LAN20 매뉴얼
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN20
+  [LS-LAN11] LS-LAN11 매뉴얼
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN11
+  [LS-GLAN30CB] LS-GLAN30CB USB 3.0 기가 랜카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN30CB
+  [LS-GLAN31] LS-GLAN31 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN31
+  [LS-GLAN30] LS-GLAN30 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN30
+
+--- USB선택기 (1건) ---
+  [LS-USB12, LS-USB14] LS-USB12, LS-USB14 USB선택기 유틸 프로그램
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-USB12
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-USB14
+
+--- USB컨버터 (17건) ---
+  [LS-RS200CN] LS-RS200CN USB 시리얼 컨버터 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS200CN
+  [LS-RS20UY] LS-RS20UY USB 시리얼 RS232 컨버터 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20UY
+  [LS-RS925] LS-RS925 USB2.0 TO RS232 시리얼 컨버터 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS925
+  [LS-COPY10, LS-COPY30] LS-COPY10/COPY30 맥 몬테레이 업데이트 사용 방법
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-COPY10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-COPY30
+  [LS-COPY10] LS-COPY10 맥 카탈리나 업데이트 사용 방법
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-COPY10
+  [LS-RS20C, LS-RS485] LS-RS20C, LS-RS485 USB 컨버터 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20C
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS485
+  [LS-RS11U, LS-RS11C] LS-RS11U, LS-RS11C USB 시리얼 RS232 컨버터 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS11U
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS11C
+  [LS-RS202C, LS-RS204C] LS-RS202C, LS-RS204C USB 시리얼 RS232 컨버터 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS202C
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS204C
+  [LS-RS20U] LS-RS20U USB 컨버터 드라이버 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20U
+  [LS-RS485] LS-RS485 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS485
+  [LS-RS202C] LS-RS202C 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS202C
+  [LS-RS20U, LS-RS20C] LS-RS20U, LS-RS20C 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20U
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20C
+  [LS-RS11U, LS-RS11C] LS-RS11U, LS-RS11C 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS11U
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS11C
+  [LS-RS20] LS-RS20 매뉴얼
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20
+  [LS-RS11] LS-RS11 매뉴얼
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS11
+  [LS-RS200C] LS-RS200C USB2.0 to 시리얼 컨버터 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS200C
+  [LS-RS20U, LS-RS20C] LS-RS20U/LS-RS20C USB2.0 시리얼 컨버터 Win8 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20U
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20C
+
+--- 랜카드 (1건) ---
+  [LS-AQC107] LS-AQC107 Marvell 10Gbps 랜카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-AQC107
+
+--- 블루투스 (1건) ---
+  [LS-BT403] LS-BT403 블루투스 동글이 하모니 소프트웨어
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-BT403
+
+--- 영상장비 (8건) ---
+  [LS-HMV401, LS-WC202] RS232 제어 프로그램 (LS-HMV401, LS-WC202)
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-HMV401
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-WC202
+  [LS-HMV401] LS-HMV401 RS232 파일
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-HMV401
+  [LS-MV109N] LS-MV109N 캐스케이딩 지원 프로그램
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-MV109N
+  [LS-AMV109-N] LS-AMV109-N 소프트웨어
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-AMV109-N
+  [LS-MV109N] LS-MV109N 화면 회전모드 지원 프로그램
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-MV109N
+  [LS-MV109] LS-MV109 RS232 시리얼 프로그램
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-MV109
+  [LS-MV104] LS-MV104 RS232 시리얼 프로그램
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-MV104
+  [LS-HMS404] LS-HMS404 RS232 시리얼 프로그램
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-HMS404
+
+--- 영상편집기 (3건) ---
+  [LS-USB2] LS-USB2.0-DVRN 이지캡처 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-USB2
+  [LS-USB2] LS-USB2.0-DVRN 드라이버 및 프로그램
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-USB2
+  [LS-USB2] LS-USB2.0-DVRN 드라이버 MAC OS 지원
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-USB2
+
+--- 카드류 (27건) ---
+  [LS-PCIE-EX1284N] LS-PCIE-EX1284N 카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1284N
+  [LS-PCIE-EX1284N] LS-PCIE-EX1284N 시리얼 2포트 카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1284N
+  [LS-PCIE-EX210AT] LS-PCIE-EX210AT 기가 랜카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX210AT
+  [LS-PCIE-EX1C] LS-PCIE-EX1C 기가 랜카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1C
+  [LS-PCIE-EX902B] LS-PCIE-EX902B 시리얼 카드 드라이버 WIN11
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX902B
+  [LS-PCIE-EX1G] LS-PCIE-EX1G 기가 랜카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1G
+  [LS-EX307] LS-EX307 PCIE USB3.0 7포트 카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-EX307
+  [LS-PCIE-EX902BN] LS-PCIE-EX902BN PCI-Express 2포트 시리얼카드
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX902BN
+  [LS-PCIE-EX540] LS-PCIE-EX540 인텔 X540-T2 10기가 랜카드 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX540
+  [LS-PCIE-4SATA] LS-PCIE-4SATA SATA3 4PORT 확장카드
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-4SATA
+  [LS-PCIE-2SATA] LS-PCIE-2SATA SATA3/ESATA 확장카드
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-2SATA
+  [LS-EX51CHN] LS-EX51CHN PCI-E 사운드카드 5.1채널 드라이버 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-EX51CHN
+  [LS-EX304] LS-EX304 USB 4포트 확장카드 드라이버 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-EX304
+  [LS-EX71CH] LS-EX71CH 사운드카드 5.1채널 드라이버 WIN10
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-EX71CH
+  [LS-PCI-1284B, LS-PCI-902SEB] LS-PCI-1284B, LS-PCI-902SEB 겸용 WIN10 (WCH351Q 칩셋)
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCI-1284B
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCI-902SEB
+  [LS-PCIE-MSATA] LS-PCIE-MSATA WIN11 지원
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-MSATA
+  [LS-PCIE-EX1284B, LS-PCIE-EX902B] LS-PCIE-EX1284B, LS-PCIE-EX902B 겸용 WIN11
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1284B
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX902B
+  [LS-100TRX, LS-100TRXB] LS-100TRX, LS-100TRXB 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-100TRX
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-100TRXB
+  [LS-PCIE-EX312] LS-PCIE-EX312 드라이버 (WIN11지원)
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX312
+  [LS-PCIE-EX312] LS-PCIE-EX312 드라이버 (WIN7/WIN8/WIN8.1)
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX312
+  [LS-PCIE-EX902B] LS-PCIE-EX902B 공용 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX902B
+  [LS-PCIE-EX1000T] LS-PCIE-EX1000T Win XP 리얼텍 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1000T
+  [LS-PCIE-EX1000T] LS-PCIE-EX1000T Win7 리얼텍 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1000T
+  [LS-PCI-902SEB] LS-PCI-902SEB CH35X 칩셋
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCI-902SEB
+  [LS-PCIE-EX902] LS-PCIE-EX902 Oxford 칩셋 드라이버 및 매뉴얼
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX902
+  [LS-500PCM] LS-500PCM 매뉴얼
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-500PCM
+
+--- 컨버터 (2건) ---
+  [LS-UH319-W, LS-UH319-WN] LS-UH319-W(N) 블랙색상 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-UH319-W
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-UH319-WN
+  [LS-UH319] LS-UH319 드라이버 최신버전 (WIN10 지원)
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-UH319
+
+--- 프린터 (1건) ---
+  [LS-PRT11, LS-PRT25] LS-PRT11(PRT110), LS-PRT25(PRT250) 드라이버
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PRT11
+    → https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PRT25
+
+
+================================================================================
+[모델별 빠른 검색 URL 전체 목록]
+================================================================================
+
+  LS-100TRX
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-100TRX
+    - LS-100TRX, LS-100TRXB 드라이버
+
+  LS-100TRXB
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-100TRXB
+    - LS-100TRX, LS-100TRXB 드라이버
+
+  LS-500PCM
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-500PCM
+    - LS-500PCM 매뉴얼
+
+  LS-AMV109-N
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-AMV109-N
+    - LS-AMV109-N 소프트웨어
+
+  LS-AQC107
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-AQC107
+    - LS-AQC107 Marvell 10Gbps 랜카드 드라이버
+
+  LS-BT403
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-BT403
+    - LS-BT403 블루투스 동글이 하모니 소프트웨어
+
+  LS-COPY10
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-COPY10
+    - LS-COPY10/COPY30 맥 몬테레이 업데이트 사용 방법
+    - LS-COPY10 맥 카탈리나 업데이트 사용 방법
+
+  LS-COPY30
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-COPY30
+    - LS-COPY10/COPY30 맥 몬테레이 업데이트 사용 방법
+
+  LS-EX304
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-EX304
+    - LS-EX304 USB 4포트 확장카드 드라이버 WIN10
+
+  LS-EX307
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-EX307
+    - LS-EX307 PCIE USB3.0 7포트 카드 드라이버
+
+  LS-EX51CHN
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-EX51CHN
+    - LS-EX51CHN PCI-E 사운드카드 5.1채널 드라이버 WIN10
+
+  LS-EX71CH
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-EX71CH
+    - LS-EX71CH 사운드카드 5.1채널 드라이버 WIN10
+
+  LS-GLAN25
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN25
+    - LS-GLAN25 USB랜카드 드라이버 WIN10
+
+  LS-GLAN30
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN30
+    - LS-GLAN30 드라이버
+
+  LS-GLAN30CB
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN30CB
+    - LS-GLAN30CB USB 3.0 기가 랜카드 드라이버
+
+  LS-GLAN30R
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN30R
+    - LS-LAN20R, LS-GLAN30R, LS-GLAN31 맥 OS 카탈리나 드라이버
+    - LS-LAN20R, LS-GLAN30R USB 랜카드 겸용 드라이버 WIN10
+
+  LS-GLAN31
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-GLAN31
+    - LS-LAN20R, LS-GLAN30R, LS-GLAN31 맥 OS 카탈리나 드라이버
+    - LS-GLAN31 USB 랜카드 WIN10 드라이버
+    - LS-GLAN31 드라이버
+
+  LS-HMS404
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-HMS404
+    - LS-HMS404 RS232 시리얼 프로그램
+
+  LS-HMV401
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-HMV401
+    - RS232 제어 프로그램 (LS-HMV401, LS-WC202)
+    - LS-HMV401 RS232 파일
+
+  LS-LAN11
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN11
+    - LS-LAN11 매뉴얼
+
+  LS-LAN20
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN20
+    - LS-LAN20 매뉴얼
+
+  LS-LAN20C
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN20C
+    - LS-LAN20C USB2.0 랜카드 드라이버
+    - LS-LAN20C USB2.0 랜카드 드라이버
+
+  LS-LAN20R
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-LAN20R
+    - LS-LAN20R, LS-GLAN30R, LS-GLAN31 맥 OS 카탈리나 드라이버
+    - LS-LAN20R, LS-GLAN30R USB 랜카드 겸용 드라이버 WIN10
+
+  LS-MV104
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-MV104
+    - LS-MV104 RS232 시리얼 프로그램
+
+  LS-MV109
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-MV109
+    - LS-MV109 RS232 시리얼 프로그램
+
+  LS-MV109N
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-MV109N
+    - LS-MV109N 캐스케이딩 지원 프로그램
+    - LS-MV109N 화면 회전모드 지원 프로그램
+
+  LS-PCI-1284B
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCI-1284B
+    - LS-PCI-1284B, LS-PCI-902SEB 겸용 WIN10 (WCH351Q 칩셋)
+
+  LS-PCI-902SEB
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCI-902SEB
+    - LS-PCI-1284B, LS-PCI-902SEB 겸용 WIN10 (WCH351Q 칩셋)
+    - LS-PCI-902SEB CH35X 칩셋
+
+  LS-PCIE-2SATA
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-2SATA
+    - LS-PCIE-2SATA SATA3/ESATA 확장카드
+
+  LS-PCIE-4SATA
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-4SATA
+    - LS-PCIE-4SATA SATA3 4PORT 확장카드
+
+  LS-PCIE-EX1000T
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1000T
+    - LS-PCIE-EX1000T Win XP 리얼텍 드라이버
+    - LS-PCIE-EX1000T Win7 리얼텍 드라이버
+
+  LS-PCIE-EX1284B
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1284B
+    - LS-PCIE-EX1284B, LS-PCIE-EX902B 겸용 WIN11
+
+  LS-PCIE-EX1284N
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1284N
+    - LS-PCIE-EX1284N 카드 드라이버
+    - LS-PCIE-EX1284N 시리얼 2포트 카드 드라이버
+
+  LS-PCIE-EX1C
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1C
+    - LS-PCIE-EX1C 기가 랜카드 드라이버
+    - LS-PCIE-EX1C 기가 랜카드 드라이버
+
+  LS-PCIE-EX1G
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX1G
+    - LS-PCIE-EX1G 기가 랜카드 드라이버
+
+  LS-PCIE-EX210AT
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX210AT
+    - LS-PCIE-EX210AT 기가 랜카드 드라이버
+
+  LS-PCIE-EX312
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX312
+    - LS-PCIE-EX312 드라이버 (WIN11지원)
+    - LS-PCIE-EX312 드라이버 (WIN7/WIN8/WIN8.1)
+
+  LS-PCIE-EX540
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX540
+    - LS-PCIE-EX540 인텔 X540-T2 10기가 랜카드 드라이버
+
+  LS-PCIE-EX902
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX902
+    - LS-PCIE-EX902 Oxford 칩셋 드라이버 및 매뉴얼
+
+  LS-PCIE-EX902B
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX902B
+    - LS-PCIE-EX902B 시리얼 카드 드라이버 WIN11
+    - LS-PCIE-EX1284B, LS-PCIE-EX902B 겸용 WIN11
+    - LS-PCIE-EX902B 공용 드라이버
+
+  LS-PCIE-EX902BN
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-EX902BN
+    - LS-PCIE-EX902BN PCI-Express 2포트 시리얼카드
+
+  LS-PCIE-MSATA
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PCIE-MSATA
+    - LS-PCIE-MSATA WIN11 지원
+
+  LS-PRT11
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PRT11
+    - LS-PRT11(PRT110), LS-PRT25(PRT250) 드라이버
+
+  LS-PRT25
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-PRT25
+    - LS-PRT11(PRT110), LS-PRT25(PRT250) 드라이버
+
+  LS-RS11
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS11
+    - LS-RS11 매뉴얼
+
+  LS-RS11C
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS11C
+    - LS-RS11U, LS-RS11C USB 시리얼 RS232 컨버터 WIN10
+    - LS-RS11U, LS-RS11C 드라이버
+
+  LS-RS11U
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS11U
+    - LS-RS11U, LS-RS11C USB 시리얼 RS232 컨버터 WIN10
+    - LS-RS11U, LS-RS11C 드라이버
+
+  LS-RS20
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20
+    - LS-RS20 매뉴얼
+
+  LS-RS200C
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS200C
+    - LS-RS200C USB2.0 to 시리얼 컨버터 드라이버
+
+  LS-RS200CN
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS200CN
+    - LS-RS200CN USB 시리얼 컨버터 드라이버
+
+  LS-RS202C
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS202C
+    - LS-RS202C, LS-RS204C USB 시리얼 RS232 컨버터 WIN10
+    - LS-RS202C 드라이버
+
+  LS-RS204C
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS204C
+    - LS-RS202C, LS-RS204C USB 시리얼 RS232 컨버터 WIN10
+
+  LS-RS20C
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20C
+    - LS-RS20C, LS-RS485 USB 컨버터 WIN10
+    - LS-RS20U, LS-RS20C 드라이버
+    - LS-RS20U/LS-RS20C USB2.0 시리얼 컨버터 Win8 드라이버
+
+  LS-RS20U
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20U
+    - LS-RS20U USB 컨버터 드라이버 WIN10
+    - LS-RS20U, LS-RS20C 드라이버
+    - LS-RS20U/LS-RS20C USB2.0 시리얼 컨버터 Win8 드라이버
+
+  LS-RS20UY
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS20UY
+    - LS-RS20UY USB 시리얼 RS232 컨버터 드라이버
+
+  LS-RS485
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS485
+    - LS-RS20C, LS-RS485 USB 컨버터 WIN10
+    - LS-RS485 드라이버
+
+  LS-RS925
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-RS925
+    - LS-RS925 USB2.0 TO RS232 시리얼 컨버터 드라이버
+
+  LS-UH319
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-UH319
+    - LS-UH319 드라이버 최신버전 (WIN10 지원)
+
+  LS-UH319-W
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-UH319-W
+    - LS-UH319-W(N) 블랙색상 드라이버
+
+  LS-UH319-WN
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-UH319-WN
+    - LS-UH319-W(N) 블랙색상 드라이버
+
+  LS-USB12
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-USB12
+    - LS-USB12, LS-USB14 USB선택기 유틸 프로그램
+
+  LS-USB14
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-USB14
+    - LS-USB12, LS-USB14 USB선택기 유틸 프로그램
+
+  LS-USB2
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-USB2
+    - LS-USB2.0-DVRN 이지캡처 드라이버
+    - LS-USB2.0-DVRN 드라이버 및 프로그램
+    - LS-USB2.0-DVRN 드라이버 MAC OS 지원
+
+  LS-WC202
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-WC202
+    - RS232 제어 프로그램 (LS-HMV401, LS-WC202)
+
+  LS-WINFG
+    URL: https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&searchField=subject&searchWord=LS-WINFG
+    - LS-WINFG 드라이버 (FpmDevAd16)
+    - LS-WINFG USB 지문인식 동글 드라이버
+
+
+총 65개 모델 등록

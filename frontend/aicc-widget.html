@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LANstar AI 기술상담</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;background:#f5f5f5;height:100vh;overflow:hidden}
+
+/* 전체 컨테이너 */
+.widget{display:flex;flex-direction:column;height:100vh;background:#fff}
+
+/* 헤더 */
+.header{background:#1a1a2e;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.header .logo{font-size:18px;font-weight:700}
+.header .logo span{color:#e63946}
+.header .sub{font-size:11px;color:#adb5bd;margin-left:auto}
+
+/* 단계 표시 */
+.step-indicator{display:flex;gap:4px;padding:8px 16px;background:#f8f9fa;border-bottom:1px solid #e9ecef;flex-shrink:0}
+.step-dot{width:8px;height:8px;border-radius:50%;background:#dee2e6;transition:.3s}
+.step-dot.active{background:#e63946;width:24px;border-radius:4px}
+.step-dot.done{background:#1a1a2e}
+
+/* 콘텐츠 영역 */
+.content{flex:1;overflow-y:auto;padding:20px 16px}
+
+/* Step 1: 모델 검색 */
+.search-wrap{position:relative}
+.search-wrap input{width:100%;padding:12px 16px;border:2px solid #dee2e6;border-radius:12px;font-size:15px;outline:none;transition:.2s}
+.search-wrap input:focus{border-color:#1a1a2e}
+.search-hint{font-size:12px;color:#868e96;margin-top:8px;padding-left:4px}
+.dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #dee2e6;border-radius:12px;max-height:280px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:10;display:none}
+.dropdown.show{display:block}
+.dd-item{padding:10px 16px;cursor:pointer;border-bottom:1px solid #f1f3f5;font-size:13px;transition:.1s}
+.dd-item:hover{background:#f8f9fa}
+.dd-item:last-child{border:none}
+.dd-item .model{font-weight:600;color:#1a1a2e}
+.dd-item .name{color:#868e96;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 선택된 모델 */
+.selected-model{background:#edf2ff;border:1px solid #4dabf7;border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+.selected-model .info .model{font-weight:700;color:#1a1a2e;font-size:14px}
+.selected-model .info .name{font-size:12px;color:#495057;margin-top:2px}
+.selected-model .clear{background:none;border:none;font-size:18px;color:#868e96;cursor:pointer;padding:4px}
+
+/* Step 2: 문의 유형 */
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.menu-btn{padding:16px 12px;border:2px solid #dee2e6;border-radius:12px;background:#fff;cursor:pointer;text-align:center;transition:.2s;font-size:14px;font-weight:500}
+.menu-btn:hover{border-color:#1a1a2e;background:#f8f9fa}
+.menu-btn .icon{font-size:24px;display:block;margin-bottom:6px}
+
+/* Step 3: 채팅 */
+.chat-area{display:flex;flex-direction:column;height:100%}
+.chat-messages{flex:1;overflow-y:auto;padding-bottom:8px}
+.msg{margin-bottom:10px;max-width:85%;animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg.user{margin-left:auto}
+.msg.ai,.msg.admin,.msg.system{margin-right:auto}
+.msg-bubble{padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.5;word-break:break-word;white-space:pre-wrap}
+.msg.user .msg-bubble{background:#1a1a2e;color:#fff;border-bottom-right-radius:4px}
+.msg.ai .msg-bubble{background:#f1f3f5;color:#212529;border-bottom-left-radius:4px}
+.msg.admin .msg-bubble{background:#fff3e0;color:#212529;border-bottom-left-radius:4px;border:1px solid #ffe0b2}
+.msg.system .msg-bubble{background:#e8f5e9;color:#2e7d32;font-size:13px;text-align:center;border-radius:8px}
+.msg-label{font-size:11px;color:#868e96;margin-bottom:2px;padding-left:2px}
+.typing{display:flex;gap:4px;align-items:center;padding:10px 14px;background:#f1f3f5;border-radius:14px;border-bottom-left-radius:4px;width:fit-content}
+.typing span{width:6px;height:6px;background:#868e96;border-radius:50%;animation:typing 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes typing{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+
+/* 채팅 입력 */
+.chat-input-wrap{display:flex;gap:8px;padding:12px 0 0;border-top:1px solid #e9ecef;flex-shrink:0}
+.chat-input-wrap textarea{flex:1;padding:10px 14px;border:2px solid #dee2e6;border-radius:12px;font-size:14px;resize:none;outline:none;max-height:80px;font-family:inherit}
+.chat-input-wrap textarea:focus{border-color:#1a1a2e}
+.chat-input-wrap button{padding:10px 16px;background:#1a1a2e;color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;transition:.2s}
+.chat-input-wrap button:hover{background:#e63946}
+.chat-input-wrap button:disabled{background:#adb5bd;cursor:not-allowed}
+
+/* 채팅 하단 버튼 */
+.chat-actions{display:flex;gap:8px;margin-top:8px}
+.chat-actions button{flex:1;padding:8px;border:1px solid #dee2e6;border-radius:8px;background:#fff;font-size:12px;cursor:pointer;transition:.2s}
+.chat-actions button:hover{background:#f8f9fa;border-color:#1a1a2e}
+
+/* 재고조회 결과 */
+.inventory-result{text-align:center;padding:20px 0}
+.inventory-card{background:#f8f9fa;border-radius:12px;padding:20px;margin-bottom:16px}
+.inventory-card .title{font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:16px}
+.inventory-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.inv-box{background:#fff;border-radius:8px;padding:12px;text-align:center;border:1px solid #e9ecef}
+.inv-box .loc{font-size:12px;color:#868e96;margin-bottom:4px}
+.inv-box .qty{font-size:22px;font-weight:700;color:#1a1a2e}
+.inv-box .qty.zero{color:#e63946}
+
+/* 견적 안내 */
+.quote-guide{background:#fff8e1;border:1px solid #ffe082;border-radius:12px;padding:20px;line-height:1.8;font-size:14px}
+.quote-guide a{color:#1a1a2e;font-weight:600}
+
+/* 버튼 공통 */
+.btn-primary{display:block;width:100%;padding:14px;background:#1a1a2e;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;transition:.2s;text-align:center}
+.btn-primary:hover{background:#e63946}
+.btn-outline{display:block;width:100%;padding:12px;background:#fff;color:#1a1a2e;border:2px solid #1a1a2e;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;transition:.2s;text-align:center;margin-top:10px}
+.btn-outline:hover{background:#f8f9fa}
+
+/* 숨김 */
+.hidden{display:none!important}
+
+/* 만족도 */
+.satisfaction{text-align:center;padding:20px}
+.satisfaction .title{font-size:16px;font-weight:600;margin-bottom:16px}
+.stars{display:flex;gap:8px;justify-content:center;margin-bottom:16px}
+.stars button{background:none;border:none;font-size:32px;cursor:pointer;opacity:.3;transition:.2s}
+.stars button:hover,.stars button.active{opacity:1;transform:scale(1.2)}
+</style>
+</head>
+<body>
+
+<div class="widget">
+  <!-- 헤더 -->
+  <div class="header">
+    <div class="logo">LAN<span>star</span> AI 상담</div>
+    <div class="sub">기술상담 챗봇</div>
+  </div>
+
+  <!-- 단계 표시 -->
+  <div class="step-indicator">
+    <div class="step-dot active" id="dot1"></div>
+    <div class="step-dot" id="dot2"></div>
+    <div class="step-dot" id="dot3"></div>
+  </div>
+
+  <!-- Step 1: 모델 선택 -->
+  <div class="content" id="step1">
+    <h3 style="margin-bottom:4px;font-size:16px">제품 모델명을 입력하세요</h3>
+    <p style="font-size:13px;color:#868e96;margin-bottom:16px">예: LS-HDMI, USB, 허브, 랜케이블</p>
+    <div class="search-wrap">
+      <input type="text" id="modelInput" placeholder="모델명 또는 제품명 입력..." autocomplete="off">
+      <div class="dropdown" id="dropdown"></div>
+    </div>
+    <div class="search-hint" id="searchHint">2자 이상 입력하면 자동 검색됩니다</div>
+
+    <div class="selected-model hidden" id="selectedBox">
+      <div class="info">
+        <div class="model" id="selModel"></div>
+        <div class="name" id="selName"></div>
+      </div>
+      <button class="clear" onclick="clearSelection()">&times;</button>
+    </div>
+
+    <button class="btn-primary hidden" id="btnNext1" onclick="goStep2()">다음 &rarr;</button>
+  </div>
+
+  <!-- Step 2: 문의 유형 -->
+  <div class="content hidden" id="step2">
+    <h3 style="margin-bottom:4px;font-size:16px">문의 유형을 선택하세요</h3>
+    <p style="font-size:13px;color:#868e96;margin-bottom:16px" id="step2Model"></p>
+    <div class="menu-grid">
+      <button class="menu-btn" onclick="selectMenu('제품문의')"><span class="icon">📦</span>제품 문의</button>
+      <button class="menu-btn" onclick="selectMenu('기술문의')"><span class="icon">🔧</span>기술 문의</button>
+      <button class="menu-btn" onclick="selectMenu('재고조회')"><span class="icon">📊</span>재고 조회</button>
+      <button class="menu-btn" onclick="selectMenu('견적문의')"><span class="icon">📋</span>견적 문의</button>
+      <button class="menu-btn" onclick="selectMenu('AS문의')"><span class="icon">🛠</span>A/S 문의</button>
+      <button class="menu-btn" onclick="selectMenu('배송문의')"><span class="icon">🚚</span>배송 문의</button>
+    </div>
+    <button class="btn-outline" onclick="goStep1()">&larr; 모델 재선택</button>
+  </div>
+
+  <!-- Step 3: 채팅 -->
+  <div class="content hidden" id="step3" style="padding:12px 16px;display:flex;flex-direction:column">
+    <div class="chat-area">
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-wrap">
+        <textarea id="chatInput" rows="1" placeholder="메시지를 입력하세요..." onkeydown="handleChatKey(event)"></textarea>
+        <button id="btnSend" onclick="sendChat()" disabled>전송</button>
+      </div>
+      <div class="chat-actions">
+        <button onclick="requestAdmin()">👤 담당자 연결</button>
+        <button onclick="endChat()">종료</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 재고조회 결과 -->
+  <div class="content hidden" id="stepInventory">
+    <div class="inventory-result">
+      <div class="inventory-card">
+        <div class="title" id="invTitle">재고 조회 중...</div>
+        <div class="inventory-grid" id="invGrid"></div>
+      </div>
+      <button class="btn-outline" onclick="goStep2()">&larr; 다른 문의</button>
+      <button class="btn-outline" onclick="goStep1()" style="margin-top:8px">&larr; 모델 재선택</button>
+    </div>
+  </div>
+
+  <!-- 견적 안내 -->
+  <div class="content hidden" id="stepQuote">
+    <h3 style="margin-bottom:12px;font-size:16px">📋 견적서 안내</h3>
+    <div class="quote-guide">
+      견적서는 쇼핑몰 장바구니에서 바로 출력하실 수 있습니다.<br><br>
+      1. 원하시는 제품을 장바구니에 담아주세요<br>
+      2. 장바구니 페이지에서 <strong>'견적서 출력'</strong> 버튼을 클릭하세요<br>
+      3. PDF로 저장하거나 출력하실 수 있습니다<br><br>
+      <a href="https://www.lanstar.co.kr/order/cart.php" target="_blank">🔗 쇼핑몰 장바구니 바로가기</a>
+    </div>
+    <button class="btn-outline" onclick="goStep2()" style="margin-top:16px">&larr; 다른 문의</button>
+  </div>
+
+  <!-- 만족도 -->
+  <div class="content hidden" id="stepSatisfaction">
+    <div class="satisfaction">
+      <div class="title">상담이 도움이 되셨나요?</div>
+      <div class="stars">
+        <button onclick="rateSatisfaction(1)">⭐</button>
+        <button onclick="rateSatisfaction(2)">⭐</button>
+        <button onclick="rateSatisfaction(3)">⭐</button>
+        <button onclick="rateSatisfaction(4)">⭐</button>
+        <button onclick="rateSatisfaction(5)">⭐</button>
+      </div>
+      <p style="font-size:13px;color:#868e96">감사합니다! 더 나은 서비스를 위해 노력하겠습니다.</p>
+      <button class="btn-primary" onclick="resetWidget()" style="margin-top:20px">새 상담 시작</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 설정 ──────────────────────────────────────────
+const BACKEND = location.origin;
+const urlParams = new URLSearchParams(window.location.search);
+const customerName = urlParams.get('name') || '';
+
+let selectedModel = null;  // {model_name, erp_code, product_name}
+let selectedMenu = '';
+let sessionId = '';
+let ws = null;
+let allModels = [];
+
+// ── 초기화 ──────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const res = await fetch(`${BACKEND}/api/aicc/models`);
+    allModels = await res.json();
+  } catch(e) {
+    console.error('모델 목록 로드 실패:', e);
+  }
+});
+
+// ── Step 관리 ──────────────────────────────────────
+function showStep(step) {
+  ['step1','step2','step3','stepInventory','stepQuote','stepSatisfaction'].forEach(id => {
+    document.getElementById(id).classList.add('hidden');
+  });
+  document.getElementById(step).classList.remove('hidden');
+
+  // 단계 표시 업데이트
+  const dots = {step1:1, step2:2, step3:3, stepInventory:3, stepQuote:3, stepSatisfaction:3};
+  const currentStep = dots[step] || 1;
+  for(let i=1;i<=3;i++){
+    const dot = document.getElementById('dot'+i);
+    dot.className = 'step-dot';
+    if(i < currentStep) dot.classList.add('done');
+    if(i === currentStep) dot.classList.add('active');
+  }
+}
+
+function goStep1(){
+  showStep('step1');
+}
+
+function goStep2(){
+  if(!selectedModel) return goStep1();
+  document.getElementById('step2Model').textContent = `선택: ${selectedModel.model_name}`;
+  showStep('step2');
+}
+
+// ── Step 1: 모델 검색 ──────────────────────────────
+const modelInput = document.getElementById('modelInput');
+const dropdown = document.getElementById('dropdown');
+let debounceTimer;
+
+modelInput.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  const q = modelInput.value.trim();
+  if(q.length < 2){
+    dropdown.classList.remove('show');
+    return;
+  }
+  debounceTimer = setTimeout(() => searchModels(q), 200);
+});
+
+modelInput.addEventListener('focus', () => {
+  if(modelInput.value.trim().length >= 2) searchModels(modelInput.value.trim());
+});
+
+document.addEventListener('click', e => {
+  if(!e.target.closest('.search-wrap')) dropdown.classList.remove('show');
+});
+
+async function searchModels(q){
+  try{
+    const res = await fetch(`${BACKEND}/api/aicc/models?q=${encodeURIComponent(q)}`);
+    const models = await res.json();
+    renderDropdown(models);
+  }catch(e){
+    // 오프라인 시 로컬 필터
+    const qu = q.toUpperCase();
+    const filtered = allModels.filter(m =>
+      m.model_name.toUpperCase().includes(qu) || m.product_name.toUpperCase().includes(qu)
+    ).slice(0,15);
+    renderDropdown(filtered);
+  }
+}
+
+function renderDropdown(models){
+  if(!models.length){
+    dropdown.innerHTML = '<div style="padding:12px;color:#868e96;font-size:13px;text-align:center">검색 결과 없음</div>';
+    dropdown.classList.add('show');
+    return;
+  }
+  dropdown.innerHTML = models.map(m => `
+    <div class="dd-item" onclick="pickModel('${escHtml(m.model_name)}','${escHtml(m.erp_code)}','${escHtml(m.product_name)}')">
+      <div class="model">${escHtml(m.model_name)}</div>
+      <div class="name">${escHtml(m.product_name)}</div>
+    </div>
+  `).join('');
+  dropdown.classList.add('show');
+}
+
+function pickModel(model, erp, name){
+  selectedModel = {model_name:model, erp_code:erp, product_name:name};
+  dropdown.classList.remove('show');
+  modelInput.value = '';
+  document.getElementById('searchHint').classList.add('hidden');
+  document.getElementById('selectedBox').classList.remove('hidden');
+  document.getElementById('selModel').textContent = model;
+  document.getElementById('selName').textContent = name;
+  document.getElementById('btnNext1').classList.remove('hidden');
+}
+
+function clearSelection(){
+  selectedModel = null;
+  document.getElementById('selectedBox').classList.add('hidden');
+  document.getElementById('btnNext1').classList.add('hidden');
+  document.getElementById('searchHint').classList.remove('hidden');
+  modelInput.focus();
+}
+
+// ── Step 2: 메뉴 선택 ──────────────────────────────
+function selectMenu(menu){
+  selectedMenu = menu;
+
+  if(menu === '재고조회') return fetchInventory();
+  if(menu === '견적문의') return showStep('stepQuote');
+
+  // 채팅 시작
+  startChat();
+}
+
+// ── 재고조회 ──────────────────────────────────────
+async function fetchInventory(){
+  showStep('stepInventory');
+  document.getElementById('invTitle').textContent = `${selectedModel.model_name} 재고 조회 중...`;
+  document.getElementById('invGrid').innerHTML = '';
+
+  try{
+    const res = await fetch(`${BACKEND}/api/aicc/inventory/${encodeURIComponent(selectedModel.model_name)}`);
+    const data = await res.json();
+
+    if(data.available === false){
+      document.getElementById('invTitle').textContent = `${selectedModel.model_name} 재고 정보`;
+      document.getElementById('invGrid').innerHTML = `<div style="grid-column:1/-1;text-align:center;color:#868e96;padding:20px">${data.message || 'ERP 코드가 등록되지 않은 제품입니다.'}</div>`;
+      return;
+    }
+
+    document.getElementById('invTitle').textContent = `${data.model_name} 재고 현황`;
+    const yc = data.yongsan > 0 ? '' : ' zero';
+    const gc = data.gimpo > 0 ? '' : ' zero';
+    const tc = data.total > 0 ? '' : ' zero';
+    document.getElementById('invGrid').innerHTML = `
+      <div class="inv-box"><div class="loc">용산</div><div class="qty${yc}">${data.yongsan}</div></div>
+      <div class="inv-box"><div class="loc">김포</div><div class="qty${gc}">${data.gimpo}</div></div>
+      <div class="inv-box"><div class="loc">합계</div><div class="qty${tc}">${data.total}</div></div>
+    `;
+  }catch(e){
+    document.getElementById('invTitle').textContent = '조회 실패';
+    document.getElementById('invGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#e63946;padding:20px">서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.</div>';
+  }
+}
+
+// ── Step 3: 채팅 ──────────────────────────────────
+function startChat(){
+  showStep('step3');
+  sessionId = crypto.randomUUID();
+
+  document.getElementById('chatMessages').innerHTML = '';
+  document.getElementById('chatInput').value = '';
+  document.getElementById('btnSend').disabled = false;
+
+  // 시스템 환영 메시지
+  appendMsg('system', `${selectedModel.model_name} ${selectedMenu} 상담을 시작합니다. 궁금한 점을 자유롭게 질문해 주세요!`);
+
+  // WebSocket 연결
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProto}//${location.host}/ws/chat/${sessionId}`
+    + `?name=${encodeURIComponent(customerName)}`
+    + `&model=${encodeURIComponent(selectedModel.model_name)}`
+    + `&erp_code=${encodeURIComponent(selectedModel.erp_code)}`
+    + `&menu=${encodeURIComponent(selectedMenu)}`;
+
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    console.log('[AICC] WebSocket 연결됨');
+  };
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    hideTyping();
+    if(data.type === 'ai_message') appendMsg('ai', data.content);
+    else if(data.type === 'admin_message') appendMsg('admin', data.content);
+    else if(data.type === 'admin_joined') appendMsg('system', data.content);
+    else if(data.type === 'session_closed'){
+      appendMsg('system', data.content);
+      showStep('stepSatisfaction');
+    }
+    else if(data.type === 'system') appendMsg('system', data.content);
+  };
+
+  ws.onclose = () => {
+    console.log('[AICC] WebSocket 닫힘');
+  };
+
+  ws.onerror = (e) => {
+    console.error('[AICC] WebSocket 오류:', e);
+    appendMsg('system', '연결에 문제가 발생했습니다. 페이지를 새로고침 해주세요.');
+  };
+}
+
+function sendChat(){
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+  appendMsg('user', text);
+  ws.send(JSON.stringify({type:'chat', content:text}));
+  input.value = '';
+  input.style.height = 'auto';
+  showTyping();
+}
+
+function handleChatKey(e){
+  if(e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    sendChat();
+  }
+}
+
+// 자동 높이 조절
+document.getElementById('chatInput').addEventListener('input', function(){
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 80) + 'px';
+  document.getElementById('btnSend').disabled = !this.value.trim();
+});
+
+function appendMsg(role, content){
+  const mc = document.getElementById('chatMessages');
+  const d = document.createElement('div');
+  d.className = `msg ${role}`;
+
+  const labels = {user:'나', ai:'AI 상담사', admin:'담당자', system:''};
+  let html = '';
+  if(labels[role]) html += `<div class="msg-label">${labels[role]}</div>`;
+  html += `<div class="msg-bubble">${escHtml(content)}</div>`;
+  d.innerHTML = html;
+  mc.appendChild(d);
+  mc.scrollTop = mc.scrollHeight;
+}
+
+function showTyping(){
+  const mc = document.getElementById('chatMessages');
+  let t = document.getElementById('typingIndicator');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'typingIndicator';
+    t.className = 'msg ai';
+    t.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+  }
+  mc.appendChild(t);
+  mc.scrollTop = mc.scrollHeight;
+}
+
+function hideTyping(){
+  const t = document.getElementById('typingIndicator');
+  if(t) t.remove();
+}
+
+function requestAdmin(){
+  if(ws && ws.readyState === WebSocket.OPEN){
+    ws.send(JSON.stringify({type:'request_admin'}));
+  }
+}
+
+function endChat(){
+  if(ws && ws.readyState === WebSocket.OPEN){
+    ws.send(JSON.stringify({type:'close'}));
+    ws.close();
+  }
+  showStep('stepSatisfaction');
+}
+
+// ── 만족도 ──────────────────────────────────────
+function rateSatisfaction(n){
+  document.querySelectorAll('.stars button').forEach((btn, i) => {
+    btn.classList.toggle('active', i < n);
+  });
+}
+
+function resetWidget(){
+  selectedModel = null;
+  selectedMenu = '';
+  sessionId = '';
+  ws = null;
+  document.getElementById('selectedBox').classList.add('hidden');
+  document.getElementById('btnNext1').classList.add('hidden');
+  document.getElementById('searchHint').classList.remove('hidden');
+  modelInput.value = '';
+  showStep('step1');
+}
+
+// ── 유틸 ──────────────────────────────────────
+function escHtml(s){
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+</script>
+</body>
+</html>
