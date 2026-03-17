@@ -227,8 +227,14 @@
     var chatInp = document.getElementById('ls-chat-input');
 
     sendBtn.addEventListener('click', sendMessage);
+
+    // 한글 IME 조합 상태 추적
+    var _isComposing = false;
+    chatInp.addEventListener('compositionstart', function() { _isComposing = true; });
+    chatInp.addEventListener('compositionend', function() { _isComposing = false; });
+
     chatInp.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !_isComposing) {
         e.preventDefault();
         sendMessage();
       }

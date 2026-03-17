@@ -15,14 +15,16 @@ SYSTEM_BASE = """당신은 랜스타(LANstar) 공식 AI 기술상담사입니다
 회사: 라인업시스템(주) | 전화: 02-717-3386 | 평일 10:00~17:00
 
 [절대 규칙]
-1. 고객이 이미 제품을 선택했으므로 절대 모델명을 다시 묻지 말 것
-2. 아래 [제품 정보]와 [관련 사례]를 최우선으로 참조하여 답변
-3. 모르는 내용: "전화(02-717-3386) 문의 바랍니다" 안내
-4. 가격 직접 안내 금지 (가격지도 적용 제품 특히 주의)
-5. 단종 제품: 현행 제품으로 절대 안내하지 말 것
-6. 반품/교환: 조건 확인 없이 "가능" 단정 금지
-7. 답변은 명확하고 간결하게 (불필요한 반복 금지)
-8. 마지막에 "추가 문의가 있으시면 편하게 말씀해 주세요" 추가
+1. 고객이 이미 제품을 선택했으므로 절대 모델명을 다시 묻지 말 것. 제품 스펙, 치수, 높이 등을 물으면 [제품 스펙]에서 바로 찾아 답변할 것.
+2. [이 제품 전용 모범답변]이 있으면 반드시 그 내용을 최우선으로 참조. 일반 지식보다 모범답변이 우선.
+3. [이 제품 FAQ]와 [상담 사례]도 적극 활용하여 정확한 답변 제공.
+4. 드라이버 다운로드 문의 시 반드시 [드라이버 다운로드] URL을 포함하여 안내.
+5. 모르는 내용: "전화(02-717-3386) 문의 바랍니다" 안내
+6. 가격 직접 안내 금지 (가격지도 적용 제품 특히 주의)
+7. 단종 제품: 현행 제품으로 절대 안내하지 말 것
+8. 반품/교환: 조건 확인 없이 "가능" 단정 금지
+9. 답변은 명확하고 간결하게 (불필요한 반복 금지)
+10. 마지막에 "추가 문의가 있으시면 편하게 말씀해 주세요" 추가
 
 [주의해야 할 오답 사례 요약]
 {wrong_answers}
@@ -60,7 +62,26 @@ def _build_product_context(model: str, menu: str) -> str:
             if spec_lines:
                 parts.append(f"제품 스펙:\n{spec_lines}")
 
-    # ── 관련 QnA (핵심: 이 제품의 실제 상담 데이터) ──────────
+    # ── 모델별 골든앤서 (최우선 참조) ──────────────────────────
+    golden_model = data_loader.get_golden_by_model(model)
+    if golden_model:
+        g_text = "\n".join(
+            f"  Q: {g['question'][:120]}\n  A: {g['answer'][:300]}"
+            + (f"\n  ⚠️ 주의: {g['warning']}" if g.get('warning') else "")
+            for g in golden_model
+        )
+        parts.append(f"[이 제품 전용 모범답변 — 반드시 이 답변을 최우선 참조]\n{g_text}")
+
+    # ── 모델별 FAQ ─────────────────────────────────────────────
+    faq_model = data_loader.get_faq_by_model(model)
+    if faq_model:
+        f_text = "\n".join(
+            f"  Q: {f['question'][:120]}\n  A: {f['answer'][:300]}"
+            for f in faq_model
+        )
+        parts.append(f"[이 제품 FAQ]\n{f_text}")
+
+    # ── 관련 QnA (이 제품의 실제 상담 데이터) ──────────────────
     if product:
         qna_list = (
             product.get("QnA", []) +
@@ -77,6 +98,10 @@ def _build_product_context(model: str, menu: str) -> str:
                     qna_text += f"\n  [{i}] Q: {question}\n      A: {answer}"
             if qna_text:
                 parts.append(f"[이 제품 관련 실제 상담 사례]{qna_text}")
+
+    # ── 드라이버 다운로드 URL ──────────────────────────────────
+    driver_url = data_loader.get_driver_url(model)
+    parts.append(f"[드라이버 다운로드]\n드라이버 문의 시 반드시 아래 URL을 안내하세요:\n{driver_url}")
 
     # ── 문의 유형별 추가 컨텍스트 ─────────────────────────────
     if menu in ("기술문의",):

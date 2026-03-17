@@ -5018,20 +5018,26 @@ function renderAiccSessions(sessions) {
 
   const c = document.getElementById('aicc-session-list');
   if (!c) return;
-  c.innerHTML = '';
+  var html = '';
   for (const [label, list] of Object.entries(groups)) {
     if (!list.length) continue;
-    c.innerHTML += '<div style="color:#999;font-size:11px;margin-top:8px;margin-bottom:4px;font-weight:700">' + label + ' (' + list.length + ')</div>';
+    html += '<div style="color:#999;font-size:11px;margin-top:8px;margin-bottom:4px;font-weight:700">' + label + ' (' + list.length + ')</div>';
     list.forEach(function(s) {
       const active = s.session_id === _aiccCurrentId;
       const modelInfo = s.selected_model ? s.selected_model + ' · ' : '';
-      c.innerHTML +=
-        '<div style="padding:8px;margin-bottom:4px;border-radius:6px;cursor:pointer;background:' + (active ? '#1a1a2e' : '#f8f9fa') + ';color:' + (active ? '#fff' : '#333') + '" onclick="selectAiccSession(\'' + s.session_id + '\')">' +
+      html +=
+        '<div class="aicc-session-item" data-sid="' + s.session_id + '" style="padding:8px;margin-bottom:4px;border-radius:6px;cursor:pointer;background:' + (active ? '#1a1a2e' : '#f8f9fa') + ';color:' + (active ? '#fff' : '#333') + '">' +
           '<div style="font-weight:600;font-size:13px">' + (s.customer_name || '비회원') + '</div>' +
           '<div style="font-size:11px;opacity:.75">' + modelInfo + s.selected_menu + '</div>' +
         '</div>';
     });
   }
+  c.innerHTML = html;
+  // 이벤트 위임: innerHTML 할당 후 클릭 핸들러 등록
+  c.onclick = function(e) {
+    var item = e.target.closest('.aicc-session-item');
+    if (item) selectAiccSession(item.dataset.sid);
+  };
 }
 
 async function selectAiccSession(id) {

@@ -199,6 +199,18 @@ class AICCDataLoader:
     def get_golden_by_category(self, cat: str) -> List[dict]:
         return [g for g in self.golden_answers if g["category"] == cat][:3]
 
+    def get_golden_by_model(self, model: str) -> List[dict]:
+        """모델명으로 골든앤서 직접 검색 (최우선)"""
+        return [g for g in self.golden_answers if g["model"] == model][:5]
+
+    def get_faq_by_model(self, model: str) -> List[dict]:
+        """모델명이 포함된 FAQ 검색"""
+        return [f for f in self.faq_list if model in f.get("models", "")][:5]
+
+    def get_driver_url(self, model: str) -> str:
+        """드라이버 다운로드 URL 생성"""
+        return f"https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&memNo=&noheader=&mypageFl=&searchField=subject&searchWord={model}"
+
     def is_price_restricted(self, model: str) -> bool:
         return model in self.price_restricted
 
