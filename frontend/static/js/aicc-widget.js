@@ -518,9 +518,15 @@
   }
 
   function formatMsg(str) {
-    // 1. **bold** 변환 (이스케이프 전에 처리)
     var s = String(str);
-    // 2. URL 추출 후 플레이스홀더 치환 (이스케이프로 & → &amp; 방지)
+    // 1. 마크다운 링크 [텍스트](URL) → 플레이스홀더
+    var links = [];
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, function(_, text, url) {
+      var idx = links.length;
+      links.push({ text: text, url: url });
+      return '{{LINK_' + idx + '}}';
+    });
+    // 2. 남은 일반 URL → 플레이스홀더
     var urls = [];
     s = s.replace(/(https?:\/\/[^\s]+)/g, function(url) {
       var idx = urls.length;
@@ -531,10 +537,14 @@
     s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
     // 4. **bold** 변환
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    // 5. URL 플레이스홀더 → 클릭 가능 링크로 복원
+    // 5. 마크다운 링크 복원 → 텍스트가 클릭 링크
+    s = s.replace(/\{\{LINK_(\d+)\}\}/g, function(_, idx) {
+      var l = links[parseInt(idx)];
+      return '<a href="' + l.url + '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;font-weight:600">' + l.text + '</a>';
+    });
+    // 6. 일반 URL 복원 → 클릭 가능 링크
     s = s.replace(/\{\{URL_(\d+)\}\}/g, function(_, idx) {
       var url = urls[parseInt(idx)];
-      // URL 앞 텍스트에서 링크 라벨 추출 시도 (예: "LS-UH319-W 드라이버 다운로드:")
       return '<a href="' + url + '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;word-break:break-all">링크 바로가기</a>';
     });
     return s;
