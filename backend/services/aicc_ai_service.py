@@ -146,10 +146,12 @@ def _build_product_context(model: str, menu: str) -> str:
 
     # ── 드라이버 다운로드 URL ──────────────────────────────────
     driver_url = data_loader.get_driver_url(model)
+    product_url = data_loader.get_product_url(model)
     parts.append(
-        f"[드라이버 다운로드 링크]\n"
-        f"드라이버 설치/다운로드 문의 시 반드시 아래 URL을 안내하세요:\n"
-        f"{driver_url}"
+        f"[링크 안내 규칙]\n"
+        f"1. 드라이버 문의 시: '{model} 드라이버 다운로드: {driver_url}' 형식으로 안내\n"
+        f"2. 대체/추천 제품 안내 시: 해당 모델의 제품 링크를 제공. 예: 'LS-XXXX 제품 보기: https://www.lanstar.co.kr/goods/goods_search.php?keyword=LS-XXXX&recentCount=10'\n"
+        f"3. 현재 제품 링크: {product_url}"
     )
 
     # ── 문의 유형별 추가 컨텍스트 ─────────────────────────────

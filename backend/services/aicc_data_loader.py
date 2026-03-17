@@ -208,8 +208,14 @@ class AICCDataLoader:
         return [f for f in self.faq_list if model in f.get("models", "")][:5]
 
     def get_driver_url(self, model: str) -> str:
-        """드라이버 다운로드 URL 생성"""
-        return f"https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&memNo=&noheader=&mypageFl=&searchField=subject&searchWord={model}"
+        """드라이버 다운로드 URL 생성 (모델명에서 LS- 접두사 제거)"""
+        # LS-UH319-W → uh319-w 형태로 검색어 생성
+        search_word = model.replace("LS-", "").lower() if model.startswith("LS-") else model.lower()
+        return f"https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&memNo=&noheader=&mypageFl=&searchField=subject&searchWord={search_word}"
+
+    def get_product_url(self, model: str) -> str:
+        """제품 검색 URL 생성"""
+        return f"https://www.lanstar.co.kr/goods/goods_search.php?keyword={model}&recentCount=10"
 
     def is_price_restricted(self, model: str) -> bool:
         return model in self.price_restricted

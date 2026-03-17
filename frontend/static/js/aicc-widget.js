@@ -156,7 +156,10 @@
 
           <!-- 화면3: 채팅 -->
           <div id="ls-screen-chat" style="display:none">
-            <div id="ls-chat-info"></div>
+            <div id="ls-chat-info">
+              <button id="ls-chat-back" onclick="LanstarChat._chatBack()" style="background:none;border:none;cursor:pointer;font-size:12px;color:#666;padding:0;margin-right:8px">← 뒤로</button>
+              <span id="ls-chat-info-text"></span>
+            </div>
             <div id="ls-admin-banner">\uD83D\uDC64 \uB2F4\uB2F9\uC790\uAC00 \uC5F0\uACB0\uB418\uC5C8\uC2B5\uB2C8\uB2E4</div>
             <div id="ls-chat-messages"></div>
             <div id="ls-typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span> AI\uAC00 \uB2F5\uBCC0 \uC911...</div>
@@ -384,9 +387,9 @@
     document.getElementById('ls-request-admin-btn').textContent = '\uB2F4\uB2F9\uC790 \uC5F0\uACB0 \uC694\uCCAD';
     document.getElementById('ls-chat-send').disabled = false;
 
-    // 상단 정보 표시
+    // 상단 정보 표시 (뒤로가기 버튼 유지)
     var modelInfo = model ? '<strong>' + escHtml(model.model_name) + '</strong> | ' : '';
-    document.getElementById('ls-chat-info').innerHTML =
+    document.getElementById('ls-chat-info-text').innerHTML =
       modelInfo + '<strong>' + escHtml(_selectedMenu) + '</strong>';
 
     showScreen('chat');
@@ -515,12 +518,25 @@
   }
 
   function formatMsg(str) {
-    // 1. HTML 이스케이프
-    var s = escHtml(str);
-    // 2. URL을 클릭 가능한 링크로 변환
-    s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;word-break:break-all">$1</a>');
-    // 3. **bold** 변환
+    // 1. **bold** 변환 (이스케이프 전에 처리)
+    var s = String(str);
+    // 2. URL 추출 후 플레이스홀더 치환 (이스케이프로 & → &amp; 방지)
+    var urls = [];
+    s = s.replace(/(https?:\/\/[^\s]+)/g, function(url) {
+      var idx = urls.length;
+      urls.push(url);
+      return '{{URL_' + idx + '}}';
+    });
+    // 3. HTML 이스케이프
+    s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    // 4. **bold** 변환
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // 5. URL 플레이스홀더 → 클릭 가능 링크로 복원
+    s = s.replace(/\{\{URL_(\d+)\}\}/g, function(_, idx) {
+      var url = urls[parseInt(idx)];
+      // URL 앞 텍스트에서 링크 라벨 추출 시도 (예: "LS-UH319-W 드라이버 다운로드:")
+      return '<a href="' + url + '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;word-break:break-all">링크 바로가기</a>';
+    });
     return s;
   }
 
@@ -547,6 +563,20 @@
     showScreen('menu');
   }
 
+  function _chatBack() {
+    // 현재 WebSocket 종료
+    if (_ws) { _ws.close(); _ws = null; }
+    _isSending = false;
+    // 채팅 내용 초기화
+    document.getElementById('ls-chat-messages').innerHTML = '';
+    // 세션 ID 재생성 (새 상담)
+    _sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    // 메뉴 화면으로
+    _selectedModel = null;
+    _selectedMenu = '';
+    showScreen('menu');
+  }
+
   function _requestAdmin() {
     if (!_ws || _ws.readyState !== WebSocket.OPEN) return;
     _ws.send(JSON.stringify({ type: 'request_admin', content: '' }));
@@ -565,6 +595,7 @@
       loadModels();
     },
     _goBack: _goBack,
+    _chatBack: _chatBack,
     _selectModel: _selectModel,
     _confirmModel: _confirmModel,
     _requestAdmin: _requestAdmin,
