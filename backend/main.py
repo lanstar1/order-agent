@@ -5,7 +5,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -28,9 +28,6 @@ from api.routes.cs import router as cs_router
 from api.routes.sales_agent import router as sales_agent_router
 from api.routes.sales_analytics import router as sales_analytics_router
 from api.routes.purchases import router as purchases_router
-from api.routes.aicc import router as aicc_router
-from api.routes.aicc_ws import ws_customer_handler, ws_admin_handler, ws_admin_list_handler
-from services.aicc_data_loader import data_loader as aicc_data_loader
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -73,12 +70,7 @@ async def security_headers_middleware(request: Request, call_next):
 
     # 보안 헤더 추가
     response.headers["X-Content-Type-Options"] = "nosniff"
-    # AICC 위젯은 lanstar.co.kr에서 iframe으로 삽입되므로 DENY 대신 조건부 허용
-    if request.url.path == "/aicc-widget.html":
-        response.headers["X-Frame-Options"] = "ALLOWALL"
-        response.headers["Content-Security-Policy"] = "frame-ancestors *"
-    else:
-        response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if not DEBUG:
@@ -236,7 +228,6 @@ app.include_router(cs_router)
 app.include_router(sales_agent_router)
 app.include_router(sales_analytics_router)
 app.include_router(purchases_router)
-app.include_router(aicc_router)
 
 # AI 대시보드 라우터
 try:
@@ -260,13 +251,6 @@ async def startup():
     logger.info("=== Order Agent 시작 (v0.2.0) ===")
     init_db()
     logger.info("데이터베이스 초기화 완료")
-
-    # AICC 데이터 로드
-    try:
-        aicc_data_loader.load_all()
-        logger.info("AICC 데이터 로딩 완료")
-    except Exception as e:
-        logger.warning(f"AICC 데이터 로딩 실패 (챗봇 기능 제한됨): {e}")
 
     # products.csv 확인
     from config import PRODUCTS_CSV
@@ -537,29 +521,6 @@ async def health():
         checks["status"] = "degraded"
 
     return checks
-
-
-# ─────────────────────────────────────────
-#  AICC WebSocket + 위젯 서빙
-# ─────────────────────────────────────────
-@app.websocket("/ws/chat/{session_id}")
-async def websocket_customer(websocket: WebSocket, session_id: str):
-    await ws_customer_handler(websocket, session_id)
-
-@app.websocket("/ws/admin/{session_id}")
-async def websocket_admin(websocket: WebSocket, session_id: str):
-    await ws_admin_handler(websocket, session_id)
-
-@app.websocket("/ws/aicc-list")
-async def websocket_aicc_list(websocket: WebSocket):
-    await ws_admin_list_handler(websocket)
-
-@app.get("/aicc-widget.html", include_in_schema=False)
-async def aicc_widget():
-    widget_path = FRONTEND_DIR / "aicc-widget.html"
-    if widget_path.exists():
-        return FileResponse(str(widget_path))
-    return JSONResponse(status_code=404, content={"detail": "AICC 위젯 파일 없음"})
 
 
 # ─────────────────────────────────────────

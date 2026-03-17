@@ -55,7 +55,6 @@ def _sql_to_pg(sql):
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
                 'sa_uploads', 'sa_jobs',
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
-                'aicc_sessions', 'aicc_messages',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -640,34 +639,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
 
-    # ── AICC 테이블 추가 ──────────────────────────────────────────
-    cur_or_conn.execute("""
-        CREATE TABLE IF NOT EXISTS aicc_sessions (
-            id TEXT PRIMARY KEY,
-            customer_name TEXT DEFAULT '',
-            selected_model TEXT DEFAULT '',
-            erp_code TEXT DEFAULT '',
-            selected_menu TEXT DEFAULT '',
-            status TEXT DEFAULT 'active',
-            is_admin_intervened INTEGER DEFAULT 0,
-            satisfaction INTEGER DEFAULT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            closed_at TIMESTAMP DEFAULT NULL
-        )
-    """)
-
-    cur_or_conn.execute("""
-        CREATE TABLE IF NOT EXISTS aicc_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (session_id) REFERENCES aicc_sessions(id)
-        )
-    """)
-
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -698,8 +669,6 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_sr_staff ON sales_records(staff_name);
         CREATE INDEX IF NOT EXISTS idx_sr_qty ON sales_records(quantity);
         CREATE INDEX IF NOT EXISTS idx_alert_read ON sales_alerts(is_read);
-        CREATE INDEX IF NOT EXISTS idx_aicc_msg_session ON aicc_messages(session_id);
-        CREATE INDEX IF NOT EXISTS idx_aicc_sess_status ON aicc_sessions(status);
     """)
 
     conn.commit()
