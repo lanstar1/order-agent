@@ -171,21 +171,45 @@ async def get_customer_orders(phone: str):
 
     orders = []
     for order in result.get("order_data", []):
+        order_no = order.get("orderNo", "")
+        order_date = order.get("orderDate", "")[:10]
+        settle_price = order.get("settlePrice", "")
+
         goods_list = order.get("orderGoodsData", [])
+        goods_items = []
+        primary_status = ""
+        primary_status_text = ""
+
         for goods in goods_list:
             inv_no = goods.get("invoiceNo", "")
-            orders.append({
-                "order_no": order.get("orderNo", ""),
-                "order_date": order.get("orderDate", "")[:10],
+            status = goods.get("orderStatus", "")
+            status_text = ORDER_STATUS.get(status, status)
+            if not primary_status:
+                primary_status = status
+                primary_status_text = status_text
+            goods_items.append({
                 "goods_name": goods.get("goodsNm", ""),
-                "order_status": goods.get("orderStatus", ""),
-                "order_status_text": ORDER_STATUS.get(goods.get("orderStatus", ""), goods.get("orderStatus", "")),
+                "order_status": status,
+                "order_status_text": status_text,
                 "invoice_company": goods.get("invoiceCompany", ""),
                 "invoice_no": inv_no,
                 "delivery_dt": (goods.get("deliveryDt") or "")[:10],
                 "delivery_complete_dt": (goods.get("deliveryCompleteDt") or "")[:10],
                 "tracking_url": f"https://www.ilogen.com/m/personal/trace/{inv_no}" if inv_no else "",
             })
+
+        first_name = goods_items[0]["goods_name"] if goods_items else ""
+        summary = first_name if len(goods_items) <= 1 else f"{first_name} 외 {len(goods_items)-1}건"
+
+        orders.append({
+            "order_no": order_no,
+            "order_date": order_date,
+            "settle_price": settle_price,
+            "goods_summary": summary,
+            "order_status": primary_status,
+            "order_status_text": primary_status_text,
+            "goods": goods_items,
+        })
 
     orders.sort(key=lambda x: x["order_date"], reverse=True)
     return {"orders": orders, "total": len(orders)}

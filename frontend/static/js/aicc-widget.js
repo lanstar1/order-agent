@@ -14,6 +14,7 @@
 
   // ── 상태 변수 ─────────────────────────────────────────────
   let _memberName = '';
+  let _memberPhone = '';
   let _selectedMenu = '';
   let _selectedModel = null;   // {model_name, erp_code, product_name}
   let _sessionId = null;
@@ -98,6 +99,41 @@
   .ls-quote-info h3{font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:10px}
   .ls-quote-info ol{padding-left:16px;color:#555}
   .ls-quote-link{display:block;text-align:center;margin-top:14px;padding:12px;background:#1a1a2e;color:#fff;border-radius:8px;text-decoration:none;font-size:14px}
+
+  /* 주문조회 화면 */
+  #ls-screen-orders{padding:16px;flex:1;overflow-y:auto;display:flex;flex-direction:column}
+  .ls-login-prompt{text-align:center;padding:40px 16px}
+  .ls-login-prompt p{font-size:14px;color:#333;margin-bottom:16px;line-height:1.6}
+  .ls-login-btn{display:inline-block;padding:12px 24px;background:#1a1a2e;color:#fff;border-radius:8px;text-decoration:none;font-size:14px}
+  .ls-phone-form{padding:16px 0}
+  .ls-phone-form p{font-size:14px;color:#333;margin-bottom:12px;line-height:1.6}
+  .ls-phone-form input{width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit}
+  .ls-phone-form input:focus{border-color:#1a1a2e;outline:none}
+  .ls-phone-form button{width:100%;padding:12px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;margin-top:8px;font-family:inherit}
+  .ls-orders-label{font-size:13px;color:#666;margin-bottom:8px}
+  .ls-orders-scroll{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:12px;padding:4px 0 8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .ls-orders-scroll::-webkit-scrollbar{display:none}
+  .ls-order-card{min-width:calc(100% - 8px);max-width:calc(100% - 8px);scroll-snap-align:start;border:1.5px solid #e0e0e0;border-radius:10px;padding:16px;flex-shrink:0;box-sizing:border-box;background:#fff}
+  .ls-order-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+  .ls-order-row:last-child{border-bottom:none}
+  .ls-order-row .label{color:#666;white-space:nowrap;margin-right:12px}
+  .ls-order-row .value{color:#333;font-weight:500;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%}
+  .ls-order-status{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600}
+  .ls-status-shipping{background:#e3f2fd;color:#1565c0}
+  .ls-status-complete{background:#e8f5e9;color:#2e7d32}
+  .ls-status-pending{background:#fff3e0;color:#e65100}
+  .ls-status-cancel{background:#fce4ec;color:#c62828}
+  .ls-status-default{background:#f5f5f5;color:#666}
+  .ls-order-btns{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+  .ls-order-btns a,.ls-order-btns button{display:block;width:100%;padding:10px;text-align:center;border:1.5px solid #e0e0e0;border-radius:8px;font-size:13px;text-decoration:none;color:#333;background:#fff;cursor:pointer;box-sizing:border-box;font-family:inherit}
+  .ls-order-btns a:hover,.ls-order-btns button:hover{background:#f5f7ff;border-color:#1a1a2e}
+  .ls-order-dots{display:flex;justify-content:center;gap:6px;padding:8px 0}
+  .ls-order-dot{width:8px;height:8px;border-radius:50%;background:#ddd;transition:background .2s}
+  .ls-order-dot.active{background:#1a1a2e}
+  .ls-order-bottom{display:flex;gap:8px;margin-top:auto;padding-top:12px}
+  .ls-order-bottom a,.ls-order-bottom button{flex:1;padding:10px;border-radius:20px;font-size:13px;text-align:center;cursor:pointer;text-decoration:none;border:1.5px solid #ddd;background:#fff;color:#333;font-family:inherit}
+  .ls-order-bottom .primary{border-color:#e63946;color:#e63946}
+  .ls-order-empty{text-align:center;padding:32px 16px;color:#999;font-size:13px;line-height:1.6}
 
   @media(max-width:420px){#ls-chat-popup{width:100vw;height:100vh;bottom:0;right:0;border-radius:0}}
   `;
@@ -190,6 +226,12 @@
             </div>
           </div>
 
+          <!-- 화면6: 주문조회 -->
+          <div id="ls-screen-orders" style="display:none">
+            <button class="back-btn" onclick="LanstarChat._goBack()" style="background:none;border:none;color:#666;font-size:13px;cursor:pointer;padding:0 0 12px;display:flex;align-items:center;gap:4px">\u2190 \uB4A4\uB85C</button>
+            <div id="ls-orders-content"></div>
+          </div>
+
         </div>
       </div>
     `);
@@ -197,7 +239,7 @@
 
   // ── 화면 전환 ──────────────────────────────────────────────
   function showScreen(name) {
-    ['menu', 'model', 'chat', 'inventory', 'quote'].forEach(function(s) {
+    ['menu', 'model', 'chat', 'inventory', 'quote', 'orders'].forEach(function(s) {
       var el = document.getElementById('ls-screen-' + s);
       if (el) el.style.display = s === name ? '' : 'none';
     });
@@ -275,7 +317,11 @@
       showScreen('quote');
       return;
     }
-    if (menu === '\uBC30\uC1A1\uBB38\uC758' || menu === 'AS\uBB38\uC758') {
+    if (menu === '\uBC30\uC1A1\uBB38\uC758') {
+      showOrdersScreen();
+      return;
+    }
+    if (menu === 'AS\uBB38\uC758') {
       startChat(null);
       return;
     }
@@ -594,11 +640,170 @@
     document.getElementById('ls-request-admin-btn').textContent = '\uC5F0\uACB0 \uC694\uCCAD \uC644\uB8CC';
   }
 
+  // ── 주문조회 ─────────────────────────────────────────────
+  function showOrdersScreen() {
+    var container = document.getElementById('ls-orders-content');
+    showScreen('orders');
+
+    // 로그인 체크 (memberName이 없으면 비로그인)
+    if (!_memberName) {
+      container.innerHTML =
+        '<div class="ls-login-prompt">' +
+          '<p>\uD83D\uDD12 \uC8FC\uBB38 \uC870\uD68C\uB97C \uC704\uD574<br><strong>\uB85C\uADF8\uC778\uC774 \uD544\uC694</strong>\uD569\uB2C8\uB2E4.</p>' +
+          '<a class="ls-login-btn" href="https://www.lanstar.co.kr/member/login.php">\uB85C\uADF8\uC778 \uD558\uAE30 \u2192</a>' +
+        '</div>';
+      return;
+    }
+
+    // 전화번호 있으면 바로 조회
+    if (_memberPhone) {
+      fetchOrders(_memberPhone);
+      return;
+    }
+
+    // 전화번호 없으면 입력 폼
+    container.innerHTML =
+      '<div class="ls-phone-form">' +
+        '<p>\uD83D\uDCDE \uC8FC\uBB38 \uC870\uD68C\uB97C \uC704\uD574<br>\uD734\uB300\uD3F0 \uBC88\uD638\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.</p>' +
+        '<input id="ls-phone-input" type="tel" placeholder="010-0000-0000" maxlength="13">' +
+        '<button onclick="LanstarChat._submitPhone()">\uC8FC\uBB38 \uC870\uD68C</button>' +
+      '</div>';
+    setTimeout(function() {
+      var pi = document.getElementById('ls-phone-input');
+      if (pi) pi.focus();
+    }, 100);
+  }
+
+  function _submitPhone() {
+    var pi = document.getElementById('ls-phone-input');
+    if (!pi) return;
+    var phone = pi.value.replace(/[^0-9]/g, '');
+    if (phone.length < 10) {
+      alert('\uD734\uB300\uD3F0 \uBC88\uD638\uB97C \uC815\uD655\uD788 \uC785\uB825\uD574 \uC8FC\uC138\uC694.');
+      return;
+    }
+    _memberPhone = phone;
+    fetchOrders(phone);
+  }
+
+  async function fetchOrders(phone) {
+    var container = document.getElementById('ls-orders-content');
+    container.innerHTML = '<p style="text-align:center;color:#999;padding:32px">\uC8FC\uBB38 \uB0B4\uC5ED\uC744 \uC870\uD68C \uC911\uC785\uB2C8\uB2E4...</p>';
+
+    try {
+      var res = await fetch(BACKEND + '/api/aicc/orders?phone=' + encodeURIComponent(phone));
+      var data = await res.json();
+      renderOrders(data);
+    } catch (e) {
+      container.innerHTML =
+        '<div class="ls-order-empty">\uC8FC\uBB38 \uC870\uD68C \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.<br>\uC804\uD654(02-717-3386)\uB85C \uBB38\uC758\uD574 \uC8FC\uC138\uC694.</div>';
+    }
+  }
+
+  function renderOrders(data) {
+    var container = document.getElementById('ls-orders-content');
+    var orders = data.orders || [];
+
+    if (!orders.length) {
+      container.innerHTML =
+        '<div class="ls-order-empty">' +
+          '<p style="font-size:32px;margin-bottom:12px">\uD83D\uDCED</p>' +
+          '\uCD5C\uADFC 90\uC77C \uC774\uB0B4 \uC8FC\uBB38 \uB0B4\uC5ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.' +
+        '</div>' +
+        '<div class="ls-order-bottom">' +
+          '<a href="https://www.lanstar.co.kr/mypage/order_list.php">\uC8FC\uBB38 \uB0B4\uC5ED \uB354\uBCF4\uAE30</a>' +
+          '<button class="primary" onclick="LanstarChat._goBack()">\uCC98\uC74C\uC73C\uB85C</button>' +
+        '</div>';
+      return;
+    }
+
+    var label = '<p class="ls-orders-label">\uCD5C\uADFC \uC8FC\uBB38\uB0B4\uC5ED\uC744 \uC548\uB0B4\uD574 \uB4DC\uB9B4\uAC8C\uC694.</p>';
+
+    // 카드 생성
+    var cards = orders.slice(0, 10).map(function(order) {
+      var statusClass = getStatusClass(order.order_status);
+      var priceHtml = order.settle_price
+        ? '<div class="ls-order-row"><span class="label">\uCD1D \uAE08\uC561</span><span class="value">' + formatPrice(order.settle_price) + '</span></div>'
+        : '';
+
+      // 배송조회 버튼 (운송장 있는 상품이 있으면)
+      var trackingBtn = '';
+      if (order.goods && order.goods.length) {
+        for (var i = 0; i < order.goods.length; i++) {
+          if (order.goods[i].tracking_url) {
+            trackingBtn = '<a href="' + order.goods[i].tracking_url + '" target="_blank">\uD83D\uDE9A \uBC30\uC1A1\uC870\uD68C</a>';
+            break;
+          }
+        }
+      }
+
+      return '<div class="ls-order-card">' +
+        '<div class="ls-order-row"><span class="label">\uC8FC\uBB38\uC77C</span><span class="value">' + escHtml(order.order_date) + '</span></div>' +
+        '<div class="ls-order-row"><span class="label">\uC8FC\uBB38\uBC88\uD638</span><span class="value">' + escHtml(order.order_no) + '</span></div>' +
+        '<div class="ls-order-row"><span class="label">\uC8FC\uBB38\uC0C1\uD488</span><span class="value">' + escHtml(order.goods_summary || '') + '</span></div>' +
+        priceHtml +
+        '<div class="ls-order-row"><span class="label">\uC8FC\uBB38\uC0C1\uD0DC</span><span class="value"><span class="ls-order-status ' + statusClass + '">' + escHtml(order.order_status_text) + '</span></span></div>' +
+        '<div class="ls-order-btns">' +
+          '<a href="https://www.lanstar.co.kr/mypage/order_view.php?orderNo=' + encodeURIComponent(order.order_no) + '" target="_blank">\uC0C1\uC138 \uD655\uC778</a>' +
+          trackingBtn +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    // 페이지 도트
+    var dotsHtml = '';
+    if (orders.length > 1) {
+      dotsHtml = '<div class="ls-order-dots" id="ls-order-dots">';
+      for (var i = 0; i < Math.min(orders.length, 10); i++) {
+        dotsHtml += '<span class="ls-order-dot' + (i === 0 ? ' active' : '') + '"></span>';
+      }
+      dotsHtml += '</div>';
+    }
+
+    var bottomHtml =
+      '<div class="ls-order-bottom">' +
+        '<a href="https://www.lanstar.co.kr/mypage/order_list.php">\uC8FC\uBB38 \uB0B4\uC5ED \uB354\uBCF4\uAE30</a>' +
+        '<button class="primary" onclick="LanstarChat._goBack()">\uCC98\uC74C\uC73C\uB85C</button>' +
+      '</div>';
+
+    container.innerHTML = label + '<div class="ls-orders-scroll" id="ls-orders-scroll">' + cards + '</div>' + dotsHtml + bottomHtml;
+
+    // 스크롤 시 도트 업데이트
+    if (orders.length > 1) {
+      var scrollEl = document.getElementById('ls-orders-scroll');
+      scrollEl.addEventListener('scroll', function() {
+        var idx = Math.round(scrollEl.scrollLeft / scrollEl.offsetWidth);
+        var dots = document.querySelectorAll('#ls-order-dots .ls-order-dot');
+        dots.forEach(function(dot, i) {
+          dot.classList.toggle('active', i === idx);
+        });
+      });
+    }
+  }
+
+  function getStatusClass(status) {
+    if (!status) return 'ls-status-default';
+    var s = status.charAt(0);
+    if (s === 'd') return status === 'd2' ? 'ls-status-complete' : 'ls-status-shipping';
+    if (s === 'p') return 'ls-status-complete';
+    if (s === 'o' && status === 'o1') return 'ls-status-pending';
+    if (s === 'c' || s === 'r' || s === 'b') return 'ls-status-cancel';
+    return 'ls-status-default';
+  }
+
+  function formatPrice(price) {
+    if (!price) return '';
+    var n = parseInt(String(price).replace(/[^0-9]/g, ''));
+    if (isNaN(n) || n === 0) return '';
+    return n.toLocaleString() + '\uC6D0';
+  }
+
   // ── 공개 API ──────────────────────────────────────────────
   window.LanstarChat = {
     init: function (opts) {
       opts = opts || {};
       _memberName = opts.memberName || '';
+      _memberPhone = opts.memberPhone || '';
       injectCSS();
       createHTML();
       bindEvents();
@@ -609,6 +814,7 @@
     _selectModel: _selectModel,
     _confirmModel: _confirmModel,
     _requestAdmin: _requestAdmin,
+    _submitPhone: _submitPhone,
   };
 
 })();
