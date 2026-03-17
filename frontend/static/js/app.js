@@ -4997,7 +4997,7 @@ function connectAiccListWS() {
 
 async function loadAiccSessions() {
   try {
-    const data = await apiCall('/api/aicc/sessions');
+    const data = await api.get('/api/aicc/sessions');
     renderAiccSessions(data.sessions);
   } catch (e) { console.warn('AICC 세션 로드 실패', e); }
 }
@@ -5044,7 +5044,7 @@ async function selectAiccSession(id) {
   if (_aiccAdminWs) _aiccAdminWs.close();
   _aiccCurrentId = id;
 
-  const s = await apiCall('/api/aicc/sessions/' + id);
+  const s = await api.get('/api/aicc/sessions/' + id);
 
   document.getElementById('aicc-empty').style.display = 'none';
   document.getElementById('aicc-detail').style.display = 'flex';
@@ -5090,7 +5090,7 @@ function appendAiccMsg(role, content, scroll) {
 }
 
 async function aiccIntervene() {
-  await apiCall('/api/aicc/sessions/' + _aiccCurrentId + '/intervene', 'POST');
+  await api.post('/api/aicc/sessions/' + _aiccCurrentId + '/intervene');
   document.getElementById('aicc-btn-intervene').style.display = 'none';
   document.getElementById('aicc-admin-input').style.display = 'block';
   document.getElementById('aicc-intervene-bar').style.display = 'block';
@@ -5103,7 +5103,7 @@ async function aiccSendAdmin() {
   if (_aiccAdminWs && _aiccAdminWs.readyState === WebSocket.OPEN) {
     _aiccAdminWs.send(JSON.stringify({ type: 'admin_message', content: txt }));
   } else {
-    await apiCall('/api/aicc/sessions/' + _aiccCurrentId + '/admin-message', 'POST', { content: txt });
+    await api.post('/api/aicc/sessions/' + _aiccCurrentId + '/admin-message', { content: txt });
   }
   appendAiccMsg('admin', txt);
   document.getElementById('aicc-admin-txt').value = '';
@@ -5111,7 +5111,7 @@ async function aiccSendAdmin() {
 
 async function aiccCloseSession() {
   if (!confirm('상담을 종료하시겠습니까?')) return;
-  await apiCall('/api/aicc/sessions/' + _aiccCurrentId + '/close', 'POST');
+  await api.post('/api/aicc/sessions/' + _aiccCurrentId + '/close');
   await loadAiccSessions();
 }
 

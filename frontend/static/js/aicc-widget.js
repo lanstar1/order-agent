@@ -492,10 +492,12 @@
     var mc = document.getElementById('ls-chat-messages');
     var div = document.createElement('div');
     div.className = 'ls-msg ' + type;
+    // AI 응답(assistant)은 URL 링크 + 볼드 변환, 사용자 메시지는 이스케이프만
+    var rendered = (type === 'assistant') ? formatMsg(content) : escHtml(content);
     if (label && type !== 'system') {
-      div.innerHTML = '<span class="ls-msg-label">' + escHtml(label) + '</span><div class="ls-msg-bubble">' + escHtml(content) + '</div>';
+      div.innerHTML = '<span class="ls-msg-label">' + escHtml(label) + '</span><div class="ls-msg-bubble">' + rendered + '</div>';
     } else {
-      div.innerHTML = '<div class="ls-msg-bubble">' + escHtml(content) + '</div>';
+      div.innerHTML = '<div class="ls-msg-bubble">' + rendered + '</div>';
     }
     mc.appendChild(div);
     mc.scrollTop = mc.scrollHeight;
@@ -510,6 +512,16 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/\n/g, '<br>');
+  }
+
+  function formatMsg(str) {
+    // 1. HTML 이스케이프
+    var s = escHtml(str);
+    // 2. URL을 클릭 가능한 링크로 변환
+    s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;word-break:break-all">$1</a>');
+    // 3. **bold** 변환
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return s;
   }
 
   function escAttr(str) {

@@ -1,9 +1,10 @@
 """
 AICC AI 서비스
-핵심: 이미 선택된 제품 컨텍스트(QnA, 스펙)를 시스템 프롬프트에 강제 주입
-→ AI가 "모델명을 알려달라"고 절대 묻지 않도록 설계
+핵심 변경: 매 메시지마다 키워드 기반 QnA 실시간 검색 → AI에 주입
+(기존 내부 시스템 searchRelevantQna 로직 이식)
 """
 import os
+import re
 import anthropic
 from .aicc_data_loader import data_loader
 
@@ -16,15 +17,14 @@ SYSTEM_BASE = """당신은 랜스타(LANstar) 공식 AI 기술상담사입니다
 
 [절대 규칙]
 1. 고객이 이미 제품을 선택했으므로 절대 모델명을 다시 묻지 말 것. 제품 스펙, 치수, 높이 등을 물으면 [제품 스펙]에서 바로 찾아 답변할 것.
-2. [이 제품 전용 모범답변]이 있으면 반드시 그 내용을 최우선으로 참조. 일반 지식보다 모범답변이 우선.
-3. [이 제품 FAQ]와 [상담 사례]도 적극 활용하여 정확한 답변 제공.
-4. 드라이버 다운로드 문의 시 반드시 [드라이버 다운로드] URL을 포함하여 안내.
-5. 모르는 내용: "전화(02-717-3386) 문의 바랍니다" 안내
-6. 가격 직접 안내 금지 (가격지도 적용 제품 특히 주의)
-7. 단종 제품: 현행 제품으로 절대 안내하지 말 것
-8. 반품/교환: 조건 확인 없이 "가능" 단정 금지
-9. 답변은 명확하고 간결하게 (불필요한 반복 금지)
-10. 마지막에 "추가 문의가 있으시면 편하게 말씀해 주세요" 추가
+2. [참고 QnA 데이터]에 고객 질문과 관련된 실제 상담 사례가 포함되어 있습니다. 반드시 이 데이터를 최우선으로 참조하여 답변하세요. 일반 지식보다 QnA 데이터가 우선합니다.
+3. 드라이버 설치/다운로드 관련 문의 시 반드시 [드라이버 다운로드 링크]를 포함하여 안내하세요.
+4. 모르는 내용: "전화(02-717-3386) 문의 바랍니다" 안내
+5. 가격 직접 안내 금지 (가격지도 적용 제품 특히 주의)
+6. 단종 제품: 현행 제품으로 절대 안내하지 말 것
+7. 반품/교환: 조건 확인 없이 "가능" 단정 금지
+8. 답변은 명확하고 간결하게 (불필요한 반복 금지)
+9. 마지막에 "추가 문의가 있으시면 편하게 말씀해 주세요" 추가
 
 [주의해야 할 오답 사례 요약]
 {wrong_answers}
@@ -42,15 +42,97 @@ FALLBACK_ERROR = (
 )
 
 
+def _search_relevant_qna(query: str, model: str, max_results: int = 8) -> list:
+    """
+    기존 내부 시스템의 searchRelevantQna 로직 이식.
+    사용자 질문 키워드로 QnA를 실시간 검색하여 관련도 높은 항목 반환.
+    같은 모델의 QnA에 가산점(+5)
+    """
+    upper = query.upper()
+    words = [w for w in re.split(r'[\s,]+', upper) if len(w) >= 2]
+    if not words:
+        words = [upper]
+
+    results = []
+    product = data_loader.get_product(model)
+
+    # 1. 현재 제품의 QnA 검색 (가장 중요)
+    if product:
+        all_qna = (
+            product.get("QnA", []) +
+            product.get("추론QnA", []) +
+            product.get("상담대화", [])
+        )
+        for q in all_qna:
+            question = str(q.get("문의", ""))
+            answer = str(q.get("답변핵심", q.get("답변", "")))
+            if not question or not answer:
+                continue
+            text = (question + " " + answer).upper()
+            score = 5  # 같은 모델 가산점
+            for w in words:
+                if w in text:
+                    score += 1
+            if score > 5:  # 키워드 매칭이 1개 이상
+                results.append({
+                    "model": model,
+                    "question": question,
+                    "answer": answer,
+                    "score": score,
+                })
+
+    # 2. 골든앤서에서도 검색
+    golden = data_loader.get_golden_by_model(model)
+    for g in golden:
+        text = (g["question"] + " " + g["answer"]).upper()
+        score = 5
+        for w in words:
+            if w in text:
+                score += 1
+        if score > 5:
+            results.append({
+                "model": model,
+                "question": g["question"],
+                "answer": g["answer"],
+                "score": score + 2,  # 골든앤서 추가 가산
+            })
+
+    # 3. FAQ에서도 검색
+    faq = data_loader.get_faq_by_model(model)
+    for f in faq:
+        text = (f["question"] + " " + f["answer"]).upper()
+        score = 5
+        for w in words:
+            if w in text:
+                score += 1
+        if score > 5:
+            results.append({
+                "model": model,
+                "question": f["question"],
+                "answer": f["answer"],
+                "score": score + 1,
+            })
+
+    # 점수 내림차순 정렬
+    results.sort(key=lambda x: x["score"], reverse=True)
+
+    # 중복 제거 (질문 앞 50자 기준)
+    seen = set()
+    unique = []
+    for r in results:
+        key = r["question"][:50]
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
+    return unique[:max_results]
+
+
 def _build_product_context(model: str, menu: str) -> str:
-    """
-    선택된 제품의 컨텍스트 빌드
-    이 내용이 AI 첫 번째 user 메시지에 주입됨 → AI가 모델명을 다시 묻는 버그 방지
-    """
+    """제품 기본 정보 + 정적 컨텍스트 (QnA는 별도 동적 검색)"""
     product = data_loader.get_product(model)
     parts = []
 
-    # ── 제품 기본 정보 (항상 포함) ─────────────────────────────
+    # ── 제품 기본 정보 ─────────────────────────────────────────
     parts.append(f"[이미 선택된 제품]\n모델명: {model}")
     if product:
         cat = product.get("카테고리", "")
@@ -62,46 +144,13 @@ def _build_product_context(model: str, menu: str) -> str:
             if spec_lines:
                 parts.append(f"제품 스펙:\n{spec_lines}")
 
-    # ── 모델별 골든앤서 (최우선 참조) ──────────────────────────
-    golden_model = data_loader.get_golden_by_model(model)
-    if golden_model:
-        g_text = "\n".join(
-            f"  Q: {g['question'][:120]}\n  A: {g['answer'][:300]}"
-            + (f"\n  ⚠️ 주의: {g['warning']}" if g.get('warning') else "")
-            for g in golden_model
-        )
-        parts.append(f"[이 제품 전용 모범답변 — 반드시 이 답변을 최우선 참조]\n{g_text}")
-
-    # ── 모델별 FAQ ─────────────────────────────────────────────
-    faq_model = data_loader.get_faq_by_model(model)
-    if faq_model:
-        f_text = "\n".join(
-            f"  Q: {f['question'][:120]}\n  A: {f['answer'][:300]}"
-            for f in faq_model
-        )
-        parts.append(f"[이 제품 FAQ]\n{f_text}")
-
-    # ── 관련 QnA (이 제품의 실제 상담 데이터) ──────────────────
-    if product:
-        qna_list = (
-            product.get("QnA", []) +
-            product.get("추론QnA", []) +
-            product.get("상담대화", [])
-        )
-        qna_list = qna_list[:8]
-        if qna_list:
-            qna_text = ""
-            for i, q in enumerate(qna_list, 1):
-                question = str(q.get("문의", ""))[:120]
-                answer = str(q.get("답변핵심", q.get("답변", "")))[:200]
-                if question and answer:
-                    qna_text += f"\n  [{i}] Q: {question}\n      A: {answer}"
-            if qna_text:
-                parts.append(f"[이 제품 관련 실제 상담 사례]{qna_text}")
-
     # ── 드라이버 다운로드 URL ──────────────────────────────────
     driver_url = data_loader.get_driver_url(model)
-    parts.append(f"[드라이버 다운로드]\n드라이버 문의 시 반드시 아래 URL을 안내하세요:\n{driver_url}")
+    parts.append(
+        f"[드라이버 다운로드 링크]\n"
+        f"드라이버 설치/다운로드 문의 시 반드시 아래 URL을 안내하세요:\n"
+        f"{driver_url}"
+    )
 
     # ── 문의 유형별 추가 컨텍스트 ─────────────────────────────
     if menu in ("기술문의",):
@@ -149,7 +198,7 @@ def _build_product_context(model: str, menu: str) -> str:
 async def get_ai_response(session: dict, user_message: str) -> str:
     """
     Claude API 호출 → 답변 반환
-    첫 번째 메시지에 제품 컨텍스트 강제 주입 (모델명 재질문 버그 방지)
+    핵심: 매 메시지마다 키워드 기반 QnA 실시간 검색하여 컨텍스트 주입
     """
     model = session["selected_model"]
     menu = session["selected_menu"]
@@ -165,29 +214,54 @@ async def get_ai_response(session: dict, user_message: str) -> str:
         wrong_answers=data_loader.wrong_answers_text[:1200]
     )
 
+    # ── 매 메시지마다 키워드 기반 QnA 검색 ──────────────────────
+    relevant_qna = _search_relevant_qna(user_message, model, max_results=8)
+
+    # QnA 컨텍스트 문자열
+    qna_context = ""
+    if relevant_qna:
+        qna_lines = []
+        for i, ref in enumerate(relevant_qna, 1):
+            qna_lines.append(
+                f"[{ref['model']}]\n"
+                f"Q: {ref['question'][:200]}\n"
+                f"A: {ref['answer'][:300]}"
+            )
+        qna_context = "\n\n## 참고 QnA 데이터\n" + "\n\n".join(qna_lines)
+        qna_context += "\n\n위 데이터를 참고하되 자연스럽게 답변하세요."
+
     # 메시지 배열 구성
     api_messages = []
 
     if not messages_history:
-        # ── 첫 번째 메시지: 제품 컨텍스트 + 사용자 질문 통합 ──
+        # ── 첫 번째 메시지: 제품 컨텍스트 + QnA + 사용자 질문 ──
         context = _build_product_context(model, menu)
         first_content = (
             f"{context}\n\n"
+            f"{qna_context}\n\n"
             f"---\n"
             f"위 제품 정보와 상담 사례를 참조하여 아래 고객 문의에 답변해 주세요.\n\n"
             f"고객 문의: {user_message}"
         )
         api_messages = [{"role": "user", "content": first_content}]
     else:
-        # ── 이후 메시지: 히스토리 유지 (최근 10턴) ─────────────
-        history = messages_history[-20:]  # 최근 20개 = 10턴
+        # ── 이후 메시지: 히스토리 + 실시간 QnA 검색 결과 주입 ──
+        history = messages_history[-20:]
         for msg in history:
             role = msg["role"]
-            if role in ("user",):
+            if role == "user":
                 api_messages.append({"role": "user", "content": msg["content"]})
             elif role == "assistant":
                 api_messages.append({"role": "assistant", "content": msg["content"]})
-        api_messages.append({"role": "user", "content": user_message})
+
+        # 현재 질문에 관련 QnA를 함께 전달
+        user_content = user_message
+        if qna_context:
+            user_content = (
+                f"{user_message}\n\n"
+                f"[참고: 이 질문과 관련된 기존 상담 데이터]{qna_context}"
+            )
+        api_messages.append({"role": "user", "content": user_content})
 
     try:
         response = client.messages.create(
