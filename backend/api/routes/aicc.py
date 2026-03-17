@@ -80,22 +80,44 @@ async def admin_message(
 
 @router.get("/inventory/{model_name}")
 async def get_inventory(model_name: str):
-    """ERP 재고조회"""
+    """ERP 재고조회 — check_inventory() 호출 후 창고별 재고 반환"""
     erp_code = data_loader.get_erp_code(model_name)
     if not erp_code:
         return {"ok": False, "message": "해당 제품의 ERP 코드를 찾을 수 없습니다."}
     try:
         from services.erp_client import ERPClient
         erp = ERPClient()
-        inv = await erp.get_inventory_by_location(erp_code)
+        # check_inventory: 전체 창고 조회 (wh_cd="" → 모든 창고)
+        result = await erp.check_inventory(prod_cd=erp_code, wh_cd="")
+        if not result.get("success"):
+            return {"ok": False, "message": result.get("error", "재고 조회 실패")}
+
+        # 창고코드/창고명으로 용산·김포 분류
+        yongsan = 0
+        gimpo = 0
+        other = 0
+        for item in result.get("data", []):
+            qty = int(item.get("qty", 0))
+            wh = (item.get("wh_name", "") + item.get("wh_cd", "")).upper()
+            if "용산" in wh or "YONGSAN" in wh or item.get("wh_cd") == "10":
+                yongsan += qty
+            elif "김포" in wh or "GIMPO" in wh or item.get("wh_cd") == "20":
+                gimpo += qty
+            else:
+                other += qty
+
+        total = yongsan + gimpo + other
         return {
             "ok": True,
             "model_name": model_name,
-            "yongsan": inv.get("yongsan", 0),
-            "gimpo": inv.get("gimpo", 0),
-            "total": inv.get("total", 0),
+            "erp_code": erp_code,
+            "yongsan": yongsan,
+            "gimpo": gimpo,
+            "total": total,
         }
     except Exception as e:
+        import traceback
+        print(f"[AICC Inventory] 오류: {e}\n{traceback.format_exc()}")
         return {"ok": False, "message": "재고 조회 중 오류가 발생했습니다. 전화(02-717-3386) 문의 바랍니다."}
 
 
