@@ -273,8 +273,10 @@ async def startup():
     try:
         from services.aicc_data_loader import data_loader as aicc_loader
         aicc_loader.load_all()
+        logger.info(f"AICC 데이터 로드 완료: 모델 {len(aicc_loader.dropdown_models)}개")
     except Exception as e:
-        logger.warning(f"AICC 데이터 로딩 실패 (서비스는 계속): {e}")
+        import traceback
+        logger.warning(f"AICC 데이터 로딩 실패 (서비스는 계속): {e}\n{traceback.format_exc()}")
 
     # products.csv 확인
     from config import PRODUCTS_CSV

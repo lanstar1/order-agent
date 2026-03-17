@@ -39,3 +39,7 @@ services:
         sync: false
       - key: LOGEN_GIMPO_PW
         sync: false
+      - key: AICC_DATA_DIR
+        value: "../data/aicc"
+      - key: SECRET_KEY
+        sync: false

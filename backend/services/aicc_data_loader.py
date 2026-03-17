@@ -5,7 +5,11 @@ import json, os, re
 from typing import Dict, List, Optional, Set
 import openpyxl
 
-DATA_DIR = os.getenv("AICC_DATA_DIR", "./data/aicc")
+# Render에서는 cd backend로 시작하므로 ../data/aicc가 올바른 경로
+_default_dir = "./data/aicc"
+if not os.path.exists(_default_dir) and os.path.exists("../data/aicc"):
+    _default_dir = "../data/aicc"
+DATA_DIR = os.getenv("AICC_DATA_DIR", _default_dir)
 
 # 드롭다운 제외 조건
 EXCLUDE_KEYWORDS = {"주문제작", "취소", "반품불가", "제작케", "★", "제작/취소"}
