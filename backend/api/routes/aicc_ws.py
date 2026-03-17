@@ -48,18 +48,6 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
                 # 메시지 저장
                 session_manager.add_message(actual_sid, "user", content, image_id=image_id)
 
-                # 관리자에게 포워딩
-                await session_manager.send_admin(actual_sid, {
-                    "type": "customer_message",
-                    "role": "user",
-                    "content": content,
-                    "image_id": image_id,
-                })
-
-                # 개입 중이면 AI 응답 안 함
-                if s["is_admin_intervened"]:
-                    continue
-
                 # AI 응답 생성 (이미지 포함)
                 try:
                     ai_reply = await get_ai_response(s, content, image_id=image_id)
@@ -69,22 +57,6 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
 
                 session_manager.add_message(actual_sid, "assistant", ai_reply)
                 await websocket.send_json({"type": "ai_message", "content": ai_reply})
-                await session_manager.send_admin(actual_sid, {
-                    "type": "ai_message",
-                    "role": "assistant",
-                    "content": ai_reply
-                })
-
-            elif msg_type == "request_admin":
-                s["status"] = "waiting_admin"
-                await session_manager.broadcast_admins({
-                    "type": "session_update",
-                    "session": session_manager.serialize(s)
-                })
-                await websocket.send_json({
-                    "type": "system",
-                    "content": "담당자 연결을 요청했습니다. 잠시만 기다려 주세요."
-                })
 
             elif msg_type == "close":
                 session_manager.close(actual_sid)

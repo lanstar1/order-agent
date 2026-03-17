@@ -25,8 +25,9 @@
 
   // ── CSS 주입 ────────────────────────────────────────────────
   const CSS = `
-  #ls-chat-btn{position:fixed;bottom:24px;right:24px;z-index:99998;width:56px;height:56px;border-radius:50%;background:#1a1a2e;color:#fff;border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;transition:transform .15s}
-  #ls-chat-btn:hover{transform:scale(1.08)}
+  #ls-chat-btn{position:fixed;bottom:24px;right:24px;z-index:99998;width:68px;height:68px;border-radius:50%;background:linear-gradient(135deg,#1a1a2e 0%,#2d2d5e 100%);color:#fff;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(26,26,46,.45);display:flex;align-items:center;justify-content:center;transition:transform .15s,box-shadow .15s;padding:0}
+  #ls-chat-btn:hover{transform:scale(1.08);box-shadow:0 8px 28px rgba(26,26,46,.55)}
+  #ls-chat-btn svg{width:36px;height:36px}
   #ls-chat-badge{position:absolute;top:-4px;right:-4px;background:#e63946;color:#fff;border-radius:50%;width:20px;height:20px;font-size:11px;display:none;align-items:center;justify-content:center;font-weight:700}
   #ls-chat-popup{position:fixed;bottom:90px;right:24px;z-index:99999;width:380px;height:600px;border-radius:16px;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.22);display:none;flex-direction:column;overflow:hidden;font-family:'Noto Sans KR',sans-serif}
   #ls-chat-popup.open{display:flex}
@@ -66,19 +67,17 @@
   #ls-chat-messages{flex:1;overflow-y:auto;padding:12px}
   .ls-msg{margin-bottom:10px;display:flex;flex-direction:column}
   .ls-msg.user{align-items:flex-end}
-  .ls-msg.ai,.ls-msg.admin,.ls-msg.system{align-items:flex-start}
+  .ls-msg.ai,.ls-msg.system{align-items:flex-start}
   .ls-msg-label{font-size:10px;color:#999;margin-bottom:3px}
   .ls-msg-bubble{max-width:82%;padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
   .ls-msg.user .ls-msg-bubble{background:#1a1a2e;color:#fff;border-bottom-right-radius:4px}
   .ls-msg.ai .ls-msg-bubble{background:#f1f3f8;color:#333;border-bottom-left-radius:4px}
-  .ls-msg.admin .ls-msg-bubble{background:#fff3cd;color:#333;border-bottom-left-radius:4px;border:1px solid #ffc107}
   .ls-msg.system .ls-msg-bubble{background:#e8f5e9;color:#2e7d32;border-radius:8px;font-size:12px;width:100%;text-align:center}
   #ls-typing{padding:8px 12px;display:none;align-items:center;gap:6px;color:#999;font-size:12px}
   #ls-typing .dot{width:6px;height:6px;border-radius:50%;background:#ccc;animation:ls-bounce .8s infinite}
   #ls-typing .dot:nth-child(2){animation-delay:.15s}
   #ls-typing .dot:nth-child(3){animation-delay:.3s}
   @keyframes ls-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
-  #ls-admin-banner{background:#fff3cd;border-top:1px solid #ffc107;padding:8px 14px;font-size:12px;color:#856404;flex-shrink:0;display:none}
   #ls-img-preview{display:none;padding:6px 12px;border-top:1px solid #eee;background:#fafafa;flex-shrink:0}
   #ls-img-preview .preview-wrap{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:4px 8px}
   #ls-img-preview img{max-height:48px;max-width:80px;border-radius:4px;object-fit:cover}
@@ -93,8 +92,6 @@
   .ls-msg-img{max-width:200px;border-radius:8px;margin-bottom:6px;cursor:pointer}
   .ls-msg-img:hover{opacity:.9}
   #ls-chat-file-input{display:none}
-  #ls-request-admin-btn{width:calc(100% - 24px);padding:8px;background:none;border:1px solid #ddd;border-radius:6px;font-size:12px;color:#666;cursor:pointer;margin:4px 12px 0;font-family:inherit}
-
   /* 재고 결과 화면 */
   #ls-screen-inventory{padding:16px;flex:1;overflow-y:auto}
   .ls-inv-card{border:1.5px solid #e0e0e0;border-radius:10px;padding:16px;margin-bottom:12px}
@@ -163,7 +160,18 @@
     document.body.insertAdjacentHTML('beforeend', `
       <!-- 팝업 버튼 -->
       <button id="ls-chat-btn" title="AI 상담">
-        \uD83D\uDCAC
+        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="12" y="18" width="40" height="28" rx="6" fill="#fff" opacity=".95"/>
+          <rect x="20" y="26" width="4" height="5" rx="2" fill="#1a1a2e"/>
+          <rect x="40" y="26" width="4" height="5" rx="2" fill="#1a1a2e"/>
+          <path d="M26 36c0 0 3 4 6 4s6-4 6-4" stroke="#1a1a2e" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="32" cy="12" r="3" fill="#e63946"/>
+          <line x1="32" y1="15" x2="32" y2="18" stroke="#e63946" stroke-width="2"/>
+          <rect x="8" y="30" width="4" height="6" rx="2" fill="#fff" opacity=".7"/>
+          <rect x="52" y="30" width="4" height="6" rx="2" fill="#fff" opacity=".7"/>
+          <path d="M24 46l-4 6" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+          <path d="M40 46l4 6" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+        </svg>
         <span id="ls-chat-badge"></span>
       </button>
 
@@ -204,7 +212,6 @@
               <button id="ls-chat-back" onclick="LanstarChat._chatBack()" style="background:none;border:none;cursor:pointer;font-size:12px;color:#666;padding:0;margin-right:8px">← 뒤로</button>
               <span id="ls-chat-info-text"></span>
             </div>
-            <div id="ls-admin-banner">\uD83D\uDC64 \uB2F4\uB2F9\uC790\uAC00 \uC5F0\uACB0\uB418\uC5C8\uC2B5\uB2C8\uB2E4</div>
             <div id="ls-chat-messages"></div>
             <div id="ls-typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span> AI\uAC00 \uB2F5\uBCC0 \uC911...</div>
             <div id="ls-img-preview"></div>
@@ -214,7 +221,6 @@
               <textarea id="ls-chat-input" placeholder="\uBA54\uC2DC\uC9C0\uB97C \uC785\uB825\uD558\uC138\uC694..." rows="1"></textarea>
               <button id="ls-chat-send">\u2191</button>
             </div>
-            <button id="ls-request-admin-btn" onclick="LanstarChat._requestAdmin()">\uB2F4\uB2F9\uC790 \uC5F0\uACB0 \uC694\uCCAD</button>
           </div>
 
           <!-- 화면4: 재고 결과 -->
@@ -441,9 +447,6 @@
     // 채팅 화면 초기화
     document.getElementById('ls-chat-messages').innerHTML = '';
     document.getElementById('ls-chat-input').value = '';
-    document.getElementById('ls-admin-banner').style.display = 'none';
-    document.getElementById('ls-request-admin-btn').disabled = false;
-    document.getElementById('ls-request-admin-btn').textContent = '\uB2F4\uB2F9\uC790 \uC5F0\uACB0 \uC694\uCCAD';
     document.getElementById('ls-chat-send').disabled = false;
 
     // 상단 정보 표시 (뒤로가기 버튼 유지)
@@ -478,13 +481,6 @@
       switch (msg.type) {
         case 'ai_message':
           appendMsg('ai', 'AI \uC0C1\uB2F4\uC0AC', msg.content);
-          break;
-        case 'admin_message':
-          appendMsg('admin', '\uD83D\uDC64 \uB2F4\uB2F9\uC790', msg.content);
-          break;
-        case 'admin_joined':
-          document.getElementById('ls-admin-banner').style.display = 'block';
-          appendMsg('system', '', msg.content);
           break;
         case 'session_closed':
           appendMsg('system', '', msg.content);
@@ -634,7 +630,7 @@
     var div = document.createElement('div');
     div.className = 'ls-msg ' + type;
     // AI/관리자 응답은 URL 링크 + 볼드 변환, 사용자 메시지는 이스케이프만
-    var rendered = (type === 'ai' || type === 'admin' || type === 'assistant') ? formatMsg(content) : escHtml(content);
+    var rendered = (type === 'ai' || type === 'assistant') ? formatMsg(content) : escHtml(content);
     var imgHtml = imageBase64 ? '<img class="ls-msg-img" src="' + imageBase64 + '" onclick="window.open(this.src)">' : '';
     if (label && type !== 'system') {
       div.innerHTML = '<span class="ls-msg-label">' + escHtml(label) + '</span><div class="ls-msg-bubble">' + imgHtml + rendered + '</div>';
@@ -724,13 +720,6 @@
     _selectedModel = null;
     _selectedMenu = '';
     showScreen('menu');
-  }
-
-  function _requestAdmin() {
-    if (!_ws || _ws.readyState !== WebSocket.OPEN) return;
-    _ws.send(JSON.stringify({ type: 'request_admin', content: '' }));
-    document.getElementById('ls-request-admin-btn').disabled = true;
-    document.getElementById('ls-request-admin-btn').textContent = '\uC5F0\uACB0 \uC694\uCCAD \uC644\uB8CC';
   }
 
   // ── 주문조회 ─────────────────────────────────────────────
@@ -917,7 +906,6 @@
     _chatBack: _chatBack,
     _selectModel: _selectModel,
     _confirmModel: _confirmModel,
-    _requestAdmin: _requestAdmin,
     _submitPhone: _submitPhone,
     _clearImage: _clearImage,
   };
