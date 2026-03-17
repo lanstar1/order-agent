@@ -59,12 +59,12 @@ FALLBACK_ERROR = (
 )
 
 
-async def get_ai_response(session: dict, user_message: str) -> str:
+async def get_ai_response(session: dict, user_message: str, image_id: str = None) -> str:
     """
     기존 shop/aicc callAnthropicApi 로직 이식.
     1. 시스템 프롬프트 구성
     2. 제품 정보 + searchRelevantQna 결과 주입
-    3. Claude API 호출
+    3. Claude API 호출 (Vision 지원)
     """
     model = session["selected_model"]
     menu = session["selected_menu"]
@@ -124,18 +124,61 @@ async def get_ai_response(session: dict, user_message: str) -> str:
             sys_prompt += f"\n[{ref['model']}]\nQ: {ref['question'][:200]}\nA: {ref['answer'][:300]}\n"
         sys_prompt += "\n위 데이터를 참고하되 자연스럽게 답변하세요.\n"
 
-    # ── 메시지 배열 구성 (기존: recent 10개) ──────────────────
+    # ── 이미지가 있으면 시스템 프롬프트에 안내 추가 ──────────────
+    has_image = False
+    images = session.get("images", {})
+    if image_id and image_id in images:
+        has_image = True
+        sys_prompt += "\n## 이미지 분석\n고객이 이미지를 보냈습니다. 이미지를 분석하여 답변하세요.\n- 제품 사진이면 모델명을 식별하세요.\n- 오류/증상 사진이면 원인과 해결방법을 안내하세요.\n- 설치 관련 사진이면 올바른 연결 방법을 안내하세요.\n"
+
+    # ── 메시지 배열 구성 (기존: recent 10개, Vision 지원) ──────
     api_messages = []
     history = messages_history[-10:]
     for msg in history:
         if msg["role"] in ("user", "assistant"):
-            api_messages.append({"role": msg["role"], "content": msg["content"]})
-    api_messages.append({"role": "user", "content": user_message})
+            msg_image_id = msg.get("image_id")
+            # 과거 메시지에 이미지가 있으면 멀티블록으로 구성
+            if msg["role"] == "user" and msg_image_id and msg_image_id in images:
+                img = images[msg_image_id]
+                content_blocks = [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": img["media_type"],
+                            "data": img["base64_data"],
+                        }
+                    },
+                ]
+                if msg["content"]:
+                    content_blocks.append({"type": "text", "text": msg["content"]})
+                api_messages.append({"role": "user", "content": content_blocks})
+            else:
+                api_messages.append({"role": msg["role"], "content": msg["content"]})
+
+    # 현재 메시지 (이미지 포함)
+    if has_image:
+        img = images[image_id]
+        content_blocks = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img["media_type"],
+                    "data": img["base64_data"],
+                }
+            },
+        ]
+        if user_message:
+            content_blocks.append({"type": "text", "text": user_message})
+        api_messages.append({"role": "user", "content": content_blocks})
+    else:
+        api_messages.append({"role": "user", "content": user_message})
 
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=800,
+            max_tokens=1200 if has_image else 800,
             system=sys_prompt,
             messages=api_messages,
         )

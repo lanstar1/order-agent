@@ -23,6 +23,7 @@ class AICCSessionManager:
             "status": "active",
             "is_admin_intervened": False,
             "messages": [],
+            "images": {},           # image_id → {media_type, base64_data}
             "customer_ws": None,
             "admin_ws": None,
             "created_at": datetime.now(),
@@ -44,21 +45,24 @@ class AICCSessionManager:
         return result
 
     def serialize(self, s: dict) -> dict:
-        skip = {"customer_ws", "admin_ws"}
+        skip = {"customer_ws", "admin_ws", "images"}
         d = {k: v for k, v in s.items() if k not in skip}
         d["created_at"] = s["created_at"].isoformat()
         d["updated_at"] = s["updated_at"].isoformat()
         return d
 
-    def add_message(self, sid: str, role: str, content: str):
+    def add_message(self, sid: str, role: str, content: str, image_id: str = None):
         s = self.sessions.get(sid)
         if not s:
             return
-        s["messages"].append({
+        msg = {
             "role": role,
             "content": content,
             "timestamp": datetime.now().isoformat(),
-        })
+        }
+        if image_id:
+            msg["image_id"] = image_id
+        s["messages"].append(msg)
         s["updated_at"] = datetime.now()
 
     async def send_customer(self, sid: str, data: dict):

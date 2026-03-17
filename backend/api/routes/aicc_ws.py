@@ -43,23 +43,26 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
                 continue  # 빈 메시지 무시
 
             if msg_type == "chat":
+                image_id = data.get("image_id")
+
                 # 메시지 저장
-                session_manager.add_message(actual_sid, "user", content)
+                session_manager.add_message(actual_sid, "user", content, image_id=image_id)
 
                 # 관리자에게 포워딩
                 await session_manager.send_admin(actual_sid, {
                     "type": "customer_message",
                     "role": "user",
-                    "content": content
+                    "content": content,
+                    "image_id": image_id,
                 })
 
                 # 개입 중이면 AI 응답 안 함
                 if s["is_admin_intervened"]:
                     continue
 
-                # AI 응답 생성
+                # AI 응답 생성 (이미지 포함)
                 try:
-                    ai_reply = await get_ai_response(s, content)
+                    ai_reply = await get_ai_response(s, content, image_id=image_id)
                 except Exception as e:
                     ai_reply = "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
                     print(f"[AICC WS] AI 오류: {e}")

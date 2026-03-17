@@ -79,11 +79,20 @@
   #ls-typing .dot:nth-child(3){animation-delay:.3s}
   @keyframes ls-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
   #ls-admin-banner{background:#fff3cd;border-top:1px solid #ffc107;padding:8px 14px;font-size:12px;color:#856404;flex-shrink:0;display:none}
-  #ls-chat-bottom{padding:10px 12px;border-top:1px solid #eee;display:flex;gap:8px;flex-shrink:0;background:#fff}
+  #ls-img-preview{display:none;padding:6px 12px;border-top:1px solid #eee;background:#fafafa;flex-shrink:0}
+  #ls-img-preview .preview-wrap{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:4px 8px}
+  #ls-img-preview img{max-height:48px;max-width:80px;border-radius:4px;object-fit:cover}
+  #ls-img-preview .remove-btn{background:none;border:none;color:#999;cursor:pointer;font-size:16px;padding:0;line-height:1}
+  #ls-chat-bottom{padding:10px 12px;border-top:1px solid #eee;display:flex;gap:8px;flex-shrink:0;background:#fff;align-items:flex-end}
+  #ls-chat-img-btn{width:38px;height:38px;border-radius:50%;background:none;border:1.5px solid #ddd;cursor:pointer;font-size:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#666;transition:all .15s}
+  #ls-chat-img-btn:hover{border-color:#1a1a2e;color:#1a1a2e}
   #ls-chat-input{flex:1;padding:9px 12px;border:1.5px solid #ddd;border-radius:20px;font-size:13px;font-family:inherit;outline:none;resize:none;max-height:80px;line-height:1.4}
   #ls-chat-input:focus{border-color:#1a1a2e}
   #ls-chat-send{width:38px;height:38px;border-radius:50%;background:#1a1a2e;color:#fff;border:none;cursor:pointer;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
   #ls-chat-send:disabled{background:#ccc;cursor:not-allowed}
+  .ls-msg-img{max-width:200px;border-radius:8px;margin-bottom:6px;cursor:pointer}
+  .ls-msg-img:hover{opacity:.9}
+  #ls-chat-file-input{display:none}
   #ls-request-admin-btn{width:calc(100% - 24px);padding:8px;background:none;border:1px solid #ddd;border-radius:6px;font-size:12px;color:#666;cursor:pointer;margin:4px 12px 0;font-family:inherit}
 
   /* 재고 결과 화면 */
@@ -198,7 +207,10 @@
             <div id="ls-admin-banner">\uD83D\uDC64 \uB2F4\uB2F9\uC790\uAC00 \uC5F0\uACB0\uB418\uC5C8\uC2B5\uB2C8\uB2E4</div>
             <div id="ls-chat-messages"></div>
             <div id="ls-typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span> AI\uAC00 \uB2F5\uBCC0 \uC911...</div>
+            <div id="ls-img-preview"></div>
+            <input type="file" id="ls-chat-file-input" accept="image/jpeg,image/png,image/gif,image/webp">
             <div id="ls-chat-bottom">
+              <button id="ls-chat-img-btn" title="\uC0AC\uC9C4 \uCCA8\uBD80">\uD83D\uDCF7</button>
               <textarea id="ls-chat-input" placeholder="\uBA54\uC2DC\uC9C0\uB97C \uC785\uB825\uD558\uC138\uC694..." rows="1"></textarea>
               <button id="ls-chat-send">\u2191</button>
             </div>
@@ -265,6 +277,12 @@
     document.addEventListener('click', function(e) {
       if (!document.getElementById('ls-model-input-wrap').contains(e.target)) hideDropdown();
     });
+
+    // 이미지 업로드
+    document.getElementById('ls-chat-img-btn').addEventListener('click', function() {
+      document.getElementById('ls-chat-file-input').click();
+    });
+    document.getElementById('ls-chat-file-input').addEventListener('change', onImageSelected);
 
     // 채팅 전송 (중복 방지: 이벤트 리스너 1개만)
     var sendBtn = document.getElementById('ls-chat-send');
@@ -502,13 +520,74 @@
     _ws = new WebSocket(url);
   }
 
+  // ── 이미지 업로드 ──────────────────────────────────────────
+  var _pendingImage = null;  // { base64: "data:image/...", name: "file.jpg" }
+
+  function onImageSelected() {
+    var fileInput = document.getElementById('ls-chat-file-input');
+    var file = fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+
+    // 파일 타입 검증
+    if (!file.type.match(/^image\/(jpeg|png|gif|webp)$/)) {
+      alert('JPG, PNG, GIF, WEBP 이미지만 업로드 가능합니다.');
+      return;
+    }
+    // 크기 제한 (4MB)
+    if (file.size > 4 * 1024 * 1024) {
+      alert('이미지 크기는 4MB 이하만 가능합니다.');
+      return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      _pendingImage = { base64: e.target.result, name: file.name };
+      // 미리보기 표시
+      var preview = document.getElementById('ls-img-preview');
+      preview.innerHTML =
+        '<div class="preview-wrap">' +
+          '<img src="' + e.target.result + '">' +
+          '<span style="font-size:11px;color:#666">' + escHtml(file.name.substring(0, 15)) + '</span>' +
+          '<button class="remove-btn" onclick="LanstarChat._clearImage()">\u00D7</button>' +
+        '</div>';
+      preview.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function _clearImage() {
+    _pendingImage = null;
+    var preview = document.getElementById('ls-img-preview');
+    preview.innerHTML = '';
+    preview.style.display = 'none';
+  }
+
+  async function uploadImage(base64Data, fileName) {
+    try {
+      var res = await fetch(BACKEND + '/api/aicc/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: _sessionId,
+          image: base64Data,
+          file_name: fileName
+        })
+      });
+      return await res.json();
+    } catch (e) {
+      return { ok: false, message: '이미지 업로드 실패' };
+    }
+  }
+
   // ── 메시지 전송 (중복 전송 완벽 방지) ────────────────────────
   function sendMessage() {
     if (_isSending) return;
 
     var inp = document.getElementById('ls-chat-input');
     var text = inp.value.trim();
-    if (!text) return;
+    var hasImage = !!_pendingImage;
+    if (!text && !hasImage) return;
     if (!_ws || _ws.readyState !== WebSocket.OPEN) {
       appendMsg('system', '', '\uC5F0\uACB0\uC774 \uB04A\uACBC\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.');
       return;
@@ -516,15 +595,33 @@
 
     _isSending = true;
 
-    // 1. 입력창 즉시 초기화 (중복 표시 방지)
+    // 1. 입력창 즉시 초기화
     inp.value = '';
     inp.style.height = 'auto';
 
-    // 2. 사용자 메시지 UI에 표시
-    appendMsg('user', '\uB098', text);
+    // 이미지 캡처 후 미리보기 제거
+    var imageData = _pendingImage;
+    if (hasImage) _clearImage();
+
+    // 2. 사용자 메시지 UI에 표시 (이미지 포함)
+    appendMsg('user', '\uB098', text || '\uC0AC\uC9C4\uC744 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4.', imageData ? imageData.base64 : null);
     showTyping();
 
-    // 3. WebSocket 전송
+    // 3. 이미지가 있으면 업로드 후 WS 전송
+    if (imageData) {
+      uploadImage(imageData.base64, imageData.name).then(function(result) {
+        if (result.ok) {
+          _ws.send(JSON.stringify({ type: 'chat', content: text || '이 사진에 대해 알려주세요.', image_id: result.image_id }));
+        } else {
+          hideTyping();
+          appendMsg('system', '', '\uC774\uBBF8\uC9C0 \uC5C5\uB85C\uB4DC \uC2E4\uD328: ' + (result.message || ''));
+        }
+        setTimeout(function() { _isSending = false; }, 500);
+      });
+      return;
+    }
+
+    // 3. WebSocket 전송 (텍스트만)
     _ws.send(JSON.stringify({ type: 'chat', content: text }));
 
     // 4. 0.5초 후 플래그 해제
@@ -532,16 +629,17 @@
   }
 
   // ── UI 헬퍼 ──────────────────────────────────────────────
-  function appendMsg(type, label, content) {
+  function appendMsg(type, label, content, imageBase64) {
     var mc = document.getElementById('ls-chat-messages');
     var div = document.createElement('div');
     div.className = 'ls-msg ' + type;
     // AI/관리자 응답은 URL 링크 + 볼드 변환, 사용자 메시지는 이스케이프만
     var rendered = (type === 'ai' || type === 'admin' || type === 'assistant') ? formatMsg(content) : escHtml(content);
+    var imgHtml = imageBase64 ? '<img class="ls-msg-img" src="' + imageBase64 + '" onclick="window.open(this.src)">' : '';
     if (label && type !== 'system') {
-      div.innerHTML = '<span class="ls-msg-label">' + escHtml(label) + '</span><div class="ls-msg-bubble">' + rendered + '</div>';
+      div.innerHTML = '<span class="ls-msg-label">' + escHtml(label) + '</span><div class="ls-msg-bubble">' + imgHtml + rendered + '</div>';
     } else {
-      div.innerHTML = '<div class="ls-msg-bubble">' + rendered + '</div>';
+      div.innerHTML = '<div class="ls-msg-bubble">' + imgHtml + rendered + '</div>';
     }
     mc.appendChild(div);
     mc.scrollTop = mc.scrollHeight;
@@ -821,6 +919,7 @@
     _confirmModel: _confirmModel,
     _requestAdmin: _requestAdmin,
     _submitPhone: _submitPhone,
+    _clearImage: _clearImage,
   };
 
 })();

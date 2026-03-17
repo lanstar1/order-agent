@@ -2,6 +2,8 @@
 AICC REST API 라우터
 """
 import os
+import uuid
+import base64
 import httpx
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
@@ -16,6 +18,61 @@ router = APIRouter()
 
 class AdminMessageBody(BaseModel):
     content: str
+
+
+class ImageUploadBody(BaseModel):
+    session_id: str
+    image: str          # data:image/jpeg;base64,...
+    file_name: str = "image.jpg"
+
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+@router.post("/upload")
+async def upload_image(body: ImageUploadBody):
+    """고객 이미지 업로드 — base64로 세션에 저장"""
+    # 세션 확인
+    s = None
+    for sess in session_manager.sessions.values():
+        if body.session_id in (sess.get("session_id", ""),):
+            s = sess
+            break
+    # session_id가 프론트에서 보낸 client-side ID일 수 있으므로 유연하게 처리
+    if not s:
+        # 모든 세션을 확인하여 customer_ws가 연결된 세션 찾기
+        for sess in session_manager.sessions.values():
+            if sess.get("status") == "active":
+                s = sess
+                break
+    if not s:
+        return {"ok": False, "message": "세션을 찾을 수 없습니다."}
+
+    # data URL 파싱: data:image/jpeg;base64,/9j/4AAQ...
+    if not body.image.startswith("data:image/"):
+        return {"ok": False, "message": "잘못된 이미지 형식입니다."}
+
+    try:
+        header, b64_data = body.image.split(",", 1)
+        media_type = header.split(":")[1].split(";")[0]  # image/jpeg
+    except (ValueError, IndexError):
+        return {"ok": False, "message": "이미지 데이터 파싱 실패"}
+
+    if media_type not in ALLOWED_IMAGE_TYPES:
+        return {"ok": False, "message": f"지원하지 않는 이미지 형식: {media_type}"}
+
+    # 크기 확인 (base64 디코딩 전 대략 체크: base64는 원본의 ~1.33배)
+    if len(b64_data) > 7 * 1024 * 1024:  # ~5MB 원본
+        return {"ok": False, "message": "이미지 크기가 너무 큽니다. (최대 5MB)"}
+
+    image_id = str(uuid.uuid4())[:8]
+    s["images"][image_id] = {
+        "media_type": media_type,
+        "base64_data": b64_data,
+        "file_name": body.file_name,
+    }
+
+    return {"ok": True, "image_id": image_id, "session_id": s["session_id"]}
 
 
 @router.get("/models")
