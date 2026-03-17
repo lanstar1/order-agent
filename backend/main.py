@@ -28,6 +28,9 @@ from api.routes.cs import router as cs_router
 from api.routes.sales_agent import router as sales_agent_router
 from api.routes.sales_analytics import router as sales_analytics_router
 from api.routes.purchases import router as purchases_router
+from api.routes.aicc import router as aicc_router
+from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
+from fastapi import WebSocket
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -228,6 +231,20 @@ app.include_router(cs_router)
 app.include_router(sales_agent_router)
 app.include_router(sales_analytics_router)
 app.include_router(purchases_router)
+app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
+
+# AICC WebSocket 엔드포인트
+@app.websocket("/ws/aicc/chat/{session_id}")
+async def ws_chat(websocket: WebSocket, session_id: str):
+    await customer_ws_handler(websocket, session_id)
+
+@app.websocket("/ws/aicc/admin/{session_id}")
+async def ws_admin(websocket: WebSocket, session_id: str):
+    await admin_ws_handler(websocket, session_id)
+
+@app.websocket("/ws/aicc/admin-list")
+async def ws_admin_list(websocket: WebSocket):
+    await admin_list_ws_handler(websocket)
 
 # AI 대시보드 라우터
 try:
@@ -251,6 +268,13 @@ async def startup():
     logger.info("=== Order Agent 시작 (v0.2.0) ===")
     init_db()
     logger.info("데이터베이스 초기화 완료")
+
+    # AICC 데이터 로드
+    try:
+        from services.aicc_data_loader import data_loader as aicc_loader
+        aicc_loader.load_all()
+    except Exception as e:
+        logger.warning(f"AICC 데이터 로딩 실패 (서비스는 계속): {e}")
 
     # products.csv 확인
     from config import PRODUCTS_CSV

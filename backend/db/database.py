@@ -639,6 +639,31 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
 
+    # ── AICC 세션 테이블
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS aicc_sessions (
+        id TEXT PRIMARY KEY,
+        customer_name TEXT DEFAULT '',
+        selected_model TEXT DEFAULT '',
+        erp_code TEXT DEFAULT '',
+        selected_menu TEXT DEFAULT '',
+        status TEXT DEFAULT 'active',
+        is_admin_intervened INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+    # ── AICC 메시지 테이블
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS aicc_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES aicc_sessions(id)
+    )""")
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -669,6 +694,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_sr_staff ON sales_records(staff_name);
         CREATE INDEX IF NOT EXISTS idx_sr_qty ON sales_records(quantity);
         CREATE INDEX IF NOT EXISTS idx_alert_read ON sales_alerts(is_read);
+        CREATE INDEX IF NOT EXISTS idx_aicc_msg ON aicc_messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_aicc_status ON aicc_sessions(status);
     """)
 
     conn.commit()

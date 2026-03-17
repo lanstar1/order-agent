@@ -116,9 +116,12 @@ function navigateTo(pageId) {
     shipping:     "택배조회",
     cs_rma:       "CS/RMA",
     sales_agent:  "판매에이전트",
+    aicc:         "AI 상담",
     ai_dashboard: "AI 대시보드",
     settings:     "설정",
   }[pageId] || "";
+  // AI 상담 페이지 진입 시 초기화
+  if (pageId === "aicc") initAiccTab();
   // CS/RMA 페이지 진입 시 초기화
   if (pageId === "cs_rma") csInit();
   // 판매에이전트 페이지 진입 시 초기화
@@ -4952,6 +4955,172 @@ async function saViewResult(jobId) {
   } catch(e) {
     hideProcessing();
     alert("결과 로드 실패: " + (e.message || e));
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+//  AICC 관리자 탭
+// ══════════════════════════════════════════════════════════════
+
+let _aiccCurrentId = null;
+let _aiccAdminWs = null;
+let _aiccListWs = null;
+let _aiccPolling = null;
+
+// 탭 진입 시 호출
+async function initAiccTab() {
+  await loadAiccSessions();
+  connectAiccListWS();
+  if (_aiccPolling) clearInterval(_aiccPolling);
+  _aiccPolling = setInterval(loadAiccSessions, 8000);
+  if (Notification && Notification.requestPermission) Notification.requestPermission();
+}
+
+// 세션 목록 실시간 WebSocket
+function connectAiccListWS() {
+  if (_aiccListWs) _aiccListWs.close();
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  _aiccListWs = new WebSocket(proto + '//' + location.host + '/ws/aicc/admin-list');
+  _aiccListWs.onmessage = function(e) {
+    const data = JSON.parse(e.data);
+    if (data.type === 'sessions_list') renderAiccSessions(data.sessions);
+    else if (data.type === 'new_session') {
+      loadAiccSessions();
+      showNewSessionNotification(data.session);
+    } else if (data.type === 'session_update') {
+      loadAiccSessions();
+    }
+  };
+  _aiccListWs.onclose = function() { setTimeout(connectAiccListWS, 3000); };
+}
+
+async function loadAiccSessions() {
+  try {
+    const data = await apiCall('/api/aicc/sessions');
+    renderAiccSessions(data.sessions);
+  } catch (e) { console.warn('AICC 세션 로드 실패', e); }
+}
+
+function renderAiccSessions(sessions) {
+  const groups = {
+    '🔴 신규': sessions.filter(function(s) { return s.status === 'active'; }),
+    '🟡 진행중': sessions.filter(function(s) { return s.status === 'intervened' || s.status === 'waiting_admin'; }),
+    '⚫ 종료': sessions.filter(function(s) { return s.status === 'closed'; }).slice(0, 15),
+  };
+
+  const newCount = groups['🔴 신규'].length;
+  const badge = document.getElementById('aicc-nav-badge');
+  if (badge) {
+    badge.textContent = newCount;
+    badge.style.display = newCount > 0 ? '' : 'none';
+  }
+
+  const c = document.getElementById('aicc-session-list');
+  if (!c) return;
+  c.innerHTML = '';
+  for (const [label, list] of Object.entries(groups)) {
+    if (!list.length) continue;
+    c.innerHTML += '<div style="color:#999;font-size:11px;margin-top:8px;margin-bottom:4px;font-weight:700">' + label + ' (' + list.length + ')</div>';
+    list.forEach(function(s) {
+      const active = s.session_id === _aiccCurrentId;
+      const modelInfo = s.selected_model ? s.selected_model + ' · ' : '';
+      c.innerHTML +=
+        '<div style="padding:8px;margin-bottom:4px;border-radius:6px;cursor:pointer;background:' + (active ? '#1a1a2e' : '#f8f9fa') + ';color:' + (active ? '#fff' : '#333') + '" onclick="selectAiccSession(\'' + s.session_id + '\')">' +
+          '<div style="font-weight:600;font-size:13px">' + (s.customer_name || '비회원') + '</div>' +
+          '<div style="font-size:11px;opacity:.75">' + modelInfo + s.selected_menu + '</div>' +
+        '</div>';
+    });
+  }
+}
+
+async function selectAiccSession(id) {
+  if (_aiccAdminWs) _aiccAdminWs.close();
+  _aiccCurrentId = id;
+
+  const s = await apiCall('/api/aicc/sessions/' + id);
+
+  document.getElementById('aicc-empty').style.display = 'none';
+  document.getElementById('aicc-detail').style.display = 'flex';
+  document.getElementById('aicc-d-name').textContent = s.customer_name || '비회원';
+  document.getElementById('aicc-d-model').textContent = s.selected_model || '-';
+  document.getElementById('aicc-d-menu').textContent = s.selected_menu;
+
+  const intervened = s.is_admin_intervened;
+  document.getElementById('aicc-btn-intervene').style.display = intervened ? 'none' : '';
+  document.getElementById('aicc-admin-input').style.display = intervened ? 'block' : 'none';
+  document.getElementById('aicc-intervene-bar').style.display = intervened ? 'block' : 'none';
+
+  // 메시지 렌더
+  const mc = document.getElementById('aicc-msgs');
+  mc.innerHTML = '';
+  (s.messages || []).forEach(function(m) { appendAiccMsg(m.role, m.content, false); });
+  mc.scrollTop = mc.scrollHeight;
+
+  // 관리자 WebSocket
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  _aiccAdminWs = new WebSocket(proto + '//' + location.host + '/ws/aicc/admin/' + id);
+  _aiccAdminWs.onmessage = function(e) {
+    const msg = JSON.parse(e.data);
+    if (['customer_message', 'ai_message', 'admin_message'].includes(msg.type)) {
+      appendAiccMsg(msg.role || 'user', msg.content);
+    }
+  };
+
+  // 세션 목록 리렌더 (선택 표시)
+  loadAiccSessions();
+}
+
+function appendAiccMsg(role, content, scroll) {
+  if (scroll === undefined) scroll = true;
+  const mc = document.getElementById('aicc-msgs');
+  const colors = { user: '#e3f2fd', assistant: '#f1f8e9', admin: '#fff3e0' };
+  const labels = { user: '고객', assistant: 'AI', admin: '관리자' };
+  const d = document.createElement('div');
+  d.style.cssText = 'margin-bottom:10px;padding:8px 12px;border-radius:10px;background:' + (colors[role]||'#f5f5f5') + ';max-width:85%;' + (role==='user'?'margin-left:auto':'');
+  d.innerHTML = '<div style="font-size:10px;color:#888;margin-bottom:3px">' + (labels[role]||role) + '</div><div style="font-size:13px;white-space:pre-wrap">' + content + '</div>';
+  mc.appendChild(d);
+  if (scroll) mc.scrollTop = mc.scrollHeight;
+}
+
+async function aiccIntervene() {
+  await apiCall('/api/aicc/sessions/' + _aiccCurrentId + '/intervene', 'POST');
+  document.getElementById('aicc-btn-intervene').style.display = 'none';
+  document.getElementById('aicc-admin-input').style.display = 'block';
+  document.getElementById('aicc-intervene-bar').style.display = 'block';
+  document.getElementById('aicc-admin-txt').focus();
+}
+
+async function aiccSendAdmin() {
+  const txt = document.getElementById('aicc-admin-txt').value.trim();
+  if (!txt) return;
+  if (_aiccAdminWs && _aiccAdminWs.readyState === WebSocket.OPEN) {
+    _aiccAdminWs.send(JSON.stringify({ type: 'admin_message', content: txt }));
+  } else {
+    await apiCall('/api/aicc/sessions/' + _aiccCurrentId + '/admin-message', 'POST', { content: txt });
+  }
+  appendAiccMsg('admin', txt);
+  document.getElementById('aicc-admin-txt').value = '';
+}
+
+async function aiccCloseSession() {
+  if (!confirm('상담을 종료하시겠습니까?')) return;
+  await apiCall('/api/aicc/sessions/' + _aiccCurrentId + '/close', 'POST');
+  await loadAiccSessions();
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.target.id === 'aicc-admin-txt' && e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    aiccSendAdmin();
+  }
+});
+
+function showNewSessionNotification(session) {
+  if (Notification && Notification.permission === 'granted') {
+    new Notification('랜스타 AI 상담 — 신규 문의', {
+      body: (session.customer_name || '비회원') + ' | ' + (session.selected_model || '') + ' | ' + session.selected_menu,
+    });
   }
 }
 
