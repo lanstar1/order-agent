@@ -495,8 +495,8 @@
     var mc = document.getElementById('ls-chat-messages');
     var div = document.createElement('div');
     div.className = 'ls-msg ' + type;
-    // AI 응답(assistant)은 URL 링크 + 볼드 변환, 사용자 메시지는 이스케이프만
-    var rendered = (type === 'assistant') ? formatMsg(content) : escHtml(content);
+    // AI/관리자 응답은 URL 링크 + 볼드 변환, 사용자 메시지는 이스케이프만
+    var rendered = (type === 'ai' || type === 'admin' || type === 'assistant') ? formatMsg(content) : escHtml(content);
     if (label && type !== 'system') {
       div.innerHTML = '<span class="ls-msg-label">' + escHtml(label) + '</span><div class="ls-msg-bubble">' + rendered + '</div>';
     } else {
