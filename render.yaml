@@ -43,3 +43,7 @@ services:
         value: "../data/aicc"
       - key: SECRET_KEY
         sync: false
+      - key: GODOMALL_MALL_ID
+        sync: false
+      - key: GODOMALL_API_KEY
+        sync: false
