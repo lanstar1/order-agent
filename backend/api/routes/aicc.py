@@ -3,6 +3,7 @@ AICC REST API 라우터
 """
 import os
 import httpx
+import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -134,71 +135,111 @@ ORDER_STATUS = {
 }
 
 
+def _xml_text(el, tag: str) -> str:
+    """XML 엘리먼트에서 태그 텍스트 추출 (None-safe)"""
+    child = el.find(tag)
+    return (child.text or "").strip() if child is not None else ""
+
+
 @router.get("/orders")
-async def get_customer_orders(phone: str):
+async def get_customer_orders(memNo: str = "", phone: str = ""):
     """
-    고객 휴대폰번호로 최근 90일 주문 조회
-    고도몰 Open API (관리자 Key 서버에서만 사용)
+    고도몰 Open API 주문조회
+    - memNo(회원번호) 또는 phone(휴대폰번호)으로 필터링
+    - API 제한: 최대 30일 단위 조회
+    - 응답: XML → 파싱 후 JSON 반환
     """
-    if not phone or len(phone.strip()) < 9:
-        return {"orders": [], "message": "전화번호 오류"}
+    if not memNo and (not phone or len(phone.replace("-", "").strip()) < 9):
+        return {"orders": [], "message": "회원 정보가 필요합니다. 로그인 후 이용해 주세요."}
+
+    partner_key = os.getenv("GODOMALL_PARTNER_KEY", os.getenv("GODOMALL_MALL_ID", ""))
+    user_key = os.getenv("GODOMALL_USER_KEY", os.getenv("GODOMALL_API_KEY", ""))
 
     end_date = date.today().strftime("%Y-%m-%d")
-    start_date = (date.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+    start_date = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
 
     payload = {
-        "mallId": os.getenv("GODOMALL_MALL_ID"),
-        "authorizationKey": os.getenv("GODOMALL_API_KEY"),
-        "searchType": "orderCellPhone",
-        "searchKeyword": phone.strip(),
+        "partner_key": partner_key,
+        "key": user_key,
+        "dateType": "order",
         "startDate": start_date,
         "endDate": end_date,
-        "dateType": "order",
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as http_client:
+        async with httpx.AsyncClient(timeout=20.0) as http_client:
             res = await http_client.post(
                 "https://openhub.godo.co.kr/godomall5/order/Order_Search.php",
-                data=payload
+                data=payload,
             )
-        result = res.json()
+        root = ET.fromstring(res.text)
     except Exception as e:
-        return {"orders": [], "message": f"API 오류: {e}"}
+        print(f"[AICC Orders] API 오류: {e}")
+        return {"orders": [], "message": f"주문 조회 중 오류가 발생했습니다."}
 
-    if str(result.get("code")) != "000":
-        return {"orders": [], "message": f"조회 실패: {result.get('msg', '')}"}
+    code = _xml_text(root, ".//code")
+    if code != "000":
+        msg = _xml_text(root, ".//msg")
+        return {"orders": [], "message": f"조회 실패: {msg}"}
 
+    # ── 전체 주문 데이터 파싱 + memNo/phone 필터링 ──
+    phone_clean = phone.replace("-", "").strip() if phone else ""
+    all_order_els = root.findall(".//order_data")
     orders = []
-    for order in result.get("order_data", []):
-        order_no = order.get("orderNo", "")
-        order_date = order.get("orderDate", "")[:10]
-        settle_price = order.get("settlePrice", "")
 
-        goods_list = order.get("orderGoodsData", [])
+    for order_el in all_order_els:
+        # memNo 필터
+        if memNo:
+            order_memNo = _xml_text(order_el, "memNo")
+            if order_memNo != memNo:
+                continue
+
+        # phone 필터 (memNo 없을 때)
+        if not memNo and phone_clean:
+            info_el = order_el.find("orderInfoData")
+            if info_el is not None:
+                order_phone = _xml_text(info_el, "orderCellPhone").replace("-", "")
+                receiver_phone = _xml_text(info_el, "receiverCellPhone").replace("-", "")
+                if phone_clean not in (order_phone, receiver_phone):
+                    continue
+            else:
+                continue
+
+        order_no = _xml_text(order_el, "orderNo")
+        order_date = _xml_text(order_el, "orderDate")[:10]
+        settle_price = _xml_text(order_el, "settlePrice")
+        order_status_top = _xml_text(order_el, "orderStatus")
+
+        # orderGoodsData 파싱
+        goods_els = order_el.findall("orderGoodsData")
         goods_items = []
         primary_status = ""
         primary_status_text = ""
 
-        for goods in goods_list:
-            inv_no = goods.get("invoiceNo", "")
-            status = goods.get("orderStatus", "")
+        for g in goods_els:
+            inv_no = _xml_text(g, "invoiceNo")
+            status = _xml_text(g, "orderStatus")
             status_text = ORDER_STATUS.get(status, status)
             if not primary_status:
                 primary_status = status
                 primary_status_text = status_text
             goods_items.append({
-                "goods_name": goods.get("goodsNm", ""),
+                "goods_name": _xml_text(g, "goodsNm"),
+                "goods_image": _xml_text(g, "listImageData"),
                 "order_status": status,
                 "order_status_text": status_text,
-                "invoice_company": goods.get("invoiceCompany", ""),
+                "invoice_company": _xml_text(g, "invoiceCompany"),
                 "invoice_no": inv_no,
-                "delivery_dt": (goods.get("deliveryDt") or "")[:10],
-                "delivery_complete_dt": (goods.get("deliveryCompleteDt") or "")[:10],
+                "delivery_dt": _xml_text(g, "deliveryDt")[:10],
+                "delivery_complete_dt": _xml_text(g, "deliveryCompleteDt")[:10],
                 "tracking_url": f"https://www.ilogen.com/m/personal/trace/{inv_no}" if inv_no else "",
             })
 
-        first_name = goods_items[0]["goods_name"] if goods_items else ""
+        if not primary_status:
+            primary_status = order_status_top
+            primary_status_text = ORDER_STATUS.get(order_status_top, order_status_top)
+
+        first_name = goods_items[0]["goods_name"] if goods_items else _xml_text(order_el, "orderGoodsNm")
         summary = first_name if len(goods_items) <= 1 else f"{first_name} 외 {len(goods_items)-1}건"
 
         orders.append({
@@ -210,6 +251,9 @@ async def get_customer_orders(phone: str):
             "order_status_text": primary_status_text,
             "goods": goods_items,
         })
+
+        if len(orders) >= 10:
+            break
 
     orders.sort(key=lambda x: x["order_date"], reverse=True)
     return {"orders": orders, "total": len(orders)}

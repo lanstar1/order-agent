@@ -15,6 +15,7 @@
   // ── 상태 변수 ─────────────────────────────────────────────
   let _memberName = '';
   let _memberPhone = '';
+  let _memberNo = '';      // 고도몰 회원번호 (memNo)
   let _selectedMenu = '';
   let _selectedModel = null;   // {model_name, erp_code, product_name}
   let _sessionId = null;
@@ -646,12 +647,18 @@
     showScreen('orders');
 
     // 로그인 체크 (memberName이 없으면 비로그인)
-    if (!_memberName) {
+    if (!_memberName && !_memberNo) {
       container.innerHTML =
         '<div class="ls-login-prompt">' +
           '<p>\uD83D\uDD12 \uC8FC\uBB38 \uC870\uD68C\uB97C \uC704\uD574<br><strong>\uB85C\uADF8\uC778\uC774 \uD544\uC694</strong>\uD569\uB2C8\uB2E4.</p>' +
           '<a class="ls-login-btn" href="https://www.lanstar.co.kr/member/login.php">\uB85C\uADF8\uC778 \uD558\uAE30 \u2192</a>' +
         '</div>';
+      return;
+    }
+
+    // 회원번호가 있으면 바로 조회 (전화번호 불필요)
+    if (_memberNo) {
+      fetchOrders('');
       return;
     }
 
@@ -691,7 +698,11 @@
     container.innerHTML = '<p style="text-align:center;color:#999;padding:32px">\uC8FC\uBB38 \uB0B4\uC5ED\uC744 \uC870\uD68C \uC911\uC785\uB2C8\uB2E4...</p>';
 
     try {
-      var res = await fetch(BACKEND + '/api/aicc/orders?phone=' + encodeURIComponent(phone));
+      var params = [];
+      if (_memberNo) params.push('memNo=' + encodeURIComponent(_memberNo));
+      if (phone) params.push('phone=' + encodeURIComponent(phone));
+      var qs = params.length ? '?' + params.join('&') : '';
+      var res = await fetch(BACKEND + '/api/aicc/orders' + qs);
       var data = await res.json();
       renderOrders(data);
     } catch (e) {
@@ -804,6 +815,7 @@
       opts = opts || {};
       _memberName = opts.memberName || '';
       _memberPhone = opts.memberPhone || '';
+      _memberNo = opts.memberNo || '';
       injectCSS();
       createHTML();
       bindEvents();
