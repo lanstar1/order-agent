@@ -1,5 +1,6 @@
 """
 AICC 데이터 로더 — 서버 시작 시 1회 로드 후 메모리 유지
+기존 shop/aicc 시스템의 데이터 구조 + 검색 로직 완전 이식
 """
 import json, os, re
 from typing import Dict, List, Optional, Set
@@ -31,6 +32,10 @@ class AICCDataLoader:
         self.price_restricted: Set[str] = set()
         self._erp_map: Dict[str, str] = {}  # model_name → erp_code
 
+        # 기존 shop/aicc 시스템 데이터 (searchRelevantQna용)
+        self.technical_qna: List[dict] = []     # lanstar_technical_qna.json
+        self.unidentified_qna: List[dict] = []  # lanstar_unidentified_qna.json
+
     def load_all(self):
         print("[AICC] 데이터 로딩 시작...")
         try:
@@ -44,7 +49,11 @@ class AICCDataLoader:
             self._load_errors()
             self._load_policies()
             self._load_price()
-            print(f"[AICC] 완료 — 드롭다운:{len(self.dropdown_models)} 제품:{len(self.product_data)}")
+            self._load_technical_qna()
+            self._load_unidentified_qna()
+            total_qna = sum(len(p.get("qna", [])) for p in self.technical_qna)
+            print(f"[AICC] 완료 — 드롭다운:{len(self.dropdown_models)} 제품:{len(self.product_data)} "
+                  f"기술QnA:{total_qna}건({len(self.technical_qna)}모델) 미분류QnA:{len(self.unidentified_qna)}건")
         except Exception as e:
             print(f"[AICC] 로딩 오류: {e}")
             raise
@@ -106,11 +115,9 @@ class AICCDataLoader:
         path = os.path.join(DATA_DIR, "04_오답사례_주의목록.txt")
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
-        # 핵심 섹션만 추출 (토큰 절약)
         self.wrong_answers_text = text[:2000]
 
     def _load_install(self):
-        # 실제 파일명에 맞춤 (정제 접미사 없을 수 있음)
         for fname in ["05_제품별_연결방법_설치가이드_정제.txt", "05_제품별_연결방법_설치가이드.txt"]:
             path = os.path.join(DATA_DIR, fname)
             if os.path.exists(path):
@@ -120,7 +127,6 @@ class AICCDataLoader:
         print("[AICC] 설치가이드 파일 없음 (스킵)")
 
     def _load_compat(self):
-        # 실제 파일명에 맞춤
         for fname in ["06_호환성_매트릭스_정제.xlsx", "06_호환성_매트릭스.xlsx"]:
             path = os.path.join(DATA_DIR, fname)
             if os.path.exists(path):
@@ -168,6 +174,26 @@ class AICCDataLoader:
                 self.price_restricted.add(str(row[1]).strip())
         wb.close()
 
+    def _load_technical_qna(self):
+        """기존 shop/aicc의 lanstar_technical_qna.json 로드"""
+        path = os.path.join(DATA_DIR, "lanstar_technical_qna.json")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                self.technical_qna = json.load(f)
+            print(f"[AICC] 기술QnA 로드: {len(self.technical_qna)}개 모델")
+        else:
+            print("[AICC] lanstar_technical_qna.json 없음 (스킵)")
+
+    def _load_unidentified_qna(self):
+        """기존 shop/aicc의 lanstar_unidentified_qna.json 로드"""
+        path = os.path.join(DATA_DIR, "lanstar_unidentified_qna.json")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                self.unidentified_qna = json.load(f)
+            print(f"[AICC] 미분류QnA 로드: {len(self.unidentified_qna)}건")
+        else:
+            print("[AICC] lanstar_unidentified_qna.json 없음 (스킵)")
+
     # ── 조회 메서드 ──────────────────────────────────────────
 
     def search_models(self, query: str, limit: int = 15) -> List[dict]:
@@ -200,25 +226,92 @@ class AICCDataLoader:
         return [g for g in self.golden_answers if g["category"] == cat][:3]
 
     def get_golden_by_model(self, model: str) -> List[dict]:
-        """모델명으로 골든앤서 직접 검색 (최우선)"""
         return [g for g in self.golden_answers if g["model"] == model][:5]
 
     def get_faq_by_model(self, model: str) -> List[dict]:
-        """모델명이 포함된 FAQ 검색"""
         return [f for f in self.faq_list if model in f.get("models", "")][:5]
 
     def get_driver_url(self, model: str) -> str:
-        """드라이버 다운로드 URL 생성 (모델명에서 LS- 접두사 제거)"""
-        # LS-UH319-W → uh319-w 형태로 검색어 생성
         search_word = model.replace("LS-", "").lower() if model.startswith("LS-") else model.lower()
         return f"https://www.lanstar.co.kr/board/list.php?bdId=lanstardownload&memNo=&noheader=&mypageFl=&searchField=subject&searchWord={search_word}"
 
     def get_product_url(self, model: str) -> str:
-        """제품 검색 URL 생성"""
         return f"https://www.lanstar.co.kr/goods/goods_search.php?keyword={model}&recentCount=10"
 
     def is_price_restricted(self, model: str) -> bool:
         return model in self.price_restricted
+
+    # ── 기존 shop/aicc searchRelevantQna 완전 이식 ──────────
+
+    def search_relevant_qna(self, query: str, session_model: str, max_results: int = 5) -> List[dict]:
+        """
+        기존 shop/aicc chatbot.js의 searchRelevantQna 로직 그대로 이식.
+        1. lanstar_technical_qna.json의 모든 제품 QnA 검색
+        2. lanstar_unidentified_qna.json (미분류 QnA) 검색
+        3. 같은 모델 = +5점, 키워드 매칭 = +1점/단어
+        """
+        upper = query.upper()
+        words = [w for w in re.split(r'[\s,]+', upper) if len(w) >= 2]
+        results = []
+
+        # 1. technical_qna (모델별 QnA)
+        for product in self.technical_qna:
+            product_model = product.get("model", "")
+            for qna in product.get("qna", []):
+                q_text = qna.get("question", "")
+                a_text = qna.get("answer", "")
+                text = (q_text + " " + a_text + " " + product_model).upper()
+
+                score = 0
+                if session_model and product_model.upper() == session_model.upper():
+                    score += 5
+                for w in words:
+                    if w in text:
+                        score += 1
+                if score > 0:
+                    results.append({
+                        "model": product_model,
+                        "category": product.get("category", ""),
+                        "question": q_text,
+                        "answer": a_text,
+                        "score": score,
+                    })
+
+        # 2. unidentified_qna (미분류 QnA — 도어락 등 특수 제품 커버)
+        for qna in self.unidentified_qna:
+            q_text = qna.get("question", "")
+            a_text = qna.get("answer", "")
+            text = (q_text + " " + a_text).upper()
+
+            score = 0
+            for w in words:
+                if w in text:
+                    score += 1
+            # 미분류지만 모델명이 포함되어 있으면 가산
+            if session_model and session_model.upper() in text:
+                score += 3
+            if score > 0:
+                results.append({
+                    "model": qna.get("original_product_name", ""),
+                    "category": "",
+                    "question": q_text,
+                    "answer": a_text,
+                    "score": score,
+                })
+
+        # 점수 내림차순 정렬
+        results.sort(key=lambda x: x["score"], reverse=True)
+
+        # 중복 제거 (질문 앞 50자)
+        seen = set()
+        unique = []
+        for r in results:
+            key = r["question"][:50]
+            if key not in seen:
+                seen.add(key)
+                unique.append(r)
+
+        return unique[:max_results]
 
 
 data_loader = AICCDataLoader()
