@@ -31,6 +31,7 @@ class AICCDataLoader:
         self.policy_return: str = ""
         self.price_restricted: Set[str] = set()
         self._erp_map: Dict[str, str] = {}  # model_name → erp_code
+        self._driver_models: Set[str] = set()  # 드라이버가 있는 모델 목록
 
         # 기존 shop/aicc 시스템 데이터 (searchRelevantQna용)
         self.technical_qna: List[dict] = []     # lanstar_technical_qna.json
@@ -49,6 +50,7 @@ class AICCDataLoader:
             self._load_errors()
             self._load_policies()
             self._load_price()
+            self._load_driver_models()
             self._load_technical_qna()
             self._load_unidentified_qna()
             total_qna = sum(len(p.get("qna", [])) for p in self.technical_qna)
@@ -174,6 +176,21 @@ class AICCDataLoader:
                 self.price_restricted.add(str(row[1]).strip())
         wb.close()
 
+    def _load_driver_models(self):
+        """08_기술자료실 파일에서 드라이버가 있는 모델 목록 파싱"""
+        path = os.path.join(DATA_DIR, "08_기술자료실_파일목록_URL.txt")
+        if not os.path.exists(path):
+            print("[AICC] 기술자료실 파일 없음 (스킵)")
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+        # [모델별 빠른 검색 URL 전체 목록] 섹션에서 모델명 추출
+        # 패턴: 줄 시작 공백 + LS-모델명 (URL: 줄 바로 위에 있는 모델명)
+        for match in re.finditer(r'^\s+(LS-[\w\-]+)\s*$', text, re.MULTILINE):
+            model = match.group(1).strip()
+            self._driver_models.add(model)
+        print(f"[AICC] 드라이버 모델 로드: {len(self._driver_models)}개")
+
     def _load_technical_qna(self):
         """기존 shop/aicc의 lanstar_technical_qna.json 로드"""
         path = os.path.join(DATA_DIR, "lanstar_technical_qna.json")
@@ -230,6 +247,10 @@ class AICCDataLoader:
 
     def get_faq_by_model(self, model: str) -> List[dict]:
         return [f for f in self.faq_list if model in f.get("models", "")][:5]
+
+    def has_driver(self, model: str) -> bool:
+        """해당 모델에 드라이버가 있는지 확인"""
+        return model in self._driver_models
 
     def get_driver_url(self, model: str) -> str:
         search_word = model.replace("LS-", "").lower() if model.startswith("LS-") else model.lower()

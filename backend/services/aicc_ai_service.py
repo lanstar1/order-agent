@@ -94,10 +94,14 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
             if spec_lines:
                 sys_prompt += f"\n## 제품 스펙\n{spec_lines}\n"
 
-    # 드라이버 URL
-    driver_url = data_loader.get_driver_url(model)
+    # 제품 링크 (드라이버는 해당 제품에 드라이버가 있는 경우에만 안내)
     product_url = data_loader.get_product_url(model)
-    sys_prompt += f"\n## 이 제품의 링크\n드라이버: {driver_url}\n제품 페이지: {product_url}\n"
+    if data_loader.has_driver(model):
+        driver_url = data_loader.get_driver_url(model)
+        sys_prompt += f"\n## 이 제품의 링크\n드라이버: {driver_url}\n제품 페이지: {product_url}\n"
+    else:
+        sys_prompt += f"\n## 이 제품의 링크\n제품 페이지: {product_url}\n"
+        sys_prompt += "\n## 드라이버 안내\n이 제품은 별도의 드라이버 설치가 필요 없는 제품입니다. 연결하면 자동으로 인식됩니다. 고객이 드라이버를 문의하면 '이 제품은 별도의 드라이버 설치 없이 연결만 하면 자동으로 인식됩니다'라고 안내하세요.\n"
 
     # 설치 가이드
     if menu in ("기술문의",):
