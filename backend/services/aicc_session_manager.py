@@ -1,5 +1,5 @@
 """
-AICC 세션 관리자 — 인메모리 + DB 영구 저장
+AICC 세션 관리자 — 인메모리(실시간) + DB(영구 저장)
 """
 import uuid
 from datetime import datetime, timedelta
@@ -29,6 +29,8 @@ class AICCSessionManager:
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
         }
+        # DB 영구 저장
+        self._db_save_session(sid, name, model, erp_code, menu)
         return sid
 
     def get(self, sid: str) -> Optional[dict]:
@@ -64,6 +66,8 @@ class AICCSessionManager:
             msg["image_id"] = image_id
         s["messages"].append(msg)
         s["updated_at"] = datetime.now()
+        # DB 영구 저장
+        self._db_save_message(sid, role, content, image_id)
 
     async def send_customer(self, sid: str, data: dict):
         s = self.sessions.get(sid)
@@ -97,18 +101,44 @@ class AICCSessionManager:
             s["is_admin_intervened"] = True
             s["status"] = "intervened"
             s["updated_at"] = datetime.now()
+            self._db_update_status(sid, "intervened")
 
     def close(self, sid: str):
         s = self.sessions.get(sid)
         if s:
             s["status"] = "closed"
             s["updated_at"] = datetime.now()
+            self._db_update_status(sid, "closed")
 
     def cleanup_expired(self, hours: int = 1):
         cutoff = datetime.now() - timedelta(hours=hours)
         for sid, s in list(self.sessions.items()):
             if s["status"] != "closed" and s["updated_at"] < cutoff:
                 s["status"] = "closed"
+                self._db_update_status(sid, "closed")
+
+    # ── DB 영구 저장 (비동기가 아닌 동기 — 빠르므로 문제없음) ──────
+
+    def _db_save_session(self, sid, name, model, erp_code, menu):
+        try:
+            from .aicc_db import save_session
+            save_session(sid, name, model, erp_code, menu)
+        except Exception as e:
+            print(f"[AICC DB] 세션 저장 오류: {e}")
+
+    def _db_save_message(self, sid, role, content, image_id=None):
+        try:
+            from .aicc_db import save_message
+            save_message(sid, role, content, image_id or "")
+        except Exception as e:
+            print(f"[AICC DB] 메시지 저장 오류: {e}")
+
+    def _db_update_status(self, sid, status):
+        try:
+            from .aicc_db import update_session_status
+            update_session_status(sid, status)
+        except Exception as e:
+            print(f"[AICC DB] 상태 업데이트 오류: {e}")
 
 
 session_manager = AICCSessionManager()

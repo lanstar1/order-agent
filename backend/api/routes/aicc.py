@@ -1,16 +1,19 @@
 """
 AICC REST API 라우터
 """
+import json
 import os
 import uuid
 import base64
 import httpx
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from services.aicc_data_loader import data_loader
 from services.aicc_session_manager import session_manager
+from services import aicc_db
 from security import get_current_user
 
 router = APIRouter()
@@ -314,3 +317,102 @@ async def get_customer_orders(memNo: str = "", phone: str = ""):
 
     orders.sort(key=lambda x: x["order_date"], reverse=True)
     return {"orders": orders, "total": len(orders)}
+
+
+# ── 제품 지식 DB 관리 API ────────────────────────────────
+
+class ProductKnowledgeBody(BaseModel):
+    model_name: str
+    category: str = ""
+    data: Dict[str, Any]
+
+
+class BulkProductKnowledgeBody(BaseModel):
+    products: Dict[str, Dict[str, Any]]
+
+
+@router.post("/knowledge")
+async def upsert_knowledge(
+    body: ProductKnowledgeBody,
+    current_user=Depends(get_current_user)
+):
+    """제품 지식 단건 등록/수정"""
+    aicc_db.upsert_product_knowledge(body.model_name, body.category, body.data)
+    return {"ok": True, "model_name": body.model_name}
+
+
+@router.post("/knowledge/bulk")
+async def bulk_upload_knowledge(
+    body: BulkProductKnowledgeBody,
+    current_user=Depends(get_current_user),
+):
+    """
+    제품 지식 일괄 등록 — JSON body
+    형식: { "products": { "LS-ANDOOR-S": { "카테고리": "도어락", ... }, ... } }
+    """
+    count = aicc_db.bulk_upsert_product_knowledge(body.products)
+    return {"ok": True, "count": count, "message": f"{count}개 제품 지식 등록 완료"}
+
+
+@router.post("/knowledge/upload")
+async def upload_knowledge_file(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+):
+    """
+    제품 지식 JSON 파일 업로드
+    파일 형식: { "LS-ANDOOR-S": { "카테고리": "도어락", ... }, ... }
+    """
+    content = await file.read()
+    try:
+        products = json.loads(content.decode("utf-8"))
+    except Exception:
+        raise HTTPException(400, "JSON 파일 파싱 실패")
+
+    if not isinstance(products, dict):
+        raise HTTPException(400, "JSON 최상위는 객체여야 합니다 (모델명: {데이터})")
+
+    count = aicc_db.bulk_upsert_product_knowledge(products)
+    return {"ok": True, "count": count, "message": f"{count}개 제품 지식 등록 완료"}
+
+
+@router.get("/knowledge")
+async def list_knowledge(current_user=Depends(get_current_user)):
+    """전체 제품 지식 목록"""
+    items = aicc_db.get_all_product_knowledge()
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/knowledge/{model_name}")
+async def get_knowledge(model_name: str, current_user=Depends(get_current_user)):
+    """특정 제품 지식 상세"""
+    item = aicc_db.get_product_knowledge(model_name)
+    if not item:
+        raise HTTPException(404, "해당 제품 지식이 없습니다")
+    return item
+
+
+@router.delete("/knowledge/{model_name}")
+async def delete_knowledge(model_name: str, current_user=Depends(get_current_user)):
+    """제품 지식 삭제"""
+    aicc_db.delete_product_knowledge(model_name)
+    return {"ok": True}
+
+
+# ── 채팅 이력 조회 API ───────────────────────────────────
+
+@router.get("/history/sessions")
+async def get_chat_history_sessions(current_user=Depends(get_current_user)):
+    """저장된 전체 AICC 채팅 세션 목록"""
+    sessions = aicc_db.get_all_sessions(limit=200)
+    return {"sessions": sessions, "total": len(sessions)}
+
+
+@router.get("/history/sessions/{session_id}")
+async def get_chat_history_messages(
+    session_id: str,
+    current_user=Depends(get_current_user)
+):
+    """특정 세션의 전체 채팅 메시지"""
+    messages = aicc_db.get_session_messages(session_id)
+    return {"session_id": session_id, "messages": messages, "total": len(messages)}

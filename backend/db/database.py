@@ -53,7 +53,7 @@ def _sql_to_pg(sql):
                 'activity_log', 'orderlist_items', 'orderlist_sync_log',
                 'shipments',
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
-                'sa_uploads', 'sa_jobs',
+                'sa_uploads', 'sa_jobs', 'aicc_product_knowledge',
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
@@ -575,6 +575,14 @@ def init_db():
     )""")
 
 
+    # ── AICC 마이그레이션: image_id 컬럼 추가 ──
+    if not column_exists(conn, 'aicc_messages', 'image_id'):
+        try:
+            cur_or_conn.execute("ALTER TABLE aicc_messages ADD COLUMN image_id TEXT DEFAULT ''")
+            logger.info("[DB] aicc_messages.image_id 컬럼 추가")
+        except Exception:
+            pass
+
     # ── 판매에이전트: 업로드 파일 + 분석 작업 ──
     _sa_init_tables(conn, cur_or_conn)
 
@@ -660,8 +668,18 @@ def init_db():
         session_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
+        image_id TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (session_id) REFERENCES aicc_sessions(id)
+    )""")
+
+    # ── AICC 제품 지식 DB (제품 상세 JSON — AI 답변의 1차 소스)
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS aicc_product_knowledge (
+        model_name TEXT PRIMARY KEY,
+        category TEXT DEFAULT '',
+        data_json TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
 
     # ── 인덱스 추가 (성능 최적화) ──
@@ -696,6 +714,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_alert_read ON sales_alerts(is_read);
         CREATE INDEX IF NOT EXISTS idx_aicc_msg ON aicc_messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_aicc_status ON aicc_sessions(status);
+        CREATE INDEX IF NOT EXISTS idx_aicc_pk_cat ON aicc_product_knowledge(category);
     """)
 
     conn.commit()
