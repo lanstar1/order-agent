@@ -171,11 +171,9 @@
             <p class="greeting">안녕하세요! 랜스타 AI 상담사입니다.<br>무엇을 도와드릴까요?</p>
             <div class="ls-menu-grid">
               <button class="ls-menu-btn" data-menu="\uC81C\uD488\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDCCB</span>\uC81C\uD488 \uBB38\uC758</button>
-              <button class="ls-menu-btn" data-menu="\uAE30\uC220\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDD27</span>\uAE30\uC220 \uBB38\uC758</button>
               <button class="ls-menu-btn" data-menu="\uBC30\uC1A1\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDE9A</span>\uBC30\uC1A1 \uBB38\uC758</button>
               <button class="ls-menu-btn" data-menu="\uC7AC\uACE0\uC870\uD68C"><span class="ls-menu-icon">\uD83D\uDCE6</span>\uC7AC\uACE0 \uC870\uD68C</button>
               <button class="ls-menu-btn" data-menu="\uACAC\uC801\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDCC4</span>\uACAC\uC801 \uBB38\uC758</button>
-              <button class="ls-menu-btn" data-menu="AS\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDEE0</span>A/S \uBB38\uC758</button>
             </div>
           </div>
 
@@ -322,11 +320,7 @@
       showOrdersScreen();
       return;
     }
-    if (menu === 'AS\uBB38\uC758') {
-      startChat(null);
-      return;
-    }
-    // 제품문의, 기술문의, 재고조회 → 제품 선택 화면
+    // 제품문의, 재고조회 → 제품 선택 화면
     document.getElementById('ls-model-screen-title').textContent =
       menu === '\uC7AC\uACE0\uC870\uD68C' ? '\uC7AC\uACE0\uB97C \uC870\uD68C\uD560 \uC81C\uD488 \uBAA8\uB378\uBA85\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694' : '\uBB38\uC758\uD558\uC2E4 \uC81C\uD488 \uBAA8\uB378\uBA85\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694';
     document.getElementById('ls-model-input').value = '';
