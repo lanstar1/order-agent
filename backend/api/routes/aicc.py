@@ -174,21 +174,27 @@ async def get_inventory(model_name: str):
         if not result.get("success"):
             return {"ok": False, "message": result.get("error", "재고 조회 실패")}
 
+        # 디버깅: 실제 ERP 응답 데이터 출력
+        for item in result.get("data", []):
+            print(f"[AICC Inventory DEBUG] wh_cd='{item.get('wh_cd')}', wh_name='{item.get('wh_name')}', qty={item.get('qty')}")
+
         # 창고코드/창고명으로 용산·김포 분류
         yongsan = 0
         gimpo = 0
         other = 0
         for item in result.get("data", []):
-            qty = int(item.get("qty", 0))
-            wh = (item.get("wh_name", "") + item.get("wh_cd", "")).upper()
-            if "용산" in wh or "YONGSAN" in wh or item.get("wh_cd") == "10":
+            qty = int(float(item.get("qty", 0)))
+            wh_cd = str(item.get("wh_cd", "")).strip()
+            wh_name = str(item.get("wh_name", "")).strip()
+            if "용산" in wh_name or wh_cd == "10":
                 yongsan += qty
-            elif "김포" in wh or "GIMPO" in wh or item.get("wh_cd") == "20":
+            elif "김포" in wh_name or wh_cd == "20":
                 gimpo += qty
             else:
                 other += qty
 
         total = yongsan + gimpo + other
+        print(f"[AICC Inventory DEBUG] 결과: 용산={yongsan}, 김포={gimpo}, 기타={other}, 총={total}")
         return {
             "ok": True,
             "model_name": model_name,
