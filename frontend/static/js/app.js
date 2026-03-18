@@ -4971,6 +4971,7 @@ let _aiccPolling = null;
 // 탭 진입 시 호출
 async function initAiccTab() {
   await loadAiccSessions();
+  loadUnansweredCount();
   connectAiccListWS();
   if (_aiccPolling) clearInterval(_aiccPolling);
   _aiccPolling = setInterval(loadAiccSessions, 8000);
@@ -4990,6 +4991,9 @@ function connectAiccListWS() {
       showNewSessionNotification(data.session);
     } else if (data.type === 'session_update') {
       loadAiccSessions();
+    } else if (data.type === 'unanswered_alert') {
+      loadUnansweredCount();
+      if (typeof toast === 'function') toast('미답변 발생: ' + (data.model||'') + ' - ' + (data.question||'').substring(0,40), 'error');
     }
   };
   _aiccListWs.onclose = function() { setTimeout(connectAiccListWS, 3000); };
@@ -5129,5 +5133,120 @@ function showNewSessionNotification(session) {
     });
   }
 }
+
+// ── 미답변 알림 시스템 ──────────────────────────────
+
+var _unansCurrentId = null;
+
+async function loadUnansweredCount() {
+  try {
+    var data = await api.get('/api/aicc/unanswered/count');
+    var badge = document.getElementById('aicc-bell-badge');
+    if (badge) {
+      badge.textContent = data.count;
+      badge.style.display = data.count > 0 ? '' : 'none';
+    }
+  } catch(e) { /* 무시 */ }
+}
+
+async function toggleUnansweredPanel() {
+  var panel = document.getElementById('aicc-unanswered-panel');
+  if (!panel) return;
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    await loadUnansweredList();
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+async function loadUnansweredList() {
+  try {
+    var data = await api.get('/api/aicc/unanswered?resolved=false');
+    var c = document.getElementById('aicc-unanswered-list');
+    if (!c) return;
+    if (!data.items || data.items.length === 0) {
+      c.innerHTML = '<div style="color:#999;text-align:center;padding:12px">미답변 없음 ✅</div>';
+      return;
+    }
+    var html = '';
+    data.items.forEach(function(item) {
+      html +=
+        '<div onclick="openUnansModal(' + item.id + ')" style="padding:8px;margin-bottom:4px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;cursor:pointer">' +
+          '<div style="font-weight:600;font-size:12px;color:#e63946">' + (item.model_name || '미지정') + '</div>' +
+          '<div style="font-size:11px;color:#333;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _escHtml(item.user_question || '').substring(0, 60) + '</div>' +
+          '<div style="font-size:10px;color:#999;margin-top:2px">' + (item.created_at || '') + '</div>' +
+        '</div>';
+    });
+    c.innerHTML = html;
+  } catch(e) { console.warn('미답변 로드 실패', e); }
+}
+
+async function openUnansModal(id) {
+  _unansCurrentId = id;
+  try {
+    var data = await api.get('/api/aicc/unanswered?resolved=false');
+    var item = data.items.find(function(x) { return x.id === id; });
+    if (!item) return;
+
+    var body = document.getElementById('unans-modal-body');
+    body.innerHTML =
+      '<div style="margin-bottom:8px"><span style="font-size:11px;color:#666">모델:</span> <strong>' + (item.model_name||'-') + '</strong></div>' +
+      '<div style="background:#e3f2fd;padding:10px;border-radius:8px;margin-bottom:8px"><div style="font-size:10px;color:#666;margin-bottom:4px">고객 질문</div><div style="font-size:13px">' + _escHtml(item.user_question) + '</div></div>' +
+      '<div style="background:#fff3e0;padding:10px;border-radius:8px"><div style="font-size:10px;color:#666;margin-bottom:4px">AI 응답 (미답변)</div><div style="font-size:12px;white-space:pre-wrap">' + _escHtml(item.ai_response).substring(0, 500) + '</div></div>';
+
+    document.getElementById('unans-model').value = item.model_name || '';
+    document.getElementById('unans-key').value = '';
+    document.getElementById('unans-value').value = '';
+
+    var modal = document.getElementById('aicc-unans-modal');
+    modal.style.display = 'flex';
+  } catch(e) { console.warn(e); }
+}
+
+function closeUnansModal() {
+  document.getElementById('aicc-unans-modal').style.display = 'none';
+  _unansCurrentId = null;
+}
+
+async function resolveUnanswered() {
+  if (!_unansCurrentId) return;
+  try {
+    await api.post('/api/aicc/unanswered/' + _unansCurrentId + '/resolve');
+    toast('해결 처리 완료', 'success');
+    closeUnansModal();
+    loadUnansweredList();
+    loadUnansweredCount();
+  } catch(e) { toast('오류 발생', 'error'); }
+}
+
+async function addKnowledgeFromUnanswered() {
+  if (!_unansCurrentId) return;
+  var model = document.getElementById('unans-model').value.trim();
+  var key = document.getElementById('unans-key').value.trim();
+  var value = document.getElementById('unans-value').value.trim();
+  if (!model || !key || !value) {
+    toast('모델명, 항목명, 내용을 모두 입력하세요', 'error');
+    return;
+  }
+  try {
+    await api.post('/api/aicc/unanswered/' + _unansCurrentId + '/add-knowledge', {
+      model_name: model, key: key, value: value
+    });
+    toast(model + ' DB에 [' + key + '] 추가 완료', 'success');
+    closeUnansModal();
+    loadUnansweredList();
+    loadUnansweredCount();
+  } catch(e) { toast('DB 추가 실패', 'error'); }
+}
+
+function _escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// 미답변 카운트 주기적 체크 (30초마다)
+setInterval(loadUnansweredCount, 30000);
 
 

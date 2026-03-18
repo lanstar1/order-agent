@@ -1126,9 +1126,23 @@ C규격품 200개
         <div style="width:280px;border-right:1px solid #dee2e6;overflow-y:auto;padding:12px;flex-shrink:0">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <strong style="font-size:14px">상담 목록</strong>
-            <button onclick="loadAiccSessions()" style="background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px">↻</button>
+            <div style="display:flex;gap:4px;align-items:center">
+              <button id="aicc-bell-btn" onclick="toggleUnansweredPanel()" style="background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:14px;position:relative" title="미답변 알림">
+                🔔<span id="aicc-bell-badge" style="display:none;position:absolute;top:-4px;right:-4px;background:#e63946;color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;line-height:16px;text-align:center">0</span>
+              </button>
+              <button onclick="loadAiccSessions()" style="background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px">↻</button>
+            </div>
           </div>
           <div id="aicc-session-list" style="font-size:13px"></div>
+
+          <!-- 미답변 패널 (토글) -->
+          <div id="aicc-unanswered-panel" style="display:none;border-top:2px solid #e63946;margin-top:8px;padding-top:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <strong style="font-size:12px;color:#e63946">🔔 미답변 알림</strong>
+              <button onclick="toggleUnansweredPanel()" style="background:none;border:none;cursor:pointer;font-size:11px;color:#999">닫기</button>
+            </div>
+            <div id="aicc-unanswered-list" style="font-size:12px;max-height:300px;overflow-y:auto"></div>
+          </div>
         </div>
         <!-- 우: 채팅 상세 -->
         <div style="flex:1;display:flex;flex-direction:column;padding:16px;min-width:0">
@@ -1158,6 +1172,27 @@ C규격품 200개
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 미답변 상세 모달 -->
+    <div id="aicc-unans-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;justify-content:center;align-items:center">
+      <div style="background:#fff;border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:16px">미답변 상세</h3>
+          <button onclick="closeUnansModal()" style="background:none;border:none;font-size:20px;cursor:pointer">&times;</button>
+        </div>
+        <div id="unans-modal-body"></div>
+        <hr style="margin:16px 0;border:none;border-top:1px solid #eee">
+        <h4 style="margin:0 0 8px;font-size:14px">📝 제품 지식 DB에 추가</h4>
+        <div style="font-size:12px;color:#666;margin-bottom:8px">이 답변을 DB에 추가하면 이후 동일 질문에 정확한 답변이 가능합니다.</div>
+        <input id="unans-model" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:8px" placeholder="모델명 (예: LS-ANDOOR-S)">
+        <input id="unans-key" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:8px" placeholder="항목명 (예: 손잡이_들뜸_해결, FAQ 등)">
+        <textarea id="unans-value" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical;margin-bottom:12px" rows="4" placeholder="추가할 내용 (예: 사각봉을 35mm두께용으로 교체하세요)"></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="resolveUnanswered()" style="padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">해결처리만</button>
+          <button onclick="addKnowledgeFromUnanswered()" style="padding:8px 16px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">DB 추가 + 해결</button>
         </div>
       </div>
     </div>

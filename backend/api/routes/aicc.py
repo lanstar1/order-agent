@@ -89,17 +89,62 @@ async def get_models(q: str = ""):
 
 @router.get("/sessions")
 async def get_sessions(current_user=Depends(get_current_user)):
-    """관리자: 전체 세션 목록"""
-    return {"sessions": session_manager.all_serialized()}
+    """관리자: 전체 세션 목록 (인메모리 + DB 병합)"""
+    # 인메모리 세션 (현재 활성)
+    mem_sessions = session_manager.all_serialized()
+    mem_ids = {s["session_id"] for s in mem_sessions}
+
+    # DB 세션 (재배포 후에도 유지)
+    db_sessions = aicc_db.get_all_sessions(limit=200)
+
+    # DB에만 있는 세션 추가 (인메모리에 없는 과거 세션)
+    for ds in db_sessions:
+        if ds["id"] not in mem_ids:
+            mem_sessions.append({
+                "session_id": ds["id"],
+                "customer_name": ds.get("customer_name", ""),
+                "selected_model": ds.get("selected_model", ""),
+                "erp_code": ds.get("erp_code", ""),
+                "selected_menu": ds.get("selected_menu", ""),
+                "status": ds.get("status", "closed"),
+                "is_admin_intervened": False,
+                "messages": [],
+                "created_at": ds.get("created_at", ""),
+                "updated_at": ds.get("updated_at", ""),
+                "from_db": True,
+            })
+
+    return {"sessions": mem_sessions}
 
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, current_user=Depends(get_current_user)):
-    """관리자: 세션 상세"""
+    """관리자: 세션 상세 (인메모리 or DB 조회)"""
     s = session_manager.get(session_id)
-    if not s:
+    if s:
+        return session_manager.serialize(s)
+
+    # 인메모리에 없으면 DB에서 조회
+    db_sessions = aicc_db.get_all_sessions(limit=500)
+    db_session = next((ds for ds in db_sessions if ds["id"] == session_id), None)
+    if not db_session:
         raise HTTPException(404, "세션 없음")
-    return session_manager.serialize(s)
+
+    # DB에서 메시지도 가져오기
+    db_messages = aicc_db.get_session_messages(session_id)
+    return {
+        "session_id": db_session["id"],
+        "customer_name": db_session.get("customer_name", ""),
+        "selected_model": db_session.get("selected_model", ""),
+        "erp_code": db_session.get("erp_code", ""),
+        "selected_menu": db_session.get("selected_menu", ""),
+        "status": db_session.get("status", "closed"),
+        "is_admin_intervened": False,
+        "messages": [{"role": m["role"], "content": m["content"], "timestamp": m.get("created_at", "")} for m in db_messages],
+        "created_at": db_session.get("created_at", ""),
+        "updated_at": db_session.get("updated_at", ""),
+        "from_db": True,
+    }
 
 
 @router.post("/sessions/{session_id}/intervene")
@@ -432,3 +477,63 @@ async def get_chat_history_messages(
     """특정 세션의 전체 채팅 메시지"""
     messages = aicc_db.get_session_messages(session_id)
     return {"session_id": session_id, "messages": messages, "total": len(messages)}
+
+
+# ── 미답변 관리 API ───────────────────────────────────
+
+@router.get("/unanswered")
+async def get_unanswered_list(
+    resolved: bool = False,
+    current_user=Depends(get_current_user)
+):
+    """미답변 목록 조회"""
+    items = aicc_db.get_unanswered(resolved=resolved)
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/unanswered/count")
+async def get_unanswered_count(current_user=Depends(get_current_user)):
+    """미해결 미답변 수"""
+    return {"count": aicc_db.count_unanswered()}
+
+
+@router.post("/unanswered/{item_id}/resolve")
+async def resolve_unanswered(
+    item_id: int,
+    current_user=Depends(get_current_user)
+):
+    """미답변 해결 처리"""
+    aicc_db.resolve_unanswered(item_id)
+    return {"ok": True}
+
+
+class AddKnowledgeFromUnanswered(BaseModel):
+    model_name: str
+    key: str       # 예: "손잡이_들뜸_해결"
+    value: str     # 예: "사각봉을 35mm용으로 교체하세요"
+
+
+@router.post("/unanswered/{item_id}/add-knowledge")
+async def add_knowledge_from_unanswered(
+    item_id: int,
+    body: AddKnowledgeFromUnanswered,
+    current_user=Depends(get_current_user)
+):
+    """미답변에서 직접 제품 지식 DB에 항목 추가"""
+    existing = aicc_db.get_product_knowledge(body.model_name)
+    if existing:
+        data = existing["data"]
+    else:
+        data = {"카테고리": ""}
+
+    # 기존 데이터에 새 키 추가
+    if body.key in data and isinstance(data[body.key], list):
+        data[body.key].append(body.value)
+    elif body.key in data and isinstance(data[body.key], str):
+        data[body.key] = [data[body.key], body.value]
+    else:
+        data[body.key] = body.value
+
+    aicc_db.upsert_product_knowledge(body.model_name, data.get("카테고리", ""), data)
+    aicc_db.resolve_unanswered(item_id, admin_note=f"DB 추가: {body.key}")
+    return {"ok": True, "model_name": body.model_name, "key": body.key}

@@ -188,3 +188,63 @@ def delete_product_knowledge(model_name: str) -> bool:
         return True
     finally:
         conn.close()
+
+
+# ── AI 미답변 기록 ─────────────────────────────────────
+
+def save_unanswered(session_id: str, model_name: str, user_question: str, ai_response: str):
+    """AI가 답변하지 못한 질문을 기록"""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO aicc_unanswered (session_id, model_name, user_question, ai_response, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (session_id, model_name, user_question, ai_response, now_kst()),
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"[AICC DB] 미답변 저장 오류: {e}")
+    finally:
+        conn.close()
+
+
+def get_unanswered(resolved: bool = False, limit: int = 100) -> List[dict]:
+    """미답변 목록 조회"""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """SELECT id, session_id, model_name, user_question, ai_response,
+                      resolved, admin_note, created_at
+               FROM aicc_unanswered
+               WHERE resolved = ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (1 if resolved else 0, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def resolve_unanswered(unanswered_id: int, admin_note: str = ""):
+    """미답변을 해결 처리"""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE aicc_unanswered SET resolved=1, admin_note=?, resolved_at=? WHERE id=?",
+            (admin_note, now_kst(), unanswered_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def count_unanswered() -> int:
+    """미해결 미답변 수"""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM aicc_unanswered WHERE resolved=0"
+        ).fetchone()
+        return row["cnt"] if row else 0
+    finally:
+        conn.close()

@@ -53,7 +53,7 @@ def _sql_to_pg(sql):
                 'activity_log', 'orderlist_items', 'orderlist_sync_log',
                 'shipments',
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
-                'sa_uploads', 'sa_jobs', 'aicc_product_knowledge',
+                'sa_uploads', 'sa_jobs', 'aicc_product_knowledge', 'aicc_unanswered',
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
@@ -682,6 +682,20 @@ def init_db():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
 
+    # ── AICC 미답변 기록 테이블
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS aicc_unanswered (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        model_name TEXT DEFAULT '',
+        user_question TEXT NOT NULL,
+        ai_response TEXT DEFAULT '',
+        resolved INTEGER DEFAULT 0,
+        admin_note TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved_at TIMESTAMP
+    )""")
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -715,6 +729,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_aicc_msg ON aicc_messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_aicc_status ON aicc_sessions(status);
         CREATE INDEX IF NOT EXISTS idx_aicc_pk_cat ON aicc_product_knowledge(category);
+        CREATE INDEX IF NOT EXISTS idx_aicc_unans_resolved ON aicc_unanswered(resolved);
     """)
 
     conn.commit()

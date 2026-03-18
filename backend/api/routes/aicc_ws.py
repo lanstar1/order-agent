@@ -1,9 +1,31 @@
 """
 AICC WebSocket 핸들러
 """
+import re
 from fastapi import WebSocket, WebSocketDisconnect
 from services.aicc_session_manager import session_manager
 from services.aicc_ai_service import get_ai_response
+
+
+# AI가 답변하지 못한 패턴 감지
+_UNANSWERED_PATTERNS = [
+    r"고객센터.*문의",
+    r"전화.*문의.*주시",
+    r"정확한 안내.*어렵",
+    r"정보가.*없",
+    r"등록되어 있지 않",
+    r"준비 중입니다",
+    r"안내를 드리기 어려",
+    r"확인이 필요합니다",
+    r"정확한 정보.*제공.*어렵",
+    r"02-717-3386",
+]
+
+
+def _is_unanswered(ai_reply: str) -> bool:
+    """AI 응답이 '답변 불가' 패턴인지 감지"""
+    matches = sum(1 for p in _UNANSWERED_PATTERNS if re.search(p, ai_reply))
+    return matches >= 2  # 2개 이상 패턴 매칭 시 미답변으로 판단
 
 
 async def customer_ws_handler(websocket: WebSocket, session_id: str):
@@ -57,6 +79,20 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
 
                 session_manager.add_message(actual_sid, "assistant", ai_reply)
                 await websocket.send_json({"type": "ai_message", "content": ai_reply})
+
+                # 미답변 감지 → DB 기록 + 관리자 알림
+                if _is_unanswered(ai_reply):
+                    try:
+                        from services.aicc_db import save_unanswered
+                        save_unanswered(actual_sid, model, content, ai_reply)
+                        await session_manager.broadcast_admins({
+                            "type": "unanswered_alert",
+                            "session_id": actual_sid,
+                            "model": model,
+                            "question": content[:200],
+                        })
+                    except Exception as ue:
+                        print(f"[AICC] 미답변 기록 오류: {ue}")
 
             elif msg_type == "close":
                 session_manager.close(actual_sid)
