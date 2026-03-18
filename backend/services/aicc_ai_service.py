@@ -70,7 +70,8 @@ def _format_knowledge_for_prompt(knowledge_data: dict) -> str:
     """제품 지식 DB 데이터를 시스템 프롬프트용 텍스트로 변환"""
     lines = []
     # 절차/단계 관련 키는 번호를 붙여서 더 명확하게
-    step_keys = {"비밀번호등록", "지문등록", "초기화방법", "설치방법", "비밀번호변경", "카드등록", "사용방법"}
+    step_keys = {"비밀번호등록", "지문등록", "초기화방법", "설치방법", "비밀번호변경", "카드등록", "사용방법",
+                  "상시열림모드_설정", "상시열림모드_해제", "상시열림모드설정", "상시열림모드해제"}
 
     for key, value in knowledge_data.items():
         if key.startswith("_") or key in ("카테고리", "category"):
