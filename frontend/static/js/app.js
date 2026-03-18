@@ -5010,7 +5010,7 @@ function renderAiccSessions(sessions) {
   const groups = {
     '🔴 신규': sessions.filter(function(s) { return s.status === 'active'; }),
     '🟡 진행중': sessions.filter(function(s) { return s.status === 'intervened' || s.status === 'waiting_admin'; }),
-    '⚫ 종료': sessions.filter(function(s) { return s.status === 'closed'; }).slice(0, 15),
+    '⚫ 종료': sessions.filter(function(s) { return s.status === 'closed'; }).slice(0, 30),
   };
 
   const newCount = groups['🔴 신규'].length;
@@ -5029,9 +5029,16 @@ function renderAiccSessions(sessions) {
     list.forEach(function(s) {
       const active = s.session_id === _aiccCurrentId;
       const modelInfo = s.selected_model ? s.selected_model + ' · ' : '';
+      var timeStr = '';
+      if (s.created_at) {
+        try {
+          var d = new Date(s.created_at);
+          timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+        } catch(e) { timeStr = s.created_at.substring(5, 16); }
+      }
       html +=
         '<div class="aicc-session-item" data-sid="' + s.session_id + '" style="padding:8px;margin-bottom:4px;border-radius:6px;cursor:pointer;background:' + (active ? '#1a1a2e' : '#f8f9fa') + ';color:' + (active ? '#fff' : '#333') + '">' +
-          '<div style="font-weight:600;font-size:13px">' + (s.customer_name || '비회원') + '</div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;font-size:13px">' + (s.customer_name || '비회원') + '</span><span style="font-size:10px;opacity:.5">' + timeStr + '</span></div>' +
           '<div style="font-size:11px;opacity:.75">' + modelInfo + s.selected_menu + '</div>' +
         '</div>';
     });

@@ -97,7 +97,7 @@ async def get_sessions(current_user=Depends(get_current_user)):
     # DB 세션 (재배포 후에도 유지)
     db_sessions = aicc_db.get_all_sessions(limit=200)
 
-    # DB에만 있는 세션 추가 (인메모리에 없는 과거 세션)
+    # DB에만 있는 세션 추가 (인메모리에 없는 = 이미 종료된 과거 세션)
     for ds in db_sessions:
         if ds["id"] not in mem_ids:
             mem_sessions.append({
@@ -106,7 +106,7 @@ async def get_sessions(current_user=Depends(get_current_user)):
                 "selected_model": ds.get("selected_model", ""),
                 "erp_code": ds.get("erp_code", ""),
                 "selected_menu": ds.get("selected_menu", ""),
-                "status": ds.get("status", "closed"),
+                "status": "closed",  # 인메모리에 없으면 무조건 종료 상태
                 "is_admin_intervened": False,
                 "messages": [],
                 "created_at": ds.get("created_at", ""),
