@@ -638,7 +638,17 @@
       div.innerHTML = '<div class="ls-msg-bubble">' + imgHtml + rendered + '</div>';
     }
     mc.appendChild(div);
-    mc.scrollTop = mc.scrollHeight;
+
+    if (type === 'user') {
+      // 사용자 메시지: 맨 하단으로 스크롤 (내 메시지 전체 보이게)
+      mc.scrollTop = mc.scrollHeight;
+    } else if (type === 'ai' || type === 'assistant') {
+      // AI 메시지: 답변 시작 부분이 보이도록 스크롤
+      var msgTop = div.offsetTop - mc.offsetTop - 8;
+      mc.scrollTo({ top: msgTop, behavior: 'smooth' });
+    } else {
+      mc.scrollTop = mc.scrollHeight;
+    }
   }
 
   function showTyping() { document.getElementById('ls-typing').style.display = 'flex'; }
