@@ -278,20 +278,16 @@ async def startup():
         import traceback
         logger.warning(f"AICC 데이터 로딩 실패 (서비스는 계속): {e}\n{traceback.format_exc()}")
 
-    # AICC 제품 지식 DB 자동 로드 (JSON → DB)
+    # AICC 제품 지식 DB 자동 로드 (JSON → DB, 매 배포시 최신 반영)
     try:
         from services import aicc_db as _aicc_db
+        import json as _json
         knowledge_path = Path(__file__).parent.parent / "data" / "aicc" / "lanstar_product_knowledge.json"
         if knowledge_path.exists():
-            existing = _aicc_db.get_all_product_knowledge()
-            if len(existing) < 100:  # DB에 데이터가 거의 없으면 로드
-                import json as _json
-                with open(knowledge_path, encoding="utf-8") as f:
-                    products = _json.load(f)
-                count = _aicc_db.bulk_upsert_product_knowledge(products)
-                logger.info(f"AICC 제품 지식 DB 로드 완료: {count}개 제품")
-            else:
-                logger.info(f"AICC 제품 지식 DB 이미 로드됨: {len(existing)}개 제품")
+            with open(knowledge_path, encoding="utf-8") as f:
+                products = _json.load(f)
+            count = _aicc_db.bulk_upsert_product_knowledge(products)
+            logger.info(f"AICC 제품 지식 DB 동기화 완료: {count}개 제품 (upsert)")
     except Exception as e:
         logger.warning(f"AICC 제품 지식 DB 로드 실패 (서비스는 계속): {e}")
 
