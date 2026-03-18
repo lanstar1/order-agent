@@ -177,7 +177,7 @@
           <path d="M40 46l4 6" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".7"/>
         </svg>
         <div class="btn-title"><em>LAN</em>star AI</div>
-        <div class="btn-desc">제품 사용법, 연결 방법<br>무엇이든 물어보세요!</div>
+        <div class="btn-desc">제품사용법, 배송/재고 조회<br>견적문의 무엇이든 물어보세요</div>
         <div class="btn-cta">💬 상담 시작</div>
         <span id="ls-chat-badge"></span>
       </button>
