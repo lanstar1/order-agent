@@ -383,6 +383,13 @@ async def list_knowledge(current_user=Depends(get_current_user)):
     return {"items": items, "total": len(items)}
 
 
+@router.get("/knowledge-count")
+async def knowledge_count():
+    """제품 지식 DB 총 개수 (인증 불필요, 디버깅용)"""
+    items = aicc_db.get_all_product_knowledge()
+    return {"total": len(items)}
+
+
 @router.get("/knowledge/{model_name}")
 async def get_knowledge(model_name: str, current_user=Depends(get_current_user)):
     """특정 제품 지식 상세"""
@@ -390,6 +397,15 @@ async def get_knowledge(model_name: str, current_user=Depends(get_current_user))
     if not item:
         raise HTTPException(404, "해당 제품 지식이 없습니다")
     return item
+
+
+@router.get("/knowledge-check/{model_name}")
+async def check_knowledge(model_name: str):
+    """제품 지식 존재 여부 확인 (인증 불필요)"""
+    item = aicc_db.get_product_knowledge(model_name)
+    if not item:
+        return {"exists": False, "model_name": model_name}
+    return {"exists": True, "model_name": model_name, "keys": list(item.get("data", {}).keys())}
 
 
 @router.delete("/knowledge/{model_name}")
