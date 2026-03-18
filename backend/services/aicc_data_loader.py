@@ -264,28 +264,65 @@ class AICCDataLoader:
 
     # ── 기존 shop/aicc searchRelevantQna 완전 이식 ──────────
 
-    def search_relevant_qna(self, query: str, session_model: str, max_results: int = 5) -> List[dict]:
+    def _get_related_models(self, model: str) -> set:
+        """같은 제품군의 관련 모델명 반환 (ADOOR↔ANDOOR 등)"""
+        if not model:
+            return set()
+        upper = model.upper()
+        related = {upper}
+
+        # ADOOR ↔ ANDOOR 매핑 (같은 도어락 제품군)
+        if "ANDOOR" in upper:
+            base = upper.replace("ANDOOR", "ADOOR")
+            related.add(base)
+            # LS-ANDOOR-S → LS-ADOOR, LS-ADOOR-S 등
+            related.add(re.sub(r'-[SB]$', '', base))
+            related.add(re.sub(r'-[SB]$', '', upper))
+        elif "ADOOR" in upper:
+            base = upper.replace("ADOOR", "ANDOOR")
+            related.add(base)
+            related.add(re.sub(r'-[SB]$', '', base))
+            related.add(re.sub(r'-[SB]$', '', upper))
+
+        # 같은 제품의 변형 (LS-XXX-S, LS-XXX-B → LS-XXX 공통)
+        base_no_suffix = re.sub(r'-[SB]$', '', upper)
+        if base_no_suffix != upper:
+            related.add(base_no_suffix)
+
+        return related
+
+    def search_relevant_qna(self, query: str, session_model: str, max_results: int = 10) -> List[dict]:
         """
-        기존 shop/aicc chatbot.js의 searchRelevantQna 로직 그대로 이식.
         1. lanstar_technical_qna.json의 모든 제품 QnA 검색
         2. lanstar_unidentified_qna.json (미분류 QnA) 검색
-        3. 같은 모델 = +5점, 키워드 매칭 = +1점/단어
+        3. 같은 모델 = +5점, 관련 모델(ADOOR↔ANDOOR) = +4점, 키워드 매칭 = +1점/단어
         """
         upper = query.upper()
         words = [w for w in re.split(r'[\s,]+', upper) if len(w) >= 2]
         results = []
 
+        # 관련 모델 그룹 (ADOOR↔ANDOOR, -S↔-B 등)
+        related_models = self._get_related_models(session_model)
+
         # 1. technical_qna (모델별 QnA)
         for product in self.technical_qna:
             product_model = product.get("model", "")
+            product_model_upper = product_model.upper()
             for qna in product.get("qna", []):
                 q_text = qna.get("question", "")
                 a_text = qna.get("answer", "")
                 text = (q_text + " " + a_text + " " + product_model).upper()
 
                 score = 0
-                if session_model and product_model.upper() == session_model.upper():
+                # 정확히 같은 모델
+                if session_model and product_model_upper == session_model.upper():
                     score += 5
+                # 관련 모델 (ADOOR↔ANDOOR 등) — 같은 제품군이므로 높은 점수
+                elif product_model_upper in related_models or any(
+                    rm in product_model_upper or product_model_upper in rm
+                    for rm in related_models
+                ):
+                    score += 4
                 for w in words:
                     if w in text:
                         score += 1
