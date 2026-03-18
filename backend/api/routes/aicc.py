@@ -513,3 +513,51 @@ async def add_knowledge_from_unanswered(
     aicc_db.upsert_product_knowledge(body.model_name, data.get("카테고리", ""), data)
     aicc_db.resolve_unanswered(item_id, admin_note=f"DB 추가: {body.key}")
     return {"ok": True, "model_name": body.model_name, "key": body.key}
+
+
+class DirectKnowledgeAdd(BaseModel):
+    model_name: str
+    key: str       # 예: "FAQ", "비밀번호등록"
+    value: str     # 단일 텍스트 또는 줄바꿈 구분 리스트
+
+
+@router.post("/knowledge/add-direct")
+async def add_knowledge_direct(
+    body: DirectKnowledgeAdd,
+    current_user=Depends(get_current_user)
+):
+    """관리자가 직접 제품 지식 DB에 항목 추가 (미답변 연동 없음)"""
+    # 모델명이 실제 존재하는지 확인
+    found = data_loader.search_models(body.model_name, limit=1)
+    if not found or found[0]["model_name"] != body.model_name:
+        # 정확히 일치하지 않아도 DB에는 추가 가능 (이미 등록된 제품일 수 있음)
+        pass
+
+    existing = aicc_db.get_product_knowledge(body.model_name)
+    if existing:
+        data = existing["data"]
+        category = existing.get("category", data.get("카테고리", ""))
+    else:
+        data = {"카테고리": ""}
+        category = ""
+
+    # 줄바꿈이 있으면 리스트로 변환
+    lines = [l.strip() for l in body.value.split("\n") if l.strip()]
+    new_value = lines if len(lines) > 1 else body.value.strip()
+
+    # 기존 데이터에 추가/병합
+    if body.key in data and isinstance(data[body.key], list):
+        if isinstance(new_value, list):
+            data[body.key].extend(new_value)
+        else:
+            data[body.key].append(new_value)
+    elif body.key in data and isinstance(data[body.key], str) and data[body.key]:
+        if isinstance(new_value, list):
+            data[body.key] = [data[body.key]] + new_value
+        else:
+            data[body.key] = [data[body.key], new_value]
+    else:
+        data[body.key] = new_value
+
+    aicc_db.upsert_product_knowledge(body.model_name, category, data)
+    return {"ok": True, "model_name": body.model_name, "key": body.key}

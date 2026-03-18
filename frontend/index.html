@@ -1131,6 +1131,7 @@ C규격품 200개
                 🔔<span id="aicc-bell-badge" style="display:none;position:absolute;top:-4px;right:-4px;background:#e63946;color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;line-height:16px;text-align:center">0</span>
               </button>
               <button onclick="loadAiccSessions()" style="background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px">↻</button>
+              <button onclick="openKnowledgeAddModal()" style="background:none;border:1px solid #4f46e5;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px;color:#4f46e5" title="지식 DB 추가">📚</button>
             </div>
           </div>
           <div id="aicc-session-list" style="font-size:13px"></div>
@@ -1193,6 +1194,65 @@ C규격품 200개
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button onclick="resolveUnanswered()" style="padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">해결처리만</button>
           <button onclick="addKnowledgeFromUnanswered()" style="padding:8px 16px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">DB 추가 + 해결</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 지식 DB 추가 모달 -->
+    <div id="aicc-kb-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;justify-content:center;align-items:center">
+      <div style="background:#fff;border-radius:12px;padding:24px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:16px">📚 제품 지식 DB 추가</h3>
+          <button onclick="closeKbModal()" style="background:none;border:none;font-size:20px;cursor:pointer">&times;</button>
+        </div>
+
+        <!-- 모델 검색 -->
+        <div style="margin-bottom:12px;position:relative">
+          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">모델명 선택 (필수)</label>
+          <input id="kb-model-input" type="text" autocomplete="off"
+            oninput="kbModelSearch(this.value)"
+            style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box"
+            placeholder="모델명 입력 (예: LS-ANDOOR, LS-HDMI 등 2자 이상)">
+          <div id="kb-model-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-top:none;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+          <div id="kb-selected-model" style="display:none;margin-top:6px;padding:6px 10px;background:#e8f5e9;border-radius:6px;font-size:12px;color:#2e7d32">
+            ✅ 선택됨: <strong id="kb-selected-name"></strong>
+          </div>
+        </div>
+
+        <!-- 기존 데이터 보기 -->
+        <div id="kb-existing-area" style="display:none;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <label style="font-size:12px;color:#666">📋 현재 등록된 지식 DB</label>
+            <button onclick="toggleKbExisting()" id="kb-existing-toggle" style="background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;color:#666">펼치기</button>
+          </div>
+          <div id="kb-existing-data" style="display:none;background:#f8f9fa;border:1px solid #e9ecef;border-radius:6px;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace"></div>
+        </div>
+
+        <!-- QnA 입력 -->
+        <hr style="margin:12px 0;border:none;border-top:1px solid #eee">
+        <h4 style="margin:0 0 8px;font-size:14px">✏️ 새 항목 추가</h4>
+        <div style="font-size:12px;color:#666;margin-bottom:10px">고객 질문에 AI가 정확히 답변할 수 있도록 제품 지식을 추가합니다.</div>
+
+        <input id="kb-key" type="text"
+          style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:8px;box-sizing:border-box"
+          placeholder="항목명 (예: FAQ, 비밀번호등록, 손잡이_설치방법, 호환성 등)">
+
+        <textarea id="kb-value"
+          style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical;margin-bottom:8px;box-sizing:border-box"
+          rows="5" placeholder="내용을 입력하세요.&#10;여러 단계가 있으면 줄바꿈으로 구분하면 자동으로 목록화됩니다.&#10;&#10;예시:&#10;1단계: 숫자 1을 누릅니다&#10;2단계: #을 누릅니다&#10;3단계: 비밀번호를 입력합니다"></textarea>
+
+        <div style="font-size:11px;color:#999;margin-bottom:12px">💡 줄바꿈으로 구분하면 리스트(배열)로 저장됩니다. 한 줄이면 단일 텍스트로 저장됩니다.</div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="closeKbModal()" style="padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">취소</button>
+          <button onclick="addKnowledgeDirect()" style="padding:8px 16px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">DB에 추가</button>
+        </div>
+
+        <!-- 추가 이력 -->
+        <div id="kb-add-history" style="margin-top:16px;display:none">
+          <hr style="margin:12px 0;border:none;border-top:1px solid #eee">
+          <label style="font-size:12px;color:#666">✅ 이번 세션에서 추가한 항목</label>
+          <div id="kb-add-history-list" style="font-size:12px;margin-top:6px"></div>
         </div>
       </div>
     </div>

@@ -5256,4 +5256,152 @@ function _escHtml(s) {
 // 미답변 카운트 주기적 체크 (30초마다)
 setInterval(loadUnansweredCount, 30000);
 
+// ── 지식 DB 직접 추가 시스템 ──────────────────────────────
+
+var _kbSelectedModel = null;
+var _kbAllModels = [];
+var _kbAddHistory = [];
+var _kbSearchTimer = null;
+
+async function openKnowledgeAddModal() {
+  _kbSelectedModel = null;
+  _kbAddHistory = [];
+  document.getElementById('kb-model-input').value = '';
+  document.getElementById('kb-selected-model').style.display = 'none';
+  document.getElementById('kb-model-dropdown').style.display = 'none';
+  document.getElementById('kb-existing-area').style.display = 'none';
+  document.getElementById('kb-existing-data').style.display = 'none';
+  document.getElementById('kb-key').value = '';
+  document.getElementById('kb-value').value = '';
+  document.getElementById('kb-add-history').style.display = 'none';
+  document.getElementById('kb-add-history-list').innerHTML = '';
+  document.getElementById('aicc-kb-modal').style.display = 'flex';
+
+  // 모델 목록 초기 로드 (캐시)
+  if (_kbAllModels.length === 0) {
+    try {
+      _kbAllModels = await api.get('/api/aicc/models');
+    } catch(e) { console.warn('모델 목록 로드 실패', e); }
+  }
+}
+
+function closeKbModal() {
+  document.getElementById('aicc-kb-modal').style.display = 'none';
+  _kbSelectedModel = null;
+}
+
+function kbModelSearch(q) {
+  // 디바운스
+  if (_kbSearchTimer) clearTimeout(_kbSearchTimer);
+  _kbSearchTimer = setTimeout(function() { _kbDoModelSearch(q); }, 200);
+}
+
+function _kbDoModelSearch(q) {
+  var dropdown = document.getElementById('kb-model-dropdown');
+  q = (q || '').trim().toUpperCase();
+  if (q.length < 2) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  // 로컬 필터링 (이미 전체 모델 로드됨)
+  var matches = _kbAllModels.filter(function(m) {
+    return m.model_name.toUpperCase().indexOf(q) >= 0 ||
+           (m.product_name || '').toUpperCase().indexOf(q) >= 0;
+  }).slice(0, 15);
+
+  if (matches.length === 0) {
+    dropdown.innerHTML = '<div style="padding:8px 12px;color:#999;font-size:12px">검색 결과 없음</div>';
+    dropdown.style.display = 'block';
+    return;
+  }
+
+  var html = '';
+  matches.forEach(function(m) {
+    html += '<div onclick="kbSelectModel(\'' + _escHtml(m.model_name) + '\',\'' + _escHtml(m.product_name || '') + '\')" ' +
+      'style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:12px" ' +
+      'onmouseover="this.style.background=\'#f3f4f6\'" onmouseout="this.style.background=\'#fff\'">' +
+      '<span style="font-weight:600;color:#4f46e5">' + _escHtml(m.model_name) + '</span> ' +
+      '<span style="color:#888">' + _escHtml(m.product_name || '') + '</span>' +
+      '</div>';
+  });
+  dropdown.innerHTML = html;
+  dropdown.style.display = 'block';
+}
+
+async function kbSelectModel(modelName, productName) {
+  _kbSelectedModel = modelName;
+  document.getElementById('kb-model-input').value = modelName;
+  document.getElementById('kb-model-dropdown').style.display = 'none';
+  document.getElementById('kb-selected-name').textContent = modelName + (productName ? ' (' + productName + ')' : '');
+  document.getElementById('kb-selected-model').style.display = 'block';
+
+  // 기존 데이터 로드
+  document.getElementById('kb-existing-area').style.display = 'block';
+  document.getElementById('kb-existing-data').style.display = 'none';
+  document.getElementById('kb-existing-toggle').textContent = '펼치기';
+  try {
+    var data = await api.get('/api/aicc/knowledge/' + encodeURIComponent(modelName));
+    if (data && data.data) {
+      var formatted = JSON.stringify(data.data, null, 2);
+      document.getElementById('kb-existing-data').textContent = formatted;
+    } else {
+      document.getElementById('kb-existing-data').textContent = '(등록된 지식 데이터 없음)';
+    }
+  } catch(e) {
+    document.getElementById('kb-existing-data').textContent = '(등록된 지식 데이터 없음 — 새로 추가됩니다)';
+  }
+}
+
+function toggleKbExisting() {
+  var area = document.getElementById('kb-existing-data');
+  var btn = document.getElementById('kb-existing-toggle');
+  if (area.style.display === 'none') {
+    area.style.display = 'block';
+    btn.textContent = '접기';
+  } else {
+    area.style.display = 'none';
+    btn.textContent = '펼치기';
+  }
+}
+
+async function addKnowledgeDirect() {
+  if (!_kbSelectedModel) {
+    toast('모델명을 선택하세요 (검색 후 목록에서 클릭)', 'error');
+    return;
+  }
+  var key = document.getElementById('kb-key').value.trim();
+  var value = document.getElementById('kb-value').value.trim();
+  if (!key || !value) {
+    toast('항목명과 내용을 모두 입력하세요', 'error');
+    return;
+  }
+  try {
+    await api.post('/api/aicc/knowledge/add-direct', {
+      model_name: _kbSelectedModel,
+      key: key,
+      value: value
+    });
+    toast(_kbSelectedModel + ' DB에 [' + key + '] 추가 완료', 'success');
+
+    // 이력 표시
+    _kbAddHistory.push({ model: _kbSelectedModel, key: key });
+    var historyDiv = document.getElementById('kb-add-history');
+    var historyList = document.getElementById('kb-add-history-list');
+    historyDiv.style.display = 'block';
+    var hHtml = '';
+    _kbAddHistory.forEach(function(h) {
+      hHtml += '<div style="padding:4px 0;border-bottom:1px solid #f0f0f0">✅ <strong>' + _escHtml(h.model) + '</strong> → [' + _escHtml(h.key) + ']</div>';
+    });
+    historyList.innerHTML = hHtml;
+
+    // 입력 초기화 (모델은 유지)
+    document.getElementById('kb-key').value = '';
+    document.getElementById('kb-value').value = '';
+
+    // 기존 데이터 새로고침
+    kbSelectModel(_kbSelectedModel, '');
+  } catch(e) { toast('DB 추가 실패: ' + (e.message || ''), 'error'); }
+}
+
 
