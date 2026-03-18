@@ -27,8 +27,10 @@ SYSTEM_BASE = """당신은 "랜스타(Lanstar)" 제품의 기술 상담 전문 A
 ## 기본 규칙
 - 한국어로 답변합니다.
 - 모델명은 정확하게 표기합니다.
-- **제품 지식 DB 정보를 최우선으로 참고하세요.** 제품 지식 DB에 있는 내용이 가장 정확합니다.
+- **[절대 규칙] 제품 지식 DB에 있는 절차/단계 정보는 반드시 그대로 안내하세요. 단계를 생략하거나 순서를 바꾸거나 임의로 변형하지 마세요.**
+- **제품 지식 DB의 내용이 가장 정확합니다. 당신이 알고 있는 일반 지식보다 제품 지식 DB를 우선하세요.**
 - QnA 데이터는 보충 참고용으로만 사용하세요. 제품 지식 DB와 QnA가 상충하면 제품 지식 DB를 따르세요.
+- 비밀번호 등록, 지문 등록, 초기화 등 절차가 DB에 있으면 DB의 단계를 원문 그대로 인용하여 답변하세요.
 - 모르는 내용: "정확한 정보 확인을 위해 랜스타 고객센터(02-717-3386)로 문의해 주시기 바랍니다."
 - 경쟁사 제품을 언급하거나 비교하지 않습니다.
 - 가격 정보는 안내하지 않습니다. 가격 문의 시 공식 사이트나 고객센터를 안내합니다.
@@ -67,12 +69,20 @@ FALLBACK_ERROR = (
 def _format_knowledge_for_prompt(knowledge_data: dict) -> str:
     """제품 지식 DB 데이터를 시스템 프롬프트용 텍스트로 변환"""
     lines = []
+    # 절차/단계 관련 키는 번호를 붙여서 더 명확하게
+    step_keys = {"비밀번호등록", "지문등록", "초기화방법", "설치방법", "비밀번호변경", "카드등록", "사용방법"}
+
     for key, value in knowledge_data.items():
-        if key in ("카테고리", "category"):
-            continue  # 이미 별도로 처리
+        if key.startswith("_") or key in ("카테고리", "category"):
+            continue
         if isinstance(value, list):
-            items = "\n".join(f"  - {v}" for v in value)
-            lines.append(f"### {key}\n{items}")
+            if key in step_keys:
+                # 절차 데이터: 번호를 붙여 단계를 명확히
+                items = "\n".join(f"  {i+1}단계: {v}" for i, v in enumerate(value))
+                lines.append(f"### {key} (총 {len(value)}단계 — 이 순서를 반드시 지키세요)\n{items}")
+            else:
+                items = "\n".join(f"  - {v}" for v in value)
+                lines.append(f"### {key}\n{items}")
         elif isinstance(value, dict):
             items = "\n".join(f"  - {k}: {v}" for k, v in value.items() if v)
             lines.append(f"### {key}\n{items}")
@@ -116,7 +126,7 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     if knowledge:
         knowledge_text = _format_knowledge_for_prompt(knowledge["data"])
         sys_prompt += f"\n## [1차 소스] 제품 지식 DB — 이 정보가 가장 정확합니다\n{knowledge_text}\n"
-        sys_prompt += "\n⚠ 위 제품 지식 DB의 내용을 최우선으로 참고하여 답변하세요. QnA와 상충 시 이 정보를 따르세요.\n"
+        sys_prompt += "\n⚠⚠⚠ [매우 중요] 위 제품 지식 DB의 절차/단계를 반드시 원문 그대로 안내하세요. 절대로 단계를 생략하거나 순서를 변경하거나 당신의 지식으로 대체하지 마세요. DB에 '1+# 입력' → '지문 인식' → '비밀번호 6자리+#' 이렇게 되어있으면 그 순서 그대로 안내해야 합니다.\n"
     else:
         # 제품 지식 DB에 없으면 기존 product_data 스펙 사용
         if product:
