@@ -93,6 +93,11 @@ function updateStep(step) {
 }
 
 function navigateTo(pageId) {
+  // AI 메일 에이전트는 외부 링크로 열기 (내부 페이지 전환 안 함)
+  if (pageId === "mail_agent") {
+    window.open("https://mail-dqxh.onrender.com", "_blank");
+    return;
+  }
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   const page = document.getElementById("page-" + pageId);
@@ -654,7 +659,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 초기 데이터 로드
   loadCustomers();
-  navigateTo("new_order");
+  navigateTo("ai_dashboard");
 
   // 드래그앤드롭 업로드
   const dropzone = document.getElementById("image-dropzone");
