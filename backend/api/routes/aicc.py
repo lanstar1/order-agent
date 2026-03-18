@@ -89,32 +89,8 @@ async def get_models(q: str = ""):
 
 @router.get("/sessions")
 async def get_sessions(current_user=Depends(get_current_user)):
-    """관리자: 전체 세션 목록 (인메모리 + DB 병합)"""
-    # 인메모리 세션 (현재 활성)
-    mem_sessions = session_manager.all_serialized()
-    mem_ids = {s["session_id"] for s in mem_sessions}
-
-    # DB 세션 (재배포 후에도 유지)
-    db_sessions = aicc_db.get_all_sessions(limit=200)
-
-    # DB에만 있는 세션 추가 (인메모리에 없는 = 이미 종료된 과거 세션)
-    for ds in db_sessions:
-        if ds["id"] not in mem_ids:
-            mem_sessions.append({
-                "session_id": ds["id"],
-                "customer_name": ds.get("customer_name", ""),
-                "selected_model": ds.get("selected_model", ""),
-                "erp_code": ds.get("erp_code", ""),
-                "selected_menu": ds.get("selected_menu", ""),
-                "status": "closed",  # 인메모리에 없으면 무조건 종료 상태
-                "is_admin_intervened": False,
-                "messages": [],
-                "created_at": ds.get("created_at", ""),
-                "updated_at": ds.get("updated_at", ""),
-                "from_db": True,
-            })
-
-    return {"sessions": mem_sessions}
+    """관리자: 현재 활성 세션 목록 (인메모리만 — 깜빡임 방지)"""
+    return {"sessions": session_manager.all_serialized()}
 
 
 @router.get("/sessions/{session_id}")

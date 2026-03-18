@@ -278,6 +278,17 @@ async def startup():
         import traceback
         logger.warning(f"AICC 데이터 로딩 실패 (서비스는 계속): {e}\n{traceback.format_exc()}")
 
+    # AICC: 이전 active 세션을 closed로 정리 (재배포 시 인메모리 초기화되므로)
+    try:
+        from db.database import get_connection as _get_conn
+        _conn = _get_conn()
+        _conn.execute("UPDATE aicc_sessions SET status='closed' WHERE status='active'")
+        _conn.commit()
+        _conn.close()
+        logger.info("AICC 이전 active 세션 → closed 정리 완료")
+    except Exception as e:
+        logger.warning(f"AICC 세션 정리 실패: {e}")
+
     # AICC 제품 지식 DB 자동 로드 (JSON → DB, 매 배포시 최신 반영)
     try:
         from services import aicc_db as _aicc_db
