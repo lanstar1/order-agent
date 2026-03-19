@@ -621,9 +621,43 @@ async def drive_upload_check(user: dict = Depends(get_current_user)):
                     result["folder_access"] = "OK"
                     result["folder_files"] = [f["name"] for f in files]
                 else:
-                    result["folder_access"] = f"FAIL ({r.status_code}): {r.text[:200]}"
+                    result["folder_access"] = f"FAIL ({r.status_code}): {r.text[:300]}"
         except Exception as e:
             result["folder_access"] = f"ERROR: {e}"
+
+        # 테스트 파일 업로드 시도
+        try:
+            import httpx, json as _json
+            boundary = "---test-boundary---"
+            metadata = _json.dumps({"name": "_drive_test.txt", "parents": [GOOGLE_CS_FOLDER_ID]})
+            test_body = (
+                f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
+                f"{metadata}\r\n--{boundary}\r\nContent-Type: text/plain\r\n\r\n"
+                f"drive upload test\r\n--{boundary}--\r\n"
+            ).encode()
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": f"multipart/related; boundary={boundary}",
+                    },
+                    content=test_body,
+                )
+                if r.status_code == 200:
+                    test_id = r.json().get("id", "")
+                    result["upload_test"] = f"OK (file_id={test_id})"
+                    # 테스트 파일 삭제
+                    await client.delete(
+                        f"https://www.googleapis.com/drive/v3/files/{test_id}",
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=5,
+                    )
+                else:
+                    err_text = r.text[:500].replace("\n", " ")
+                    result["upload_test"] = f"FAIL ({r.status_code}): {err_text}"
+        except Exception as e:
+            result["upload_test"] = f"ERROR: {e}"
 
     return result
 

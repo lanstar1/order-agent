@@ -132,13 +132,11 @@ async def upload_to_drive(
             timeout=60,
         )
         if r.status_code != 200:
-            error_body = ""
-            try:
-                error_body = r.text[:500]
-            except Exception:
-                pass
-            logger.error(f"[GoogleDrive] 업로드 실패 ({r.status_code}): {error_body}")
-            r.raise_for_status()
+            error_body = r.text[:1000] if r.text else "(empty)"
+            # 줄바꿈 제거하여 한 줄로 로깅
+            error_oneline = error_body.replace("\n", " ").replace("\r", "")
+            logger.error(f"[GoogleDrive] 업로드 실패 ({r.status_code}): {error_oneline}")
+            raise RuntimeError(f"Drive API {r.status_code}: {error_oneline}")
         data = r.json()
 
     file_id = data["id"]

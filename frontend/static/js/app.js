@@ -4332,6 +4332,7 @@ async function csDriveCheck() {
       `토큰 발급: ${res.token_status || "-"}`,
       `폴더 접근: ${res.folder_access || "-"}`,
       res.folder_files ? `폴더 내 파일: ${res.folder_files.join(", ") || "(없음)"}` : "",
+      `업로드 테스트: ${res.upload_test || "-"}`,
     ].filter(Boolean);
     alert("Google Drive 업로드 진단\n\n" + lines.join("\n"));
   } catch(e) { alert("진단 오류: " + (e.message || e)); }
