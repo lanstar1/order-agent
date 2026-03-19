@@ -131,7 +131,14 @@ async def upload_to_drive(
             content=body,
             timeout=60,
         )
-        r.raise_for_status()
+        if r.status_code != 200:
+            error_body = ""
+            try:
+                error_body = r.text[:500]
+            except Exception:
+                pass
+            logger.error(f"[GoogleDrive] 업로드 실패 ({r.status_code}): {error_body}")
+            r.raise_for_status()
         data = r.json()
 
     file_id = data["id"]
