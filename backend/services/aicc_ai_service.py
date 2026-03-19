@@ -7,10 +7,44 @@ AICC AI 서비스
 """
 import json
 import os
+import re as _re
 import anthropic
 from .aicc_data_loader import data_loader
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+
+def _extract_search_keywords(user_message: str) -> str:
+    """
+    자연어 고객 질문에서 제품 검색용 기술 키워드를 AI로 추출.
+    예: "랜케이블로 연결해서 hdmi 신호 먼곳으로 보내는제품"
+      → "HDMI LAN 익스텐더 이더넷 연장"
+    """
+    try:
+        resp = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=100,
+            system=(
+                "당신은 랜스타(Lanstar) IT 주변기기 검색 키워드 추출기입니다.\n"
+                "고객의 자연어 질문에서 제품 검색에 유용한 기술 키워드를 추출하세요.\n"
+                "규칙:\n"
+                "- 원래 질문의 핵심 단어 + 관련 기술 동의어/약어를 모두 포함\n"
+                "- 예: '랜케이블로 hdmi 보내는' → 'HDMI LAN 익스텐더 이더넷 연장 extender'\n"
+                "- 예: '비데' → '비데 BDC 비데커버'\n"
+                "- 예: '모니터 두대 연결' → 'HDMI 분배기 스플리터 splitter 2포트'\n"
+                "- 예: 'usb 허브' → 'USB 허브 HUB'\n"
+                "- 예: '도어락 비밀번호' → '도어락 ADOOR ANDOOR 비밀번호'\n"
+                "- 키워드만 공백으로 구분하여 한 줄로 출력. 설명 금지.\n"
+                "- 모델명이 포함되어 있으면 그대로 유지 (예: LS-HDMI-LAN-150M)"
+            ),
+            messages=[{"role": "user", "content": user_message}],
+        )
+        keywords = resp.content[0].text.strip()
+        # 원본 메시지도 합쳐서 반환 (모델명 등이 원본에만 있을 수 있으므로)
+        return f"{user_message} {keywords}"
+    except Exception as e:
+        print(f"[AICC] 키워드 추출 실패, 원본 사용: {e}")
+        return user_message
 
 # ── 시스템 프롬프트 ───────────────────────────────────────
 
@@ -335,8 +369,12 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
     # ── 시스템 프롬프트 구성 ──────────────────────────────
     sys_prompt = SYSTEM_PRODUCT_INQUIRY
 
+    # ── 0차: AI 키워드 추출 (자연어 → 기술 키워드) ─────────
+    enriched_query = _extract_search_keywords(user_message)
+    print(f"[AICC] 원본: {user_message[:60]} → 확장: {enriched_query[:100]}")
+
     # ── 1차: 제품 데이터 검색 ─────────────────────────────
-    matched_products = data_loader.search_products_for_recommendation(user_message, max_results=15)
+    matched_products = data_loader.search_products_for_recommendation(enriched_query, max_results=15)
 
     if matched_products:
         sys_prompt += "\n## 검색된 제품 데이터 (고객 문의 키워드 매칭)\n"
@@ -371,7 +409,6 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
     for msg in messages_history[-10:]:
         if msg["role"] == "assistant":
             # 이전 답변에서 모델명 추출
-            import re as _re
             for m in _re.findall(r'LS-[\w\-]+|LSP-[\w\-]+|ZOT-[\w\-]+', msg.get("content", "")):
                 prev_models.add(m)
 
