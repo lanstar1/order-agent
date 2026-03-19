@@ -2243,22 +2243,33 @@ async function checkGoogleApi() {
     // Drive API
     if (data.drive_api) {
       const d = data.drive_api;
-      if (d.enabled) {
-        html += '<div style="color:var(--success);font-weight:500">Google Drive API: 활성화됨</div>';
+      if (d.status === "OK") {
+        let detail = "활성화됨";
+        if (d.sample_files != null) detail += ` (테스트 폴더에서 ${d.sample_files}개 파일 확인)`;
+        if (d.note) detail = d.note;
+        html += `<div style="color:var(--success);font-weight:500">Google Drive API: ${detail}</div>`;
+      } else if (d.status === "FOLDER_NOT_SHARED") {
+        html += '<div style="color:#d69e2e;font-weight:500">Google Drive API: API 활성화됨, 폴더 공유 안 됨</div>';
+        html += `<div style="font-size:12px;color:var(--gray-500);margin-left:8px">${d.error}</div>`;
+        if (d.tested_folder) html += `<div style="font-size:11px;color:var(--gray-400);margin-left:8px">테스트 폴더 ID: ${d.tested_folder}</div>`;
       } else {
-        html += `<div style="color:var(--danger);font-weight:500">Google Drive API: 비활성화 (${d.http_status}) - ${d.error || ""}</div>`;
-        html += '<div style="font-size:12px;color:var(--gray-500);margin-left:8px">Google Cloud Console > API 및 서비스 > 라이브러리에서 "Google Drive API"를 검색하여 활성화하세요.</div>';
+        html += `<div style="color:var(--danger);font-weight:500">Google Drive API: 오류 (${d.http_status || ""}) - ${d.error || ""}</div>`;
+        const fix = d.fix || 'Google Cloud Console > API 및 서비스 > 라이브러리에서 "Google Drive API"를 활성화하세요.';
+        html += `<div style="font-size:12px;color:var(--gray-500);margin-left:8px">${fix}</div>`;
       }
     }
 
     // Sheets API
     if (data.sheets_api) {
       const s = data.sheets_api;
-      if (s.enabled) {
-        html += '<div style="color:var(--success);font-weight:500">Google Sheets API: 활성화됨</div>';
+      if (s.status === "OK") {
+        let detail = "활성화됨";
+        if (s.sheet_title) detail += ` (테스트 시트: "${s.sheet_title}")`;
+        html += `<div style="color:var(--success);font-weight:500">Google Sheets API: ${detail}</div>`;
       } else {
-        html += `<div style="color:var(--danger);font-weight:500">Google Sheets API: 비활성화 (${s.http_status}) - ${s.error || ""}</div>`;
-        html += '<div style="font-size:12px;color:var(--gray-500);margin-left:8px">Google Cloud Console > API 및 서비스 > 라이브러리에서 "Google Sheets API"를 검색하여 활성화하세요.</div>';
+        html += `<div style="color:var(--danger);font-weight:500">Google Sheets API: 오류 (${s.http_status || ""}) - ${s.error || ""}</div>`;
+        const fix = s.fix || 'Google Cloud Console > API 및 서비스 > 라이브러리에서 "Google Sheets API"를 활성화하세요.';
+        html += `<div style="font-size:12px;color:var(--gray-500);margin-left:8px">${fix}</div>`;
       }
     }
 
@@ -2830,7 +2841,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
-<script src="/static/js/api.js?v=20260319c"></script>
-<script src="/static/js/app.js?v=20260319c"></script>
+<script src="/static/js/api.js?v=20260319d"></script>
+<script src="/static/js/app.js?v=20260319d"></script>
 </body>
 </html>

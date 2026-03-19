@@ -135,7 +135,7 @@ async def price_sheet_data(
 # ─────────────────────────────────────────
 @router.get("/google-api-check")
 async def google_api_check(user: dict = Depends(get_current_user)):
-    """Google API Key 상태 진단 (Drive API, Sheets API 활성화 여부 확인)"""
+    """Google API Key 상태 진단 (Drive API, Sheets API 활성화 여부 + 실제 폴더/시트 접근 테스트)"""
     import httpx
     from config import GOOGLE_API_KEY
 
@@ -147,50 +147,6 @@ async def google_api_check(user: dict = Depends(get_current_user)):
     # 키 앞 8자리만 표시
     results["api_key_prefix"] = GOOGLE_API_KEY[:8] + "..."
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        # 1) Google Drive API v3 테스트
-        try:
-            r = await client.get(
-                "https://www.googleapis.com/drive/v3/about",
-                params={"key": GOOGLE_API_KEY, "fields": "kind"},
-            )
-            if r.status_code == 200:
-                results["drive_api"] = {"status": "OK", "enabled": True}
-            else:
-                body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text[:300]}
-                err_msg = body.get("error", {}).get("message", r.text[:300])
-                results["drive_api"] = {
-                    "status": "FAIL",
-                    "enabled": False,
-                    "http_status": r.status_code,
-                    "error": err_msg,
-                }
-        except Exception as e:
-            results["drive_api"] = {"status": "ERROR", "error": str(e)}
-
-        # 2) Google Sheets API v4 테스트 (존재하지 않는 시트로 테스트 — 403이면 API 미활성, 404면 활성)
-        try:
-            r = await client.get(
-                "https://sheets.googleapis.com/v4/spreadsheets/NONEXISTENT_TEST",
-                params={"key": GOOGLE_API_KEY, "fields": "spreadsheetId"},
-            )
-            if r.status_code == 404:
-                # 404 = API는 활성화됨 (시트만 못 찾은 것)
-                results["sheets_api"] = {"status": "OK", "enabled": True}
-            elif r.status_code == 403:
-                body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text[:300]}
-                err_msg = body.get("error", {}).get("message", r.text[:300])
-                results["sheets_api"] = {
-                    "status": "FAIL",
-                    "enabled": False,
-                    "http_status": 403,
-                    "error": err_msg,
-                }
-            else:
-                results["sheets_api"] = {"status": "OK", "enabled": True}
-        except Exception as e:
-            results["sheets_api"] = {"status": "ERROR", "error": str(e)}
-
     # DB에서 등록된 소스 확인
     conn = get_connection()
     sources = conn.execute(
@@ -198,6 +154,142 @@ async def google_api_check(user: dict = Depends(get_current_user)):
     ).fetchall()
     conn.close()
     results["registered_sources"] = [dict(s) for s in sources]
+
+    # 실제 등록된 Drive 폴더 ID와 Sheet ID 가져오기
+    drive_folder_id = None
+    sheet_id = None
+    for s in sources:
+        if s["source_type"] == "drive_folder" and s["folder_id"] and s["is_active"]:
+            drive_folder_id = s["folder_id"]
+        if s["source_type"] == "sheet" and s["sheet_id"] and s["is_active"] and not sheet_id:
+            sheet_id = s["sheet_id"]
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        # 1) Google Drive API v3 테스트 — 실제 등록된 폴더로 files.list 호출
+        try:
+            if drive_folder_id:
+                r = await client.get(
+                    "https://www.googleapis.com/drive/v3/files",
+                    params={
+                        "q": f"'{drive_folder_id}' in parents and trashed=false",
+                        "key": GOOGLE_API_KEY,
+                        "fields": "files(id,name)",
+                        "pageSize": 1,
+                    },
+                )
+            else:
+                # 등록된 폴더가 없으면 존재하지 않는 폴더로 API 활성화 여부만 테스트
+                r = await client.get(
+                    "https://www.googleapis.com/drive/v3/files",
+                    params={
+                        "q": "'NONEXISTENT_FOLDER_TEST' in parents",
+                        "key": GOOGLE_API_KEY,
+                        "fields": "files(id)",
+                        "pageSize": 1,
+                    },
+                )
+
+            if r.status_code == 200:
+                file_count = len(r.json().get("files", []))
+                results["drive_api"] = {
+                    "status": "OK",
+                    "enabled": True,
+                    "tested_folder": drive_folder_id or "(테스트용)",
+                    "sample_files": file_count,
+                }
+            elif r.status_code == 404:
+                results["drive_api"] = {
+                    "status": "OK",
+                    "enabled": True,
+                    "note": "API 활성화됨. 폴더를 찾을 수 없음 — folder_id 또는 공유 설정 확인 필요.",
+                    "tested_folder": drive_folder_id,
+                }
+            else:
+                body = {}
+                try:
+                    body = r.json()
+                except Exception:
+                    pass
+                err_msg = body.get("error", {}).get("message", r.text[:300])
+                err_reason = ""
+                errors_list = body.get("error", {}).get("errors", [])
+                if errors_list:
+                    err_reason = errors_list[0].get("reason", "")
+
+                # 403 + "notFound" reason = 폴더가 공유 안 됨
+                if r.status_code == 403 and err_reason == "notFound":
+                    results["drive_api"] = {
+                        "status": "FOLDER_NOT_SHARED",
+                        "enabled": True,
+                        "http_status": 403,
+                        "tested_folder": drive_folder_id,
+                        "error": "Drive 폴더가 공개 공유되지 않았습니다. 폴더 → 공유 → '링크가 있는 모든 사용자(뷰어)'로 설정하세요.",
+                    }
+                elif r.status_code == 403:
+                    results["drive_api"] = {
+                        "status": "FAIL",
+                        "enabled": False,
+                        "http_status": 403,
+                        "error": err_msg,
+                        "reason": err_reason,
+                        "fix": "Google Cloud Console > API 및 서비스 > 라이브러리에서 'Google Drive API' 활성화 필요. 또는 Drive 폴더를 '링크가 있는 모든 사용자'로 공유하세요.",
+                    }
+                else:
+                    results["drive_api"] = {
+                        "status": "FAIL",
+                        "enabled": False,
+                        "http_status": r.status_code,
+                        "error": err_msg,
+                    }
+        except Exception as e:
+            results["drive_api"] = {"status": "ERROR", "error": str(e)}
+
+        # 2) Google Sheets API v4 테스트
+        try:
+            test_sheet_id = sheet_id or "NONEXISTENT_TEST"
+            r = await client.get(
+                f"https://sheets.googleapis.com/v4/spreadsheets/{test_sheet_id}",
+                params={"key": GOOGLE_API_KEY, "fields": "spreadsheetId,properties.title"},
+            )
+            if r.status_code == 200:
+                title = r.json().get("properties", {}).get("title", "")
+                results["sheets_api"] = {
+                    "status": "OK",
+                    "enabled": True,
+                    "tested_sheet": test_sheet_id,
+                    "sheet_title": title,
+                }
+            elif r.status_code == 404:
+                # 404 = API는 활성화됨 (시트만 못 찾은 것)
+                results["sheets_api"] = {"status": "OK", "enabled": True}
+            elif r.status_code == 403:
+                body = {}
+                try:
+                    body = r.json()
+                except Exception:
+                    pass
+                err_msg = body.get("error", {}).get("message", r.text[:300])
+                results["sheets_api"] = {
+                    "status": "FAIL",
+                    "enabled": False,
+                    "http_status": 403,
+                    "error": err_msg,
+                    "fix": "Google Cloud Console > API 및 서비스 > 라이브러리에서 'Google Sheets API' 활성화 필요.",
+                }
+            else:
+                body = {}
+                try:
+                    body = r.json()
+                except Exception:
+                    pass
+                err_msg = body.get("error", {}).get("message", r.text[:300])
+                results["sheets_api"] = {
+                    "status": "FAIL",
+                    "http_status": r.status_code,
+                    "error": err_msg,
+                }
+        except Exception as e:
+            results["sheets_api"] = {"status": "ERROR", "error": str(e)}
 
     return results
 
