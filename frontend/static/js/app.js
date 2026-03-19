@@ -4292,14 +4292,7 @@ async function csUploadFile(ticketId, input) {
   const formData = new FormData();
   formData.append("file", file);
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/cs/tickets/${ticketId}/upload`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${token}` },
-      body: formData,
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "업로드 실패");
+    const res = await api.postForm(`/api/cs/tickets/${ticketId}/upload`, formData);
     alert("파일 업로드 완료");
     csShowDetail(ticketId);
   } catch(e) { alert("업로드 오류: " + (e.message || e)); }
