@@ -88,26 +88,63 @@ async def get_models(q: str = ""):
 
 
 @router.get("/sessions")
-async def get_sessions(current_user=Depends(get_current_user)):
-    """관리자: 현재 활성 세션 목록 (인메모리만 — 깜빡임 방지)"""
-    return {"sessions": session_manager.all_serialized()}
+async def get_sessions(menu: str = "", current_user=Depends(get_current_user)):
+    """관리자: 세션 목록 (인메모리 + DB 병합, 재배포 후에도 유지)"""
+    # 1. 인메모리 세션
+    memory_sessions = session_manager.all_serialized()
+    memory_ids = {s["session_id"] for s in memory_sessions}
+
+    # 2. DB 세션 (인메모리에 없는 것만 추가)
+    db_sessions = aicc_db.get_all_sessions(limit=200)
+    for ds in db_sessions:
+        if ds["id"] not in memory_ids:
+            memory_sessions.append({
+                "session_id": ds["id"],
+                "customer_name": ds.get("customer_name", ""),
+                "selected_model": ds.get("selected_model", ""),
+                "erp_code": ds.get("erp_code", ""),
+                "selected_menu": ds.get("selected_menu", ""),
+                "status": ds.get("status", "closed"),
+                "is_admin_intervened": False,
+                "messages": [],
+                "created_at": ds.get("created_at", ""),
+                "updated_at": ds.get("updated_at", ""),
+                "from_db": True,
+            })
+
+    # 3. 메뉴 필터
+    if menu:
+        memory_sessions = [s for s in memory_sessions if s.get("selected_menu", "") == menu]
+
+    # 최신순 정렬
+    memory_sessions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return {"sessions": memory_sessions}
 
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, current_user=Depends(get_current_user)):
-    """관리자: 세션 상세 (인메모리 or DB 조회)"""
+    """관리자: 세션 상세 (DB 메시지 우선, 인메모리 보완)"""
     s = session_manager.get(session_id)
-    if s:
-        return session_manager.serialize(s)
 
-    # 인메모리에 없으면 DB에서 조회
+    # DB에서 메시지 조회 (영구 저장된 완전한 기록)
+    db_messages = aicc_db.get_session_messages(session_id)
+
+    if s:
+        result = session_manager.serialize(s)
+        # DB 메시지가 있으면 DB 우선 (더 완전한 기록)
+        if db_messages:
+            result["messages"] = [
+                {"role": m["role"], "content": m["content"], "timestamp": m.get("created_at", "")}
+                for m in db_messages
+            ]
+        return result
+
+    # 인메모리에 없으면 DB에서 세션 정보도 조회
     db_sessions = aicc_db.get_all_sessions(limit=500)
     db_session = next((ds for ds in db_sessions if ds["id"] == session_id), None)
     if not db_session:
         raise HTTPException(404, "세션 없음")
 
-    # DB에서 메시지도 가져오기
-    db_messages = aicc_db.get_session_messages(session_id)
     return {
         "session_id": db_session["id"],
         "customer_name": db_session.get("customer_name", ""),

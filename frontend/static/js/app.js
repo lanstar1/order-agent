@@ -4972,6 +4972,7 @@ let _aiccCurrentId = null;
 let _aiccAdminWs = null;
 let _aiccListWs = null;
 let _aiccPolling = null;
+let _aiccMenuFilter = '';  // '', '제품문의', '기술문의'
 
 // 탭 진입 시 호출
 async function initAiccTab() {
@@ -5006,9 +5007,23 @@ function connectAiccListWS() {
 
 async function loadAiccSessions() {
   try {
-    const data = await api.get('/api/aicc/sessions');
+    var url = '/api/aicc/sessions';
+    if (_aiccMenuFilter) url += '?menu=' + encodeURIComponent(_aiccMenuFilter);
+    const data = await api.get(url);
     renderAiccSessions(data.sessions);
   } catch (e) { console.warn('AICC 세션 로드 실패', e); }
+}
+
+function setAiccMenuFilter(btn, menu) {
+  _aiccMenuFilter = menu;
+  document.querySelectorAll('#aicc-menu-tabs .aicc-tab').forEach(function(t) {
+    if (t === btn) {
+      t.style.background = '#1a1a2e'; t.style.color = '#fff'; t.style.borderColor = '#1a1a2e';
+    } else {
+      t.style.background = '#fff'; t.style.color = '#333'; t.style.borderColor = '#d1d5db';
+    }
+  });
+  loadAiccSessions();
 }
 
 function renderAiccSessions(sessions) {

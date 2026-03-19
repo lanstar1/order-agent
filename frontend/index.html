@@ -1141,6 +1141,11 @@ C규격품 200개
               <span style="font-size:20px">📚</span><span>지식DB</span>
             </button>
           </div>
+          <div id="aicc-menu-tabs" style="display:flex;gap:4px;margin-bottom:8px">
+            <button class="aicc-tab active" data-menu="" onclick="setAiccMenuFilter(this,'')" style="flex:1;padding:6px;border:1.5px solid #1a1a2e;border-radius:6px;background:#1a1a2e;color:#fff;cursor:pointer;font-size:11px;font-weight:600">전체</button>
+            <button class="aicc-tab" data-menu="제품문의" onclick="setAiccMenuFilter(this,'제품문의')" style="flex:1;padding:6px;border:1.5px solid #d1d5db;border-radius:6px;background:#fff;color:#333;cursor:pointer;font-size:11px;font-weight:600">제품문의</button>
+            <button class="aicc-tab" data-menu="기술문의" onclick="setAiccMenuFilter(this,'기술문의')" style="flex:1;padding:6px;border:1.5px solid #d1d5db;border-radius:6px;background:#fff;color:#333;cursor:pointer;font-size:11px;font-weight:600">기술문의</button>
+          </div>
           <div id="aicc-session-list" style="font-size:13px"></div>
 
           <!-- 미답변 패널 (토글) -->
@@ -2757,6 +2762,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260312f"></script>
-<script src="/static/js/app.js?v=20260319a"></script>
+<script src="/static/js/app.js?v=20260319b"></script>
 </body>
 </html>
