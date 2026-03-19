@@ -37,6 +37,10 @@ class AICCDataLoader:
         self.technical_qna: List[dict] = []     # lanstar_technical_qna.json
         self.unidentified_qna: List[dict] = []  # lanstar_unidentified_qna.json
 
+        # 품목가격정보 (제품문의용)
+        self.price_info: Dict[str, dict] = {}   # model_name → {품목명, 딜러가, 온라인노출가}
+        self._price_model_map: Dict[str, str] = {}  # 모델명(괄호 제거) → 원본 키
+
     def load_all(self):
         print("[AICC] 데이터 로딩 시작...")
         try:
@@ -53,6 +57,7 @@ class AICCDataLoader:
             self._load_driver_models()
             self._load_technical_qna()
             self._load_unidentified_qna()
+            self._load_price_info()
             total_qna = sum(len(p.get("qna", [])) for p in self.technical_qna)
             print(f"[AICC] 완료 — 드롭다운:{len(self.dropdown_models)} 제품:{len(self.product_data)} "
                   f"기술QnA:{total_qna}건({len(self.technical_qna)}모델) 미분류QnA:{len(self.unidentified_qna)}건")
@@ -190,6 +195,107 @@ class AICCDataLoader:
             model = match.group(1).strip()
             self._driver_models.add(model)
         print(f"[AICC] 드라이버 모델 로드: {len(self._driver_models)}개")
+
+    def _load_price_info(self):
+        """품목가격정보.json 로드 — 제품문의 시 가격 비교용"""
+        path = os.path.join(DATA_DIR, "품목가격정보.json")
+        if not os.path.exists(path):
+            print("[AICC] 품목가격정보.json 없음 (스킵)")
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        for full_key, val in raw.items():
+            # 키: "LS-H21AOC-5M(AVO-HD선054)" → 모델명: "LS-H21AOC-5M"
+            model_name = full_key.split("(")[0].strip()
+            self.price_info[model_name] = {
+                "품목명": val.get("품목명", ""),
+                "딜러가": val.get("딜러가", 0),
+                "온라인노출가": val.get("온라인노출가", 0),
+                "원본키": full_key,
+            }
+            self._price_model_map[model_name.upper()] = model_name
+        print(f"[AICC] 품목가격정보 로드: {len(self.price_info)}개")
+
+    def search_products_for_recommendation(self, query: str, max_results: int = 15) -> List[dict]:
+        """
+        고객 질문에서 키워드를 추출하여 제품 추천용 데이터 검색.
+        01_제품별_통합데이터.json + 품목가격정보.json 교차 검색.
+        """
+        upper = query.upper()
+        words = [w for w in re.split(r'[\s,]+', upper) if len(w) >= 2]
+        if not words:
+            return []
+
+        results = []
+        seen_models = set()
+
+        # 1. product_data (01_제품별_통합데이터.json) 검색
+        for model_name, product in self.product_data.items():
+            feat = product.get("제품특징", {})
+            cat = product.get("카테고리", "")
+
+            # 검색 대상 텍스트 구성
+            if isinstance(feat, dict):
+                search_text = " ".join(str(v) for v in feat.values()) + " " + cat + " " + model_name
+            elif isinstance(feat, list):
+                search_text = " ".join(feat) + " " + cat + " " + model_name
+            else:
+                search_text = str(feat) + " " + cat + " " + model_name
+            search_text = search_text.upper()
+
+            score = 0
+            for w in words:
+                if w in search_text:
+                    score += 1
+
+            if score > 0:
+                # 가격 정보 매칭
+                price_data = self.price_info.get(model_name, {})
+                product_name = ""
+                if isinstance(feat, dict):
+                    product_name = feat.get("제품명_full", "") or feat.get("용도", "")
+                if not product_name and price_data:
+                    product_name = price_data.get("품목명", "")
+
+                results.append({
+                    "model_name": model_name,
+                    "category": cat,
+                    "product_name": product_name,
+                    "features": feat,
+                    "price_tier": price_data.get("온라인노출가", 0),
+                    "score": score,
+                })
+                seen_models.add(model_name.upper())
+
+        # 2. price_info에만 있는 제품도 검색 (product_data에 없는 것)
+        for model_name, pinfo in self.price_info.items():
+            if model_name.upper() in seen_models:
+                continue
+            search_text = (pinfo.get("품목명", "") + " " + model_name).upper()
+            score = 0
+            for w in words:
+                if w in search_text:
+                    score += 1
+            if score > 0:
+                results.append({
+                    "model_name": model_name,
+                    "category": "",
+                    "product_name": pinfo.get("품목명", ""),
+                    "features": {},
+                    "price_tier": pinfo.get("온라인노출가", 0),
+                    "score": score,
+                })
+
+        # 점수 내림차순 정렬
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:max_results]
+
+    def get_price_rank(self, model_name: str) -> Optional[int]:
+        """해당 모델의 온라인노출가 반환 (상대 비교용)"""
+        pinfo = self.price_info.get(model_name)
+        if pinfo:
+            return pinfo.get("온라인노출가", 0)
+        return None
 
     def _load_technical_qna(self):
         """기존 shop/aicc의 lanstar_technical_qna.json 로드"""

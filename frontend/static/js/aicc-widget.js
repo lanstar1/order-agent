@@ -47,6 +47,9 @@
   .ls-menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
   .ls-menu-btn{padding:14px 8px;border:1.5px solid #e0e0e0;border-radius:10px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit;text-align:center;transition:all .15s;color:#333}
   .ls-menu-btn:hover{border-color:#1a1a2e;background:#f5f7ff;color:#1a1a2e}
+  .ls-menu-wide{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:14px 16px;background:linear-gradient(135deg,#f5f7ff 0%,#e8ecff 100%);border-color:#c5cdf5;margin-bottom:4px}
+  .ls-menu-wide .ls-menu-icon{margin-bottom:0;font-size:22px}
+  .ls-menu-wide .ls-menu-sub{font-size:11px;color:#888;margin-left:4px}
   .ls-menu-icon{display:block;font-size:20px;margin-bottom:4px}
 
   /* 제품 선택 화면 */
@@ -193,8 +196,9 @@
           <!-- 화면1: 메뉴 선택 -->
           <div id="ls-screen-menu">
             <p class="greeting">안녕하세요! 랜스타 AI 상담사입니다.<br>무엇을 도와드릴까요?</p>
+            <button class="ls-menu-btn ls-menu-wide" data-menu="\uC81C\uD488\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDD0D</span>\uC81C\uD488 \uBB38\uC758<span class="ls-menu-sub">\uC6A9\uB3C4\u00B7\uADDC\uACA9\uC5D0 \uB9DE\uB294 \uC81C\uD488 \uCD94\uCC9C</span></button>
             <div class="ls-menu-grid">
-              <button class="ls-menu-btn" data-menu="\uC81C\uD488\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDCCB</span>\uC81C\uD488 \uBB38\uC758</button>
+              <button class="ls-menu-btn" data-menu="\uAE30\uC220\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDCCB</span>\uAE30\uC220 \uBB38\uC758</button>
               <button class="ls-menu-btn" data-menu="\uBC30\uC1A1\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDE9A</span>\uBC30\uC1A1 \uBB38\uC758</button>
               <button class="ls-menu-btn" data-menu="\uC7AC\uACE0\uC870\uD68C"><span class="ls-menu-icon">\uD83D\uDCE6</span>\uC7AC\uACE0 \uC870\uD68C</button>
               <button class="ls-menu-btn" data-menu="\uACAC\uC801\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDCC4</span>\uACAC\uC801 \uBB38\uC758</button>
@@ -351,7 +355,12 @@
       showOrdersScreen();
       return;
     }
-    // 제품문의, 재고조회 → 제품 선택 화면
+    if (menu === '\uC81C\uD488\uBB38\uC758') {
+      // 제품문의: 모델 선택 없이 바로 채팅
+      startChat(null);
+      return;
+    }
+    // 기술문의, 재고조회 → 제품 선택 화면
     document.getElementById('ls-model-screen-title').textContent =
       menu === '\uC7AC\uACE0\uC870\uD68C' ? '\uC7AC\uACE0\uB97C \uC870\uD68C\uD560 \uC81C\uD488 \uBAA8\uB378\uBA85\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694' : '\uBB38\uC758\uD558\uC2E4 \uC81C\uD488 \uBAA8\uB378\uBA85\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694';
     document.getElementById('ls-model-input').value = '';
@@ -453,7 +462,12 @@
 
     // 채팅 화면 초기화
     document.getElementById('ls-chat-messages').innerHTML = '';
-    document.getElementById('ls-chat-input').value = '';
+    var chatInput = document.getElementById('ls-chat-input');
+    chatInput.value = '';
+    chatInput.disabled = false;
+    chatInput.placeholder = _selectedMenu === '\uC81C\uD488\uBB38\uC758'
+      ? '\uC608: HDMI \uAD11\uCF00\uC774\uBE14 30m \uC774\uC0C1 \uCD94\uCC9C\uD574\uC8FC\uC138\uC694'
+      : '\uBA54\uC2DC\uC9C0\uB97C \uC785\uB825\uD558\uC138\uC694...';
     document.getElementById('ls-chat-send').disabled = false;
 
     // 상단 정보 표시 (뒤로가기 버튼 유지)

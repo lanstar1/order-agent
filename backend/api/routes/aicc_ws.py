@@ -4,7 +4,7 @@ AICC WebSocket 핸들러
 import re
 from fastapi import WebSocket, WebSocketDisconnect
 from services.aicc_session_manager import session_manager
-from services.aicc_ai_service import get_ai_response
+from services.aicc_ai_service import get_ai_response, get_product_inquiry_response
 
 
 # AI가 답변하지 못한 패턴 감지
@@ -36,7 +36,7 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
     name = params.get("name", "")
     model = params.get("model", "")
     erp_code = params.get("erp_code", "")
-    menu = params.get("menu", "제품문의")
+    menu = params.get("menu", "기술문의")
 
     # 세션 생성
     actual_sid = session_manager.create(name, model, erp_code, menu)
@@ -70,9 +70,12 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
                 # 메시지 저장
                 session_manager.add_message(actual_sid, "user", content, image_id=image_id)
 
-                # AI 응답 생성 (이미지 포함)
+                # AI 응답 생성 (메뉴별 분기)
                 try:
-                    ai_reply = await get_ai_response(s, content, image_id=image_id)
+                    if menu == "제품문의":
+                        ai_reply = await get_product_inquiry_response(s, content, image_id=image_id)
+                    else:
+                        ai_reply = await get_ai_response(s, content, image_id=image_id)
                 except Exception as e:
                     ai_reply = "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
                     print(f"[AICC WS] AI 오류: {e}")
