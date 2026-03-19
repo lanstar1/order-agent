@@ -406,10 +406,10 @@ async def upload_file(
     filename = f"{ticket_id}_{file_id_short}{ext}"
     drive_file_id = ""
 
-    # Google Drive 업로드 시도 (설정되어 있으면)
-    try:
-        from services.google_drive_service import upload_to_drive, _is_configured
-        if _is_configured():
+    # Google Drive 업로드 (설정되어 있으면 필수, 실패 시 에러 반환)
+    from services.google_drive_service import upload_to_drive, _is_configured
+    if _is_configured():
+        try:
             logger.info(f"[CS] Google Drive 업로드 시작: {filename} ({len(content)} bytes)")
             result = await upload_to_drive(
                 file_content=content,
@@ -420,13 +420,13 @@ async def upload_file(
             file_url = result["file_url"]
             drive_file_id = result["file_id"]
             logger.info(f"[CS] 파일 Google Drive 업로드 완료: {filename} → {drive_file_id}")
-        else:
-            logger.warning("[CS] Google Drive 미설정 (GOOGLE_SERVICE_ACCOUNT_JSON 또는 GOOGLE_CS_FOLDER_ID 누락)")
-            raise RuntimeError("Google Drive 미설정 — 로컬 저장으로 전환")
-    except Exception as e:
-        # Google Drive 실패 시 로컬 저장 (개발환경 또는 설정 전)
-        import traceback
-        logger.warning(f"[CS] Google Drive 업로드 실패, 로컬 저장: {e}\n{traceback.format_exc()}")
+        except Exception as e:
+            import traceback
+            logger.error(f"[CS] Google Drive 업로드 실패: {e}\n{traceback.format_exc()}")
+            raise HTTPException(500, f"Google Drive 업로드 실패: {e}")
+    else:
+        # Drive 미설정 시에만 로컬 저장 (개발환경)
+        logger.warning("[CS] Google Drive 미설정 — 로컬 저장 (배포 시 삭제됨)")
         file_path = UPLOAD_DIR / filename
         with open(file_path, "wb") as f:
             f.write(content)
