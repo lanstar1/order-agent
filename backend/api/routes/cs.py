@@ -170,9 +170,9 @@ async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
             "SELECT * FROM cs_test_results WHERE ticket_id = ?", (ticket_id,)
         ).fetchone()
 
-        # 첨부파일
+        # 첨부파일 (file_data 바이너리 제외)
         files = conn.execute(
-            "SELECT * FROM cs_files WHERE ticket_id = ? ORDER BY created_at", (ticket_id,)
+            "SELECT id, ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, drive_file_id, mime_type FROM cs_files WHERE ticket_id = ? ORDER BY created_at", (ticket_id,)
         ).fetchall()
 
         # 이력
@@ -363,7 +363,7 @@ async def resolve_ticket(ticket_id: str, data: FinalAction, user: dict = Depends
         conn.close()
 
 
-# ── [8] 파일 업로드 (Google Drive 또는 로컬) ──
+# ── [8] 파일 업로드 (DB 바이너리 저장) ──
 @router.post("/tickets/{ticket_id}/upload")
 async def upload_file(
     ticket_id: str,
@@ -402,126 +402,100 @@ async def upload_file(
     }
     mime_type = mime_map.get(ext, "application/octet-stream")
 
-    file_id_short = str(uuid.uuid4())[:8]
-    filename = f"{ticket_id}_{file_id_short}{ext}"
-    drive_file_id = ""
+    original_name = file.filename or f"file{ext}"
+    file_url = f"/api/cs/files/db/{0}"  # DB ID로 서빙 (아래에서 업데이트)
 
-    # Google Drive 업로드 (설정되어 있으면 필수, 실패 시 에러 반환)
-    from services.google_drive_service import upload_to_drive, _is_configured
-    if _is_configured():
-        try:
-            logger.info(f"[CS] Google Drive 업로드 시작: {filename} ({len(content)} bytes)")
-            result = await upload_to_drive(
-                file_content=content,
-                filename=filename,
-                mime_type=mime_type,
-                subfolder_name=ticket_id,
-            )
-            file_url = result["file_url"]
-            drive_file_id = result["file_id"]
-            logger.info(f"[CS] 파일 Google Drive 업로드 완료: {filename} → {drive_file_id}")
-        except Exception as e:
-            import traceback
-            logger.error(f"[CS] Google Drive 업로드 실패: {e}\n{traceback.format_exc()}")
-            raise HTTPException(500, f"Google Drive 업로드 실패: {e}")
-    else:
-        # Drive 미설정 시에만 로컬 저장 (개발환경)
-        logger.warning("[CS] Google Drive 미설정 — 로컬 저장 (배포 시 삭제됨)")
-        file_path = UPLOAD_DIR / filename
-        with open(file_path, "wb") as f:
-            f.write(content)
-        file_url = f"/api/cs/files/{filename}"
-
-    # DB 기록
+    # DB에 파일 바이너리 + 메타데이터 저장
+    from db.database import USE_PG
     conn = get_connection()
     try:
+        # PostgreSQL은 psycopg2.Binary, SQLite는 bytes 그대로
+        if USE_PG:
+            import psycopg2
+            file_blob = psycopg2.Binary(content)
+        else:
+            file_blob = content
+
         conn.execute(
-            """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, drive_file_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (ticket_id, file.filename or filename, file_url, file_type, len(content), user["emp_cd"], now_kst(), drive_file_id)
+            """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, file_blob)
         )
-        _log_action(conn, ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{file.filename} ({file_type})")
+
+        # 방금 삽입된 ID 가져오기
+        row = conn.execute(
+            "SELECT id FROM cs_files WHERE ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,)
+        ).fetchone()
+        file_id = row["id"] if row else 0
+        file_url = f"/api/cs/files/db/{file_id}"
+
+        conn.execute("UPDATE cs_files SET file_url = ? WHERE id = ?", (file_url, file_id))
+        _log_action(conn, ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{original_name} ({file_type})")
         conn.commit()
 
-        return {"success": True, "file_url": file_url, "file_name": filename, "drive_file_id": drive_file_id}
+        logger.info(f"[CS] 파일 DB 저장 완료: {original_name} ({len(content)} bytes) → id={file_id}")
+        return {"success": True, "file_url": file_url, "file_name": original_name, "file_id": file_id}
     except Exception as e:
         conn.rollback()
+        logger.error(f"[CS] 파일 DB 저장 실패: {e}")
         raise HTTPException(500, str(e))
     finally:
         conn.close()
 
 
-# ── [9] 파일 서빙 (로컬 폴백) ──
-@router.get("/files/{filename}")
-async def serve_file(filename: str):
-    """로컬에 저장된 파일 서빙 (Google Drive 파일은 직접 URL 사용)"""
-    file_path = UPLOAD_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(404, "파일을 찾을 수 없습니다. (Render 재배포 시 로컬 파일은 삭제됩니다)")
-    from fastapi.responses import FileResponse
-    return FileResponse(str(file_path))
-
-
-# ── [9-0] 파일 다운로드 (Google Drive 프록시 또는 로컬) ──
-@router.get("/download/{file_id}")
-async def download_file(file_id: int, user: dict = Depends(get_current_user)):
-    """첨부파일 다운로드 (Google Drive 파일은 프록시, 로컬 파일은 직접 전송)"""
-    import httpx
-    from fastapi.responses import StreamingResponse, FileResponse
-
+# ── [9] 파일 서빙 (DB에서 바이너리 읽기) ──
+@router.get("/files/db/{file_id}")
+async def serve_file_from_db(file_id: int):
+    """DB에 저장된 파일 서빙 (이미지 미리보기용)"""
+    from fastapi.responses import Response
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM cs_files WHERE id = ?", (file_id,)).fetchone()
-        if not row:
+        row = conn.execute(
+            "SELECT file_name, mime_type, file_data FROM cs_files WHERE id = ?", (file_id,)
+        ).fetchone()
+        if not row or not row["file_data"]:
             raise HTTPException(404, "파일을 찾을 수 없습니다.")
+        data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
+        return Response(
+            content=data,
+            media_type=row["mime_type"] or "application/octet-stream",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
     finally:
         conn.close()
 
-    drive_file_id = row.get("drive_file_id", "")
-    original_name = row["file_name"]
 
-    # Google Drive 파일인 경우 프록시 다운로드
-    if drive_file_id:
-        try:
-            from services.google_drive_service import _get_access_token, _is_configured
-            if not _is_configured():
-                raise RuntimeError("Google Drive 미설정")
+# ── [9-0] 파일 다운로드 (DB에서 바이너리 읽기) ──
+@router.get("/download/{file_id}")
+async def download_file(file_id: int, user: dict = Depends(get_current_user)):
+    """첨부파일 다운로드"""
+    from fastapi.responses import Response
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT file_name, mime_type, file_data FROM cs_files WHERE id = ?", (file_id,)
+        ).fetchone()
+        if not row or not row["file_data"]:
+            raise HTTPException(404, "파일을 찾을 수 없습니다.")
+        data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
+        return Response(
+            content=data,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{row["file_name"]}"'},
+        )
+    finally:
+        conn.close()
 
-            access_token = await _get_access_token()
-            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-                r = await client.get(
-                    f"https://www.googleapis.com/drive/v3/files/{drive_file_id}?alt=media",
-                    headers={"Authorization": f"Bearer {access_token}"},
-                )
-                r.raise_for_status()
 
-                # Content-Type 결정
-                content_type = r.headers.get("content-type", "application/octet-stream")
-
-                return StreamingResponse(
-                    iter([r.content]),
-                    media_type=content_type,
-                    headers={
-                        "Content-Disposition": f'attachment; filename="{original_name}"',
-                    },
-                )
-        except Exception as e:
-            logger.warning(f"[CS] Drive 다운로드 실패 (file_id={drive_file_id}): {e}")
-            raise HTTPException(500, f"Google Drive 다운로드 실패: {e}")
-
-    # 로컬 파일인 경우
-    file_url = row.get("file_url", "")
-    if file_url.startswith("/api/cs/files/"):
-        local_name = file_url.split("/")[-1]
-        local_path = UPLOAD_DIR / local_name
-        if local_path.exists():
-            return FileResponse(
-                str(local_path),
-                filename=original_name,
-                media_type="application/octet-stream",
-            )
-
-    raise HTTPException(404, "파일을 찾을 수 없습니다. (Render 재배포 시 로컬 파일은 삭제됩니다)")
+# ── [9-0b] 로컬 파일 서빙 (하위호환) ──
+@router.get("/files/{filename}")
+async def serve_file_local(filename: str):
+    """로컬에 저장된 파일 서빙 (레거시 호환)"""
+    file_path = UPLOAD_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(404, "파일을 찾을 수 없습니다.")
+    from fastapi.responses import FileResponse
+    return FileResponse(str(file_path))
 
 
 # ── [9-1] 파일 삭제 ──
@@ -537,26 +511,8 @@ async def delete_file(file_id: int, user: dict = Depends(get_current_user)):
             raise HTTPException(404, "파일을 찾을 수 없습니다.")
 
         ticket_id = row["ticket_id"]
-        drive_file_id = row.get("drive_file_id", "")
 
-        # Google Drive 파일 삭제
-        if drive_file_id:
-            try:
-                from services.google_drive_service import delete_from_drive
-                await delete_from_drive(drive_file_id)
-                logger.info(f"[CS] Drive 파일 삭제: {drive_file_id}")
-            except Exception as e:
-                logger.warning(f"[CS] Drive 파일 삭제 실패: {e}")
-        else:
-            # 로컬 파일 삭제
-            file_url = row.get("file_url", "")
-            if file_url.startswith("/api/cs/files/"):
-                local_name = file_url.split("/")[-1]
-                local_path = UPLOAD_DIR / local_name
-                if local_path.exists():
-                    local_path.unlink()
-
-        # DB 삭제
+        # DB 삭제 (파일 바이너리도 함께 삭제됨)
         conn.execute("DELETE FROM cs_files WHERE id = ?", (file_id,))
         _log_action(conn, ticket_id, "파일삭제", user["emp_cd"], user["name"], row["file_name"])
         conn.commit()

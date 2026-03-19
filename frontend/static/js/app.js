@@ -4140,14 +4140,11 @@ async function csShowDetail(ticketId) {
         <div style="font-weight:600;font-size:13px;margin-bottom:8px">📎 첨부파일 (${files.length})</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${files.map(f => {
-            // Google Drive 이미지는 썸네일 URL 사용
-            const isDrive = f.file_url && f.file_url.includes("drive.google.com");
-            const imgSrc = isDrive && f.drive_file_id
-              ? `https://drive.google.com/thumbnail?id=${f.drive_file_id}&sz=w200`
-              : f.file_url;
-            const viewUrl = isDrive && f.drive_file_id
-              ? `https://drive.google.com/file/d/${f.drive_file_id}/view`
-              : f.file_url;
+            // DB 저장 파일: /api/cs/files/db/{id} 로 서빙
+            const imgSrc = f.file_url && f.file_url.startsWith("/api/cs/files/db/")
+              ? f.file_url
+              : (f.file_url || `/api/cs/files/db/${f.id}`);
+            const viewUrl = imgSrc;
             const delBtn = t.current_status !== "처리종결"
               ? `<button onclick="csDeleteFile(${f.id},'${f.ticket_id}')" title="삭제" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#dc2626;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0">✕</button>`
               : "";

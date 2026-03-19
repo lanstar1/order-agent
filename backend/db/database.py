@@ -583,6 +583,20 @@ def init_db():
         except Exception as e:
             logger.debug(f"[DB] cs_files.drive_file_id 추가 스킵: {e}")
 
+    # ── CS 마이그레이션: file_data (바이너리) + mime_type 컬럼 추가 ──
+    if not column_exists(conn, 'cs_files', 'file_data'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN file_data BLOB")
+            logger.info("[DB] cs_files.file_data 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_files.file_data 추가 스킵: {e}")
+    if not column_exists(conn, 'cs_files', 'mime_type'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN mime_type TEXT DEFAULT ''")
+            logger.info("[DB] cs_files.mime_type 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_files.mime_type 추가 스킵: {e}")
+
     # ── AICC 마이그레이션: image_id 컬럼 추가 ──
     if not column_exists(conn, 'aicc_messages', 'image_id'):
         try:
