@@ -475,14 +475,21 @@ async def download_file(file_id: int, user: dict = Depends(get_current_user)):
         row = conn.execute(
             "SELECT file_name, mime_type, file_data FROM cs_files WHERE id = ?", (file_id,)
         ).fetchone()
-        if not row or not row["file_data"]:
-            raise HTTPException(404, "파일을 찾을 수 없습니다.")
+        if not row:
+            raise HTTPException(404, "파일 레코드를 찾을 수 없습니다.")
+        if not row["file_data"]:
+            raise HTTPException(404, "파일 데이터가 없습니다. (DB 저장 이전에 업로드된 파일)")
         data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
         return Response(
             content=data,
             media_type="application/octet-stream",
             headers={"Content-Disposition": f'attachment; filename="{row["file_name"]}"'},
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[CS] 다운로드 오류 (file_id={file_id}): {e}")
+        raise HTTPException(500, f"다운로드 실패: {e}")
     finally:
         conn.close()
 
