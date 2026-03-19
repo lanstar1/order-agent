@@ -131,6 +131,78 @@ async def price_sheet_data(
 
 
 # ─────────────────────────────────────────
+#  Google API 진단
+# ─────────────────────────────────────────
+@router.get("/google-api-check")
+async def google_api_check(user: dict = Depends(get_current_user)):
+    """Google API Key 상태 진단 (Drive API, Sheets API 활성화 여부 확인)"""
+    import httpx
+    from config import GOOGLE_API_KEY
+
+    results = {"google_api_key_set": bool(GOOGLE_API_KEY)}
+    if not GOOGLE_API_KEY:
+        results["error"] = "GOOGLE_API_KEY 환경변수가 설정되지 않았습니다."
+        return results
+
+    # 키 앞 8자리만 표시
+    results["api_key_prefix"] = GOOGLE_API_KEY[:8] + "..."
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        # 1) Google Drive API v3 테스트
+        try:
+            r = await client.get(
+                "https://www.googleapis.com/drive/v3/about",
+                params={"key": GOOGLE_API_KEY, "fields": "kind"},
+            )
+            if r.status_code == 200:
+                results["drive_api"] = {"status": "OK", "enabled": True}
+            else:
+                body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text[:300]}
+                err_msg = body.get("error", {}).get("message", r.text[:300])
+                results["drive_api"] = {
+                    "status": "FAIL",
+                    "enabled": False,
+                    "http_status": r.status_code,
+                    "error": err_msg,
+                }
+        except Exception as e:
+            results["drive_api"] = {"status": "ERROR", "error": str(e)}
+
+        # 2) Google Sheets API v4 테스트 (존재하지 않는 시트로 테스트 — 403이면 API 미활성, 404면 활성)
+        try:
+            r = await client.get(
+                "https://sheets.googleapis.com/v4/spreadsheets/NONEXISTENT_TEST",
+                params={"key": GOOGLE_API_KEY, "fields": "spreadsheetId"},
+            )
+            if r.status_code == 404:
+                # 404 = API는 활성화됨 (시트만 못 찾은 것)
+                results["sheets_api"] = {"status": "OK", "enabled": True}
+            elif r.status_code == 403:
+                body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text[:300]}
+                err_msg = body.get("error", {}).get("message", r.text[:300])
+                results["sheets_api"] = {
+                    "status": "FAIL",
+                    "enabled": False,
+                    "http_status": 403,
+                    "error": err_msg,
+                }
+            else:
+                results["sheets_api"] = {"status": "OK", "enabled": True}
+        except Exception as e:
+            results["sheets_api"] = {"status": "ERROR", "error": str(e)}
+
+    # DB에서 등록된 소스 확인
+    conn = get_connection()
+    sources = conn.execute(
+        "SELECT id, name, source_type, folder_id, sheet_id, is_active FROM material_sources"
+    ).fetchall()
+    conn.close()
+    results["registered_sources"] = [dict(s) for s in sources]
+
+    return results
+
+
+# ─────────────────────────────────────────
 #  소스 관리
 # ─────────────────────────────────────────
 @router.get("/sources")

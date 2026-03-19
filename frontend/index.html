@@ -1538,6 +1538,19 @@ C규격품 200개
       <!-- ─── 탭 3: 자료관리 ─── -->
       <div class="settings-panel" id="settings-tab-materials" style="display:none">
 
+        <!-- Google API 진단 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>Google API 연결 상태</span>
+            <button class="btn btn-outline btn-sm" onclick="checkGoogleApi()" id="google-api-check-btn">
+              진단 실행
+            </button>
+          </div>
+          <div id="google-api-check-result" style="font-size:13px;color:var(--gray-500)">
+            '진단 실행' 버튼을 클릭하여 Google Drive API / Sheets API 활성화 상태를 확인하세요.
+          </div>
+        </div>
+
         <!-- 동기화 상태 -->
         <div class="card">
           <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
@@ -2210,6 +2223,62 @@ async function loadMaterialSources() {
   }
 }
 
+async function checkGoogleApi() {
+  const btn = document.getElementById("google-api-check-btn");
+  const el = document.getElementById("google-api-check-result");
+  btn.disabled = true;
+  btn.textContent = "진단 중...";
+  el.innerHTML = '<span style="color:var(--gray-500)">Google API 상태 확인 중...</span>';
+  try {
+    const data = await api.get("/api/materials/google-api-check");
+    let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+
+    // API Key 상태
+    if (!data.google_api_key_set) {
+      html += '<div style="color:var(--danger);font-weight:600">GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.</div>';
+    } else {
+      html += `<div>API Key: <code style="font-size:11px;background:#f7fafc;padding:2px 6px;border-radius:3px">${data.api_key_prefix}</code></div>`;
+    }
+
+    // Drive API
+    if (data.drive_api) {
+      const d = data.drive_api;
+      if (d.enabled) {
+        html += '<div style="color:var(--success);font-weight:500">Google Drive API: 활성화됨</div>';
+      } else {
+        html += `<div style="color:var(--danger);font-weight:500">Google Drive API: 비활성화 (${d.http_status}) - ${d.error || ""}</div>`;
+        html += '<div style="font-size:12px;color:var(--gray-500);margin-left:8px">Google Cloud Console > API 및 서비스 > 라이브러리에서 "Google Drive API"를 검색하여 활성화하세요.</div>';
+      }
+    }
+
+    // Sheets API
+    if (data.sheets_api) {
+      const s = data.sheets_api;
+      if (s.enabled) {
+        html += '<div style="color:var(--success);font-weight:500">Google Sheets API: 활성화됨</div>';
+      } else {
+        html += `<div style="color:var(--danger);font-weight:500">Google Sheets API: 비활성화 (${s.http_status}) - ${s.error || ""}</div>`;
+        html += '<div style="font-size:12px;color:var(--gray-500);margin-left:8px">Google Cloud Console > API 및 서비스 > 라이브러리에서 "Google Sheets API"를 검색하여 활성화하세요.</div>';
+      }
+    }
+
+    // 등록된 소스
+    if (data.registered_sources && data.registered_sources.length > 0) {
+      const driveCount = data.registered_sources.filter(s => s.source_type === 'drive_folder').length;
+      const sheetCount = data.registered_sources.filter(s => s.source_type === 'sheet').length;
+      html += `<div style="font-size:12px;color:var(--gray-500)">등록된 소스: 시트 ${sheetCount}개, Drive 폴더 ${driveCount}개</div>`;
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--danger)">진단 실패: ${e.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "진단 실행";
+  }
+}
+
 async function materialsyncAll() {
   const btn = document.getElementById("mat-sync-all-btn");
   const statusEl = document.getElementById("mat-sync-status");
@@ -2761,7 +2830,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
-<script src="/static/js/api.js?v=20260312f"></script>
-<script src="/static/js/app.js?v=20260319b"></script>
+<script src="/static/js/api.js?v=20260319c"></script>
+<script src="/static/js/app.js?v=20260319c"></script>
 </body>
 </html>

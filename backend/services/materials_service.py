@@ -667,7 +667,23 @@ async def sync_sheet(source_id: int) -> dict:
 
     except httpx.HTTPStatusError as e:
         conn.close()
-        err = f"HTTP 오류 {e.response.status_code}: 시트 접근이 거부되었습니다. 시트가 '링크가 있는 모든 사용자'에게 공개되어 있는지 확인하세요."
+        detail = ""
+        try:
+            err_body = e.response.json()
+            detail = err_body.get("error", {}).get("message", "")
+        except Exception:
+            detail = e.response.text[:200] if e.response.text else ""
+
+        if e.response.status_code == 403:
+            err = (
+                f"HTTP 403: Google Sheets API 접근이 거부되었습니다. "
+                f"Google Cloud Console에서 'Google Sheets API'를 활성화했는지 확인하세요. "
+                f"또한 시트가 '링크가 있는 모든 사용자'에게 공개되어 있어야 합니다."
+            )
+            if detail:
+                err += f" [상세: {detail}]"
+        else:
+            err = f"HTTP 오류 {e.response.status_code}: 시트 접근 실패. [상세: {detail}]"
         logger.error(f"[Materials] {err}")
         return {"success": False, "error": err, "rows_synced": 0}
     except Exception as e:
@@ -843,7 +859,32 @@ async def sync_drive_folder(source_id: int) -> dict:
 
     except httpx.HTTPStatusError as e:
         conn.close()
-        err = f"HTTP 오류 {e.response.status_code}: Drive API 접근 실패. API Key와 폴더 공유 설정을 확인하세요."
+        # Google API 에러 응답 본문에서 구체적 원인 추출
+        detail = ""
+        try:
+            err_body = e.response.json()
+            err_info = err_body.get("error", {})
+            detail = err_info.get("message", "")
+            err_status = err_info.get("status", "")
+            if err_status:
+                detail = f"{detail} ({err_status})"
+        except Exception:
+            detail = e.response.text[:200] if e.response.text else ""
+
+        if e.response.status_code == 403:
+            err = (
+                f"HTTP 403 Forbidden: Google Drive API 접근이 거부되었습니다. "
+                f"Google Cloud Console에서 'Google Drive API'를 활성화했는지 확인하세요. "
+                f"또한 Drive 폴더가 '링크가 있는 모든 사용자'로 공유되어 있어야 합니다."
+            )
+            if detail:
+                err += f" [상세: {detail}]"
+        elif e.response.status_code == 400:
+            err = f"HTTP 400: 잘못된 요청입니다. folder_id가 올바른지 확인하세요. [상세: {detail}]"
+        elif e.response.status_code == 404:
+            err = f"HTTP 404: 폴더를 찾을 수 없습니다. folder_id가 올바른지, 폴더가 삭제되지 않았는지 확인하세요. [상세: {detail}]"
+        else:
+            err = f"HTTP 오류 {e.response.status_code}: Drive API 접근 실패. [상세: {detail}]"
         logger.error(f"[Materials] {err}")
         return {"success": False, "files_synced": 0, "error": err}
     except Exception as e:
