@@ -410,6 +410,7 @@ async def upload_file(
     try:
         from services.google_drive_service import upload_to_drive, _is_configured
         if _is_configured():
+            logger.info(f"[CS] Google Drive 업로드 시작: {filename} ({len(content)} bytes)")
             result = await upload_to_drive(
                 file_content=content,
                 filename=filename,
@@ -420,10 +421,12 @@ async def upload_file(
             drive_file_id = result["file_id"]
             logger.info(f"[CS] 파일 Google Drive 업로드 완료: {filename} → {drive_file_id}")
         else:
+            logger.warning("[CS] Google Drive 미설정 (GOOGLE_SERVICE_ACCOUNT_JSON 또는 GOOGLE_CS_FOLDER_ID 누락)")
             raise RuntimeError("Google Drive 미설정 — 로컬 저장으로 전환")
     except Exception as e:
         # Google Drive 실패 시 로컬 저장 (개발환경 또는 설정 전)
-        logger.warning(f"[CS] Google Drive 업로드 실패, 로컬 저장: {e}")
+        import traceback
+        logger.warning(f"[CS] Google Drive 업로드 실패, 로컬 저장: {e}\n{traceback.format_exc()}")
         file_path = UPLOAD_DIR / filename
         with open(file_path, "wb") as f:
             f.write(content)
@@ -457,6 +460,68 @@ async def serve_file(filename: str):
         raise HTTPException(404, "파일을 찾을 수 없습니다. (Render 재배포 시 로컬 파일은 삭제됩니다)")
     from fastapi.responses import FileResponse
     return FileResponse(str(file_path))
+
+
+# ── [9-0] 파일 다운로드 (Google Drive 프록시 또는 로컬) ──
+@router.get("/download/{file_id}")
+async def download_file(file_id: int, user: dict = Depends(get_current_user)):
+    """첨부파일 다운로드 (Google Drive 파일은 프록시, 로컬 파일은 직접 전송)"""
+    import httpx
+    from fastapi.responses import StreamingResponse, FileResponse
+
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM cs_files WHERE id = ?", (file_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "파일을 찾을 수 없습니다.")
+    finally:
+        conn.close()
+
+    drive_file_id = row.get("drive_file_id", "")
+    original_name = row["file_name"]
+
+    # Google Drive 파일인 경우 프록시 다운로드
+    if drive_file_id:
+        try:
+            from services.google_drive_service import _get_access_token, _is_configured
+            if not _is_configured():
+                raise RuntimeError("Google Drive 미설정")
+
+            access_token = await _get_access_token()
+            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+                r = await client.get(
+                    f"https://www.googleapis.com/drive/v3/files/{drive_file_id}?alt=media",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                r.raise_for_status()
+
+                # Content-Type 결정
+                content_type = r.headers.get("content-type", "application/octet-stream")
+
+                return StreamingResponse(
+                    iter([r.content]),
+                    media_type=content_type,
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{original_name}"',
+                    },
+                )
+        except Exception as e:
+            logger.warning(f"[CS] Drive 다운로드 실패 (file_id={drive_file_id}): {e}")
+            raise HTTPException(500, f"Google Drive 다운로드 실패: {e}")
+
+    # 로컬 파일인 경우
+    file_url = row.get("file_url", "")
+    if file_url.startswith("/api/cs/files/"):
+        local_name = file_url.split("/")[-1]
+        local_path = UPLOAD_DIR / local_name
+        if local_path.exists():
+            return FileResponse(
+                str(local_path),
+                filename=original_name,
+                media_type="application/octet-stream",
+            )
+
+    raise HTTPException(404, "파일을 찾을 수 없습니다. (Render 재배포 시 로컬 파일은 삭제됩니다)")
 
 
 # ── [9-1] 파일 삭제 ──
@@ -504,6 +569,63 @@ async def delete_file(file_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(500, str(e))
     finally:
         conn.close()
+
+
+# ── [9-2] Google Drive 업로드 진단 ──
+@router.get("/drive-check")
+async def drive_upload_check(user: dict = Depends(get_current_user)):
+    """Google Drive 업로드 설정 진단"""
+    from config import GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_CS_FOLDER_ID
+    result = {
+        "service_account_json_set": bool(GOOGLE_SERVICE_ACCOUNT_JSON),
+        "service_account_json_length": len(GOOGLE_SERVICE_ACCOUNT_JSON) if GOOGLE_SERVICE_ACCOUNT_JSON else 0,
+        "cs_folder_id": GOOGLE_CS_FOLDER_ID or "(미설정)",
+    }
+
+    if GOOGLE_SERVICE_ACCOUNT_JSON:
+        try:
+            import json
+            sa_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+            result["service_account_email"] = sa_info.get("client_email", "(없음)")
+            result["project_id"] = sa_info.get("project_id", "(없음)")
+            result["json_parse"] = "OK"
+        except Exception as e:
+            result["json_parse"] = f"FAIL: {e}"
+            return result
+
+    if GOOGLE_SERVICE_ACCOUNT_JSON and GOOGLE_CS_FOLDER_ID:
+        try:
+            from services.google_drive_service import _get_access_token
+            token = await _get_access_token()
+            result["access_token"] = f"{token[:20]}..." if token else "(없음)"
+            result["token_status"] = "OK"
+        except Exception as e:
+            result["token_status"] = f"FAIL: {e}"
+            return result
+
+        # 폴더 접근 테스트
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    "https://www.googleapis.com/drive/v3/files",
+                    params={
+                        "q": f"'{GOOGLE_CS_FOLDER_ID}' in parents and trashed=false",
+                        "fields": "files(id,name)",
+                        "pageSize": 3,
+                    },
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                if r.status_code == 200:
+                    files = r.json().get("files", [])
+                    result["folder_access"] = "OK"
+                    result["folder_files"] = [f["name"] for f in files]
+                else:
+                    result["folder_access"] = f"FAIL ({r.status_code}): {r.text[:200]}"
+        except Exception as e:
+            result["folder_access"] = f"ERROR: {e}"
+
+    return result
 
 
 # ── [10] 이력 조회 ──

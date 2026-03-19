@@ -4151,12 +4151,13 @@ async function csShowDetail(ticketId) {
             const delBtn = t.current_status !== "처리종결"
               ? `<button onclick="csDeleteFile(${f.id},'${f.ticket_id}')" title="삭제" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#dc2626;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0">✕</button>`
               : "";
+            const dlBtn = `<button onclick="csDownloadFile(${f.id},'${_esc(f.file_name)}')" title="다운로드" style="position:absolute;bottom:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#2563eb;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0">⬇</button>`;
             if (f.file_type === "image") {
-              return `<div style="position:relative;display:inline-block">${delBtn}<a href="${viewUrl}" target="_blank"><img src="${imgSrc}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span style="display:none;width:80px;height:80px;align-items:center;justify-content:center;background:#f3f4f6;border-radius:6px;font-size:24px;border:1px solid #e5e7eb">🖼️</span></a></div>`;
+              return `<div style="position:relative;display:inline-block">${delBtn}${dlBtn}<a href="${viewUrl}" target="_blank"><img src="${imgSrc}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span style="display:none;width:80px;height:80px;align-items:center;justify-content:center;background:#f3f4f6;border-radius:6px;font-size:24px;border:1px solid #e5e7eb">🖼️</span></a></div>`;
             } else if (f.file_type === "video") {
-              return `<div style="position:relative;display:inline-block">${delBtn}<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">🎬 ${_esc(f.file_name)}</a></div>`;
+              return `<div style="position:relative;display:inline-block">${delBtn}${dlBtn}<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">🎬 ${_esc(f.file_name)}</a></div>`;
             }
-            return `<div style="position:relative;display:inline-block">${delBtn}<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">📄 ${_esc(f.file_name)}</a></div>`;
+            return `<div style="position:relative;display:inline-block">${delBtn}${dlBtn}<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">📄 ${_esc(f.file_name)}</a></div>`;
           }).join("")}
         </div>
       </div>`;
@@ -4316,6 +4317,47 @@ async function csDeleteFile(fileId, ticketId) {
     await api.delete(`/api/cs/files/${fileId}`);
     csShowDetail(ticketId);
   } catch(e) { alert("삭제 오류: " + (e.message || e)); }
+}
+
+// ── Drive 업로드 진단 ──
+async function csDriveCheck() {
+  try {
+    const res = await api.get("/api/cs/drive-check");
+    const lines = [
+      `Service Account JSON: ${res.service_account_json_set ? "설정됨 (" + res.service_account_json_length + "자)" : "미설정"}`,
+      `JSON 파싱: ${res.json_parse || "-"}`,
+      `서비스 계정: ${res.service_account_email || "-"}`,
+      `프로젝트: ${res.project_id || "-"}`,
+      `CS 폴더 ID: ${res.cs_folder_id || "-"}`,
+      `토큰 발급: ${res.token_status || "-"}`,
+      `폴더 접근: ${res.folder_access || "-"}`,
+      res.folder_files ? `폴더 내 파일: ${res.folder_files.join(", ") || "(없음)"}` : "",
+    ].filter(Boolean);
+    alert("Google Drive 업로드 진단\n\n" + lines.join("\n"));
+  } catch(e) { alert("진단 오류: " + (e.message || e)); }
+}
+
+// ── 파일 다운로드 ──
+async function csDownloadFile(fileId, fileName) {
+  try {
+    const token = localStorage.getItem("jwt_token");
+    const res = await fetch(`/api/cs/download/${fileId}`, {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `다운로드 실패 (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName || "download";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch(e) { alert("다운로드 오류: " + (e.message || e)); }
 }
 
 // ── 메모 추가 ──
