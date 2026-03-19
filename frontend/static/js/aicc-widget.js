@@ -612,9 +612,10 @@
 
     _isSending = true;
 
-    // 1. 입력창 즉시 초기화
+    // 1. 입력창 즉시 초기화 + 예시 placeholder 제거
     inp.value = '';
     inp.style.height = 'auto';
+    inp.placeholder = '\uBA54\uC2DC\uC9C0\uB97C \uC785\uB825\uD558\uC138\uC694...';
 
     // 이미지 캡처 후 미리보기 제거
     var imageData = _pendingImage;
