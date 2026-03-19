@@ -4140,12 +4140,20 @@ async function csShowDetail(ticketId) {
         <div style="font-weight:600;font-size:13px;margin-bottom:8px">📎 첨부파일 (${files.length})</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${files.map(f => {
+            // Google Drive 이미지는 썸네일 URL 사용
+            const isDrive = f.file_url && f.file_url.includes("drive.google.com");
+            const imgSrc = isDrive && f.drive_file_id
+              ? `https://drive.google.com/thumbnail?id=${f.drive_file_id}&sz=w200`
+              : f.file_url;
+            const viewUrl = isDrive && f.drive_file_id
+              ? `https://drive.google.com/file/d/${f.drive_file_id}/view`
+              : f.file_url;
             if (f.file_type === "image") {
-              return `<a href="${f.file_url}" target="_blank"><img src="${f.file_url}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb"></a>`;
+              return `<a href="${viewUrl}" target="_blank"><img src="${imgSrc}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span style="display:none;width:80px;height:80px;align-items:center;justify-content:center;background:#f3f4f6;border-radius:6px;font-size:24px;border:1px solid #e5e7eb">🖼️</span></a>`;
             } else if (f.file_type === "video") {
-              return `<a href="${f.file_url}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">🎬 ${_esc(f.file_name)}</a>`;
+              return `<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">🎬 ${_esc(f.file_name)}</a>`;
             }
-            return `<a href="${f.file_url}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">📄 ${_esc(f.file_name)}</a>`;
+            return `<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">📄 ${_esc(f.file_name)}</a>`;
           }).join("")}
         </div>
       </div>`;

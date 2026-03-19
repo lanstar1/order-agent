@@ -363,7 +363,7 @@ async def resolve_ticket(ticket_id: str, data: FinalAction, user: dict = Depends
         conn.close()
 
 
-# ── [8] 파일 업로드 ──
+# ── [8] 파일 업로드 (Google Drive 또는 로컬) ──
 @router.post("/tickets/{ticket_id}/upload")
 async def upload_file(
     ticket_id: str,
@@ -381,7 +381,7 @@ async def upload_file(
     finally:
         conn.close()
 
-    # 파일 저장
+    # 파일 검증
     ext = Path(file.filename).suffix.lower() if file.filename else ".bin"
     allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".pdf"}
     if ext not in allowed_exts:
@@ -391,28 +391,56 @@ async def upload_file(
     if len(content) > 50 * 1024 * 1024:  # 50MB 제한
         raise HTTPException(400, "파일 크기가 50MB를 초과합니다.")
 
-    file_id = str(uuid.uuid4())[:8]
-    filename = f"{ticket_id}_{file_id}{ext}"
-    file_path = UPLOAD_DIR / filename
+    file_type = "video" if ext in {".mp4", ".mov"} else "image" if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"} else "document"
 
-    with open(file_path, "wb") as f:
-        f.write(content)
+    # MIME 타입 결정
+    mime_map = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+        ".gif": "image/gif", ".webp": "image/webp",
+        ".mp4": "video/mp4", ".mov": "video/quicktime",
+        ".pdf": "application/pdf",
+    }
+    mime_type = mime_map.get(ext, "application/octet-stream")
+
+    file_id_short = str(uuid.uuid4())[:8]
+    filename = f"{ticket_id}_{file_id_short}{ext}"
+    drive_file_id = ""
+
+    # Google Drive 업로드 시도 (설정되어 있으면)
+    try:
+        from services.google_drive_service import upload_to_drive, _is_configured
+        if _is_configured():
+            result = await upload_to_drive(
+                file_content=content,
+                filename=filename,
+                mime_type=mime_type,
+                subfolder_name=ticket_id,
+            )
+            file_url = result["file_url"]
+            drive_file_id = result["file_id"]
+            logger.info(f"[CS] 파일 Google Drive 업로드 완료: {filename} → {drive_file_id}")
+        else:
+            raise RuntimeError("Google Drive 미설정 — 로컬 저장으로 전환")
+    except Exception as e:
+        # Google Drive 실패 시 로컬 저장 (개발환경 또는 설정 전)
+        logger.warning(f"[CS] Google Drive 업로드 실패, 로컬 저장: {e}")
+        file_path = UPLOAD_DIR / filename
+        with open(file_path, "wb") as f:
+            f.write(content)
+        file_url = f"/api/cs/files/{filename}"
 
     # DB 기록
-    file_type = "video" if ext in {".mp4", ".mov"} else "image" if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"} else "document"
-    file_url = f"/api/cs/files/{filename}"
-
     conn = get_connection()
     try:
         conn.execute(
-            """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (ticket_id, file.filename or filename, file_url, file_type, len(content), user["emp_cd"], now_kst())
+            """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, drive_file_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ticket_id, file.filename or filename, file_url, file_type, len(content), user["emp_cd"], now_kst(), drive_file_id)
         )
         _log_action(conn, ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{file.filename} ({file_type})")
         conn.commit()
 
-        return {"success": True, "file_url": file_url, "file_name": filename}
+        return {"success": True, "file_url": file_url, "file_name": filename, "drive_file_id": drive_file_id}
     except Exception as e:
         conn.rollback()
         raise HTTPException(500, str(e))
@@ -420,12 +448,13 @@ async def upload_file(
         conn.close()
 
 
-# ── [9] 파일 서빙 ──
+# ── [9] 파일 서빙 (로컬 폴백) ──
 @router.get("/files/{filename}")
 async def serve_file(filename: str):
+    """로컬에 저장된 파일 서빙 (Google Drive 파일은 직접 URL 사용)"""
     file_path = UPLOAD_DIR / filename
     if not file_path.exists():
-        raise HTTPException(404, "파일을 찾을 수 없습니다.")
+        raise HTTPException(404, "파일을 찾을 수 없습니다. (Render 재배포 시 로컬 파일은 삭제됩니다)")
     from fastapi.responses import FileResponse
     return FileResponse(str(file_path))
 

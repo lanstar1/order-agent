@@ -28,6 +28,14 @@ CLAUDE_MODEL_LIGHT = os.getenv("CLAUDE_MODEL_LIGHT", "claude-haiku-4-5-20251001"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 
 # ─────────────────────────────────────────
+#  Google Service Account (Drive 파일 업로드용)
+# ─────────────────────────────────────────
+# JSON 키 파일 내용을 환경변수로 전달 (Render에서는 Secret File 또는 환경변수)
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+# CS 파일 업로드용 Drive 폴더 ID
+GOOGLE_CS_FOLDER_ID = os.getenv("GOOGLE_CS_FOLDER_ID", "")
+
+# ─────────────────────────────────────────
 #  ECOUNT ERP
 # ─────────────────────────────────────────
 ERP_COM_CODE  = os.getenv("ERP_COM_CODE",  "")

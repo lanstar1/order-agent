@@ -575,6 +575,14 @@ def init_db():
     )""")
 
 
+    # ── CS 마이그레이션: drive_file_id 컬럼 추가 ──
+    if not column_exists(conn, 'cs_files', 'drive_file_id'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN drive_file_id TEXT DEFAULT ''")
+            logger.info("[DB] cs_files.drive_file_id 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_files.drive_file_id 추가 스킵: {e}")
+
     # ── AICC 마이그레이션: image_id 컬럼 추가 ──
     if not column_exists(conn, 'aicc_messages', 'image_id'):
         try:
