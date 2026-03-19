@@ -48,7 +48,7 @@ async def _get_access_token() -> str:
     # JWT Claim
     claim = base64.urlsafe_b64encode(json.dumps({
         "iss": client_email,
-        "scope": "https://www.googleapis.com/auth/drive.file",
+        "scope": "https://www.googleapis.com/auth/drive",
         "aud": "https://oauth2.googleapis.com/token",
         "iat": now,
         "exp": now + 3600,
