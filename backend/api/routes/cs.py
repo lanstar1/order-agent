@@ -459,6 +459,53 @@ async def serve_file(filename: str):
     return FileResponse(str(file_path))
 
 
+# ── [9-1] 파일 삭제 ──
+@router.delete("/files/{file_id}")
+async def delete_file(file_id: int, user: dict = Depends(get_current_user)):
+    """첨부파일 삭제 (DB + Google Drive/로컬 파일)"""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM cs_files WHERE id = ?", (file_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "파일을 찾을 수 없습니다.")
+
+        ticket_id = row["ticket_id"]
+        drive_file_id = row.get("drive_file_id", "")
+
+        # Google Drive 파일 삭제
+        if drive_file_id:
+            try:
+                from services.google_drive_service import delete_from_drive
+                await delete_from_drive(drive_file_id)
+                logger.info(f"[CS] Drive 파일 삭제: {drive_file_id}")
+            except Exception as e:
+                logger.warning(f"[CS] Drive 파일 삭제 실패: {e}")
+        else:
+            # 로컬 파일 삭제
+            file_url = row.get("file_url", "")
+            if file_url.startswith("/api/cs/files/"):
+                local_name = file_url.split("/")[-1]
+                local_path = UPLOAD_DIR / local_name
+                if local_path.exists():
+                    local_path.unlink()
+
+        # DB 삭제
+        conn.execute("DELETE FROM cs_files WHERE id = ?", (file_id,))
+        _log_action(conn, ticket_id, "파일삭제", user["emp_cd"], user["name"], row["file_name"])
+        conn.commit()
+
+        return {"success": True, "message": "파일 삭제 완료"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        conn.close()
+
+
 # ── [10] 이력 조회 ──
 @router.get("/tickets/{ticket_id}/logs")
 async def get_ticket_logs(ticket_id: str, user: dict = Depends(get_current_user)):

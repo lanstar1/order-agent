@@ -4148,12 +4148,15 @@ async function csShowDetail(ticketId) {
             const viewUrl = isDrive && f.drive_file_id
               ? `https://drive.google.com/file/d/${f.drive_file_id}/view`
               : f.file_url;
+            const delBtn = t.current_status !== "처리종결"
+              ? `<button onclick="csDeleteFile(${f.id},'${f.ticket_id}')" title="삭제" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#dc2626;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0">✕</button>`
+              : "";
             if (f.file_type === "image") {
-              return `<a href="${viewUrl}" target="_blank"><img src="${imgSrc}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span style="display:none;width:80px;height:80px;align-items:center;justify-content:center;background:#f3f4f6;border-radius:6px;font-size:24px;border:1px solid #e5e7eb">🖼️</span></a>`;
+              return `<div style="position:relative;display:inline-block">${delBtn}<a href="${viewUrl}" target="_blank"><img src="${imgSrc}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span style="display:none;width:80px;height:80px;align-items:center;justify-content:center;background:#f3f4f6;border-radius:6px;font-size:24px;border:1px solid #e5e7eb">🖼️</span></a></div>`;
             } else if (f.file_type === "video") {
-              return `<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">🎬 ${_esc(f.file_name)}</a>`;
+              return `<div style="position:relative;display:inline-block">${delBtn}<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">🎬 ${_esc(f.file_name)}</a></div>`;
             }
-            return `<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">📄 ${_esc(f.file_name)}</a>`;
+            return `<div style="position:relative;display:inline-block">${delBtn}<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">📄 ${_esc(f.file_name)}</a></div>`;
           }).join("")}
         </div>
       </div>`;
@@ -4304,6 +4307,15 @@ async function csUploadFile(ticketId, input) {
     alert("파일 업로드 완료");
     csShowDetail(ticketId);
   } catch(e) { alert("업로드 오류: " + (e.message || e)); }
+}
+
+// ── 파일 삭제 ──
+async function csDeleteFile(fileId, ticketId) {
+  if (!confirm("이 파일을 삭제하시겠습니까?")) return;
+  try {
+    await api.delete(`/api/cs/files/${fileId}`);
+    csShowDetail(ticketId);
+  } catch(e) { alert("삭제 오류: " + (e.message || e)); }
 }
 
 // ── 메모 추가 ──
