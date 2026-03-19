@@ -479,11 +479,13 @@ async def download_file(file_id: int, user: dict = Depends(get_current_user)):
             raise HTTPException(404, "파일 레코드를 찾을 수 없습니다.")
         if not row["file_data"]:
             raise HTTPException(404, "파일 데이터가 없습니다. (DB 저장 이전에 업로드된 파일)")
+        from urllib.parse import quote
         data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
+        encoded_name = quote(row["file_name"])
         return Response(
             content=data,
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{row["file_name"]}"'},
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"},
         )
     except HTTPException:
         raise
