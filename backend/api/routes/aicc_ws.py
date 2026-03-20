@@ -73,13 +73,14 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
                 # 상태 콜백: AI 처리 단계를 실시간으로 프론트에 전송
                 async def send_status(step: str, detail: str = ""):
                     try:
+                        print(f"[AICC WS] 상태 전송: {step} | {detail}")
                         await websocket.send_json({
                             "type": "status",
                             "step": step,
                             "detail": detail,
                         })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[AICC WS] 상태 전송 실패: {e}")
 
                 # AI 응답 생성 (메뉴별 분기)
                 try:
@@ -100,6 +101,7 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
 
                 ai_reply = result["content"]
                 suggestions = result.get("suggestions", [])
+                print(f"[AICC WS] 추천질문 {len(suggestions)}개: {suggestions}")
 
                 session_manager.add_message(actual_sid, "assistant", ai_reply)
                 await websocket.send_json({
