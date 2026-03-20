@@ -54,6 +54,7 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
     if not is_resume:
         model_text = f"{model} " if model else ""
         greeting = f"안녕하세요{', ' + name + '님' if name else ''}! 랜스타 AI 상담사입니다.\n{model_text}{menu} 상담을 시작합니다. 궁금하신 점을 편하게 말씀해 주세요."
+        session_manager.add_message(actual_sid, "assistant", greeting)
         await websocket.send_json({"type": "ai_message", "content": greeting})
 
     try:

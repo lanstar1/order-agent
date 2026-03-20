@@ -331,7 +331,13 @@ async def get_session(session_id: str, current_user=Depends(get_current_user)):
     s = session_manager.get(session_id)
 
     # DB에서 메시지 조회 (영구 저장된 완전한 기록)
-    db_messages = aicc_db.get_session_messages(session_id)
+    try:
+        db_messages = aicc_db.get_session_messages(session_id)
+    except Exception as e:
+        print(f"[AICC] DB 메시지 조회 오류: {e}")
+        db_messages = []
+
+    print(f"[AICC] 세션 조회: {session_id[:8]}… 인메모리={'있음' if s else '없음'}, DB메시지={len(db_messages)}건")
 
     if s:
         result = session_manager.serialize(s)

@@ -123,22 +123,27 @@ class AICCSessionManager:
         try:
             from .aicc_db import save_session
             save_session(sid, name, model, erp_code, menu)
+            print(f"[AICC DB] 세션 저장 OK: {sid[:8]}… ({name}, {menu})")
         except Exception as e:
-            print(f"[AICC DB] 세션 저장 오류: {e}")
+            import traceback
+            print(f"[AICC DB] 세션 저장 오류: {e}\n{traceback.format_exc()}")
 
     def _db_save_message(self, sid, role, content, image_id=None):
         try:
             from .aicc_db import save_message
             save_message(sid, role, content, image_id or "")
+            print(f"[AICC DB] 메시지 저장 OK: {sid[:8]}… [{role}] {content[:30]}")
         except Exception as e:
-            print(f"[AICC DB] 메시지 저장 오류: {e}")
+            import traceback
+            print(f"[AICC DB] 메시지 저장 오류: {e}\n{traceback.format_exc()}")
 
     def _db_update_status(self, sid, status):
         try:
             from .aicc_db import update_session_status
             update_session_status(sid, status)
         except Exception as e:
-            print(f"[AICC DB] 상태 업데이트 오류: {e}")
+            import traceback
+            print(f"[AICC DB] 상태 업데이트 오류: {e}\n{traceback.format_exc()}")
 
 
 session_manager = AICCSessionManager()
