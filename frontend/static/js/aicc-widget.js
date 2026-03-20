@@ -64,7 +64,15 @@
 
   function _restoreSession() {
     var state = _loadState();
-    if (!state || !state.sessionId) return;
+    console.log('[AICC] restore check:', state ? {sid: state.sessionId, screen: state.screen, open: state.popupOpen, hasHtml: !!state.messagesHtml} : 'no state');
+    if (!state) return;
+
+    // 팝업 상태 먼저 복원 (세션 없어도 열린 상태는 유지)
+    if (state.popupOpen) {
+      document.getElementById('ls-chat-popup').classList.add('open');
+    }
+
+    if (!state.sessionId) return;
 
     // 상태 복원
     _sessionId = state.sessionId;
@@ -72,14 +80,16 @@
     _selectedModel = state.selectedModel || null;
 
     // 채팅 화면이었으면 복원
-    if (state.screen === 'chat' && state.messagesHtml) {
+    if (state.screen === 'chat') {
       // 상단 정보 표시
       var modelInfo = _selectedModel ? '<strong>' + escHtml(_selectedModel.model_name) + '</strong> | ' : '';
       document.getElementById('ls-chat-info-text').innerHTML =
         modelInfo + '<strong>' + escHtml(_selectedMenu) + '</strong>';
 
       // 채팅 메시지 복원
-      document.getElementById('ls-chat-messages').innerHTML = state.messagesHtml;
+      if (state.messagesHtml) {
+        document.getElementById('ls-chat-messages').innerHTML = state.messagesHtml;
+      }
 
       // 입력 활성화
       var chatInput = document.getElementById('ls-chat-input');
@@ -93,11 +103,7 @@
 
       // WebSocket 재연결
       connectWS();
-    }
-
-    // 팝업 상태 복원
-    if (state.popupOpen) {
-      document.getElementById('ls-chat-popup').classList.add('open');
+      console.log('[AICC] session restored:', _sessionId, _selectedMenu);
     }
   }
 
@@ -577,6 +583,7 @@
 
     showScreen('chat');
     connectWS();
+    _saveState();
   }
 
   // ── WebSocket 연결 ─────────────────────────────────────────
@@ -1137,6 +1144,11 @@
       bindEvents();
       loadModels();
       _restoreSession();
+
+      // 페이지 이동 시 상태 자동 저장
+      window.addEventListener('beforeunload', function() {
+        _saveState();
+      });
     },
     _goBack: _goBack,
     _chatBack: _chatBack,
