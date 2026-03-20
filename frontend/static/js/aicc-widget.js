@@ -118,7 +118,7 @@
 
   // ── CSS 주입 ────────────────────────────────────────────────
   const CSS = `
-  #ls-chat-btn{position:fixed;bottom:24px;right:464px;z-index:99998;width:140px;height:210px;border-radius:16px;background:linear-gradient(135deg,#1a1a2e 0%,#2d2d5e 100%);color:#fff;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(26,26,46,.45);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:transform .15s,box-shadow .15s;padding:12px 8px}
+  #ls-chat-btn{position:fixed;bottom:24px;left:600px;z-index:99998;width:140px;height:210px;border-radius:16px;background:linear-gradient(135deg,#1a1a2e 0%,#2d2d5e 100%);color:#fff;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(26,26,46,.45);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:transform .15s,box-shadow .15s;padding:12px 8px}
   #ls-chat-btn:hover{transform:scale(1.03);box-shadow:0 8px 28px rgba(26,26,46,.55)}
   #ls-chat-btn svg{width:52px;height:52px;flex-shrink:0}
   #ls-chat-btn .btn-title{font-size:15px;font-weight:700;letter-spacing:-.3px;line-height:1.2}
@@ -126,7 +126,7 @@
   #ls-chat-btn .btn-desc{font-size:11px;opacity:.85;line-height:1.4;text-align:center;word-break:keep-all}
   #ls-chat-btn .btn-cta{font-size:12px;background:rgba(255,255,255,.15);border-radius:20px;padding:4px 14px;margin-top:2px}
   #ls-chat-badge{position:absolute;top:-4px;right:-4px;background:#e63946;color:#fff;border-radius:50%;width:20px;height:20px;font-size:11px;display:none;align-items:center;justify-content:center;font-weight:700}
-  #ls-chat-popup{position:fixed;bottom:90px;right:464px;z-index:99999;width:380px;height:600px;border-radius:16px;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.22);display:none;flex-direction:column;overflow:hidden;font-family:'Noto Sans KR',sans-serif}
+  #ls-chat-popup{position:fixed;bottom:90px;left:600px;z-index:99999;width:380px;height:600px;border-radius:16px;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.22);display:none;flex-direction:column;overflow:hidden;font-family:'Noto Sans KR',sans-serif}
   #ls-chat-popup.open{display:flex}
   #ls-chat-header{background:#1a1a2e;color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
   #ls-chat-header .title{font-size:15px;font-weight:700}
