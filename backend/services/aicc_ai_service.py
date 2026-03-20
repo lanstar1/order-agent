@@ -518,9 +518,10 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
         for blog in blog_results:
             sys_prompt += f"\n- [{blog['title']}]({blog['link']}) ({blog['bloggername']})\n  {blog['description'][:200]}\n"
 
-    # ── 유튜브 영상 검색 ─────────────────────────────────
+    # ── 유튜브 영상 검색 (매칭된 상위 제품 모델명도 활용) ────
+    _yt_model = matched_products[0]["model_name"] if matched_products else ""
     await _status("유튜브 영상 검색 중...", f"'{user_message[:20]}' 관련 영상 탐색")
-    youtube_results = data_loader.search_youtube_videos(enriched_query, "", max_results=3)
+    youtube_results = data_loader.search_youtube_videos(enriched_query, _yt_model, max_results=3)
     if youtube_results:
         yt_titles = [y['title'][:30] for y in youtube_results]
         await _status("유튜브 영상 매칭 완료", f"{', '.join(yt_titles[:2])}")

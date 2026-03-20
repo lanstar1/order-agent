@@ -261,6 +261,7 @@ class AICCDataLoader:
         고객 질문과 모델명으로 관련 유튜브 영상 검색.
         검색 대상: title, main_topic, sub_topics, keywords, summary
         점수: 모델명 매칭 +5, 키워드 매칭 +1/단어
+        띄어쓰기 무시 매칭으로 '멀티허브'='멀티 허브' 등 처리
         """
         if not self.youtube_videos:
             return []
@@ -285,6 +286,8 @@ class AICCDataLoader:
             summary = video.get("summary", "")
 
             search_text = f"{title} {main_topic} {sub_topics} {keywords_text} {summary}".upper()
+            # 띄어쓰기 제거 버전 (멀티허브=멀티 허브, 도킹스테이션=도킹 스테이션 등)
+            search_text_nospace = search_text.replace(" ", "")
 
             score = 0
 
@@ -296,9 +299,9 @@ class AICCDataLoader:
             elif model_base and model_base != model_upper and model_base in search_text:
                 score += 3
 
-            # 키워드 매칭
+            # 키워드 매칭 (원본 + 띄어쓰기 제거 양쪽에서 검색)
             for w in words:
-                if w in search_text:
+                if w in search_text or w in search_text_nospace:
                     score += 1
 
             if score > 0:
