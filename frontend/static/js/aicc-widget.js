@@ -173,16 +173,13 @@
   #ls-status-main .dot:nth-child(2){animation-delay:.15s}
   #ls-status-main .dot:nth-child(3){animation-delay:.3s}
   @keyframes ls-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
-  #ls-status-details{display:flex;flex-direction:column;gap:3px;padding-left:4px;max-height:120px;overflow:hidden}
-  .ls-status-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#888;animation:ls-fadeSlide .4s ease-out;max-height:30px;transition:opacity .5s,max-height .5s}
-  .ls-status-item.active{color:#1a1a2e;font-weight:500}
-  .ls-status-item.done{color:#aaa}
+  #ls-status-details{display:flex;flex-direction:column;gap:2px;padding-left:4px;overflow:hidden}
+  .ls-status-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#1a1a2e;font-weight:500;animation:ls-fadeSlide .35s ease-out;max-height:28px;overflow:hidden;transition:opacity .6s ease,max-height .6s ease,margin .6s ease}
+  .ls-status-item.fading{opacity:0;max-height:0;margin:0;padding:0}
   .ls-status-item .ls-status-icon{font-size:10px;width:14px;text-align:center;flex-shrink:0}
-  .ls-status-item .ls-status-text{animation:ls-shimmer 2s ease-in-out infinite}
-  .ls-status-item.active .ls-status-text{animation:ls-wave 1.5s ease-in-out infinite}
-  @keyframes ls-fadeSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-  @keyframes ls-wave{0%,100%{opacity:1}50%{opacity:.6}}
-  @keyframes ls-shimmer{0%,100%{opacity:.5}50%{opacity:.3}}
+  .ls-status-item .ls-status-text{animation:ls-wave 1.5s ease-in-out infinite}
+  @keyframes ls-fadeSlide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes ls-wave{0%,100%{opacity:1}50%{opacity:.55}}
 
   /* 추천 질문 버튼 */
   .ls-suggestions{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:0 4px}
@@ -856,51 +853,65 @@
     var details = document.getElementById('ls-status-details');
     if (details) details.innerHTML = '';
     _statusItemCount = 0;
+    // 페이드 타이머 모두 해제
+    for (var i = 0; i < _statusFadeTimers.length; i++) {
+      clearTimeout(_statusFadeTimers[i]);
+    }
+    _statusFadeTimers = [];
   }
 
   var _statusItemCount = 0;
+  var _statusFadeTimers = [];  // 페이드 타이머 추적
+
   function updateStatus(step, detail) {
     var el = document.getElementById('ls-typing');
     if (el.style.display === 'none') el.style.display = 'flex';
 
-    // 메인 상태 텍스트 업데이트 (백엔드에서 한국어 텍스트 직접 전달)
+    // 메인 상태 텍스트 업데이트
     var stepEl = document.getElementById('ls-status-step');
     if (stepEl && step) {
       stepEl.textContent = step;
     }
 
-    // 상세 항목 추가 (드롭다운처럼 펼쳐지며 나타남)
     if (detail) {
       var details = document.getElementById('ls-status-details');
       if (!details) return;
 
-      // 이전 active 항목을 done으로 전환
-      var prevActive = details.querySelectorAll('.ls-status-item.active');
-      for (var i = 0; i < prevActive.length; i++) {
-        prevActive[i].classList.remove('active');
-        prevActive[i].classList.add('done');
-      }
-
       _statusItemCount++;
       var item = document.createElement('div');
-      item.className = 'ls-status-item active';
+      item.className = 'ls-status-item';
+      item.setAttribute('data-ts', Date.now());
       item.innerHTML = '<span class="ls-status-icon">📄</span><span class="ls-status-text">' + escHtml(detail).replace(/<br>/g, ' ') + '</span>';
-      details.appendChild(item);
 
-      // 오래된 항목은 서서히 사라지게
-      if (_statusItemCount > 4) {
-        var old = details.firstElementChild;
-        if (old) {
-          old.style.transition = 'opacity .5s, max-height .5s';
-          old.style.opacity = '0';
-          old.style.maxHeight = '0';
-          old.style.overflow = 'hidden';
-          setTimeout(function() { if (old.parentNode) old.parentNode.removeChild(old); }, 500);
-        }
+      // 새 항목을 맨 위에 삽입 (최신이 상단)
+      if (details.firstChild) {
+        details.insertBefore(item, details.firstChild);
+      } else {
+        details.appendChild(item);
       }
 
-      var mc = document.getElementById('ls-messages');
-      if (mc) mc.scrollTop = mc.scrollHeight;
+      // 3초 후 페이드아웃 예약
+      var fadeTimer = setTimeout(function() {
+        if (!item.parentNode) return;
+        item.classList.add('fading');
+        setTimeout(function() {
+          if (item.parentNode) item.parentNode.removeChild(item);
+        }, 600);
+      }, 3500);
+      _statusFadeTimers.push(fadeTimer);
+
+      // 동시에 3개 초과 시 가장 오래된 것 즉시 페이드 (3초 지난 것만)
+      var items = details.querySelectorAll('.ls-status-item:not(.fading)');
+      if (items.length > 3) {
+        var oldest = items[items.length - 1];
+        var ts = parseInt(oldest.getAttribute('data-ts') || '0');
+        if (Date.now() - ts > 2500) {
+          oldest.classList.add('fading');
+          setTimeout(function() {
+            if (oldest.parentNode) oldest.parentNode.removeChild(oldest);
+          }, 600);
+        }
+      }
     }
   }
 
