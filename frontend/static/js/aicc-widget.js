@@ -23,6 +23,7 @@
   let _allModels = [];
   let _isSending = false;      // 중복 전송 방지 플래그
   let _placeholderExamples = []; // 리뷰 기반 랜덤 예시 질문
+  let _techPlaceholders = [];    // 기술문의: 모델별 QnA 기반 예시 질문
 
   // ── 세션 유지 (sessionStorage) ─────────────────────────────
   var STORAGE_KEY = 'ls_chat_state';
@@ -95,9 +96,14 @@
       // 입력 활성화
       var chatInput = document.getElementById('ls-chat-input');
       chatInput.disabled = false;
-      chatInput.placeholder = _selectedMenu === '제품문의'
-        ? _getRandomPlaceholder()
-        : '메시지를 입력하세요...';
+      if (_selectedMenu === '제품문의') {
+        chatInput.placeholder = _getRandomPlaceholder();
+      } else if (_selectedMenu === '기술문의' && _selectedModel) {
+        chatInput.placeholder = _getTechPlaceholder(_selectedModel.model_name);
+        _fetchTechPlaceholders(_selectedModel.model_name);
+      } else {
+        chatInput.placeholder = '메시지를 입력하세요...';
+      }
       document.getElementById('ls-chat-send').disabled = false;
 
       showScreen('chat');
@@ -281,6 +287,32 @@
   function _getRandomPlaceholder() {
     if (_placeholderExamples.length === 0) return '예: HDMI 케이블 추천해주세요';
     return '예: ' + _placeholderExamples[Math.floor(Math.random() * _placeholderExamples.length)];
+  }
+
+  function _fetchTechPlaceholders(modelName) {
+    _techPlaceholders = [];
+    if (!modelName) return;
+    fetch(BACKEND + '/api/aicc/placeholder-examples/tech?model=' + encodeURIComponent(modelName) + '&count=8')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.examples && data.examples.length) {
+          _techPlaceholders = data.examples;
+          console.log('[AICC] 기술문의 예시 질문 로드:', _techPlaceholders.length + '개 (' + modelName + ')');
+          // 이미 채팅 화면이면 placeholder 즉시 갱신
+          var chatInput = document.getElementById('ls-chat-input');
+          if (chatInput && _selectedMenu === '기술문의') {
+            chatInput.placeholder = _getTechPlaceholder(modelName);
+          }
+        }
+      })
+      .catch(function(e) { console.log('[AICC] 기술문의 예시 로드 실패:', e); });
+  }
+
+  function _getTechPlaceholder(modelName) {
+    if (_techPlaceholders.length === 0) {
+      return '예: ' + (modelName || '') + ' 연결 방법은?';
+    }
+    return '예: ' + _techPlaceholders[Math.floor(Math.random() * _techPlaceholders.length)];
   }
 
   function injectCSS() {
@@ -601,9 +633,14 @@
     var chatInput = document.getElementById('ls-chat-input');
     chatInput.value = '';
     chatInput.disabled = false;
-    chatInput.placeholder = _selectedMenu === '\uC81C\uD488\uBB38\uC758'
-      ? _getRandomPlaceholder()
-      : '\uBA54\uC2DC\uC9C0\uB97C \uC785\uB825\uD558\uC138\uC694...';
+    if (_selectedMenu === '제품문의') {
+      chatInput.placeholder = _getRandomPlaceholder();
+    } else if (_selectedMenu === '기술문의' && model) {
+      chatInput.placeholder = _getTechPlaceholder(model.model_name);
+      _fetchTechPlaceholders(model.model_name);
+    } else {
+      chatInput.placeholder = '메시지를 입력하세요...';
+    }
     document.getElementById('ls-chat-send').disabled = false;
 
     // 상단 정보 표시 (뒤로가기 버튼 유지)

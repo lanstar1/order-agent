@@ -5128,7 +5128,14 @@ async function selectAiccSession(id) {
   if (_aiccAdminWs) _aiccAdminWs.close();
   _aiccCurrentId = id;
 
-  const s = await api.get('/api/aicc/sessions/' + id);
+  var s;
+  try {
+    s = await api.get('/api/aicc/sessions/' + id);
+  } catch (err) {
+    console.error('[AICC] 세션 로드 실패:', err);
+    alert('세션을 불러올 수 없습니다: ' + (err.message || err));
+    return;
+  }
 
   document.getElementById('aicc-empty').style.display = 'none';
   document.getElementById('aicc-detail').style.display = 'flex';
@@ -5144,15 +5151,23 @@ async function selectAiccSession(id) {
   // 메시지 렌더
   const mc = document.getElementById('aicc-msgs');
   mc.innerHTML = '';
-  (s.messages || []).forEach(function(m) { appendAiccMsg(m.role, m.content, false); });
-  mc.scrollTop = mc.scrollHeight;
+  var msgs = s.messages || [];
+  if (msgs.length === 0) {
+    mc.innerHTML = '<div style="text-align:center;color:#999;padding:40px 0;font-size:13px">아직 대화 내역이 없습니다.</div>';
+  } else {
+    msgs.forEach(function(m) { appendAiccMsg(m.role, m.content, false); });
+    mc.scrollTop = mc.scrollHeight;
+  }
 
   // 관리자 WebSocket
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   _aiccAdminWs = new WebSocket(proto + '//' + location.host + '/ws/aicc/admin/' + id);
   _aiccAdminWs.onmessage = function(e) {
-    const msg = JSON.parse(e.data);
+    var msg = JSON.parse(e.data);
     if (['customer_message', 'ai_message', 'admin_message'].includes(msg.type)) {
+      // 빈 메시지 안내 제거
+      var emptyNote = mc.querySelector('div[style*="text-align:center"]');
+      if (emptyNote) emptyNote.remove();
       appendAiccMsg(msg.role || 'user', msg.content);
     }
   };

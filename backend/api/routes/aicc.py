@@ -72,6 +72,157 @@ async def get_placeholder_examples(count: int = 5):
     return {"examples": examples}
 
 
+def _clean_qna_question(raw: str, model: str) -> str:
+    """
+    고객 QnA 원문을 짧은 질문형 placeholder로 정제.
+    - 인사말/감사 제거
+    - 첫 번째 실질 질문 문장만 추출
+    - 60자 이내로 자르기
+    """
+    import re as _re
+
+    # 줄바꿈 → 공백
+    text = raw.replace("\n", " ").strip()
+
+    # 인사/감사/주문/부탁 등 비질문 패턴 제거
+    noise = [
+        r"안녕하세요[.\s,]*",
+        r"감사합니다[.\s!~]*",
+        r"네\s+감사합니다[.\s!~]*",
+        r"부탁\s*드립니다[.\s!~]*",
+        r"꼭\s*좀\s*부탁[^\s]*",
+        r"랜스타\s*(입니다)?[.\s,]*",
+        r"주문\s*했습니다[.\s,]*",
+        r"어제\s*저녁에[^\s]*",
+        r"행사\s*때문에[^,]*,?",
+        r"주중으로는[^.]*\.",
+    ]
+    for pat in noise:
+        text = _re.sub(pat, " ", text, flags=_re.IGNORECASE)
+
+    text = _re.sub(r'\s+', ' ', text).strip()
+    if not text:
+        return ""
+
+    # 문장 분리: 물음표, 마침표, 쉼표+공백 기준
+    sentences = _re.split(r'(?<=[?.!])\s+|(?<=요)\s+|(?<=지)\s+|,\s+', text)
+    question_sent = ""
+    for sent in sentences:
+        sent = sent.strip()
+        if len(sent) < 5:
+            continue
+        # 질문스러운 문장 우선
+        if _re.search(r'[?]|인가요|까요|나요|는지|런가요|을까요|ㄹ까요|궁금|알\s*수|가능한|되나요|호환|사용|연결|설치|차이|어떻게|몇|무게|크기|규격|지원|방법', sent):
+            question_sent = sent
+            break
+    if not question_sent:
+        # 질문 마커 없으면 첫 번째 의미있는 문장
+        for sent in sentences:
+            sent = sent.strip()
+            if len(sent) >= 8:
+                question_sent = sent
+                break
+        if not question_sent:
+            question_sent = text
+
+    # 55자 초과 시 자르기
+    if len(question_sent) > 55:
+        # 물음표/~요/~지 기준 앞부분만
+        cut = _re.search(r'^(.{15,50}[?요지])', question_sent)
+        if cut:
+            question_sent = cut.group(1)
+        else:
+            question_sent = question_sent[:52] + "..."
+
+    # 끝에 물음표 없으면 추가 (질문형이어야 하므로)
+    if question_sent and not question_sent.endswith("?") and not question_sent.endswith("요") and not question_sent.endswith("요."):
+        if _re.search(r'인가|까요|나요|는지|런가|을까|ㄹ까|궁금|알\s*수|가능한|되나|호환|차이|어떻게|몇', question_sent):
+            question_sent = question_sent.rstrip(".!~ ") + "?"
+
+    return question_sent.strip()
+
+
+@router.get("/placeholder-examples/tech")
+async def get_tech_placeholder_examples(model: str = "", count: int = 5):
+    """
+    기술문의용: 모델명 기반 QnA 예시 질문 반환.
+    technical_qna + product_data(QnA) 에서 실제 질문을 추출·정제.
+    """
+    if not model or len(model.strip()) < 3:
+        return {"examples": [], "model": model}
+
+    model = model.strip()
+    model_upper = model.upper()
+    # 베이스 모델명 (길이 접미사 제거)
+    base_model = data_loader._extract_model_base(model).upper()
+
+    raw_questions = []
+
+    # 1. technical_qna에서 검색 (정확 매칭 + 베이스 모델 매칭)
+    for product in data_loader.technical_qna:
+        pm = product.get("model", "")
+        pm_upper = pm.upper()
+        pm_base = data_loader._extract_model_base(pm).upper()
+
+        if pm_upper == model_upper or pm_base == base_model:
+            for qna in product.get("qna", []):
+                q = qna.get("question", "").strip()
+                if q and len(q) > 10:
+                    raw_questions.append(q)
+
+    # 2. product_data(01_제품별_통합데이터.json) QnA 검색
+    for pmodel, pdata in data_loader.product_data.items():
+        pm_upper = pmodel.upper()
+        pm_base = data_loader._extract_model_base(pmodel).upper()
+
+        if pm_upper == model_upper or pm_base == base_model:
+            for qna in pdata.get("QnA", []):
+                q = qna.get("문의", "").strip()
+                if q and len(q) > 10:
+                    raw_questions.append(q)
+
+    if not raw_questions:
+        # 카테고리 기반 폴백: 같은 카테고리 제품의 질문 사용
+        target_cat = ""
+        prod = data_loader.product_data.get(model, {})
+        if prod:
+            target_cat = prod.get("카테고리", "")
+        if not target_cat:
+            for product in data_loader.technical_qna:
+                if product.get("model", "").upper() == model_upper:
+                    target_cat = product.get("category", "")
+                    break
+
+        if target_cat:
+            for product in data_loader.technical_qna:
+                if product.get("category", "") == target_cat:
+                    for qna in product.get("qna", []):
+                        q = qna.get("question", "").strip()
+                        if q and len(q) > 10:
+                            raw_questions.append(q)
+                    if len(raw_questions) >= 20:
+                        break
+
+    if not raw_questions:
+        return {"examples": [], "model": model}
+
+    # 정제
+    cleaned = []
+    seen = set()
+    # 비기술 질문 필터 (배송/주문/교환/환불 관련은 제외)
+    _skip_patterns = re.compile(r"배송|택배|주문|교환|환불|반품|쿠폰|적립|영수증|송장|결제|입금|계좌|카드")
+    random.shuffle(raw_questions)
+    for raw in raw_questions:
+        q = _clean_qna_question(raw, model)
+        if q and len(q) >= 8 and q not in seen and not _skip_patterns.search(q):
+            seen.add(q)
+            cleaned.append(q)
+        if len(cleaned) >= count:
+            break
+
+    return {"examples": cleaned, "model": model}
+
+
 class AdminMessageBody(BaseModel):
     content: str
 
@@ -190,6 +341,21 @@ async def get_session(session_id: str, current_user=Depends(get_current_user)):
                 {"role": m["role"], "content": m["content"], "timestamp": m.get("created_at", "")}
                 for m in db_messages
             ]
+        elif not result.get("messages"):
+            # DB에도 인메모리에도 메시지 없으면 인메모리 대화이력에서 추출
+            mem_msgs = []
+            for msg in s.get("messages", []):
+                if isinstance(msg, dict):
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        # Claude API 형식: [{"type":"text","text":"..."}]
+                        content = " ".join(
+                            c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"
+                        )
+                    if content:
+                        mem_msgs.append({"role": role, "content": content, "timestamp": ""})
+            result["messages"] = mem_msgs
         return result
 
     # 인메모리에 없으면 DB에서 세션 정보도 조회
