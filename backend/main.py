@@ -253,18 +253,25 @@ try:
 except ImportError:
     pass
 
-# 정적 파일 (프론트엔드) — JS/CSS 캐시 방지
+# 정적 파일 (프론트엔드) — JS 캐시 방지
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 STATIC_DIR   = FRONTEND_DIR / "static"
 
-@app.middleware("http")
-async def no_cache_js(request: Request, call_next):
-    response = await call_next(request)
-    if request.url.path.startswith("/static/js/"):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-    return response
+# JS 파일은 캐시 방지 헤더와 함께 직접 서빙
+@app.get("/static/js/{filename}")
+async def serve_js_no_cache(filename: str):
+    file_path = STATIC_DIR / "js" / filename
+    if not file_path.exists() or not file_path.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(
+        file_path,
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
