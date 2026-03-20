@@ -40542,29 +40542,6 @@
     ],
     "_processed_at": "2026-03-18 00:43:22"
   },
-  "LS-U31MHN": {
-    "카테고리": "USB 컨버터",
-    "제품특징": [
-      "6 IN 1 USB Type-C Multi Hub",
-      "USB Type-C to HDMI / USB3.0 / SD, Micro SD",
-      "SAMSUNG DEX 모드 지원",
-      "4K 2K 30Hz Ultra HD 해상도 지원",
-      "USB 3.0 2Port",
-      "SD / Micro SD Card Reader",
-      "PD 3.0 충전 지원",
-      "닌텐도 스위치 호환"
-    ],
-    "스펙": {
-      "INPUT": "USB 3.1 Type-C",
-      "OUTPUT": "HDMI/USB3.0*2/SD/Micro SD/PD",
-      "해상도": "4K@30Hz",
-      "크기": "108*30*12mm"
-    },
-    "_source_files": [
-      "LS-U31MHN.jpg"
-    ],
-    "_processed_at": "2026-03-18 00:43:32"
-  },
   "LS-U31MHS": {
     "카테고리": "USB 컨버터",
     "제품특징": [
