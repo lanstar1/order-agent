@@ -253,7 +253,18 @@
   .ls-order-bottom .primary{border-color:#e63946;color:#e63946}
   .ls-order-empty{text-align:center;padding:32px 16px;color:#999;font-size:13px;line-height:1.6}
 
-  @media(max-width:420px){#ls-chat-popup{width:100vw;height:100vh;bottom:0;right:0;border-radius:0}}
+  @media(max-width:768px){
+    #ls-chat-btn{right:12px;bottom:12px;width:60px;height:60px;border-radius:50%;padding:0;gap:0}
+    #ls-chat-btn svg{width:28px;height:28px}
+    #ls-chat-btn .btn-title,#ls-chat-btn .btn-desc,#ls-chat-btn .btn-cta{display:none}
+    #ls-chat-badge{top:-2px;right:-2px}
+    #ls-chat-popup{width:100vw;height:100vh;height:100dvh;bottom:0;right:0;border-radius:0;top:0;left:0}
+    #ls-chat-popup.open{display:flex}
+    #ls-chat-messages{padding:10px 8px}
+    .ls-msg-bubble{max-width:88%;font-size:13px}
+    #ls-chat-bottom{padding:8px 10px}
+    #ls-chat-input{font-size:14px}
+  }
   `;
 
   // ── 리뷰 기반 랜덤 예시 질문 로드 ──────────────────────
