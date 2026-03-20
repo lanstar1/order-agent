@@ -6,11 +6,14 @@ import os
 import random
 import uuid
 import base64
+import io
+import tempfile
 import httpx
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from typing import Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from services.aicc_data_loader import data_loader
 from services.aicc_session_manager import session_manager
@@ -823,3 +826,196 @@ async def add_knowledge_direct(
 
     aicc_db.upsert_product_knowledge(body.model_name, category, data)
     return {"ok": True, "model_name": body.model_name, "key": body.key}
+
+
+# ── 상품 엑셀 다운로드 ────────────────────────────────────────
+@router.get("/goods-excel")
+async def download_goods_excel(
+    level: int = Query(0, description="회원등급 (0=일반, 1=LV1, 2=LV2사업자, 3=LV3업체)"),
+    category: str = Query("", description="카테고리 코드 (빈값=전체)"),
+):
+    """
+    고도몰 DB에서 상품 데이터를 조회하여 엑셀 파일로 반환.
+    - SSH → PHP → MySQL(localhost) 경로로 조회 (SELECT only)
+    - 회원등급에 따라 가격 컬럼 필터링
+    - LV2(사업자) 이상만 호출 가능
+    """
+    if level < 2:
+        raise HTTPException(status_code=403, detail="엑셀 다운로드는 사업자회원(LV2) 이상만 가능합니다.")
+
+    import paramiko
+
+    # ── PHP 쿼리 생성 (SELECT only) ──
+    where_clause = "open=1"
+    if category:
+        where_clause += f" AND goodsno IN (SELECT goodsno FROM gd_goods_link WHERE category LIKE '{category}%')"
+
+    php_code = f"""<?php
+$conn = new mysqli("localhost", "lanmartDq", "Sbxxe97EB^L", "lanmart_godo_co_kr");
+if ($conn->connect_error) {{ die(json_encode(["error" => $conn->connect_error])); }}
+$conn->set_charset("utf8");
+
+// 카테고리 조회용
+function getCateName($conn, $goodsno, $len) {{
+    $res = $conn->query("SELECT catnm FROM gd_category WHERE category IN (SELECT category FROM gd_goods_link WHERE goodsno='$goodsno' AND LEFT(category,3)!='013' AND LENGTH(category)=$len) LIMIT 1");
+    if ($res && $row = $res->fetch_assoc()) return $row['catnm'];
+    return '';
+}}
+
+$res = $conn->query("SELECT goodsno, goodscd, model_name, goodsnm, maker, origin, totstock, addstock, goods_consumer, goods_prices0, goods_prices1, goods_prices2, goods_prices3, img_l, img_m, img_s, img_i, longdesc, shortdesc, launchdt, runout FROM gd_goods WHERE {where_clause} ORDER BY goodsnm");
+if (!$res) {{ die(json_encode(["error" => $conn->error])); }}
+
+$rows = [];
+while ($data = $res->fetch_assoc()) {{
+    $data['cate1'] = getCateName($conn, $data['goodsno'], 3);
+    $data['cate2'] = getCateName($conn, $data['goodsno'], 6);
+    $data['cate3'] = getCateName($conn, $data['goodsno'], 9);
+    $data['cate4'] = getCateName($conn, $data['goodsno'], 12);
+    // 이미지 URL 처리
+    $imgs = explode('|', $data['img_l']);
+    $data['img_l'] = isset($imgs[0]) ? $imgs[0] : '';
+    $rows[] = $data;
+}}
+echo json_encode($rows);
+$conn->close();
+?>"""
+
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(
+            '182.162.22.143', port=22,
+            username='lanmart', password='LINEUP5303**',
+            timeout=15
+        )
+
+        sftp = ssh.open_sftp()
+        remote_path = '/tmp/_goods_export.php'
+        with sftp.open(remote_path, 'w') as f:
+            f.write(php_code)
+        sftp.close()
+
+        stdin, stdout, stderr = ssh.exec_command(
+            f'php {remote_path} && rm {remote_path}',
+            timeout=60
+        )
+        stdout.channel.settimeout(60)
+        raw = stdout.read().decode('utf-8', errors='replace')
+        ssh.close()
+
+        goods_list = json.loads(raw)
+        if isinstance(goods_list, dict) and "error" in goods_list:
+            raise HTTPException(status_code=500, detail=f"DB 오류: {goods_list['error']}")
+
+    except paramiko.SSHException as e:
+        raise HTTPException(status_code=500, detail=f"서버 연결 실패: {str(e)}")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="데이터 파싱 실패")
+
+    # ── 엑셀 생성 ──
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "상품목록"
+
+    # 헤더 정의 (등급별 가격 컬럼 필터링)
+    headers = [
+        ("상품코드", "goodsno", 12),
+        ("모델명(상품코드)", "goodscd", 18),
+        ("1차카테고리", "cate1", 14),
+        ("2차카테고리", "cate2", 14),
+        ("3차카테고리", "cate3", 14),
+        ("4차카테고리", "cate4", 14),
+        ("품목코드(모델명)", "model_name", 20),
+        ("상품명", "goodsnm", 40),
+        ("제조사", "maker", 16),
+        ("원산지", "origin", 10),
+        ("총재고", "_totalstock", 8),
+        ("용산창고", "totstock", 8),
+        ("김포창고", "addstock", 8),
+        ("소비자가", "goods_prices0", 12),
+    ]
+
+    # 등급별 가격 추가
+    if level >= 1:
+        headers.append(("오픈마켓 등록가", "goods_prices1", 16))
+    if level >= 2:
+        headers.append(("온라인 노출가", "goods_prices2", 16))
+    if level >= 3:
+        headers.append(("딜러가", "goods_prices3", 12))
+
+    headers += [
+        ("상품이미지", "img_l", 40),
+        ("짧은설명", "shortdesc", 30),
+        ("등록일", "launchdt", 12),
+        ("품절여부", "_runout", 8),
+    ]
+
+    # 스타일
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    header_fill = PatternFill("solid", fgColor="1a1a2e")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style='thin', color='D1D5DB'),
+        right=Side(style='thin', color='D1D5DB'),
+        top=Side(style='thin', color='D1D5DB'),
+        bottom=Side(style='thin', color='D1D5DB'),
+    )
+    blue_font = Font(color="0000FF", size=10)
+    red_font = Font(color="FF0000", size=10)
+    price_fmt = '#,##0'
+
+    # 헤더 행
+    for col_idx, (label, key, width) in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=label)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        cell.border = thin_border
+        ws.column_dimensions[cell.column_letter].width = width
+
+    # 데이터 행
+    for row_idx, item in enumerate(goods_list, 2):
+        for col_idx, (label, key, width) in enumerate(headers, 1):
+            if key == "_totalstock":
+                tot = int(item.get("totstock") or 0) + int(item.get("addstock") or 0)
+                value = tot if tot > 0 else "품절"
+            elif key == "_runout":
+                value = "품절" if item.get("runout") == "1" else "판매중"
+            elif key in ("goods_prices0", "goods_prices1", "goods_prices2", "goods_prices3", "goods_consumer"):
+                value = int(float(item.get(key) or 0))
+            elif key in ("totstock", "addstock"):
+                raw_val = int(item.get(key) or 0)
+                value = raw_val if raw_val > 0 else "품절"
+            else:
+                value = item.get(key, "")
+
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+            cell.alignment = Alignment(vertical="center")
+
+            # 가격 컬럼 서식
+            if key in ("goods_prices0", "goods_prices1", "goods_prices2", "goods_prices3") and isinstance(value, (int, float)):
+                cell.number_format = price_fmt
+            # 용산재고/오픈마켓 등록가 파란색
+            if key in ("totstock", "goods_prices1"):
+                cell.font = blue_font
+            # 김포재고/온라인 노출가 빨간색
+            if key in ("addstock", "goods_prices2"):
+                cell.font = red_font
+
+    # 엑셀 파일을 메모리에 저장
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    today = date.today().strftime("%Y%m%d")
+    filename = f"lanstar_goods_{today}.xlsx"
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )

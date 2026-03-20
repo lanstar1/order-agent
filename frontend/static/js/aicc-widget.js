@@ -4,7 +4,7 @@
  *
  * 사용법: 고도몰 스킨 HTML 하단에 아래 추가
  * <script src="https://order-agent-ffr7.onrender.com/static/js/aicc-widget.js"></script>
- * <script>LanstarChat.init({ memberName: '{$member.mem_name}' });</script>
+ * <script>LanstarChat.init({ memberName: '{$member.mem_name}', memberLevel: '{$member.groupSno}' });</script>
  */
 
 (function () {
@@ -16,6 +16,7 @@
   let _memberName = '';
   let _memberPhone = '';
   let _memberNo = '';      // 고도몰 회원번호 (memNo)
+  let _memberLevel = 0;   // 고도몰 회원등급 (0=일반, 1=LV1, 2=LV2사업자, 3=LV3업체)
   let _selectedMenu = '';
   let _selectedModel = null;   // {model_name, erp_code, product_name}
   let _sessionId = null;
@@ -144,6 +145,12 @@
   .ls-menu-wide .ls-menu-icon{margin-bottom:0;font-size:22px}
   .ls-menu-wide .ls-menu-sub{font-size:11px;color:#888;margin-left:4px}
   .ls-menu-icon{display:block;font-size:20px;margin-bottom:4px}
+  .ls-excel-btn{display:flex;align-items:center;gap:8px;width:100%;padding:10px 16px;border:1.5px solid #16a34a;border-radius:10px;background:linear-gradient(135deg,#f0fdf4 0%,#dcfce7 100%);cursor:pointer;font-size:13px;font-family:inherit;color:#166534;transition:all .15s;margin-top:4px}
+  .ls-excel-btn:hover{background:linear-gradient(135deg,#dcfce7 0%,#bbf7d0 100%);border-color:#15803d}
+  .ls-excel-btn svg{width:18px;height:18px;flex-shrink:0}
+  .ls-excel-btn .excel-label{font-weight:600}
+  .ls-excel-btn .excel-sub{font-size:11px;color:#6b7280;margin-left:auto}
+  .ls-excel-downloading{opacity:0.6;pointer-events:none}
 
   /* 제품 선택 화면 */
   #ls-screen-model{padding:16px;flex:1;overflow-y:auto}
@@ -373,6 +380,7 @@
               <button class="ls-menu-btn" data-menu="\uC7AC\uACE0\uC870\uD68C"><span class="ls-menu-icon">\uD83D\uDCE6</span>\uC7AC\uACE0 \uC870\uD68C</button>
               <button class="ls-menu-btn" data-menu="\uACAC\uC801\uBB38\uC758"><span class="ls-menu-icon">\uD83D\uDCC4</span>\uACAC\uC801 \uBB38\uC758</button>
             </div>
+            <div id="ls-excel-download-wrap"></div>
           </div>
 
           <!-- 화면2: 제품 선택 (제품/기술/재고문의 시) -->
@@ -444,6 +452,54 @@
       var el = document.getElementById('ls-screen-' + s);
       if (el) el.style.display = s === name ? '' : 'none';
     });
+  }
+
+  // ── 엑셀 다운로드 (LV2 이상만) ──────────────────────────────
+  function renderExcelButton() {
+    var wrap = document.getElementById('ls-excel-download-wrap');
+    if (!wrap) return;
+    if (_memberLevel < 2) { wrap.innerHTML = ''; return; }
+
+    var levelLabel = _memberLevel >= 3 ? '업체회원' : '사업자회원';
+    wrap.innerHTML =
+      '<button class="ls-excel-btn" id="ls-excel-btn" onclick="LanstarChat._downloadExcel()">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>' +
+        '<span class="excel-label">상품 엑셀 다운로드</span>' +
+        '<span class="excel-sub">' + levelLabel + '</span>' +
+      '</button>';
+  }
+
+  function downloadExcel() {
+    var btn = document.getElementById('ls-excel-btn');
+    if (!btn || btn.classList.contains('ls-excel-downloading')) return;
+
+    btn.classList.add('ls-excel-downloading');
+    btn.querySelector('.excel-label').textContent = '다운로드 중...';
+
+    var url = BACKEND + '/api/aicc/goods-excel?level=' + _memberLevel;
+
+    fetch(url)
+      .then(function(res) {
+        if (!res.ok) throw new Error('다운로드 실패 (' + res.status + ')');
+        return res.blob();
+      })
+      .then(function(blob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        var today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+        a.download = 'lanstar_goods_' + today + '.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(function(err) {
+        alert('엑셀 다운로드 실패: ' + err.message);
+      })
+      .finally(function() {
+        btn.classList.remove('ls-excel-downloading');
+        btn.querySelector('.excel-label').textContent = '상품 엑셀 다운로드';
+      });
   }
 
   // ── 이벤트 바인딩 ──────────────────────────────────────────
@@ -1267,10 +1323,12 @@
       _memberName = opts.memberName || '';
       _memberPhone = opts.memberPhone || '';
       _memberNo = opts.memberNo || '';
+      _memberLevel = parseInt(opts.memberLevel) || 0;
       injectCSS();
       createHTML();
       bindEvents();
       loadModels();
+      renderExcelButton();
       _fetchPlaceholderExamples();
       _restoreSession();
 
@@ -1286,6 +1344,7 @@
     _submitPhone: _submitPhone,
     _clearImage: _clearImage,
     _clickSuggestion: _clickSuggestion,
+    _downloadExcel: downloadExcel,
   };
 
 })();
