@@ -3,6 +3,7 @@ AICC REST API 라우터
 """
 import json
 import os
+import random
 import uuid
 import base64
 import httpx
@@ -17,6 +18,58 @@ from services import aicc_db
 from security import get_current_user
 
 router = APIRouter()
+
+
+# ── 리뷰 기반 랜덤 예시 질문 생성 ─────────────────────────
+_EXAMPLE_TEMPLATES = [
+    "{model} 추천해주세요",
+    "{model} 어떤 제품인가요?",
+    "{category} 추천 부탁드려요",
+    "{category} 어떤 게 좋을까요?",
+    "{model} 사용 후기 궁금해요",
+    "{model} 호환되는 제품 있나요?",
+    "{category} 인기 제품 알려주세요",
+]
+
+_review_samples: list[dict] = []  # [{model, category}, ...]
+
+
+def _init_review_samples():
+    """리뷰 데이터에서 예시 질문용 샘플 추출 (서버 시작 시 1회)"""
+    global _review_samples
+    if _review_samples:
+        return
+    try:
+        # 제품 데이터에서 카테고리 매핑
+        samples = []
+        for model_name, prod in data_loader.product_data.items():
+            cat = prod.get("카테고리", "")
+            if cat and model_name.startswith(("LS-", "LSP-", "ZOT-")):
+                samples.append({"model": model_name, "category": cat})
+        if samples:
+            _review_samples = samples
+            print(f"[AICC] 예시 질문 샘플 {len(samples)}개 로드 완료")
+    except Exception as e:
+        print(f"[AICC] 예시 질문 샘플 로드 실패: {e}")
+
+
+@router.get("/placeholder-examples")
+async def get_placeholder_examples(count: int = 5):
+    """리뷰/제품 데이터 기반 랜덤 예시 질문 반환"""
+    _init_review_samples()
+    if not _review_samples:
+        return {"examples": ["HDMI 케이블 추천해주세요", "USB 허브 추천 부탁드려요"]}
+
+    examples = []
+    picked = random.sample(_review_samples, min(count * 2, len(_review_samples)))
+    for s in picked:
+        tmpl = random.choice(_EXAMPLE_TEMPLATES)
+        ex = tmpl.format(model=s["model"], category=s["category"])
+        if ex not in examples:
+            examples.append(ex)
+        if len(examples) >= count:
+            break
+    return {"examples": examples}
 
 
 class AdminMessageBody(BaseModel):

@@ -22,6 +22,7 @@
   let _ws = null;
   let _allModels = [];
   let _isSending = false;      // 중복 전송 방지 플래그
+  let _placeholderExamples = []; // 리뷰 기반 랜덤 예시 질문
 
   // ── 세션 유지 (sessionStorage) ─────────────────────────────
   var STORAGE_KEY = 'ls_chat_state';
@@ -95,7 +96,7 @@
       var chatInput = document.getElementById('ls-chat-input');
       chatInput.disabled = false;
       chatInput.placeholder = _selectedMenu === '제품문의'
-        ? '예: HDMI 광케이블 30m 이상 추천해주세요'
+        ? _getRandomPlaceholder()
         : '메시지를 입력하세요...';
       document.getElementById('ls-chat-send').disabled = false;
 
@@ -254,6 +255,25 @@
 
   @media(max-width:420px){#ls-chat-popup{width:100vw;height:100vh;bottom:0;right:0;border-radius:0}}
   `;
+
+  // ── 리뷰 기반 랜덤 예시 질문 로드 ──────────────────────
+  function _fetchPlaceholderExamples() {
+    if (_placeholderExamples.length > 0) return;
+    fetch(BACKEND + '/api/aicc/placeholder-examples?count=10')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.examples && data.examples.length) {
+          _placeholderExamples = data.examples;
+          console.log('[AICC] 예시 질문 로드:', _placeholderExamples.length + '개');
+        }
+      })
+      .catch(function(e) { console.log('[AICC] 예시 질문 로드 실패:', e); });
+  }
+
+  function _getRandomPlaceholder() {
+    if (_placeholderExamples.length === 0) return '예: HDMI 케이블 추천해주세요';
+    return '예: ' + _placeholderExamples[Math.floor(Math.random() * _placeholderExamples.length)];
+  }
 
   function injectCSS() {
     if (document.getElementById('ls-chat-css')) return;
@@ -574,7 +594,7 @@
     chatInput.value = '';
     chatInput.disabled = false;
     chatInput.placeholder = _selectedMenu === '\uC81C\uD488\uBB38\uC758'
-      ? '\uC608: HDMI \uAD11\uCF00\uC774\uBE14 30m \uC774\uC0C1 \uCD94\uCC9C\uD574\uC8FC\uC138\uC694'
+      ? _getRandomPlaceholder()
       : '\uBA54\uC2DC\uC9C0\uB97C \uC785\uB825\uD558\uC138\uC694...';
     document.getElementById('ls-chat-send').disabled = false;
 
@@ -1167,6 +1187,7 @@
       createHTML();
       bindEvents();
       loadModels();
+      _fetchPlaceholderExamples();
       _restoreSession();
 
       // 페이지 이동 시 상태 자동 저장
