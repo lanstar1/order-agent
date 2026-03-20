@@ -611,7 +611,7 @@
           break;
         case 'ai_message':
           hideTyping();
-          appendMsg('ai', 'AI \uC0C1\uB2F4\uC0AC', msg.content);
+          appendMsg('ai', 'AI \uC0C1\uB2F4\uC0AC', msg.content, null, true);
           if (msg.suggestions && msg.suggestions.length) {
             appendSuggestions(msg.suggestions);
           }
@@ -759,7 +759,9 @@
   }
 
   // ── UI 헬퍼 ──────────────────────────────────────────────
-  function appendMsg(type, label, content, imageBase64) {
+  var _lastAiMsgDiv = null;  // 마지막 AI 메시지 요소 추적
+
+  function appendMsg(type, label, content, imageBase64, deferScroll) {
     var mc = document.getElementById('ls-chat-messages');
     var div = document.createElement('div');
     div.className = 'ls-msg ' + type;
@@ -773,18 +775,30 @@
     }
     mc.appendChild(div);
 
-    if (type === 'user') {
-      // 사용자 메시지: 맨 하단으로 스크롤 (내 메시지 전체 보이게)
-      mc.scrollTop = mc.scrollHeight;
-    } else if (type === 'ai' || type === 'assistant') {
-      // AI 메시지: 답변 시작 부분이 보이도록 스크롤
-      var msgTop = div.offsetTop - mc.offsetTop - 8;
-      mc.scrollTo({ top: msgTop, behavior: 'smooth' });
-    } else {
-      mc.scrollTop = mc.scrollHeight;
+    if (type === 'ai' || type === 'assistant') {
+      _lastAiMsgDiv = div;
+    }
+
+    if (!deferScroll) {
+      if (type === 'user') {
+        mc.scrollTop = mc.scrollHeight;
+      } else if (type === 'ai' || type === 'assistant') {
+        _scrollToAiStart(mc, div);
+      } else {
+        mc.scrollTop = mc.scrollHeight;
+      }
     }
     // 상태 저장
     _saveState();
+  }
+
+  function _scrollToAiStart(mc, div) {
+    // AI 답변의 "AI 상담사" 라벨 부분이 보이도록 스크롤
+    // 라벨 위치 = div 상단 - 약간의 여백
+    setTimeout(function() {
+      var msgTop = div.offsetTop - mc.offsetTop - 12;
+      mc.scrollTo({ top: msgTop, behavior: 'smooth' });
+    }, 50);
   }
 
   function showTyping() {
@@ -867,7 +881,10 @@
       wrap.appendChild(btn);
     }
     mc.appendChild(wrap);
-    mc.scrollTo({ top: mc.scrollHeight, behavior: 'smooth' });
+    // AI 답변 시작 부분이 보이도록 스크롤 (추천 질문은 답변 아래에 위치)
+    if (_lastAiMsgDiv) {
+      _scrollToAiStart(mc, _lastAiMsgDiv);
+    }
     _saveState();
   }
 
