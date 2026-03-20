@@ -253,7 +253,7 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
         if status_callback:
             await status_callback(step, detail)
 
-    await _status("고객 질문 의도 파악 중...")
+    await _status("고객 질문 분석 중...", f"'{user_message[:30]}' 의도 파악")
 
     # 제품 데이터 없으면 fallback
     product = data_loader.get_product(model)
@@ -275,7 +275,7 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     sys_prompt += f"\n## 현재 상담 제품\n모델명: {model}\n카테고리: {cat or '미분류'}\n이 제품에 집중하여 답변하세요.\n"
 
     # ── 1차 소스: 제품 지식 DB (가장 정확한 정보) ─────────
-    await _status("제품 데이터 확인 중...", f"{model} 제품 정보")
+    await _status("제품 지식 DB 조회 중...", f"{model} 스펙·매뉴얼 검색")
     knowledge = _get_knowledge(model)
     if knowledge:
         knowledge_text = _format_knowledge_for_prompt(knowledge["data"])
@@ -312,38 +312,48 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
         sys_prompt += f"\n## 배송 정책\n{data_loader.policy_delivery[:600]}\n"
 
     # ── 고객 리뷰 (참고 자료) ──────────────────────────────
+    await _status("구매 리뷰 검색 중...", f"{model} 고객 후기 확인")
     reviews = data_loader.search_reviews(model, max_reviews=5)
     if reviews:
-        await _status("고객 리뷰 확인 중...", f"{len(reviews)}건의 구매 리뷰")
+        await _status("구매 리뷰 분석 중...", f"{model} 리뷰 {len(reviews)}건 발견")
         sys_prompt += "\n## [참고] 고객 구매 리뷰\n실제 구매 고객이 작성한 리뷰입니다. 답변의 1차 근거로 사용하지 말고, '구매하신 고객분들 중에 이런 후기도 있었습니다' 정도로 자연스럽게 참고 언급하세요.\n"
         for rv in reviews:
             sys_prompt += f"- {rv[:150]}\n"
+    else:
+        await _status("구매 리뷰 검색 완료", f"{model} 관련 리뷰 없음")
 
     # ── 2차 소스: QnA 검색 (중요한 보충 자료) ────────────────────
-    await _status("관련 QnA 검색 중...", "고객 문의 데이터")
+    await _status("고객 QnA 검색 중...", f"'{user_message[:20]}' 유사 문의 탐색")
     relevant_qna = data_loader.search_relevant_qna(user_message, model, max_results=10)
 
     if relevant_qna:
-        await _status("관련 문서 분석 중...", f"{len(relevant_qna)}건의 QnA 매칭")
+        qna_models = list(set(ref['model'] for ref in relevant_qna))[:3]
+        await _status("QnA 데이터 분석 중...", f"{len(relevant_qna)}건 매칭 ({', '.join(qna_models)})")
         sys_prompt += "\n## [2차 소스] 고객 QnA 데이터 — 실제 고객 문의와 답변입니다. 적극 활용하세요.\n"
         for ref in relevant_qna:
             sys_prompt += f"\n[{ref['model']}]\nQ: {ref['question'][:250]}\nA: {ref['answer'][:400]}\n"
         sys_prompt += "\n위 QnA에서 고객 질문과 유사한 사례를 찾아 답변에 활용하세요. 제품 지식 DB와 상충하면 DB를 우선하세요.\n"
+    else:
+        await _status("QnA 검색 완료", "유사 문의 없음")
 
     # ── 3차 소스: 네이버 블로그 검색 (보충 참고) ────────────────
-    await _status("웹에서 관련 자료 검색 중...", "네이버 블로그")
+    await _status("네이버 블로그 검색 중...", f"'{model} {user_message[:15]}' 검색")
     blog_results = await search_product_blog(model, user_message, max_results=3, product_specific=True)
     if blog_results:
-        await _status("블로그 자료 분석 중...", f"{len(blog_results)}건의 블로그 글")
+        blog_titles = [b['title'][:30] for b in blog_results]
+        await _status("블로그 자료 분석 중...", f"{', '.join(blog_titles[:2])}")
         sys_prompt += "\n## [3차 소스] 웹 검색 참고 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요. 1차/2차 소스와 상충하면 무시하세요.\n답변 마지막에 관련 블로그 글을 '[제목](링크)' 마크다운 링크로 안내해 주세요.\n"
         for blog in blog_results:
             sys_prompt += f"\n- [{blog['title']}]({blog['link']}) ({blog['bloggername']})\n  {blog['description'][:200]}\n"
+    else:
+        await _status("블로그 검색 완료", "관련 블로그 글 없음")
 
     # ── 이미지가 있으면 안내 추가 ─────────────────────────
     has_image = False
     images = session.get("images", {})
     if image_id and image_id in images:
         has_image = True
+        await _status("이미지 분석 중...", "첨부된 이미지 확인")
         sys_prompt += "\n## 이미지 분석\n고객이 이미지를 보냈습니다. 이미지를 분석하여 답변하세요.\n- 제품 사진이면 모델명을 식별하세요.\n- 오류/증상 사진이면 원인과 해결방법을 안내하세요.\n- 설치 관련 사진이면 올바른 연결 방법을 안내하세요.\n"
 
     # ── 메시지 배열 구성 (recent 10개, Vision 지원) ────────
@@ -389,7 +399,7 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     else:
         api_messages.append({"role": "user", "content": user_message})
 
-    await _status("답변을 정리하고 있어요...")
+    await _status("AI가 답변 작성 중...", "수집된 자료를 종합하여 답변 생성")
 
     try:
         import asyncio
@@ -403,7 +413,7 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
         ai_text = response.content[0].text
 
         # ── 추천 질문 생성 ─────────────────────────────────
-        await _status("추천 질문 생성 중...")
+        await _status("추천 질문 생성 중...", "후속 질문 추천 준비")
         suggestions = await _generate_suggestions(model, user_message, ai_text, blog_results)
         return {"content": ai_text, "suggestions": suggestions}
     except Exception as e:
@@ -427,15 +437,17 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
     sys_prompt = SYSTEM_PRODUCT_INQUIRY
 
     # ── 0차: AI 키워드 추출 (자연어 → 기술 키워드) ─────────
-    await _status("고객 질문 의도 파악 중...")
+    await _status("고객 질문 분석 중...", f"'{user_message[:25]}' 키워드 추출")
     enriched_query = await _extract_search_keywords(user_message)
     print(f"[AICC] 원본: {user_message[:60]} → 확장: {enriched_query[:100]}")
 
     # ── 1차: 제품 데이터 검색 ─────────────────────────────
-    await _status("제품 데이터 검색 중...", "제품 카탈로그")
+    await _status("제품 카탈로그 검색 중...", f"'{enriched_query[:30]}' 으로 검색")
     matched_products = data_loader.search_products_for_recommendation(enriched_query, max_results=15)
 
     if matched_products:
+        top_models = [p["model_name"] for p in matched_products[:4]]
+        await _status("제품 데이터 분석 중...", f"{len(matched_products)}개 매칭: {', '.join(top_models)}")
         sys_prompt += "\n## 검색된 제품 데이터 (고객 문의 키워드 매칭)\n"
         for p in matched_products:
             model = p["model_name"]
@@ -465,24 +477,31 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
 
     # ── 고객 리뷰 (매칭된 제품들의 리뷰) ──────────────────
     if matched_products:
-        await _status("고객 리뷰 확인 중...", "구매 리뷰 데이터")
+        matched_names = [p["model_name"] for p in matched_products[:5]]
+        await _status("구매 리뷰 검색 중...", f"{', '.join(matched_names[:3])} 후기 확인")
         review_section = ""
+        review_count = 0
         for p in matched_products[:5]:
             m_name = p["model_name"]
             reviews = data_loader.search_reviews(m_name, max_reviews=3)
             if reviews:
+                review_count += len(reviews)
                 review_section += f"\n**{m_name}** 리뷰:\n"
                 for rv in reviews:
                     review_section += f"  - {rv[:150]}\n"
         if review_section:
+            await _status("리뷰 분석 중...", f"총 {review_count}건의 구매 리뷰 발견")
             sys_prompt += "\n## [참고] 고객 구매 리뷰\n실제 구매 고객이 작성한 리뷰입니다. 제품 추천 시 '구매하신 고객분들 중에 이런 후기도 있었습니다' 정도로 자연스럽게 참고 언급하세요. 1차 판단 근거로는 사용하지 마세요.\n"
             sys_prompt += review_section
+        else:
+            await _status("리뷰 검색 완료", "매칭 제품 리뷰 없음")
 
     # ── 웹 검색 (네이버 블로그) ─────────────────────────
-    await _status("웹에서 관련 자료 검색 중...", "네이버 블로그")
+    await _status("네이버 블로그 검색 중...", f"'{user_message[:20]}' 관련 글 탐색")
     blog_results = await search_product_blog("", user_message, max_results=3, product_specific=True)
     if blog_results:
-        await _status("블로그 자료 분석 중...", f"{len(blog_results)}건의 블로그 글")
+        blog_titles = [b['title'][:30] for b in blog_results]
+        await _status("블로그 자료 분석 중...", f"{', '.join(blog_titles[:2])}")
         sys_prompt += "\n## [참고] 웹 검색 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요.\n답변 마지막에 관련 블로그 글을 '[제목](링크)' 마크다운 링크로 안내해 주세요.\n"
         for blog in blog_results:
             sys_prompt += f"\n- [{blog['title']}]({blog['link']}) ({blog['bloggername']})\n  {blog['description'][:200]}\n"
@@ -573,7 +592,8 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
     else:
         api_messages.append({"role": "user", "content": user_message})
 
-    await _status("답변을 정리하고 있어요...")
+    prod_count = len(matched_products) if matched_products else 0
+    await _status("AI가 답변 작성 중...", f"{prod_count}개 제품 비교·분석하여 추천 생성")
 
     try:
         import asyncio
@@ -585,7 +605,7 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
             messages=api_messages,
         ))
         ai_text = response.content[0].text
-        await _status("추천 질문 생성 중...")
+        await _status("추천 질문 생성 중...", "후속 질문 추천 준비")
         suggestions = await _generate_suggestions("", user_message, ai_text, blog_results)
         return {"content": ai_text, "suggestions": suggestions}
     except Exception as e:

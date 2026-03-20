@@ -79,7 +79,7 @@ async def search_product_blog(model: str, user_question: str = "", max_results: 
     results = await search_naver_blog(search_query, display=8)
 
     # 경쟁사 필터링 (항상 적용)
-    exclude_keywords = ["유니콘", "벨킨", "앤커", "애플", "삼성전자", "엘지전자"]
+    exclude_keywords = ["유니콘", "벨킨", "앤커", "애플", "삼성전자", "엘지전자", "유그린", "ugreen", "코드웨이", "바라쿠다", "넥스트", "iptime", "아이피타임", "컴스", "홈플래닛"]
     filtered = []
     for r in results:
         text = (r["title"] + " " + r["description"]).lower()
