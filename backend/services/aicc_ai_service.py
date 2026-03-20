@@ -348,6 +348,18 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     else:
         await _status("블로그 검색 완료", "관련 블로그 글 없음")
 
+    # ── 4차 소스: 유튜브 영상 (참고 링크) ────────────────────
+    await _status("유튜브 영상 검색 중...", f"'{model} {user_message[:15]}' 관련 영상 탐색")
+    youtube_results = data_loader.search_youtube_videos(user_message, model, max_results=3)
+    if youtube_results:
+        yt_titles = [y['title'][:30] for y in youtube_results]
+        await _status("유튜브 영상 매칭 완료", f"{', '.join(yt_titles[:2])}")
+        sys_prompt += "\n## [4차 소스] 랜스타 공식 유튜브 영상\n아래는 랜스타 공식 유튜브 채널의 관련 영상입니다. 답변 마지막에 관련 영상이 있으면 '참고하실 수 있는 영상도 안내드립니다' 정도로 자연스럽게 '[영상제목](유튜브링크)' 마크다운 링크로 안내해 주세요.\n관련성이 낮으면 굳이 안내하지 않아도 됩니다.\n"
+        for yt in youtube_results:
+            sys_prompt += f"\n- [{yt['title']}]({yt['url']}) ({yt['duration']})\n  내용: {yt['summary'][:200]}\n"
+    else:
+        await _status("유튜브 영상 검색 완료", "관련 영상 없음")
+
     # ── 이미지가 있으면 안내 추가 ─────────────────────────
     has_image = False
     images = session.get("images", {})
@@ -505,6 +517,18 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
         sys_prompt += "\n## [참고] 웹 검색 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요.\n답변 마지막에 관련 블로그 글을 '[제목](링크)' 마크다운 링크로 안내해 주세요.\n"
         for blog in blog_results:
             sys_prompt += f"\n- [{blog['title']}]({blog['link']}) ({blog['bloggername']})\n  {blog['description'][:200]}\n"
+
+    # ── 유튜브 영상 검색 ─────────────────────────────────
+    await _status("유튜브 영상 검색 중...", f"'{user_message[:20]}' 관련 영상 탐색")
+    youtube_results = data_loader.search_youtube_videos(enriched_query, "", max_results=3)
+    if youtube_results:
+        yt_titles = [y['title'][:30] for y in youtube_results]
+        await _status("유튜브 영상 매칭 완료", f"{', '.join(yt_titles[:2])}")
+        sys_prompt += "\n## [참고] 랜스타 공식 유튜브 영상\n아래는 랜스타 공식 유튜브 채널의 관련 영상입니다. 답변 마지막에 관련 영상이 있으면 '참고하실 수 있는 영상도 안내드립니다' 정도로 자연스럽게 '[영상제목](유튜브링크)' 마크다운 링크로 안내해 주세요.\n관련성이 낮으면 굳이 안내하지 않아도 됩니다.\n"
+        for yt in youtube_results:
+            sys_prompt += f"\n- [{yt['title']}]({yt['url']}) ({yt['duration']})\n  내용: {yt['summary'][:200]}\n"
+    else:
+        await _status("유튜브 영상 검색 완료", "관련 영상 없음")
 
     # ── 대화 이력에서 이전에 추천한 모델 추적 (연속 대화용) ──
     prev_models = set()

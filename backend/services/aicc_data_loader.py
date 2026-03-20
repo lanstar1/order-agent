@@ -44,6 +44,9 @@ class AICCDataLoader:
         # 리뷰 데이터
         self.review_data: Dict[str, List[str]] = {}  # model_name → [리뷰텍스트, ...]
 
+        # 유튜브 영상 데이터
+        self.youtube_videos: List[dict] = []  # lanstar_videos.json
+
     def load_all(self):
         print("[AICC] 데이터 로딩 시작...")
         try:
@@ -62,6 +65,7 @@ class AICCDataLoader:
             self._load_unidentified_qna()
             self._load_price_info()
             self._load_reviews()
+            self._load_youtube_videos()
             total_qna = sum(len(p.get("qna", [])) for p in self.technical_qna)
             print(f"[AICC] 완료 — 드롭다운:{len(self.dropdown_models)} 제품:{len(self.product_data)} "
                   f"기술QnA:{total_qna}건({len(self.technical_qna)}모델) 미분류QnA:{len(self.unidentified_qna)}건")
@@ -240,6 +244,77 @@ class AICCDataLoader:
             if reviews:
                 self.review_data[model_name] = reviews
         print(f"[AICC] 리뷰 로드: {len(self.review_data)}개 모델")
+
+    def _load_youtube_videos(self):
+        """lanstar_videos.json 로드 — 유튜브 영상 데이터"""
+        path = os.path.join(DATA_DIR, "lanstar_videos.json")
+        if not os.path.exists(path):
+            print("[AICC] lanstar_videos.json 없음 (스킵)")
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        self.youtube_videos = raw.get("videos", [])
+        print(f"[AICC] 유튜브 영상 로드: {len(self.youtube_videos)}개")
+
+    def search_youtube_videos(self, query: str, model: str = "", max_results: int = 3) -> List[dict]:
+        """
+        고객 질문과 모델명으로 관련 유튜브 영상 검색.
+        검색 대상: title, main_topic, sub_topics, keywords, summary
+        점수: 모델명 매칭 +5, 키워드 매칭 +1/단어
+        """
+        if not self.youtube_videos:
+            return []
+
+        upper_query = query.upper()
+        words = [w for w in re.split(r'[\s,]+', upper_query) if len(w) >= 2]
+        if not words and not model:
+            return []
+
+        # 모델명에서 LS- 제거한 검색어도 준비
+        model_upper = model.upper() if model else ""
+        model_short = model.replace("LS-", "").upper() if model else ""
+        model_base = self._extract_model_base(model).upper() if model else ""
+
+        results = []
+        for video in self.youtube_videos:
+            title = video.get("title", "")
+            main_topic = video.get("main_topic", "")
+            sub_topics = " ".join(video.get("sub_topics", []))
+            keywords_list = video.get("keywords", [])
+            keywords_text = " ".join(keywords_list)
+            summary = video.get("summary", "")
+
+            search_text = f"{title} {main_topic} {sub_topics} {keywords_text} {summary}".upper()
+
+            score = 0
+
+            # 모델명 매칭 (정확한 모델명이 영상에 포함된 경우)
+            if model_upper and model_upper in search_text:
+                score += 5
+            elif model_short and model_short in search_text:
+                score += 4
+            elif model_base and model_base != model_upper and model_base in search_text:
+                score += 3
+
+            # 키워드 매칭
+            for w in words:
+                if w in search_text:
+                    score += 1
+
+            if score > 0:
+                results.append({
+                    "title": title,
+                    "url": video.get("url", ""),
+                    "summary": summary,
+                    "keywords": keywords_list,
+                    "main_topic": main_topic,
+                    "duration": video.get("duration", ""),
+                    "score": score,
+                })
+
+        # 점수 내림차순 정렬
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:max_results]
 
     @staticmethod
     def _extract_model_base(model: str) -> str:
