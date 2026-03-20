@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -253,9 +253,19 @@ try:
 except ImportError:
     pass
 
-# 정적 파일 (프론트엔드)
+# 정적 파일 (프론트엔드) — JS/CSS 캐시 방지
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 STATIC_DIR   = FRONTEND_DIR / "static"
+
+@app.middleware("http")
+async def no_cache_js(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/js/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 

@@ -787,7 +787,7 @@
     if (details) details.innerHTML = '';
     if (step) step.textContent = 'AI가 답변 준비 중...';
     el.style.display = 'flex';
-    var mc = document.getElementById('ls-messages');
+    var mc = document.getElementById('ls-chat-messages');
     if (mc) mc.scrollTop = mc.scrollHeight;
   }
 
@@ -796,6 +796,7 @@
     el.style.display = 'none';
     var details = document.getElementById('ls-status-details');
     if (details) details.innerHTML = '';
+    _statusItemCount = 0;
   }
 
   var _statusItemCount = 0;

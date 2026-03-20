@@ -59,21 +59,26 @@ async def search_naver_blog(query: str, display: int = 5) -> list[dict]:
         return []
 
 
-async def search_product_blog(model: str, user_question: str = "", max_results: int = 3) -> list[dict]:
+async def search_product_blog(model: str, user_question: str = "", max_results: int = 3, product_specific: bool = True) -> list[dict]:
     """
     제품 모델명 + 질문 키워드로 블로그 검색.
-    랜스타 관련 글 우선, 경쟁사 필터링.
+    product_specific=True → 랜스타/LS 관련 글만 (없으면 빈 리스트)
+    product_specific=False → 범용 질문이므로 타사 블로그도 허용
     """
-    # 검색어 구성: "랜스타 모델명" 또는 "모델명 키워드"
-    search_query = f"랜스타 {model}"
-    if user_question:
-        # 질문에서 핵심 키워드 추출 (짧게)
-        keywords = user_question[:30]
-        search_query = f"{model} {keywords}"
+    # 검색어 구성
+    if model:
+        search_query = f"랜스타 {model}"
+        if user_question:
+            keywords = user_question[:30]
+            search_query = f"랜스타 {model} {keywords}"
+    elif user_question:
+        search_query = f"랜스타 {user_question[:40]}"
+    else:
+        return []
 
     results = await search_naver_blog(search_query, display=8)
 
-    # 경쟁사/무관한 결과 필터링
+    # 경쟁사 필터링 (항상 적용)
     exclude_keywords = ["유니콘", "벨킨", "앤커", "애플", "삼성전자", "엘지전자"]
     filtered = []
     for r in results:
@@ -81,5 +86,15 @@ async def search_product_blog(model: str, user_question: str = "", max_results: 
         if any(kw in text for kw in exclude_keywords):
             continue
         filtered.append(r)
+
+    if product_specific:
+        # 제품 추천 상담 중 → 랜스타/LS 관련 블로그만 허용
+        lanstar_keywords = ["랜스타", "lanstar", "ls-", "lsp-", "zot-"]
+        lanstar_only = []
+        for r in filtered:
+            text = (r["title"] + " " + r["description"]).lower()
+            if any(kw in text for kw in lanstar_keywords):
+                lanstar_only.append(r)
+        return lanstar_only[:max_results]
 
     return filtered[:max_results]

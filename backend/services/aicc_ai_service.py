@@ -332,7 +332,7 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
 
     # ── 3차 소스: 네이버 블로그 검색 (보충 참고) ────────────────
     await _status("웹에서 관련 자료 검색 중...", "네이버 블로그")
-    blog_results = await search_product_blog(model, user_message, max_results=3)
+    blog_results = await search_product_blog(model, user_message, max_results=3, product_specific=True)
     if blog_results:
         await _status("블로그 자료 분석 중...", f"{len(blog_results)}건의 블로그 글")
         sys_prompt += "\n## [3차 소스] 웹 검색 참고 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요. 1차/2차 소스와 상충하면 무시하세요.\n답변 마지막에 관련 블로그 글을 '[제목](링크)' 마크다운 링크로 안내해 주세요.\n"
@@ -480,7 +480,7 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
 
     # ── 웹 검색 (네이버 블로그) ─────────────────────────
     await _status("웹에서 관련 자료 검색 중...", "네이버 블로그")
-    blog_results = await search_product_blog("", user_message, max_results=3)
+    blog_results = await search_product_blog("", user_message, max_results=3, product_specific=True)
     if blog_results:
         await _status("블로그 자료 분석 중...", f"{len(blog_results)}건의 블로그 글")
         sys_prompt += "\n## [참고] 웹 검색 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요.\n답변 마지막에 관련 블로그 글을 '[제목](링크)' 마크다운 링크로 안내해 주세요.\n"
