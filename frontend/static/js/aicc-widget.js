@@ -23,6 +23,84 @@
   let _allModels = [];
   let _isSending = false;      // 중복 전송 방지 플래그
 
+  // ── 세션 유지 (sessionStorage) ─────────────────────────────
+  var STORAGE_KEY = 'ls_chat_state';
+
+  function _saveState() {
+    try {
+      var mc = document.getElementById('ls-chat-messages');
+      var popup = document.getElementById('ls-chat-popup');
+      var state = {
+        sessionId: _sessionId,
+        selectedMenu: _selectedMenu,
+        selectedModel: _selectedModel,
+        messagesHtml: mc ? mc.innerHTML : '',
+        popupOpen: popup ? popup.classList.contains('open') : false,
+        screen: _getCurrentScreen(),
+      };
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) { /* quota 초과 등 무시 */ }
+  }
+
+  function _clearState() {
+    try { sessionStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  }
+
+  function _loadState() {
+    try {
+      var raw = sessionStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  function _getCurrentScreen() {
+    var screens = ['menu', 'model', 'chat', 'inventory', 'quote', 'orders'];
+    for (var i = 0; i < screens.length; i++) {
+      var el = document.getElementById('ls-screen-' + screens[i]);
+      if (el && el.style.display !== 'none') return screens[i];
+    }
+    return 'menu';
+  }
+
+  function _restoreSession() {
+    var state = _loadState();
+    if (!state || !state.sessionId) return;
+
+    // 상태 복원
+    _sessionId = state.sessionId;
+    _selectedMenu = state.selectedMenu || '';
+    _selectedModel = state.selectedModel || null;
+
+    // 채팅 화면이었으면 복원
+    if (state.screen === 'chat' && state.messagesHtml) {
+      // 상단 정보 표시
+      var modelInfo = _selectedModel ? '<strong>' + escHtml(_selectedModel.model_name) + '</strong> | ' : '';
+      document.getElementById('ls-chat-info-text').innerHTML =
+        modelInfo + '<strong>' + escHtml(_selectedMenu) + '</strong>';
+
+      // 채팅 메시지 복원
+      document.getElementById('ls-chat-messages').innerHTML = state.messagesHtml;
+
+      // 입력 활성화
+      var chatInput = document.getElementById('ls-chat-input');
+      chatInput.disabled = false;
+      chatInput.placeholder = _selectedMenu === '제품문의'
+        ? '예: HDMI 광케이블 30m 이상 추천해주세요'
+        : '메시지를 입력하세요...';
+      document.getElementById('ls-chat-send').disabled = false;
+
+      showScreen('chat');
+
+      // WebSocket 재연결
+      connectWS();
+    }
+
+    // 팝업 상태 복원
+    if (state.popupOpen) {
+      document.getElementById('ls-chat-popup').classList.add('open');
+    }
+  }
+
   // ── CSS 주입 ────────────────────────────────────────────────
   const CSS = `
   #ls-chat-btn{position:fixed;bottom:24px;right:164px;z-index:99998;width:140px;height:210px;border-radius:16px;background:linear-gradient(135deg,#1a1a2e 0%,#2d2d5e 100%);color:#fff;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(26,26,46,.45);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:transform .15s,box-shadow .15s;padding:12px 8px}
@@ -356,10 +434,12 @@
   function openPopup() {
     document.getElementById('ls-chat-popup').classList.add('open');
     if (!_allModels.length) loadModels();
+    _saveState();
   }
 
   function closePopup() {
     document.getElementById('ls-chat-popup').classList.remove('open');
+    _saveState();
   }
 
   // ── 메뉴 선택 ─────────────────────────────────────────────
@@ -559,10 +639,7 @@
 
   function reconnectWS() {
     if (!_sessionId || (_ws && _ws.readyState === WebSocket.OPEN)) return;
-    var wsProto = BACKEND.startsWith('https') ? 'wss' : 'ws';
-    var wsHost = BACKEND.replace(/^https?:\/\//, '');
-    var url = wsProto + '://' + wsHost + '/ws/aicc/chat/' + _sessionId + '?reconnect=1';
-    _ws = new WebSocket(url);
+    connectWS();
   }
 
   // ── 이미지 업로드 ──────────────────────────────────────────
@@ -699,6 +776,8 @@
     } else {
       mc.scrollTop = mc.scrollHeight;
     }
+    // 상태 저장
+    _saveState();
   }
 
   function showTyping() {
@@ -766,7 +845,7 @@
   }
 
   function appendSuggestions(suggestions) {
-    var mc = document.getElementById('ls-messages');
+    var mc = document.getElementById('ls-chat-messages');
     if (!mc || !suggestions || !suggestions.length) return;
 
     var wrap = document.createElement('div');
@@ -776,11 +855,12 @@
       btn.className = 'ls-suggest-btn';
       btn.textContent = suggestions[i];
       btn.setAttribute('data-question', suggestions[i]);
-      btn.onclick = function() { _clickSuggestion(this.getAttribute('data-question')); };
+      btn.setAttribute('onclick', 'LanstarChat._clickSuggestion(this.getAttribute("data-question"))');
       wrap.appendChild(btn);
     }
     mc.appendChild(wrap);
     mc.scrollTo({ top: mc.scrollHeight, behavior: 'smooth' });
+    _saveState();
   }
 
   function _clickSuggestion(question) {
@@ -857,6 +937,7 @@
   function _goBack() {
     _selectedModel = null;
     _selectedMenu = '';
+    _clearState();
     showScreen('menu');
   }
 
@@ -867,10 +948,11 @@
     // 채팅 내용 초기화
     document.getElementById('ls-chat-messages').innerHTML = '';
     // 세션 ID 재생성 (새 상담)
-    _sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    _sessionId = null;
     // 메뉴 화면으로
     _selectedModel = null;
     _selectedMenu = '';
+    _clearState();
     showScreen('menu');
   }
 
@@ -1053,6 +1135,7 @@
       createHTML();
       bindEvents();
       loadModels();
+      _restoreSession();
     },
     _goBack: _goBack,
     _chatBack: _chatBack,

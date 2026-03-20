@@ -16,14 +16,16 @@ from .aicc_web_search import search_product_blog
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
-def _extract_search_keywords(user_message: str) -> str:
+async def _extract_search_keywords(user_message: str) -> str:
     """
-    자연어 고객 질문에서 제품 검색용 기술 키워드를 AI로 추출.
+    자연어 고객 질문에서 제품 검색용 기술 키워드를 AI로 추출 (비동기).
     예: "랜케이블로 연결해서 hdmi 신호 먼곳으로 보내는제품"
       → "HDMI LAN 익스텐더 이더넷 연장"
     """
+    import asyncio
     try:
-        resp = client.messages.create(
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(None, lambda: client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=100,
             system=(
@@ -40,7 +42,7 @@ def _extract_search_keywords(user_message: str) -> str:
                 "- 모델명이 포함되어 있으면 그대로 유지 (예: LS-HDMI-LAN-150M)"
             ),
             messages=[{"role": "user", "content": user_message}],
-        )
+        ))
         keywords = resp.content[0].text.strip()
         # 원본 메시지도 합쳐서 반환 (모델명 등이 원본에만 있을 수 있으므로)
         return f"{user_message} {keywords}"
@@ -333,9 +335,9 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     blog_results = await search_product_blog(model, user_message, max_results=3)
     if blog_results:
         await _status("블로그 자료 분석 중...", f"{len(blog_results)}건의 블로그 글")
-        sys_prompt += "\n## [3차 소스] 웹 검색 참고 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요. 1차/2차 소스와 상충하면 무시하세요.\n"
+        sys_prompt += "\n## [3차 소스] 웹 검색 참고 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요. 1차/2차 소스와 상충하면 무시하세요.\n답변 마지막에 관련 블로그 글을 '[제목](링크)' 마크다운 링크로 안내해 주세요.\n"
         for blog in blog_results:
-            sys_prompt += f"\n- **{blog['title']}** ({blog['bloggername']})\n  {blog['description'][:200]}\n"
+            sys_prompt += f"\n- [{blog['title']}]({blog['link']}) ({blog['bloggername']})\n  {blog['description'][:200]}\n"
 
     # ── 이미지가 있으면 안내 추가 ─────────────────────────
     has_image = False
@@ -390,16 +392,19 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     await _status("답변을 정리하고 있어요...")
 
     try:
-        response = client.messages.create(
+        import asyncio
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, lambda: client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1500 if has_image else 1200,
             system=sys_prompt,
             messages=api_messages,
-        )
+        ))
         ai_text = response.content[0].text
 
         # ── 추천 질문 생성 ─────────────────────────────────
-        suggestions = _generate_suggestions(model, user_message, ai_text, blog_results)
+        await _status("추천 질문 생성 중...")
+        suggestions = await _generate_suggestions(model, user_message, ai_text, blog_results)
         return {"content": ai_text, "suggestions": suggestions}
     except Exception as e:
         print(f"[AICC AI] 오류: {e}")
@@ -423,7 +428,7 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
 
     # ── 0차: AI 키워드 추출 (자연어 → 기술 키워드) ─────────
     await _status("고객 질문 의도 파악 중...")
-    enriched_query = _extract_search_keywords(user_message)
+    enriched_query = await _extract_search_keywords(user_message)
     print(f"[AICC] 원본: {user_message[:60]} → 확장: {enriched_query[:100]}")
 
     # ── 1차: 제품 데이터 검색 ─────────────────────────────
@@ -478,9 +483,9 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
     blog_results = await search_product_blog("", user_message, max_results=3)
     if blog_results:
         await _status("블로그 자료 분석 중...", f"{len(blog_results)}건의 블로그 글")
-        sys_prompt += "\n## [참고] 웹 검색 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요.\n"
+        sys_prompt += "\n## [참고] 웹 검색 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요.\n답변 마지막에 관련 블로그 글을 '[제목](링크)' 마크다운 링크로 안내해 주세요.\n"
         for blog in blog_results:
-            sys_prompt += f"\n- **{blog['title']}** ({blog['bloggername']})\n  {blog['description'][:200]}\n"
+            sys_prompt += f"\n- [{blog['title']}]({blog['link']}) ({blog['bloggername']})\n  {blog['description'][:200]}\n"
 
     # ── 대화 이력에서 이전에 추천한 모델 추적 (연속 대화용) ──
     prev_models = set()
@@ -571,22 +576,27 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
     await _status("답변을 정리하고 있어요...")
 
     try:
-        response = client.messages.create(
+        import asyncio
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, lambda: client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1500,
             system=sys_prompt,
             messages=api_messages,
-        )
+        ))
         ai_text = response.content[0].text
-        suggestions = _generate_suggestions("", user_message, ai_text, blog_results)
+        await _status("추천 질문 생성 중...")
+        suggestions = await _generate_suggestions("", user_message, ai_text, blog_results)
         return {"content": ai_text, "suggestions": suggestions}
     except Exception as e:
         print(f"[AICC AI] 제품문의 오류: {e}")
         return {"content": FALLBACK_ERROR, "suggestions": []}
 
 
-def _generate_suggestions(model: str, user_question: str, ai_answer: str, blog_results: list) -> list[str]:
-    """AI 답변 기반으로 추천 질문 2~3개 생성"""
+async def _generate_suggestions(model: str, user_question: str, ai_answer: str, blog_results: list) -> list[str]:
+    """AI 답변 기반으로 추천 질문 2~3개 생성 (비동기)"""
+    import asyncio
+    import json as _json
     try:
         context_parts = [f"고객질문: {user_question[:100]}"]
         if model:
@@ -596,7 +606,9 @@ def _generate_suggestions(model: str, user_question: str, ai_answer: str, blog_r
             blog_titles = ", ".join(b["title"][:40] for b in blog_results[:2])
             context_parts.append(f"관련 블로그: {blog_titles}")
 
-        resp = client.messages.create(
+        # 동기 API를 이벤트 루프 차단 없이 호출
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(None, lambda: client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=150,
             system=(
@@ -611,8 +623,7 @@ def _generate_suggestions(model: str, user_question: str, ai_answer: str, blog_r
                 "- 다른 텍스트 없이 JSON만 출력"
             ),
             messages=[{"role": "user", "content": "\n".join(context_parts)}],
-        )
-        import json as _json
+        ))
         raw = resp.content[0].text.strip()
         suggestions = _json.loads(raw)
         if isinstance(suggestions, list):
