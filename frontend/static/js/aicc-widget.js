@@ -101,8 +101,10 @@
 
       showScreen('chat');
 
-      // WebSocket 재연결
+      // WebSocket 재연결 (복원 모드 — greeting 스킵)
+      _isResuming = true;
       connectWS();
+      _isResuming = false;
       console.log('[AICC] session restored:', _sessionId, _selectedMenu);
     }
   }
@@ -587,6 +589,8 @@
   }
 
   // ── WebSocket 연결 ─────────────────────────────────────────
+  var _isResuming = false;  // 세션 복원 중 플래그
+
   function connectWS() {
     if (_ws) { _ws.close(); _ws = null; }
 
@@ -599,7 +603,8 @@
       + '?name=' + encodeURIComponent(_memberName)
       + '&model=' + encodeURIComponent(modelName)
       + '&erp_code=' + encodeURIComponent(erpCode)
-      + '&menu=' + encodeURIComponent(_selectedMenu);
+      + '&menu=' + encodeURIComponent(_selectedMenu)
+      + (_isResuming ? '&resume=true' : '');
 
     _ws = new WebSocket(url);
 
@@ -646,7 +651,9 @@
 
   function reconnectWS() {
     if (!_sessionId || (_ws && _ws.readyState === WebSocket.OPEN)) return;
+    _isResuming = true;
     connectWS();
+    _isResuming = false;
   }
 
   // ── 이미지 업로드 ──────────────────────────────────────────

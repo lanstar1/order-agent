@@ -37,6 +37,7 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
     model = params.get("model", "")
     erp_code = params.get("erp_code", "")
     menu = params.get("menu", "기술문의")
+    is_resume = params.get("resume", "") == "true"
 
     # 세션 생성
     actual_sid = session_manager.create(name, model, erp_code, menu)
@@ -49,11 +50,11 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
         "session": session_manager.serialize(s)
     })
 
-    # 첫 인사 메시지
-    # 모델명이 있으면 표시, 없으면 메뉴만 표시
-    model_text = f"{model} " if model else ""
-    greeting = f"안녕하세요{', ' + name + '님' if name else ''}! 랜스타 AI 상담사입니다.\n{model_text}{menu} 상담을 시작합니다. 궁금하신 점을 편하게 말씀해 주세요."
-    await websocket.send_json({"type": "ai_message", "content": greeting})
+    # 첫 인사 메시지 (세션 복원이 아닌 경우에만)
+    if not is_resume:
+        model_text = f"{model} " if model else ""
+        greeting = f"안녕하세요{', ' + name + '님' if name else ''}! 랜스타 AI 상담사입니다.\n{model_text}{menu} 상담을 시작합니다. 궁금하신 점을 편하게 말씀해 주세요."
+        await websocket.send_json({"type": "ai_message", "content": greeting})
 
     try:
         while True:
