@@ -205,6 +205,13 @@
   #ls-chat-send:disabled{background:#ccc;cursor:not-allowed}
   .ls-msg-img{max-width:200px;border-radius:8px;margin-bottom:6px;cursor:pointer}
   .ls-msg-img:hover{opacity:.9}
+  .ls-yt-card{display:block;text-decoration:none!important;background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin:8px 0 4px;transition:box-shadow .2s}
+  .ls-yt-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.15)}
+  .ls-yt-thumb-wrap{position:relative;width:100%;aspect-ratio:16/9;background:#000}
+  .ls-yt-thumb{width:100%;height:100%;object-fit:cover;display:block}
+  .ls-yt-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);opacity:.85;transition:opacity .2s}
+  .ls-yt-card:hover .ls-yt-play{opacity:1}
+  .ls-yt-title{padding:8px 10px;font-size:12px;font-weight:600;color:#1a1a2e;line-height:1.4;white-space:normal}
   #ls-chat-file-input{display:none}
   /* 재고 결과 화면 */
   #ls-screen-inventory{padding:16px;flex:1;overflow-y:auto}
@@ -1015,9 +1022,19 @@
     s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
     // 4. **bold** 변환
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    // 5. 마크다운 링크 복원 → 텍스트가 클릭 링크
+    // 5. 마크다운 링크 복원 → 유튜브는 썸네일 카드, 나머지는 텍스트 링크
     s = s.replace(/\{\{LINK_(\d+)\}\}/g, function(_, idx) {
       var l = links[parseInt(idx)];
+      var ytId = _extractYoutubeId(l.url);
+      if (ytId) {
+        return '<a href="' + l.url + '" target="_blank" rel="noopener" class="ls-yt-card">' +
+          '<div class="ls-yt-thumb-wrap">' +
+            '<img class="ls-yt-thumb" src="https://img.youtube.com/vi/' + ytId + '/mqdefault.jpg" alt="' + escAttr(l.text) + '">' +
+            '<div class="ls-yt-play"><svg viewBox="0 0 68 48" width="48" height="34"><path d="M66.52 7.74c-.78-2.93-2.49-5.41-5.42-6.19C55.79.13 34 0 34 0S12.21.13 6.9 1.55C3.97 2.33 2.27 4.81 1.48 7.74.06 13.05 0 24 0 24s.06 10.95 1.48 16.26c.78 2.93 2.49 5.41 5.42 6.19C12.21 47.87 34 48 34 48s21.79-.13 27.1-1.55c2.93-.78 4.64-3.26 5.42-6.19C67.94 34.95 68 24 68 24s-.06-10.95-1.48-16.26z" fill="red"/><path d="M45 24L27 14v20" fill="white"/></svg></div>' +
+          '</div>' +
+          '<div class="ls-yt-title">' + escAttr(l.text) + '</div>' +
+        '</a>';
+      }
       return '<a href="' + l.url + '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;font-weight:600">' + l.text + '</a>';
     });
     // 6. 일반 URL 복원 → 클릭 가능 링크
@@ -1026,6 +1043,14 @@
       return '<a href="' + url + '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;word-break:break-all">링크 바로가기</a>';
     });
     return s;
+  }
+
+  function _extractYoutubeId(url) {
+    // youtu.be/VIDEO_ID 또는 youtube.com/watch?v=VIDEO_ID
+    var m = url.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/) ||
+            url.match(/youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/) ||
+            url.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/);
+    return m ? m[1] : null;
   }
 
   function escAttr(str) {
