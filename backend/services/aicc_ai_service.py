@@ -98,6 +98,14 @@ SYSTEM_BASE = """당신은 "랜스타(Lanstar)" 제품의 기술 상담 전문 A
 - ✅ 한국어 답변, 모델명 정확 표기
 - ✅ 마지막에 "추가 문의가 있으시면 편하게 말씀해 주세요."
 
+## 모델명 길이 변형 규칙
+모델명 끝에 길이(숫자+M, 숫자만, 또는 대시 없이 숫자M)가 붙은 것은 케이블/제품 길이를 나타냅니다. 같은 베이스 모델의 길이 변형은 동일 제품입니다.
+예: LS-HF-10M, LS-HF-20M, LS-HF-30M → 모두 LS-HF 계열 동일 제품 (길이만 다름)
+예: LS-6UTPD-3M, LS-6UTPD-5M, LS-6UTPD-10M → 모두 LS-6UTPD 계열 동일 제품
+예: LS-7SD-BK1M, LS-7SD-BK2M, LS-7SD-BK5M → 모두 LS-7SD-BK 계열 동일 제품 (대시 없이 숫자M)
+예: LS-5FTPSD-BK0.5M, LS-5FTPSD-BK1M → 모두 LS-5FTPSD-BK 계열 동일 제품
+따라서 특정 길이 모델의 데이터나 리뷰가 없더라도, 같은 베이스 모델의 다른 길이 제품 정보를 참고하여 답변하세요.
+
 ## 기타 규칙
 - 경쟁사 제품을 언급하거나 비교하지 않습니다.
 - 가격 정보는 안내하지 않습니다. 가격 문의 시 공식 사이트나 고객센터를 안내합니다.
@@ -176,7 +184,13 @@ SYSTEM_PRODUCT_INQUIRY = """당신은 "랜스타(Lanstar)" 제품 추천 전문 
 - 유사한 대안이 있으면 함께 제안
 - 전화(02-717-3386) 문의 안내
 
-### 6. 기타
+### 6. 모델명 길이 변형 규칙
+모델명 끝에 '-숫자M'이 붙은 것은 케이블 길이를 나타냅니다. 같은 베이스 모델의 길이 변형은 동일 제품입니다.
+예: LS-HF-10M, LS-HF-20M, LS-HF-30M → 모두 LS-HF 계열 동일 제품 (길이만 다름)
+예: LS-6UTPD-3M, LS-6UTPD-5M, LS-6UTPD-10M → 모두 LS-6UTPD 계열 동일 제품
+따라서 특정 길이 모델의 데이터나 리뷰가 없더라도, 같은 베이스 모델의 다른 길이 제품 정보를 참고하여 답변하세요.
+
+### 7. 기타
 - 경쟁사 제품 언급/비교 금지
 - 마지막에 "추가로 궁금한 점이 있으시면 편하게 말씀해 주세요." 추가
 - 한국어 답변, 모델명 정확 표기
@@ -285,6 +299,13 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
 
     if menu == "배송문의":
         sys_prompt += f"\n## 배송 정책\n{data_loader.policy_delivery[:600]}\n"
+
+    # ── 고객 리뷰 (참고 자료) ──────────────────────────────
+    reviews = data_loader.search_reviews(model, max_reviews=5)
+    if reviews:
+        sys_prompt += "\n## [참고] 고객 구매 리뷰\n실제 구매 고객이 작성한 리뷰입니다. 답변의 1차 근거로 사용하지 말고, '구매하신 고객분들 중에 이런 후기도 있었습니다' 정도로 자연스럽게 참고 언급하세요.\n"
+        for rv in reviews:
+            sys_prompt += f"- {rv[:150]}\n"
 
     # ── 2차 소스: QnA 검색 (중요한 보충 자료) ────────────────────
     relevant_qna = data_loader.search_relevant_qna(user_message, model, max_results=10)
@@ -403,6 +424,20 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
         sys_prompt += "\n※ 가격등급은 상대 비교 전용입니다. 숫자가 높을수록 고가입니다. 절대 가격 수치를 고객에게 말하지 마세요.\n"
     else:
         sys_prompt += "\n## 검색 결과\n키워드에 매칭되는 제품이 없습니다. 고객에게 좀 더 구체적인 조건을 요청하거나, 고객센터 안내를 해주세요.\n"
+
+    # ── 고객 리뷰 (매칭된 제품들의 리뷰) ──────────────────
+    if matched_products:
+        review_section = ""
+        for p in matched_products[:5]:
+            m_name = p["model_name"]
+            reviews = data_loader.search_reviews(m_name, max_reviews=3)
+            if reviews:
+                review_section += f"\n**{m_name}** 리뷰:\n"
+                for rv in reviews:
+                    review_section += f"  - {rv[:150]}\n"
+        if review_section:
+            sys_prompt += "\n## [참고] 고객 구매 리뷰\n실제 구매 고객이 작성한 리뷰입니다. 제품 추천 시 '구매하신 고객분들 중에 이런 후기도 있었습니다' 정도로 자연스럽게 참고 언급하세요. 1차 판단 근거로는 사용하지 마세요.\n"
+            sys_prompt += review_section
 
     # ── 대화 이력에서 이전에 추천한 모델 추적 (연속 대화용) ──
     prev_models = set()

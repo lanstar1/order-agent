@@ -41,6 +41,9 @@ class AICCDataLoader:
         self.price_info: Dict[str, dict] = {}   # model_name → {품목명, 딜러가, 온라인노출가}
         self._price_model_map: Dict[str, str] = {}  # 모델명(괄호 제거) → 원본 키
 
+        # 리뷰 데이터
+        self.review_data: Dict[str, List[str]] = {}  # model_name → [리뷰텍스트, ...]
+
     def load_all(self):
         print("[AICC] 데이터 로딩 시작...")
         try:
@@ -58,6 +61,7 @@ class AICCDataLoader:
             self._load_technical_qna()
             self._load_unidentified_qna()
             self._load_price_info()
+            self._load_reviews()
             total_qna = sum(len(p.get("qna", [])) for p in self.technical_qna)
             print(f"[AICC] 완료 — 드롭다운:{len(self.dropdown_models)} 제품:{len(self.product_data)} "
                   f"기술QnA:{total_qna}건({len(self.technical_qna)}모델) 미분류QnA:{len(self.unidentified_qna)}건")
@@ -215,6 +219,71 @@ class AICCDataLoader:
             }
             self._price_model_map[model_name.upper()] = model_name
         print(f"[AICC] 품목가격정보 로드: {len(self.price_info)}개")
+
+    def _load_reviews(self):
+        """review_merged.json 로드 — 고객 리뷰 데이터"""
+        path = os.path.join(DATA_DIR, "review_merged.json")
+        if not os.path.exists(path):
+            print("[AICC] review_merged.json 없음 (스킵)")
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        for item in raw:
+            model_name = item.get("모델명", "").strip()
+            if not model_name:
+                continue
+            reviews = []
+            for r in item.get("리뷰", []):
+                text = r.get("리뷰상세내용", "").strip()
+                if text:
+                    reviews.append(text)
+            if reviews:
+                self.review_data[model_name] = reviews
+        print(f"[AICC] 리뷰 로드: {len(self.review_data)}개 모델")
+
+    @staticmethod
+    def _extract_model_base(model: str) -> str:
+        """
+        모델명에서 길이 접미사를 제거하여 베이스 모델명 추출.
+        길이 표기 패턴 (모두 같은 제품의 길이 변형):
+          1) -숫자M / -숫자.숫자M  : LS-HF-30M → LS-HF
+          2)  숫자M /  숫자.숫자M  : LS-7SD-BK1M → LS-7SD-BK
+          3) -숫자  / -숫자.숫자   : LS-HF-30 → LS-HF
+        길이 접미사가 없으면 원본 그대로 반환.
+        """
+        # 1) -숫자M / -숫자.숫자M (대시 + 숫자 + M)
+        m = re.match(r'^(.+?)-\d+(?:\.\d+)?M$', model, re.IGNORECASE)
+        if m:
+            return m.group(1)
+        # 2) 숫자M / 숫자.숫자M (대시 없이 문자 바로 뒤 숫자 + M)
+        m = re.match(r'^(.+?[A-Za-z])\d+(?:\.\d+)?M$', model, re.IGNORECASE)
+        if m:
+            return m.group(1)
+        # 3) -숫자 / -숫자.숫자 (대시 + 숫자, M 없음)
+        m = re.match(r'^(.+?)-\d+(?:\.\d+)?$', model)
+        if m:
+            return m.group(1)
+        return model
+
+    def search_reviews(self, model: str, max_reviews: int = 5) -> List[str]:
+        """
+        모델명으로 리뷰 검색.
+        1차: 정확한 모델명 매칭
+        2차: 베이스 모델명 매칭 (길이 변형 통합, 예: LS-HF-30M → LS-HF 계열 전체)
+        """
+        # 1차: 정확 매칭
+        reviews = self.review_data.get(model, [])
+        if reviews:
+            return reviews[:max_reviews]
+
+        # 2차: 베이스 모델명 매칭 (길이 접미사 제거 후 비교)
+        target_base = self._extract_model_base(model).upper()
+        collected = []
+        for review_model, review_list in self.review_data.items():
+            review_base = self._extract_model_base(review_model).upper()
+            if review_base == target_base:
+                collected.extend(review_list)
+        return collected[:max_reviews]
 
     def search_products_for_recommendation(self, query: str, max_results: int = 15) -> List[dict]:
         """
