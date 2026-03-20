@@ -80,11 +80,28 @@
   .ls-msg.user .ls-msg-bubble{background:#1a1a2e;color:#fff;border-bottom-right-radius:4px}
   .ls-msg.ai .ls-msg-bubble{background:#f1f3f8;color:#333;border-bottom-left-radius:4px}
   .ls-msg.system .ls-msg-bubble{background:#e8f5e9;color:#2e7d32;border-radius:8px;font-size:12px;width:100%;text-align:center}
-  #ls-typing{padding:8px 12px;display:none;align-items:center;gap:6px;color:#999;font-size:12px}
-  #ls-typing .dot{width:6px;height:6px;border-radius:50%;background:#ccc;animation:ls-bounce .8s infinite}
-  #ls-typing .dot:nth-child(2){animation-delay:.15s}
-  #ls-typing .dot:nth-child(3){animation-delay:.3s}
+  #ls-typing{padding:10px 14px;display:none;flex-direction:column;gap:6px;font-size:12px}
+  #ls-status-main{display:flex;align-items:center;gap:8px;color:#1a1a2e;font-weight:600;font-size:13px}
+  #ls-status-main .dot{width:6px;height:6px;border-radius:50%;background:#1a1a2e;animation:ls-bounce .8s infinite}
+  #ls-status-main .dot:nth-child(2){animation-delay:.15s}
+  #ls-status-main .dot:nth-child(3){animation-delay:.3s}
   @keyframes ls-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+  #ls-status-details{display:flex;flex-direction:column;gap:3px;padding-left:4px;max-height:120px;overflow:hidden}
+  .ls-status-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#888;animation:ls-fadeSlide .4s ease-out;max-height:30px;transition:opacity .5s,max-height .5s}
+  .ls-status-item.active{color:#1a1a2e;font-weight:500}
+  .ls-status-item.done{color:#aaa}
+  .ls-status-item .ls-status-icon{font-size:10px;width:14px;text-align:center;flex-shrink:0}
+  .ls-status-item .ls-status-text{animation:ls-shimmer 2s ease-in-out infinite}
+  .ls-status-item.active .ls-status-text{animation:ls-wave 1.5s ease-in-out infinite}
+  @keyframes ls-fadeSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes ls-wave{0%,100%{opacity:1}50%{opacity:.6}}
+  @keyframes ls-shimmer{0%,100%{opacity:.5}50%{opacity:.3}}
+
+  /* 추천 질문 버튼 */
+  .ls-suggestions{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:0 4px}
+  .ls-suggest-btn{background:#fff;border:1.5px solid #d0d5e0;border-radius:20px;padding:8px 14px;font-size:12px;color:#1a1a2e;cursor:pointer;text-align:left;transition:all .2s;font-family:inherit;line-height:1.4}
+  .ls-suggest-btn:hover{background:#f0f2ff;border-color:#1a1a2e;transform:translateX(4px)}
+  .ls-suggest-btn:active{transform:scale(.97)}
   #ls-img-preview{display:none;padding:6px 12px;border-top:1px solid #eee;background:#fafafa;flex-shrink:0}
   #ls-img-preview .preview-wrap{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:4px 8px}
   #ls-img-preview img{max-height:48px;max-width:80px;border-radius:4px;object-fit:cover}
@@ -224,7 +241,10 @@
               <span id="ls-chat-info-text"></span>
             </div>
             <div id="ls-chat-messages"></div>
-            <div id="ls-typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span> AI\uAC00 \uB2F5\uBCC0 \uC911...</div>
+            <div id="ls-typing">
+              <div id="ls-status-main"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span id="ls-status-step">AI\uAC00 \uB2F5\uBCC0 \uC900\uBE44 \uC911...</span></div>
+              <div id="ls-status-details"></div>
+            </div>
             <div id="ls-img-preview"></div>
             <input type="file" id="ls-chat-file-input" accept="image/jpeg,image/png,image/gif,image/webp">
             <div id="ls-chat-bottom">
@@ -498,18 +518,26 @@
 
     _ws.onmessage = function (e) {
       var msg = JSON.parse(e.data);
-      hideTyping();
       switch (msg.type) {
+        case 'status':
+          updateStatus(msg.step, msg.detail || '');
+          break;
         case 'ai_message':
+          hideTyping();
           appendMsg('ai', 'AI \uC0C1\uB2F4\uC0AC', msg.content);
+          if (msg.suggestions && msg.suggestions.length) {
+            appendSuggestions(msg.suggestions);
+          }
           break;
         case 'session_closed':
+          hideTyping();
           appendMsg('system', '', msg.content);
           document.getElementById('ls-chat-input').disabled = true;
           document.getElementById('ls-chat-send').disabled = true;
           if (_ws) _ws.close();
           break;
         case 'system':
+          hideTyping();
           appendMsg('system', '', msg.content);
           break;
       }
@@ -673,8 +701,100 @@
     }
   }
 
-  function showTyping() { document.getElementById('ls-typing').style.display = 'flex'; }
-  function hideTyping() { document.getElementById('ls-typing').style.display = 'none'; }
+  function showTyping() {
+    var el = document.getElementById('ls-typing');
+    var details = document.getElementById('ls-status-details');
+    var step = document.getElementById('ls-status-step');
+    if (details) details.innerHTML = '';
+    if (step) step.textContent = 'AI가 답변 준비 중...';
+    el.style.display = 'flex';
+    var mc = document.getElementById('ls-messages');
+    if (mc) mc.scrollTop = mc.scrollHeight;
+  }
+
+  function hideTyping() {
+    var el = document.getElementById('ls-typing');
+    el.style.display = 'none';
+    var details = document.getElementById('ls-status-details');
+    if (details) details.innerHTML = '';
+  }
+
+  var _statusItemCount = 0;
+  function updateStatus(step, detail) {
+    var el = document.getElementById('ls-typing');
+    if (el.style.display === 'none') el.style.display = 'flex';
+
+    // 메인 상태 텍스트 업데이트 (백엔드에서 한국어 텍스트 직접 전달)
+    var stepEl = document.getElementById('ls-status-step');
+    if (stepEl && step) {
+      stepEl.textContent = step;
+    }
+
+    // 상세 항목 추가 (드롭다운처럼 펼쳐지며 나타남)
+    if (detail) {
+      var details = document.getElementById('ls-status-details');
+      if (!details) return;
+
+      // 이전 active 항목을 done으로 전환
+      var prevActive = details.querySelectorAll('.ls-status-item.active');
+      for (var i = 0; i < prevActive.length; i++) {
+        prevActive[i].classList.remove('active');
+        prevActive[i].classList.add('done');
+      }
+
+      _statusItemCount++;
+      var item = document.createElement('div');
+      item.className = 'ls-status-item active';
+      item.innerHTML = '<span class="ls-status-icon">📄</span><span class="ls-status-text">' + escHtml(detail).replace(/<br>/g, ' ') + '</span>';
+      details.appendChild(item);
+
+      // 오래된 항목은 서서히 사라지게
+      if (_statusItemCount > 4) {
+        var old = details.firstElementChild;
+        if (old) {
+          old.style.transition = 'opacity .5s, max-height .5s';
+          old.style.opacity = '0';
+          old.style.maxHeight = '0';
+          old.style.overflow = 'hidden';
+          setTimeout(function() { if (old.parentNode) old.parentNode.removeChild(old); }, 500);
+        }
+      }
+
+      var mc = document.getElementById('ls-messages');
+      if (mc) mc.scrollTop = mc.scrollHeight;
+    }
+  }
+
+  function appendSuggestions(suggestions) {
+    var mc = document.getElementById('ls-messages');
+    if (!mc || !suggestions || !suggestions.length) return;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'ls-suggestions';
+    for (var i = 0; i < suggestions.length; i++) {
+      var btn = document.createElement('button');
+      btn.className = 'ls-suggest-btn';
+      btn.textContent = suggestions[i];
+      btn.setAttribute('data-question', suggestions[i]);
+      btn.onclick = function() { _clickSuggestion(this.getAttribute('data-question')); };
+      wrap.appendChild(btn);
+    }
+    mc.appendChild(wrap);
+    mc.scrollTo({ top: mc.scrollHeight, behavior: 'smooth' });
+  }
+
+  function _clickSuggestion(question) {
+    if (!question || !_ws) return;
+    // 추천 질문 버튼 영역 제거
+    var allSugg = document.querySelectorAll('.ls-suggestions');
+    for (var i = 0; i < allSugg.length; i++) {
+      allSugg[i].parentNode.removeChild(allSugg[i]);
+    }
+    // 메시지로 전송
+    appendMsg('user', _memberName || '고객', question);
+    showTyping();
+    _ws.send(JSON.stringify({ type: 'chat', content: question }));
+  }
 
   function escHtml(str) {
     return String(str)
@@ -940,6 +1060,7 @@
     _confirmModel: _confirmModel,
     _submitPhone: _submitPhone,
     _clearImage: _clearImage,
+    _clickSuggestion: _clickSuggestion,
   };
 
 })();

@@ -3,13 +3,15 @@ AICC AI 서비스
 하이브리드 답변 방식:
   1차: 제품 지식 DB (정확한 제품 정보)
   2차: QnA 검색 (보충/참고)
-  → Claude가 두 소스를 조합하여 풍성한 답변 생성
+  3차: 웹 검색 (네이버 블로그 — 보충)
+  → Claude가 소스를 조합하여 풍성한 답변 생성
 """
 import json
 import os
 import re as _re
 import anthropic
 from .aicc_data_loader import data_loader
+from .aicc_web_search import search_product_blog
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -234,7 +236,7 @@ def _format_knowledge_for_prompt(knowledge_data: dict) -> str:
     return "\n\n".join(lines)
 
 
-async def get_ai_response(session: dict, user_message: str, image_id: str = None) -> str:
+async def get_ai_response(session: dict, user_message: str, image_id: str = None, status_callback=None) -> dict:
     """
     하이브리드 답변 생성:
     1차: 제품 지식 DB (정확한 제품 상세 정보)
@@ -245,13 +247,19 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     menu = session["selected_menu"]
     messages_history = session.get("messages", [])
 
+    async def _status(step, detail=""):
+        if status_callback:
+            await status_callback(step, detail)
+
+    await _status("고객 질문 의도 파악 중...")
+
     # 제품 데이터 없으면 fallback
     product = data_loader.get_product(model)
     if not product and not data_loader.get_erp_code(model):
         # 제품 지식 DB에는 있을 수 있으므로 체크
         knowledge = _get_knowledge(model)
         if not knowledge:
-            return FALLBACK_NO_DATA.format(model=model)
+            return {"content": FALLBACK_NO_DATA.format(model=model), "suggestions": []}
 
     # ── 시스템 프롬프트 구성 ──────────────────────────────
     sys_prompt = SYSTEM_BASE.format(
@@ -265,6 +273,7 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     sys_prompt += f"\n## 현재 상담 제품\n모델명: {model}\n카테고리: {cat or '미분류'}\n이 제품에 집중하여 답변하세요.\n"
 
     # ── 1차 소스: 제품 지식 DB (가장 정확한 정보) ─────────
+    await _status("제품 데이터 확인 중...", f"{model} 제품 정보")
     knowledge = _get_knowledge(model)
     if knowledge:
         knowledge_text = _format_knowledge_for_prompt(knowledge["data"])
@@ -303,18 +312,30 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     # ── 고객 리뷰 (참고 자료) ──────────────────────────────
     reviews = data_loader.search_reviews(model, max_reviews=5)
     if reviews:
+        await _status("고객 리뷰 확인 중...", f"{len(reviews)}건의 구매 리뷰")
         sys_prompt += "\n## [참고] 고객 구매 리뷰\n실제 구매 고객이 작성한 리뷰입니다. 답변의 1차 근거로 사용하지 말고, '구매하신 고객분들 중에 이런 후기도 있었습니다' 정도로 자연스럽게 참고 언급하세요.\n"
         for rv in reviews:
             sys_prompt += f"- {rv[:150]}\n"
 
     # ── 2차 소스: QnA 검색 (중요한 보충 자료) ────────────────────
+    await _status("관련 QnA 검색 중...", "고객 문의 데이터")
     relevant_qna = data_loader.search_relevant_qna(user_message, model, max_results=10)
 
     if relevant_qna:
+        await _status("관련 문서 분석 중...", f"{len(relevant_qna)}건의 QnA 매칭")
         sys_prompt += "\n## [2차 소스] 고객 QnA 데이터 — 실제 고객 문의와 답변입니다. 적극 활용하세요.\n"
         for ref in relevant_qna:
             sys_prompt += f"\n[{ref['model']}]\nQ: {ref['question'][:250]}\nA: {ref['answer'][:400]}\n"
         sys_prompt += "\n위 QnA에서 고객 질문과 유사한 사례를 찾아 답변에 활용하세요. 제품 지식 DB와 상충하면 DB를 우선하세요.\n"
+
+    # ── 3차 소스: 네이버 블로그 검색 (보충 참고) ────────────────
+    await _status("웹에서 관련 자료 검색 중...", "네이버 블로그")
+    blog_results = await search_product_blog(model, user_message, max_results=3)
+    if blog_results:
+        await _status("블로그 자료 분석 중...", f"{len(blog_results)}건의 블로그 글")
+        sys_prompt += "\n## [3차 소스] 웹 검색 참고 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요. 1차/2차 소스와 상충하면 무시하세요.\n"
+        for blog in blog_results:
+            sys_prompt += f"\n- **{blog['title']}** ({blog['bloggername']})\n  {blog['description'][:200]}\n"
 
     # ── 이미지가 있으면 안내 추가 ─────────────────────────
     has_image = False
@@ -366,6 +387,8 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     else:
         api_messages.append({"role": "user", "content": user_message})
 
+    await _status("답변을 정리하고 있어요...")
+
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -373,28 +396,38 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
             system=sys_prompt,
             messages=api_messages,
         )
-        return response.content[0].text
+        ai_text = response.content[0].text
+
+        # ── 추천 질문 생성 ─────────────────────────────────
+        suggestions = _generate_suggestions(model, user_message, ai_text, blog_results)
+        return {"content": ai_text, "suggestions": suggestions}
     except Exception as e:
         print(f"[AICC AI] 오류: {e}")
-        return FALLBACK_ERROR
+        return {"content": FALLBACK_ERROR, "suggestions": []}
 
 
-async def get_product_inquiry_response(session: dict, user_message: str, image_id: str = None) -> str:
+async def get_product_inquiry_response(session: dict, user_message: str, image_id: str = None, status_callback=None) -> dict:
     """
     제품문의 전용 AI 응답:
     1차: 키워드로 제품 데이터 검색 (01_제품별_통합데이터 + 품목가격정보)
     2차: Claude가 고객 맥락에 맞게 추천
     """
+    async def _status(step, detail=""):
+        if status_callback:
+            await status_callback(step, detail)
+
     messages_history = session.get("messages", [])
 
     # ── 시스템 프롬프트 구성 ──────────────────────────────
     sys_prompt = SYSTEM_PRODUCT_INQUIRY
 
     # ── 0차: AI 키워드 추출 (자연어 → 기술 키워드) ─────────
+    await _status("고객 질문 의도 파악 중...")
     enriched_query = _extract_search_keywords(user_message)
     print(f"[AICC] 원본: {user_message[:60]} → 확장: {enriched_query[:100]}")
 
     # ── 1차: 제품 데이터 검색 ─────────────────────────────
+    await _status("제품 데이터 검색 중...", "제품 카탈로그")
     matched_products = data_loader.search_products_for_recommendation(enriched_query, max_results=15)
 
     if matched_products:
@@ -427,6 +460,7 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
 
     # ── 고객 리뷰 (매칭된 제품들의 리뷰) ──────────────────
     if matched_products:
+        await _status("고객 리뷰 확인 중...", "구매 리뷰 데이터")
         review_section = ""
         for p in matched_products[:5]:
             m_name = p["model_name"]
@@ -438,6 +472,15 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
         if review_section:
             sys_prompt += "\n## [참고] 고객 구매 리뷰\n실제 구매 고객이 작성한 리뷰입니다. 제품 추천 시 '구매하신 고객분들 중에 이런 후기도 있었습니다' 정도로 자연스럽게 참고 언급하세요. 1차 판단 근거로는 사용하지 마세요.\n"
             sys_prompt += review_section
+
+    # ── 웹 검색 (네이버 블로그) ─────────────────────────
+    await _status("웹에서 관련 자료 검색 중...", "네이버 블로그")
+    blog_results = await search_product_blog("", user_message, max_results=3)
+    if blog_results:
+        await _status("블로그 자료 분석 중...", f"{len(blog_results)}건의 블로그 글")
+        sys_prompt += "\n## [참고] 웹 검색 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요.\n"
+        for blog in blog_results:
+            sys_prompt += f"\n- **{blog['title']}** ({blog['bloggername']})\n  {blog['description'][:200]}\n"
 
     # ── 대화 이력에서 이전에 추천한 모델 추적 (연속 대화용) ──
     prev_models = set()
@@ -525,6 +568,8 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
     else:
         api_messages.append({"role": "user", "content": user_message})
 
+    await _status("답변을 정리하고 있어요...")
+
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -532,10 +577,49 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
             system=sys_prompt,
             messages=api_messages,
         )
-        return response.content[0].text
+        ai_text = response.content[0].text
+        suggestions = _generate_suggestions("", user_message, ai_text, blog_results)
+        return {"content": ai_text, "suggestions": suggestions}
     except Exception as e:
         print(f"[AICC AI] 제품문의 오류: {e}")
-        return FALLBACK_ERROR
+        return {"content": FALLBACK_ERROR, "suggestions": []}
+
+
+def _generate_suggestions(model: str, user_question: str, ai_answer: str, blog_results: list) -> list[str]:
+    """AI 답변 기반으로 추천 질문 2~3개 생성"""
+    try:
+        context_parts = [f"고객질문: {user_question[:100]}"]
+        if model:
+            context_parts.append(f"제품: {model}")
+        context_parts.append(f"AI답변 요약: {ai_answer[:300]}")
+        if blog_results:
+            blog_titles = ", ".join(b["title"][:40] for b in blog_results[:2])
+            context_parts.append(f"관련 블로그: {blog_titles}")
+
+        resp = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=150,
+            system=(
+                "당신은 랜스타(Lanstar) IT 주변기기 상담 어시스턴트입니다.\n"
+                "고객의 질문과 AI 답변을 보고, 고객이 추가로 궁금해할 만한 질문 2~3개를 생성하세요.\n"
+                "규칙:\n"
+                "- 각 질문은 20자 이내로 짧고 자연스럽게\n"
+                "- 이미 답변된 내용을 다시 묻는 질문 금지\n"
+                "- 제품 사용법, 호환성, 비교, 설치 팁 등 실용적인 질문\n"
+                "- 웹/블로그에서 찾을 수 있는 심화 정보 관련 질문도 포함\n"
+                "- JSON 배열 형식으로만 출력. 예: [\"질문1\", \"질문2\", \"질문3\"]\n"
+                "- 다른 텍스트 없이 JSON만 출력"
+            ),
+            messages=[{"role": "user", "content": "\n".join(context_parts)}],
+        )
+        import json as _json
+        raw = resp.content[0].text.strip()
+        suggestions = _json.loads(raw)
+        if isinstance(suggestions, list):
+            return [s for s in suggestions if isinstance(s, str)][:3]
+    except Exception as e:
+        print(f"[AICC] 추천질문 생성 오류: {e}")
+    return []
 
 
 def _get_knowledge(model: str) -> dict | None:

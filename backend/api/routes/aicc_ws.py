@@ -70,18 +70,43 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
                 # 메시지 저장
                 session_manager.add_message(actual_sid, "user", content, image_id=image_id)
 
+                # 상태 콜백: AI 처리 단계를 실시간으로 프론트에 전송
+                async def send_status(step: str, detail: str = ""):
+                    try:
+                        await websocket.send_json({
+                            "type": "status",
+                            "step": step,
+                            "detail": detail,
+                        })
+                    except Exception:
+                        pass
+
                 # AI 응답 생성 (메뉴별 분기)
                 try:
                     if menu == "제품문의":
-                        ai_reply = await get_product_inquiry_response(s, content, image_id=image_id)
+                        result = await get_product_inquiry_response(
+                            s, content, image_id=image_id, status_callback=send_status
+                        )
                     else:
-                        ai_reply = await get_ai_response(s, content, image_id=image_id)
+                        result = await get_ai_response(
+                            s, content, image_id=image_id, status_callback=send_status
+                        )
                 except Exception as e:
-                    ai_reply = "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                    result = {
+                        "content": "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+                        "suggestions": [],
+                    }
                     print(f"[AICC WS] AI 오류: {e}")
 
+                ai_reply = result["content"]
+                suggestions = result.get("suggestions", [])
+
                 session_manager.add_message(actual_sid, "assistant", ai_reply)
-                await websocket.send_json({"type": "ai_message", "content": ai_reply})
+                await websocket.send_json({
+                    "type": "ai_message",
+                    "content": ai_reply,
+                    "suggestions": suggestions,
+                })
 
                 # 미답변 감지 → DB 기록 + 관리자 알림
                 if _is_unanswered(ai_reply):
