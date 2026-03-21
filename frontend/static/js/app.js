@@ -92,6 +92,12 @@ function updateStep(step) {
   document.getElementById("processing-step").textContent = step;
 }
 
+// ─── 사이드바 그룹 토글 ───
+function toggleNavGroup(headerEl) {
+  const group = headerEl.closest('.nav-group');
+  if (group) group.classList.toggle('open');
+}
+
 function navigateTo(pageId) {
   // AI 메일 에이전트는 외부 링크로 열기 (내부 페이지 전환 안 함)
   if (pageId === "mail_agent") {
@@ -103,7 +109,14 @@ function navigateTo(pageId) {
   const page = document.getElementById("page-" + pageId);
   if (page) page.classList.add("active");
   const nav = document.querySelector(`[data-page="${pageId}"]`);
-  if (nav) nav.classList.add("active");
+  if (nav) {
+    nav.classList.add("active");
+    // 해당 nav-item이 속한 그룹을 자동으로 열기
+    const parentGroup = nav.closest('.nav-group');
+    if (parentGroup && !parentGroup.classList.contains('open')) {
+      parentGroup.classList.add('open');
+    }
+  }
   document.getElementById("topbar-title").textContent = {
     dashboard:    "대시보드",
     new_order:    "판매입력",
@@ -120,7 +133,6 @@ function navigateTo(pageId) {
     training:     "발주서 학습",
     shipping:     "택배조회",
     cs_rma:       "CS/RMA",
-
     aicc:         "AI 상담",
     ai_dashboard: "AI 대시보드",
     settings:     "설정",
@@ -129,7 +141,6 @@ function navigateTo(pageId) {
   if (pageId === "aicc") initAiccTab();
   // CS/RMA 페이지 진입 시 초기화
   if (pageId === "cs_rma") csInit();
-
   // 택배조회 페이지 진입 시 통계 로드
   if (pageId === "shipping") initShippingPage();
   // 주문서 페이지 진입 시 드롭존 초기화
@@ -562,21 +573,21 @@ function switchTab(tab) {
   document.getElementById("tab-image").style.display = tab === "image" ? "block" : "none";
 }
 
-// ─── 사이드바 네비게이션 (클릭 + 드래그 정렬) ───
+// ─── 사이드바 네비게이션 (그룹 + 클릭) ───
 function initSidebarNav() {
   const nav = document.getElementById("sidebar-nav");
   if (!nav) return;
 
-  // localStorage에서 저장된 순서 복원
-  const saved = localStorage.getItem("navOrder");
-  if (saved) {
+  // localStorage에서 그룹 열림/닫힘 상태 복원
+  const savedGroups = localStorage.getItem("navGroupState");
+  if (savedGroups) {
     try {
-      const order = JSON.parse(saved);
-      const items = Array.from(nav.querySelectorAll(".nav-item"));
-      const map = {};
-      items.forEach(el => { map[el.dataset.page] = el; });
-      order.forEach(pageId => {
-        if (map[pageId]) nav.appendChild(map[pageId]);
+      const groupState = JSON.parse(savedGroups);
+      nav.querySelectorAll(".nav-group").forEach(group => {
+        const gid = group.dataset.group;
+        if (groupState[gid] !== undefined) {
+          group.classList.toggle("open", groupState[gid]);
+        }
       });
     } catch (e) { /* 무시 */ }
   }
@@ -584,65 +595,23 @@ function initSidebarNav() {
   // 클릭 이벤트
   nav.querySelectorAll(".nav-item").forEach(item => {
     item.addEventListener("click", (e) => {
-      if (e.target.classList.contains("drag-handle")) return;
       const page = item.dataset.page;
       navigateTo(page);
       if (page === "history") loadHistory();
-      if (page === "sale_order") initSODropzone();
-      if (page === "purchase") initPODropzone();
     });
   });
 
-  // 드래그앤드롭 정렬
-  let dragEl = null;
-
-  nav.addEventListener("dragstart", (e) => {
-    const item = e.target.closest(".nav-item");
-    if (!item) return;
-    dragEl = item;
-    item.classList.add("dragging");
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", item.dataset.page);
-  });
-
-  nav.addEventListener("dragend", (e) => {
-    if (dragEl) dragEl.classList.remove("dragging");
-    nav.querySelectorAll(".nav-item").forEach(n => n.classList.remove("drag-over"));
-    dragEl = null;
-  });
-
-  nav.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    const target = e.target.closest(".nav-item");
-    if (!target || target === dragEl) return;
-    nav.querySelectorAll(".nav-item").forEach(n => n.classList.remove("drag-over"));
-    target.classList.add("drag-over");
-  });
-
-  nav.addEventListener("dragleave", (e) => {
-    const target = e.target.closest(".nav-item");
-    if (target) target.classList.remove("drag-over");
-  });
-
-  nav.addEventListener("drop", (e) => {
-    e.preventDefault();
-    const target = e.target.closest(".nav-item");
-    if (!target || !dragEl || target === dragEl) return;
-    target.classList.remove("drag-over");
-
-    // 위치 계산: 드롭 대상의 위/아래 반 기준
-    const rect = target.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    if (e.clientY < midY) {
-      nav.insertBefore(dragEl, target);
-    } else {
-      nav.insertBefore(dragEl, target.nextSibling);
-    }
-
-    // localStorage에 순서 저장
-    const order = Array.from(nav.querySelectorAll(".nav-item")).map(n => n.dataset.page);
-    localStorage.setItem("navOrder", JSON.stringify(order));
+  // 그룹 토글 시 상태 저장
+  nav.querySelectorAll(".nav-group-header").forEach(header => {
+    header.addEventListener("click", () => {
+      setTimeout(() => {
+        const state = {};
+        nav.querySelectorAll(".nav-group").forEach(g => {
+          state[g.dataset.group] = g.classList.contains("open");
+        });
+        localStorage.setItem("navGroupState", JSON.stringify(state));
+      }, 50);
+    });
   });
 }
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260312b">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260322c">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
   <style>
     /* CS/RMA 파이프라인 탭 */
@@ -50,99 +50,101 @@
   <!-- ── 사이드바 ── -->
   <nav class="sidebar">
     <div class="sidebar-logo">
-      <h1>AI 발주서<br>자동화 시스템</h1>
-      <span>v0.1</span>
+      <div class="sidebar-logo-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="8" fill="#6366f1"/><path d="M8 14l4 4 8-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="sidebar-logo-text">
+        <h1>Order Agent</h1>
+        <span>AI Business Platform</span>
+      </div>
     </div>
     <div class="sidebar-nav" id="sidebar-nav">
-      <div class="nav-item" data-page="new_order" draggable="true">
-        <span class="icon">📋</span>
-        <span>판매입력</span>
-        <span class="drag-handle">⠿</span>
+
+      <!-- 업무 입력 -->
+      <div class="nav-group open" data-group="work">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+          <span>업무 입력</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="new_order"><span>판매입력</span></div>
+          <div class="nav-item" data-page="sale_order"><span>견적서입력</span></div>
+          <div class="nav-item" data-page="purchase"><span>구매입력</span></div>
+        </div>
       </div>
-      <div class="nav-item" data-page="history" draggable="true">
-        <span class="icon">📂</span>
-        <span>처리 이력</span>
-        <span class="drag-handle">⠿</span>
+
+      <!-- 조회 -->
+      <div class="nav-group" data-group="search">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <span>조회</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="history"><span>처리 이력</span></div>
+          <div class="nav-item" data-page="inventory"><span>재고 조회</span></div>
+          <div class="nav-item" data-page="doc_search"><span>자료검색</span></div>
+          <div class="nav-item" data-page="price_sheet"><span>단가표</span></div>
+          <div class="nav-item" data-page="orderlist"><span>오더리스트</span></div>
+        </div>
       </div>
-      <div class="nav-item" data-page="sale_order" draggable="true">
-        <span class="icon">📑</span>
-        <span>견적서입력</span>
-        <span class="drag-handle">⠿</span>
+
+      <!-- 물류 -->
+      <div class="nav-group" data-group="logistics">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1v-1h3.05a2.5 2.5 0 014.9 0H19a1 1 0 001-1v-4a1 1 0 00-.293-.707l-3-3A1 1 0 0016 5h-3V4a1 1 0 00-1-1H3z"/></svg>
+          <span>물류</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="shipping"><span>택배조회</span></div>
+          <div class="nav-item" data-page="cs_rma"><span>CS / RMA</span></div>
+        </div>
       </div>
-      <div class="nav-item" data-page="purchase" draggable="true">
-        <span class="icon">🛒</span>
-        <span>구매입력</span>
-        <span class="drag-handle">⠿</span>
+
+      <!-- AI 서비스 -->
+      <div class="nav-group" data-group="ai">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6.672 1.911a1 1 0 10-1.932.518l.259.966a1 1 0 001.932-.518l-.26-.966zM2.429 4.74a1 1 0 10-.517 1.932l.966.259a1 1 0 00.517-1.932l-.966-.26zm8.814-.569a1 1 0 00-1.415-1.414l-.707.707a1 1 0 101.415 1.415l.707-.708zm-7.071 7.072l.707-.708a1 1 0 00-1.414-1.414l-.708.707a1 1 0 001.415 1.415zm3.2-5.171a1 1 0 00-1.3 1.3l4 10a1 1 0 001.823.075l1.38-2.759 2.758-1.379a1 1 0 00-.075-1.823l-10-4z" clip-rule="evenodd"/></svg>
+          <span>AI 서비스</span>
+          <span id="aicc-nav-badge" class="nav-badge" style="display:none">0</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="aicc"><span>AI 상담</span></div>
+          <div class="nav-item" data-page="ai_dashboard"><span>AI 대시보드</span></div>
+          <div class="nav-item" data-page="super_agent"><span>Super Agent</span></div>
+          <div class="nav-item" data-page="mail_agent"><span>AI 메일</span></div>
+        </div>
       </div>
-      <div class="nav-item" data-page="inventory" draggable="true">
-        <span class="icon">📦</span>
-        <span>재고 조회</span>
-        <span class="drag-handle">⠿</span>
+
+      <!-- 관리 -->
+      <div class="nav-group" data-group="admin">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+          <span>관리</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="training"><span>발주서 학습</span></div>
+          <div class="nav-item" data-page="settings"><span>설정</span></div>
+        </div>
       </div>
-      <div class="nav-item" data-page="doc_search" draggable="true">
-        <span class="icon">📄</span>
-        <span>자료검색</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="price_sheet" draggable="true">
-        <span class="icon">💰</span>
-        <span>단가표 조회</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="orderlist" draggable="true">
-        <span class="icon">🚢</span>
-        <span>오더리스트</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="training" draggable="true">
-        <span class="icon">🧠</span>
-        <span>발주서 학습</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="shipping" draggable="true">
-        <span class="icon">🚚</span>
-        <span>택배조회</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="cs_rma" draggable="true">
-        <span class="icon">🔧</span>
-        <span>CS/RMA</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="aicc" draggable="true" style="position:relative">
-        <span class="icon">💬</span>
-        <span>AI 상담</span>
-        <span class="drag-handle">⠿</span>
-        <span id="aicc-nav-badge" style="display:none;background:#e63946;color:#fff;border-radius:50%;min-width:18px;height:18px;font-size:10px;line-height:18px;text-align:center;position:absolute;top:2px;right:2px;padding:0 4px">0</span>
-      </div>
-      <div class="nav-item" data-page="ai_dashboard" draggable="true">
-        <span class="icon">📊</span>
-        <span>AI 대시보드</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="super_agent" draggable="true">
-        <span class="icon">🤖</span>
-        <span>Super Agent</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="mail_agent" draggable="true">
-        <span class="icon">📧</span>
-        <span>AI 메일 에이전트</span>
-        <span class="drag-handle">⠿</span>
-      </div>
-      <div class="nav-item" data-page="settings" draggable="true">
-        <span class="icon">⚙️</span>
-        <span>설정</span>
-        <span class="drag-handle">⠿</span>
-      </div>
+
     </div>
     <!-- 로그인한 사용자 정보 -->
     <div class="sidebar-user" id="sidebar-user" style="display:none">
-      <div style="font-size:12px;color:var(--gray-400);margin-bottom:4px">로그인</div>
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <span id="sidebar-username" style="font-weight:600;color:#e2e8f0;font-size:14px"></span>
-        <button onclick="logout()" style="background:none;border:1px solid #4a5568;color:#a0aec0;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">로그아웃</button>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-avatar" id="sidebar-user-avatar">U</div>
+        <div class="sidebar-user-detail">
+          <span id="sidebar-username" class="sidebar-user-name"></span>
+          <span class="sidebar-user-role">관리자</span>
+        </div>
       </div>
+      <button onclick="logout()" class="sidebar-logout-btn">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+      </button>
     </div>
   </nav>
 
@@ -2566,9 +2568,11 @@ function updateSidebarUser() {
   const user = getCurrentUser();
   const el = document.getElementById("sidebar-user");
   const nm = document.getElementById("sidebar-username");
+  const avatar = document.getElementById("sidebar-user-avatar");
   if (user) {
-    el.style.display = "block";
-    nm.textContent = `[${user.emp_cd}] ${user.name}`;
+    el.style.display = "flex";
+    nm.textContent = user.name;
+    if (avatar && user.name) avatar.textContent = user.name.charAt(0).toUpperCase();
   } else {
     el.style.display = "none";
   }
@@ -2719,7 +2723,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260322a"></script>
-<script src="/static/js/app.js?v=20260322b"></script>
+<script src="/static/js/app.js?v=20260322c"></script>
 <script src="/static/js/super_agent.js?v=20260322b"></script>
 </body>
 </html>
