@@ -197,7 +197,7 @@ async def get_llm_config(user: dict = Depends(get_current_user)):
     """전체 기능별 LLM 설정 조회"""
     ensure_settings_table()
     conn = get_connection()
-    rows = conn.execute("SELECT key, value FROM app_settings WHERE key LIKE 'llm_%'").fetchall()
+    rows = conn.execute("SELECT key, value FROM app_settings WHERE key LIKE ?", ("llm_%",)).fetchall()
     conn.close()
 
     db_settings = {r["key"]: r["value"] for r in rows}
