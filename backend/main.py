@@ -25,7 +25,7 @@ from api.routes.orderlist import router as orderlist_router
 from api.routes.activity import router as activity_router
 from api.routes.shipping import router as shipping_router
 from api.routes.cs import router as cs_router
-from api.routes.sales_agent import router as sales_agent_router
+
 from api.routes.sales_analytics import router as sales_analytics_router
 from api.routes.purchases import router as purchases_router
 from api.routes.aicc import router as aicc_router
@@ -133,9 +133,7 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/cs/tickets"): "CS 불량 접수",
     ("PUT", "/api/cs/tickets"): "CS 상태 변경",
     ("POST", "/api/cs/tickets"): "CS 테스트/파일",
-    ("POST", "/api/sales-agent/upload"): "판매에이전트 파일 업로드",
-    ("POST", "/api/sales-agent/analyze"): "판매에이전트 AI 분석",
-    ("GET", "/api/sales-agent/history"): "판매에이전트 이력 조회",
+
     ("POST", "/api/sales/upload-csv"): "판매현황 CSV 업로드",
     ("POST", "/api/sales/fetch-ecount"): "판매현황 이카운트 수집",
     ("POST", "/api/sales/scheduler/run-now"): "판매현황 즉시 수집",
@@ -238,7 +236,7 @@ app.include_router(orderlist_router)
 app.include_router(activity_router)
 app.include_router(shipping_router)
 app.include_router(cs_router)
-app.include_router(sales_agent_router)
+
 app.include_router(sales_analytics_router)
 app.include_router(purchases_router)
 app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])

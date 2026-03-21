@@ -349,13 +349,6 @@ const api = {
     return api.request("DELETE", `/api/shipping/${id}`);
   },
 
-  // ── 판매에이전트 ──
-  saUpload: (formData) => api.postForm("/api/sales-agent/upload", formData),
-  saAnalyze: (formData) => api.postForm("/api/sales-agent/analyze", formData),
-  saCustomers: (fileId) => api.get(`/api/sales-agent/customers/${fileId}`),
-  saStatus: (jobId) => api.get(`/api/sales-agent/status/${jobId}`),
-  saResult: (jobId) => api.get(`/api/sales-agent/result/${jobId}`),
-  saHistory: (size = 20) => api.get(`/api/sales-agent/history?size=${size}`),
 
   // ── 구매입력 ──
   processPurchase:    (body) => api.post("/api/purchases/process", body),
