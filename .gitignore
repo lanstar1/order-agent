@@ -10,3 +10,4 @@ data/feedback/*
 start.bat
 scripts/
 .DS_Store
+data/sa_outputs/

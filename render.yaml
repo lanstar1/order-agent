@@ -47,3 +47,7 @@ services:
         sync: false
       - key: GODOMALL_USER_KEY
         sync: false
+      - key: SA_MONTHLY_BUDGET
+        value: "50.0"
+      - key: SA_MAX_CONCURRENT
+        value: "6"

@@ -110,17 +110,37 @@ async def call_llm(
     last_error = None
     for try_model_key in models_to_try:
         try_info = MODEL_REGISTRY.get(try_model_key, model_info)
-        try:
-            result = await _call_single_model(
-                try_model_key, try_info, messages, system_prompt,
-                max_tokens, temperature, response_format
-            )
-            result["latency_ms"] = int((time.time() - start_time) * 1000)
-            return result
-        except Exception as e:
-            last_error = e
-            logger.warning(f"[LLM] {try_model_key} 실패: {e}, 다음 모델 시도")
-            continue
+
+        # 각 모델당 최대 2회 재시도 (지수 백오프)
+        for attempt in range(2):
+            try:
+                result = await _call_single_model(
+                    try_model_key, try_info, messages, system_prompt,
+                    max_tokens, temperature, response_format
+                )
+                result["latency_ms"] = int((time.time() - start_time) * 1000)
+
+                # 비용 로깅
+                try:
+                    from super_agent.tools.cost_tracker import log_cost
+                    log_cost(
+                        job_id="",
+                        model=try_model_key,
+                        tokens_input=result.get("tokens_input", 0),
+                        tokens_output=result.get("tokens_output", 0),
+                        cost=result.get("cost", 0),
+                    )
+                except Exception:
+                    pass
+
+                return result
+            except Exception as e:
+                last_error = e
+                if attempt == 0:
+                    logger.warning(f"[LLM] {try_model_key} 1차 실패: {e}, 재시도")
+                    await asyncio.sleep(1)  # 1초 대기 후 재시도
+                else:
+                    logger.warning(f"[LLM] {try_model_key} 2차 실패: {e}, 다음 모델")
 
     # 모든 모델 실패
     raise Exception(f"모든 LLM 호출 실패. 마지막 에러: {last_error}")
