@@ -1,5 +1,5 @@
 """
-실행 엔진 — DAG 기반 병렬 실행, 의존성 관리
+실행 엔진 — DAG 기반 병렬 실행, 의존성 관리 + ReAct Agent Loop
 """
 import json
 import time
@@ -13,6 +13,9 @@ from super_agent.tools.litellm_gateway import call_llm
 from super_agent.agents.domain_prompts import get_domain_prompt
 
 logger = logging.getLogger(__name__)
+
+# Agent Loop을 사용할 작업 종류
+AGENT_LOOP_TASKS = {"research", "analysis", "composition"}
 
 
 class ExecutionEngine:
@@ -102,7 +105,7 @@ class ExecutionEngine:
         user_prompt: str,
         plan: ExecutionPlan,
     ) -> Dict[str, Any]:
-        """단일 태스크 실행"""
+        """단일 태스크 실행 — 도구 필요 시 Agent Loop, 아니면 직접 LLM 호출"""
         async with self.semaphore:
             start = time.time()
 
@@ -128,7 +131,49 @@ class ExecutionEngine:
                 for key, val in dep_results.items():
                     context += f"\n### {key}\n{val[:3000]}\n"
 
-            # LLM 호출
+            # 도구가 필요한 작업 → Agent Loop 사용
+            needs_tools = (
+                subtask.task_kind in AGENT_LOOP_TASKS
+                or any(t in subtask.required_tools for t in ["web_search", "image_gen", "execute_code", "erp_query"])
+            )
+
+            if needs_tools:
+                try:
+                    from super_agent.core.agent_loop import run_agent_loop
+
+                    async def _progress(msg):
+                        if self.progress_callback:
+                            await self.progress_callback(
+                                task_id=subtask.task_id,
+                                task_key=subtask.task_key,
+                                status="running",
+                                message=msg,
+                            )
+
+                    agent_result = await run_agent_loop(
+                        task_objective=subtask.objective,
+                        context=context,
+                        file_data=file_data if "file_analysis" in subtask.required_tools else None,
+                        model_key=subtask.preferred_llm,
+                        progress_callback=_progress,
+                    )
+
+                    elapsed = int((time.time() - start) * 1000)
+                    return {
+                        "status": "succeeded",
+                        "content": agent_result["answer"],
+                        "model": subtask.preferred_llm,
+                        "tokens_input": 0,
+                        "tokens_output": 0,
+                        "cost": agent_result["total_cost"],
+                        "latency_ms": elapsed,
+                        "tool_calls": agent_result.get("tool_calls", []),
+                        "iterations": agent_result.get("iterations", 0),
+                    }
+                except Exception as e:
+                    logger.warning(f"[Engine] Agent Loop 실패, LLM 직접 호출로 fallback: {e}")
+
+            # 직접 LLM 호출 (기존 방식)
             system_prompt = self._get_system_prompt(subtask)
 
             result = await call_llm(

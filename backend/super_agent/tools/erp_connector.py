@@ -210,3 +210,51 @@ def format_erp_data_for_llm(data: Dict[str, Any], data_type: str = "sales") -> s
             lines.append(f"  - {status}: {cnt}건")
 
     return "\n".join(lines)
+
+
+# ─── Tool Registry 연동 ───
+
+async def _erp_query_tool(query_type: str, period_start: str = "", period_end: str = "", customer_code: str = "") -> "ToolResult":
+    """ERP 데이터 조회 (Tool 인터페이스)"""
+    from super_agent.tools.tool_registry import ToolResult
+
+    try:
+        if query_type == "sales":
+            data = await fetch_erp_sales_data(period_start or None, period_end or None, customer_code or None)
+        elif query_type == "inventory":
+            data = await fetch_erp_inventory_data()
+        elif query_type == "customers":
+            data = await fetch_erp_customers()
+        elif query_type == "shipping":
+            days = 30
+            data = await fetch_shipping_data(days=days)
+        else:
+            return ToolResult(success=False, error=f"지원하지 않는 조회 유형: {query_type}")
+
+        if data.get("success"):
+            text = format_for_llm(data, query_type)
+            return ToolResult(success=True, data=text, metadata={"type": query_type, "count": len(data.get("data", []))})
+        else:
+            return ToolResult(success=False, error=data.get("error", "ERP 조회 실패"))
+    except Exception as e:
+        return ToolResult(success=False, error=f"ERP 조회 오류: {e}")
+
+
+def register_erp_tools(registry):
+    from super_agent.tools.tool_registry import ToolDefinition
+    registry.register(ToolDefinition(
+        name="erp_query",
+        description="ECOUNT ERP 데이터 조회. 매출, 재고, 거래처, 배송 데이터를 조회",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query_type": {"type": "string", "description": "조회 유형: sales, inventory, customers, shipping"},
+                "period_start": {"type": "string", "description": "시작일 (YYYY-MM-DD, 매출 조회 시)"},
+                "period_end": {"type": "string", "description": "종료일 (YYYY-MM-DD, 매출 조회 시)"},
+                "customer_code": {"type": "string", "description": "거래처 코드 (매출 필터링 시)"},
+            },
+            "required": ["query_type"],
+        },
+        execute_fn=_erp_query_tool,
+        category="data",
+    ))

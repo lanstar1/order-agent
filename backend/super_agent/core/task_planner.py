@@ -21,14 +21,13 @@ PLANNER_PROMPT = """당신은 업무 자동화 시스템의 작업 계획 수립
 4. task_kind: research(조사), analysis(분석), calculation(계산), composition(문서작성), verification(검증)
 5. 실용적이고 구체적인 작업으로 분해하세요
 
-## 사용 가능한 도구
-- erp_query: ERP 매출/재고/거래처 데이터 조회
+## 사용 가능한 도구 (실제 실행 가능)
+- web_search: Perplexity AI 실시간 웹 검색 (시장조사, 경쟁사 분석, 최신 동향)
+- erp_query: ERP 매출/재고/거래처/배송 데이터 조회
+- execute_code: Python 코드 실행 (pandas/matplotlib 차트 생성, 통계 분석)
+- write_document: GPT-4o 고품질 문서 작성 (보고서, 제안서, 이메일)
+- image_gen: AI 이미지 생성 (제품 이미지, 인포그래픽, 홍보 이미지)
 - file_analysis: 업로드된 파일 데이터 분석
-- web_search: 웹 검색 (시장/경쟁사 조사)
-- chart_gen: 차트/그래프 생성
-- doc_gen: 문서(docx/pptx/xlsx) 생성
-- calculation: 수치 계산/통계
-- cross_verify: 결과 교차검증
 
 ## 도메인별 추천 태스크 구성
 - sales_analysis: data_extraction → trend_analysis + segment_analysis → compose_report

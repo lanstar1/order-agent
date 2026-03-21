@@ -62,6 +62,12 @@ MODEL_REGISTRY = {
         "cost_output_1m": 0.40,
         "tier": "data",
     },
+    "perplexity-sonar": {
+        "litellm_key": "perplexity/sonar",
+        "cost_input_1m": 1.0,
+        "cost_output_1m": 1.0,
+        "tier": "search",
+    },
 }
 
 # ─── 라우팅 정책 ───

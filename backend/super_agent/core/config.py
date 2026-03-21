@@ -44,5 +44,11 @@ SA_JOB_TIMEOUT_SEC = int(os.getenv("SA_JOB_TIMEOUT_SEC", "600"))
 SA_DEBUG = os.getenv("SA_DEBUG", "false").lower() in ("true", "1", "yes")
 SA_LOG_LEVEL = os.getenv("SA_LOG_LEVEL", "INFO")
 
+# ─── 외부 API 키 ───
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+
 # ─── 출력 ───
 SA_OUTPUT_DIR = os.getenv("SA_OUTPUT_DIR", "")  # 비어있으면 기본 data/sa_outputs

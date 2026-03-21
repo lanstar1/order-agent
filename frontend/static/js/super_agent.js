@@ -148,6 +148,11 @@ function handleSA2WSMessage(msg) {
     if (msg.task_key) {
       updateSA2TaskStatus(msg.task_key, msg.status);
     }
+
+    // 도구 호출 로그 표시
+    if (msg.message && (msg.message.includes("도구 실행:") || msg.message.includes("Agent 반복"))) {
+      appendToolLog(msg.message);
+    }
   }
 
   if (type === "completed") {
@@ -190,6 +195,31 @@ function updateSA2Progress(pct, msg) {
   }
   if (text) text.textContent = `${pct}%`;
   if (status) status.textContent = msg;
+}
+
+function appendToolLog(message) {
+  let logEl = document.getElementById("sa2-tool-log");
+  if (!logEl) {
+    const progressArea = document.getElementById("sa2-progress-area");
+    if (!progressArea) return;
+    logEl = document.createElement("div");
+    logEl.id = "sa2-tool-log";
+    logEl.style.cssText = "margin-top:12px;max-height:200px;overflow-y:auto;font-size:12px;font-family:monospace;background:#0f172a;color:#94a3b8;border-radius:8px;padding:10px 14px";
+    logEl.innerHTML = '<div style="color:#6366f1;font-weight:600;margin-bottom:6px">Agent 실행 로그</div>';
+    progressArea.appendChild(logEl);
+  }
+  const line = document.createElement("div");
+  line.style.cssText = "padding:2px 0;border-bottom:1px solid #1e293b";
+
+  const toolIcons = {web_search:"🔍", image_gen:"🎨", write_document:"📝", execute_code:"💻", erp_query:"📊"};
+  let icon = "⚡";
+  for (const [k,v] of Object.entries(toolIcons)) {
+    if (message.includes(k)) { icon = v; break; }
+  }
+  const time = new Date().toLocaleTimeString("ko-KR", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  line.innerHTML = `<span style="color:#475569">[${time}]</span> ${icon} ${message}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
 function updateSA2TaskStatus(taskKey, status) {

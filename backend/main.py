@@ -309,6 +309,14 @@ async def startup():
     except Exception as e:
         logger.warning(f"Super Agent 테이블 초기화 실패 (서비스는 계속): {e}")
 
+    # Super Agent 도구 레지스트리 초기화
+    try:
+        from super_agent.tools.tool_registry import init_all_tools
+        init_all_tools()
+        logger.info("Super Agent 도구 레지스트리 초기화 완료")
+    except Exception as e:
+        logger.warning(f"Super Agent 도구 초기화 실패 (서비스는 계속): {e}")
+
     # AICC 데이터 로드
     try:
         from services.aicc_data_loader import data_loader as aicc_loader
