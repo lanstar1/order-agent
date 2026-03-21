@@ -5,6 +5,7 @@ import re
 from fastapi import WebSocket, WebSocketDisconnect
 from services.aicc_session_manager import session_manager
 from services.aicc_ai_service import get_ai_response, get_product_inquiry_response
+from services import aicc_db
 
 
 # AI가 답변하지 못한 패턴 감지
@@ -179,15 +180,44 @@ async def admin_ws_handler(websocket: WebSocket, session_id: str):
         s["admin_ws"] = None
 
 
+def _get_merged_sessions(menu: str = "") -> list:
+    """인메모리 + DB 세션 병합 (API와 동일한 로직)"""
+    memory_sessions = session_manager.all_serialized()
+    memory_ids = {s["session_id"] for s in memory_sessions}
+
+    db_sessions = aicc_db.get_all_sessions(limit=200)
+    for ds in db_sessions:
+        if ds["id"] not in memory_ids:
+            memory_sessions.append({
+                "session_id": ds["id"],
+                "customer_name": ds.get("customer_name", ""),
+                "selected_model": ds.get("selected_model", ""),
+                "erp_code": ds.get("erp_code", ""),
+                "selected_menu": ds.get("selected_menu", ""),
+                "status": ds.get("status", "closed"),
+                "is_admin_intervened": False,
+                "messages": [],
+                "created_at": ds.get("created_at", ""),
+                "updated_at": ds.get("updated_at", ""),
+                "from_db": True,
+            })
+
+    if menu:
+        memory_sessions = [s for s in memory_sessions if s.get("selected_menu", "") == menu]
+
+    memory_sessions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return memory_sessions
+
+
 async def admin_list_ws_handler(websocket: WebSocket):
     """관리자 세션 목록 실시간 업데이트용 WebSocket"""
     await websocket.accept()
     session_manager.admin_list_sockets.append(websocket)
     try:
-        # 연결 즉시 현재 세션 목록 전송
+        # 연결 즉시 현재 세션 목록 전송 (인메모리 + DB 병합)
         await websocket.send_json({
             "type": "sessions_list",
-            "sessions": session_manager.all_serialized()
+            "sessions": _get_merged_sessions()
         })
         while True:
             await websocket.receive_text()  # ping 유지

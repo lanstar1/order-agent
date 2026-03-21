@@ -4392,8 +4392,19 @@ async function initAiccTab() {
 }
 
 // 세션 목록 실시간 WebSocket
+var _aiccListWsClosedIntentionally = false;
+
 function connectAiccListWS() {
-  if (_aiccListWs) _aiccListWs.close();
+  // 기존 WS 정리 (onclose 재접속 방지)
+  if (_aiccListWs) {
+    _aiccListWsClosedIntentionally = true;
+    _aiccListWs.onclose = null;
+    _aiccListWs.onmessage = null;
+    _aiccListWs.close();
+    _aiccListWs = null;
+  }
+  _aiccListWsClosedIntentionally = false;
+
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   _aiccListWs = new WebSocket(proto + '//' + location.host + '/ws/aicc/admin-list');
   _aiccListWs.onmessage = function(e) {
@@ -4409,7 +4420,12 @@ function connectAiccListWS() {
       if (typeof toast === 'function') toast('미답변 발생: ' + (data.model||'') + ' - ' + (data.question||'').substring(0,40), 'error');
     }
   };
-  _aiccListWs.onclose = function() { setTimeout(connectAiccListWS, 3000); };
+  _aiccListWs.onclose = function() {
+    // 의도적 종료가 아닌 경우에만 재접속 (무한루프 방지)
+    if (!_aiccListWsClosedIntentionally) {
+      setTimeout(connectAiccListWS, 5000);
+    }
+  };
 }
 
 async function loadAiccSessions() {
@@ -4478,8 +4494,17 @@ function renderAiccSessions(sessions) {
   };
 }
 
+var _aiccSelectRequestId = 0;  // 레이스 컨디션 방지용
+
 async function selectAiccSession(id) {
-  if (_aiccAdminWs) _aiccAdminWs.close();
+  // 레이스 컨디션 방지: 이전 요청 무효화
+  var requestId = ++_aiccSelectRequestId;
+
+  if (_aiccAdminWs) {
+    _aiccAdminWs.onmessage = null;
+    _aiccAdminWs.close();
+    _aiccAdminWs = null;
+  }
   _aiccCurrentId = id;
 
   var s;
@@ -4490,6 +4515,9 @@ async function selectAiccSession(id) {
     alert('세션을 불러올 수 없습니다: ' + (err.message || err));
     return;
   }
+
+  // 레이스 컨디션: 다른 세션이 선택되었으면 이 응답 무시
+  if (requestId !== _aiccSelectRequestId) return;
 
   document.getElementById('aicc-empty').style.display = 'none';
   document.getElementById('aicc-detail').style.display = 'flex';
@@ -4517,6 +4545,8 @@ async function selectAiccSession(id) {
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   _aiccAdminWs = new WebSocket(proto + '//' + location.host + '/ws/aicc/admin/' + id);
   _aiccAdminWs.onmessage = function(e) {
+    // 다른 세션이 선택되었으면 무시
+    if (_aiccCurrentId !== id) return;
     var msg = JSON.parse(e.data);
     if (['customer_message', 'ai_message', 'admin_message'].includes(msg.type)) {
       // 빈 메시지 안내 제거
@@ -4526,8 +4556,12 @@ async function selectAiccSession(id) {
     }
   };
 
-  // 세션 목록 리렌더 (선택 표시)
-  loadAiccSessions();
+  // 세션 목록에서 선택 상태만 업데이트 (전체 리로드 대신 DOM 직접 조작)
+  document.querySelectorAll('.aicc-session-item').forEach(function(el) {
+    var isActive = el.dataset.sid === id;
+    el.style.background = isActive ? '#1a1a2e' : '#f8f9fa';
+    el.style.color = isActive ? '#fff' : '#333';
+  });
 }
 
 function appendAiccMsg(role, content, scroll) {
