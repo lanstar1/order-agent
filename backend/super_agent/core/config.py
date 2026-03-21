@@ -1,12 +1,30 @@
 """
 Super Agent 설정
-환경변수 기반 설정, 기본값 포함
+환경변수 기반 설정, 기본값 포함 + DB 설정 연동
 """
 import os
 
-# ─── LLM 설정 ───
+# ─── LLM 설정 (기본값) ───
 SA_DEFAULT_MODEL = os.getenv("SA_DEFAULT_MODEL", "claude-sonnet")
 SA_FAST_MODEL = os.getenv("SA_FAST_MODEL", "claude-haiku")
+
+
+def get_sa_default_model() -> str:
+    """DB 설정에서 SA 기본 모델 조회"""
+    try:
+        from api.routes.settings import get_llm_setting
+        return get_llm_setting("llm_sa_default", SA_DEFAULT_MODEL)
+    except Exception:
+        return SA_DEFAULT_MODEL
+
+
+def get_sa_fast_model() -> str:
+    """DB 설정에서 SA 빠른 모델 조회"""
+    try:
+        from api.routes.settings import get_llm_setting
+        return get_llm_setting("llm_sa_fast", SA_FAST_MODEL)
+    except Exception:
+        return SA_FAST_MODEL
 SA_MAX_CONCURRENT = int(os.getenv("SA_MAX_CONCURRENT", "6"))
 SA_MAX_TOKENS = int(os.getenv("SA_MAX_TOKENS", "4096"))
 

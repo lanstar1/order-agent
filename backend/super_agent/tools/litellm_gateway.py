@@ -85,8 +85,19 @@ FALLBACK_CHAIN = {
 
 
 def get_model_for_task(task_type: str) -> str:
-    """작업 유형에 맞는 최적 모델 반환"""
-    return ROUTING_POLICY.get(task_type, "claude-sonnet")
+    """작업 유형에 맞는 최적 모델 반환 (DB 설정 연동)"""
+    from super_agent.core.config import get_sa_default_model, get_sa_fast_model
+    default_model = get_sa_default_model()
+    fast_model = get_sa_fast_model()
+
+    # 동적 라우팅: DB 설정 기반 기본/빠른 모델 적용
+    dynamic_policy = dict(ROUTING_POLICY)
+    dynamic_policy["reasoning"] = default_model
+    dynamic_policy["document_writing"] = default_model
+    dynamic_policy["code"] = default_model
+    dynamic_policy["fast_classification"] = fast_model
+
+    return dynamic_policy.get(task_type, default_model)
 
 
 async def call_llm(

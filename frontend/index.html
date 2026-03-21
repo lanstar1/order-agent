@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260322c">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260322d">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
   <style>
     /* CS/RMA 파이프라인 탭 */
@@ -1308,7 +1308,7 @@ C규격품 200개
     <!-- ──────────────────────────────
          페이지 5: 설정
          ────────────────────────────── -->
-    <div class="page" id="page-settings">
+    <div class="page" id="page-settings" style="position:relative">
 
       <!-- 설정 탭 네비게이션 -->
       <div class="settings-tabs" style="display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--gray-200);padding-bottom:0">
@@ -1339,19 +1339,37 @@ C규격품 200개
         </button>
       </div>
 
-      <!-- ─── 탭 1: AI 모델 설정 ─── -->
+      <!-- ─── 관리자 비밀번호 오버레이 ─── -->
+      <div id="settings-admin-overlay" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.97);z-index:10;display:flex;align-items:center;justify-content:center;border-radius:var(--radius)">
+        <div style="text-align:center;max-width:340px;padding:40px">
+          <div style="font-size:40px;margin-bottom:12px">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:8px">관리자 인증 필요</h3>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:20px">설정 페이지에 접근하려면<br>관리자 비밀번호를 입력하세요.</p>
+          <input type="password" class="form-control" id="admin-pw-input" placeholder="관리자 비밀번호"
+            style="text-align:center;margin-bottom:12px" onkeydown="if(event.key==='Enter')verifyAdminPassword()">
+          <button class="btn btn-primary" onclick="verifyAdminPassword()" style="width:100%">확인</button>
+          <div id="admin-pw-error" style="margin-top:10px;font-size:12px;color:var(--danger)"></div>
+        </div>
+      </div>
+
+      <!-- ─── 탭 1: AI 모델 설정 (기능별 통합) ─── -->
       <div class="settings-panel" id="settings-tab-api">
         <div class="card">
-          <div class="card-title">Claude AI 모델 선택</div>
-          <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
-            발주서 분석에 사용할 AI 모델을 선택합니다. 상위 모델일수록 정확도가 높지만 처리 속도가 느리고 비용이 높습니다.
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>기능별 LLM 모델 관리</span>
+            <button class="btn btn-primary btn-sm" onclick="saveLLMConfig()" id="llm-save-btn">전체 저장</button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:20px">
+            각 기능에서 사용하는 AI 모델을 확인하고 변경할 수 있습니다.
           </p>
 
-          <div id="model-list" style="display:flex;flex-direction:column;gap:10px">
-            <p style="color:var(--gray-400);text-align:center;padding:20px">모델 목록 로딩 중...</p>
+          <div id="llm-config-list" style="display:flex;flex-direction:column;gap:12px">
+            <p style="color:var(--gray-400);text-align:center;padding:20px">LLM 설정 로딩 중...</p>
           </div>
 
-          <div id="model-status" style="margin-top:16px;font-size:13px"></div>
+          <div id="llm-config-status" style="margin-top:16px;font-size:13px"></div>
         </div>
 
         <div class="card">
@@ -1519,9 +1537,30 @@ C규격품 200개
             </div>
           </div>
 
+          <!-- 관리자 전용: 관리자 비밀번호 변경 -->
+          <div id="admin-pw-change-section" style="display:none;border-top:1px solid var(--gray-100);padding-top:16px;margin-top:16px">
+            <div class="card-title" style="font-size:15px">관리자 비밀번호 변경</div>
+            <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">설정 페이지 접근에 사용하는 관리자 비밀번호를 변경합니다.</p>
+            <div style="max-width:360px">
+              <div class="form-group">
+                <label class="form-label">현재 관리자 비밀번호</label>
+                <input type="password" class="form-control" id="admin-pw-current" placeholder="현재 관리자 비밀번호">
+              </div>
+              <div class="form-group">
+                <label class="form-label">새 관리자 비밀번호</label>
+                <input type="password" class="form-control" id="admin-pw-new" placeholder="새 비밀번호">
+              </div>
+              <div class="form-group">
+                <label class="form-label">새 관리자 비밀번호 확인</label>
+                <input type="password" class="form-control" id="admin-pw-confirm" placeholder="새 비밀번호 재입력">
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="changeAdminPassword()">관리자 비밀번호 변경</button>
+            </div>
+          </div>
+
           <!-- 관리자 전용: 비밀번호 초기화 -->
           <div id="admin-reset-section" style="display:none;border-top:1px solid var(--gray-100);padding-top:16px;margin-top:16px">
-            <div class="card-title" style="font-size:15px">🔑 직원 비밀번호 초기화 (관리자 전용)</div>
+            <div class="card-title" style="font-size:15px">직원 비밀번호 초기화 (관리자 전용)</div>
             <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">비밀번호를 잊은 직원의 비밀번호를 담당자 코드 숫자로 초기화합니다.</p>
             <div style="max-width:360px">
               <div class="form-group">
@@ -1802,7 +1841,7 @@ function switchSettingsTab(tab) {
   if (panel) panel.style.display = "block";
 
   // 탭별 초기화
-  if (tab === "api") loadModels();
+  if (tab === "api") loadLLMConfig();
   if (tab === "materials") { loadMaterialSources(); loadSettingsOlStatus(); }
   if (tab === "customers") {
     const searchEl = document.getElementById("settings-cust-search");
@@ -1817,76 +1856,120 @@ function switchSettingsTab(tab) {
   }
 }
 
-// ── AI 모델 관리
-async function loadModels() {
+// ── 관리자 비밀번호 검증
+async function verifyAdminPassword() {
+  const pw = document.getElementById("admin-pw-input").value;
+  const errEl = document.getElementById("admin-pw-error");
+  if (!pw) { errEl.textContent = "비밀번호를 입력하세요"; return; }
   try {
-    const res = await api.get("/api/settings/models");
-    const models = res.models || [];
-    const current = res.current_model || "";
-    renderModelList(models, current);
+    await api.post("/api/settings/admin-verify", { password: pw });
+    sessionStorage.setItem("admin_verified", "1");
+    document.getElementById("settings-admin-overlay").style.display = "none";
+    loadLLMConfig();
   } catch (e) {
-    document.getElementById("model-list").innerHTML =
-      `<p style="color:var(--danger);text-align:center;padding:20px">모델 목록 로드 실패: ${e.message}</p>`;
+    errEl.textContent = "비밀번호가 올바르지 않습니다";
+    document.getElementById("admin-pw-input").value = "";
+    document.getElementById("admin-pw-input").focus();
   }
 }
 
-function renderModelList(models, currentId) {
-  const container = document.getElementById("model-list");
-  const tierLabels = { basic: "Basic", standard: "Standard", premium: "Premium" };
-  const tierColors = { basic: "#48bb78", standard: "#4299e1", premium: "#9f7aea" };
+function showAdminOverlay() {
+  if (sessionStorage.getItem("admin_verified") === "1") {
+    document.getElementById("settings-admin-overlay").style.display = "none";
+    return false;
+  }
+  const overlay = document.getElementById("settings-admin-overlay");
+  overlay.style.display = "flex";
+  document.getElementById("admin-pw-input").value = "";
+  document.getElementById("admin-pw-error").textContent = "";
+  setTimeout(() => document.getElementById("admin-pw-input").focus(), 100);
+  return true;
+}
 
-  container.innerHTML = models.map(m => {
-    const isSelected = m.id === currentId;
+// ── 관리자 비밀번호 변경
+async function changeAdminPassword() {
+  const cur = document.getElementById("admin-pw-current").value;
+  const nw = document.getElementById("admin-pw-new").value;
+  const cf = document.getElementById("admin-pw-confirm").value;
+  if (!cur || !nw) { toast("모든 필드를 입력하세요", "warning"); return; }
+  if (nw !== cf) { toast("새 비밀번호가 일치하지 않습니다", "warning"); return; }
+  if (nw.length < 4) { toast("비밀번호는 4자 이상이어야 합니다", "warning"); return; }
+  try {
+    const res = await api.post("/api/settings/admin-password", { current_password: cur, new_password: nw });
+    toast(res.message, "success");
+    document.getElementById("admin-pw-current").value = "";
+    document.getElementById("admin-pw-new").value = "";
+    document.getElementById("admin-pw-confirm").value = "";
+    sessionStorage.removeItem("admin_verified");
+  } catch (e) {
+    toast("변경 실패: " + (e.message || "오류"), "error");
+  }
+}
+
+// ── 기능별 LLM 설정 관리
+let _llmFeatures = [];
+
+async function loadLLMConfig() {
+  const container = document.getElementById("llm-config-list");
+  try {
+    const res = await api.get("/api/settings/llm-config");
+    _llmFeatures = res.features || [];
+    renderLLMConfig(_llmFeatures);
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:20px">LLM 설정 로드 실패: ${e.message}</p>`;
+  }
+}
+
+function renderLLMConfig(features) {
+  const container = document.getElementById("llm-config-list");
+  const tierColors = { basic: "#10b981", standard: "#6366f1", premium: "#8b5cf6" };
+
+  container.innerHTML = features.map(f => {
+    const options = f.models.map(m => {
+      const sel = m.id === f.current ? "selected" : "";
+      const tier = m.tier ? ` [${m.tier}]` : "";
+      return `<option value="${m.id}" ${sel}>${m.name}${tier}</option>`;
+    }).join("");
+
     return `
-      <div onclick="selectModel('${m.id}')" style="
-        display:flex;align-items:center;gap:14px;padding:14px 16px;
-        border:2px solid ${isSelected ? 'var(--primary)' : 'var(--gray-200)'};
-        border-radius:10px;cursor:pointer;transition:all .2s;
-        background:${isSelected ? '#ebf8ff' : '#fff'};
-        position:relative;
-      " onmouseover="if(!${isSelected})this.style.borderColor='var(--gray-300)';this.style.background='${isSelected ? '#ebf8ff' : '#f7fafc'}'"
-        onmouseout="if(!${isSelected})this.style.borderColor='var(--gray-200)';this.style.background='${isSelected ? '#ebf8ff' : '#fff'}'">
-        <div style="
-          width:20px;height:20px;border-radius:50%;
-          border:2px solid ${isSelected ? 'var(--primary)' : 'var(--gray-300)'};
-          display:flex;align-items:center;justify-content:center;flex-shrink:0;
-        ">
-          ${isSelected ? '<div style="width:10px;height:10px;border-radius:50%;background:var(--primary)"></div>' : ''}
-        </div>
+      <div style="display:flex;align-items:center;gap:16px;padding:16px 18px;
+        background:#fff;border:1px solid var(--gray-200);border-radius:10px;
+        transition:border-color .15s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--gray-200)'">
         <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
-            <span style="font-weight:600;font-size:14px;color:var(--gray-900)">${m.name}</span>
-            <span style="font-size:11px;padding:1px 8px;border-radius:10px;
-              background:${tierColors[m.tier] || '#999'}22;color:${tierColors[m.tier] || '#999'};
-              font-weight:600">${tierLabels[m.tier] || m.tier}</span>
-            ${isSelected ? '<span style="font-size:11px;padding:1px 8px;border-radius:10px;background:#ebf8ff;color:var(--primary);font-weight:600">사용중</span>' : ''}
-          </div>
-          <div style="font-size:12px;color:var(--gray-500)">${m.description}</div>
-          <div style="font-size:11px;color:var(--gray-400);margin-top:2px;font-family:monospace">${m.id}</div>
+          <div style="font-weight:600;font-size:14px;color:var(--gray-800);margin-bottom:2px">${f.label}</div>
+          <div style="font-size:12px;color:var(--gray-500)">${f.description}</div>
         </div>
+        <select class="form-control" data-llm-key="${f.key}"
+          style="width:240px;flex-shrink:0;font-size:13px;padding:8px 12px">
+          ${options}
+        </select>
       </div>`;
   }).join("");
 }
 
-async function selectModel(modelId) {
-  const statusEl = document.getElementById("model-status");
-  statusEl.innerHTML = '<span style="color:var(--gray-500)">모델 변경 중...</span>';
+async function saveLLMConfig() {
+  const selects = document.querySelectorAll("[data-llm-key]");
+  const settings = {};
+  selects.forEach(sel => { settings[sel.dataset.llmKey] = sel.value; });
+
+  const statusEl = document.getElementById("llm-config-status");
+  statusEl.innerHTML = '<span style="color:var(--gray-500)">저장 중...</span>';
 
   try {
-    const res = await api.post("/api/settings/models", { model_id: modelId });
+    const res = await api.post("/api/settings/llm-config", { settings });
     if (res.success) {
       toast(res.message, "success");
       statusEl.innerHTML = `<span style="color:var(--success)">${res.message}</span>`;
-      loadModels(); // 리렌더
-    } else {
-      toast("모델 변경 실패", "error");
-      statusEl.innerHTML = '<span style="color:var(--danger)">변경 실패</span>';
+      setTimeout(() => { statusEl.innerHTML = ""; }, 3000);
     }
   } catch (e) {
-    toast("모델 변경 오류: " + e.message, "error");
-    statusEl.innerHTML = `<span style="color:var(--danger)">오류: ${e.message}</span>`;
+    toast("저장 실패: " + e.message, "error");
+    statusEl.innerHTML = `<span style="color:var(--danger)">저장 실패: ${e.message}</span>`;
   }
 }
+
+// 레거시 호환
+async function loadModels() { loadLLMConfig(); }
 
 // ── 거래처 관리
 async function addCustomer() {
@@ -2012,12 +2095,13 @@ function updateAccountInfo() {
   const el = document.getElementById("account-info");
   if (el && user) el.textContent = `[${user.emp_cd}] ${user.name} 님이 로그인 중입니다.`;
 
-  // 관리자 전용 비밀번호 초기화 섹션 표시
+  // 관리자 전용 섹션 표시
   const adminSection = document.getElementById("admin-reset-section");
+  const adminPwSection = document.getElementById("admin-pw-change-section");
   const ADMIN_CODES = ["28", "01"];
-  if (adminSection && user && ADMIN_CODES.includes(user.emp_cd)) {
-    adminSection.style.display = "block";
-    loadResetTargetEmployees();
+  if (user && ADMIN_CODES.includes(user.emp_cd)) {
+    if (adminSection) { adminSection.style.display = "block"; loadResetTargetEmployees(); }
+    if (adminPwSection) adminPwSection.style.display = "block";
   }
 }
 
@@ -2723,7 +2807,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260322a"></script>
-<script src="/static/js/app.js?v=20260322c"></script>
+<script src="/static/js/app.js?v=20260322e"></script>
 <script src="/static/js/super_agent.js?v=20260322d"></script>
 </body>
 </html>

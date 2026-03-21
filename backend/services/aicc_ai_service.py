@@ -13,6 +13,16 @@ import anthropic
 from .aicc_data_loader import data_loader
 from .aicc_web_search import search_product_blog
 
+_AICC_DEFAULT_MODEL = "claude-sonnet-4-20250514"
+
+def _get_aicc_model() -> str:
+    """DB에서 AICC용 LLM 모델 조회"""
+    try:
+        from api.routes.settings import get_llm_setting
+        return get_llm_setting("llm_aicc", _AICC_DEFAULT_MODEL)
+    except Exception:
+        return _AICC_DEFAULT_MODEL
+
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
@@ -26,7 +36,7 @@ async def _extract_search_keywords(user_message: str) -> str:
     try:
         loop = asyncio.get_event_loop()
         resp = await loop.run_in_executor(None, lambda: client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=_get_aicc_model(),
             max_tokens=100,
             system=(
                 "당신은 랜스타(Lanstar) IT 주변기기 검색 키워드 추출기입니다.\n"
@@ -417,7 +427,7 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
         import asyncio
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(None, lambda: client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=_get_aicc_model(),
             max_tokens=1500 if has_image else 1200,
             system=sys_prompt,
             messages=api_messages,
@@ -624,7 +634,7 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
         import asyncio
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(None, lambda: client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=_get_aicc_model(),
             max_tokens=1500,
             system=sys_prompt,
             messages=api_messages,
@@ -654,7 +664,7 @@ async def _generate_suggestions(model: str, user_question: str, ai_answer: str, 
         # 동기 API를 이벤트 루프 차단 없이 호출
         loop = asyncio.get_event_loop()
         resp = await loop.run_in_executor(None, lambda: client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=_get_aicc_model(),
             max_tokens=150,
             system=(
                 "당신은 랜스타(Lanstar) IT 주변기기 상담 어시스턴트입니다.\n"
