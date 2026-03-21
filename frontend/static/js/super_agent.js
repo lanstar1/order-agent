@@ -369,15 +369,48 @@ function updateSA2FileLabel(file) {
   label.style.display = "block";
 }
 
+// ─── 템플릿 로드 및 실행 ───
+async function loadSA2Templates() {
+  const container = document.getElementById("sa2-templates-grid");
+  if (!container) return;
+
+  try {
+    const token = localStorage.getItem("order_agent_token");
+    const resp = await fetch("/api/super-agent/templates", {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!resp.ok) return;
+
+    const data = await resp.json();
+    const templates = data.templates || [];
+
+    container.innerHTML = templates.map(t => `
+      <div class="sa2-template-card" onclick="useSA2Template('${t.id}', '${t.prompt.replace(/'/g, "\\'")}', '${t.deliverable_type}')" title="${t.description}">
+        <div style="font-size:24px;margin-bottom:6px">${t.icon}</div>
+        <div style="font-size:12px;font-weight:600;color:#111827;margin-bottom:2px">${t.title}</div>
+        <div style="font-size:11px;color:#9ca3af">${t.category}</div>
+      </div>
+    `).join("");
+  } catch {}
+}
+
+function useSA2Template(templateId, prompt, delivType) {
+  const promptEl = document.getElementById("sa2-prompt");
+  const typeEl = document.getElementById("sa2-deliverable-type");
+  if (promptEl) promptEl.value = prompt;
+  if (typeEl) typeEl.value = delivType;
+  promptEl?.focus();
+}
+
 // ─── 페이지 진입 시 초기화 ───
 document.addEventListener("DOMContentLoaded", () => {
-  // super_agent 페이지 nav-item 클릭 감지
   const navItem = document.querySelector('[data-page="super_agent"]');
   if (navItem) {
     navItem.addEventListener("click", () => {
       setTimeout(() => {
         initSA2Dropzone();
         loadSuperAgentHistory();
+        loadSA2Templates();
       }, 100);
     });
   }

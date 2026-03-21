@@ -10,6 +10,7 @@ from collections import defaultdict
 
 from super_agent.models.schemas import SubTask, ExecutionPlan
 from super_agent.tools.litellm_gateway import call_llm
+from super_agent.agents.domain_prompts import get_domain_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class ExecutionEngine:
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.task_results: Dict[str, Dict[str, Any]] = {}
         self.progress_callback: Optional[Callable] = None
+        self.job_type: str = "freeform"  # 도메인 프롬프트 선택용
 
     def set_progress_callback(self, callback: Callable):
         """WebSocket 진행상황 콜백 설정"""
@@ -178,31 +180,8 @@ class ExecutionEngine:
         return '\n'.join(parts)
 
     def _get_system_prompt(self, subtask: SubTask) -> str:
-        """태스크 유형별 시스템 프롬프트"""
-        prompts = {
-            "research": "당신은 전문 리서치 에이전트입니다. 주어진 주제에 대해 체계적으로 조사하고 핵심 인사이트를 구조화하세요. 한국어로 응답하세요.",
-            "analysis": "당신은 데이터 분석 전문가입니다. 주어진 데이터를 깊이 분석하고, 추이/패턴/이상치/원인을 찾아내세요. 숫자에 근거한 구체적 분석을 제공하세요. 한국어로 응답하세요.",
-            "calculation": "당신은 수치 계산 전문가입니다. 정확한 계산과 통계 분석을 수행하세요. 모든 계산 과정을 명시하세요. 한국어로 응답하세요.",
-            "composition": """당신은 보고서 작성 전문가입니다. 이전 작업 결과를 종합하여 완성도 높은 문서를 작성하세요.
-반드시 아래 JSON 형식으로 응답하세요:
-```json
-{
-  "title": "보고서 제목",
-  "executive_summary": "핵심 요약 (3-5줄)",
-  "sections": [
-    {"heading": "섹션 제목", "body": "본문 내용"},
-    {"heading": "섹션 제목", "body": ["불릿 항목1", "불릿 항목2"]}
-  ],
-  "tables": [
-    {"title": "표 제목", "headers": ["컬럼1", "컬럼2"], "rows": [["값1", "값2"]]}
-  ],
-  "action_items": ["액션1", "액션2"],
-  "references": ["출처1"]
-}
-```""",
-            "verification": "당신은 품질 검증 전문가입니다. 주어진 내용의 사실 정확성, 숫자 일관성, 논리적 타당성을 검증하세요. 한국어로 응답하세요.",
-        }
-        return prompts.get(subtask.task_kind, prompts["analysis"])
+        """도메인 + 태스크 종류별 전문 시스템 프롬프트"""
+        return get_domain_prompt(self.job_type, subtask.task_kind)
 
     def _topological_layers(self, subtasks: List[SubTask]) -> List[List[SubTask]]:
         """DAG를 레이어별로 분리 (Topological Sort)"""

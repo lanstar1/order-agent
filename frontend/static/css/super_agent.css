@@ -169,6 +169,24 @@
   border-color: #93c5fd;
 }
 
+/* 템플릿 카드 */
+.sa2-template-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sa2-template-card:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+}
+
 /* 비용 정보 */
 .sa2-cost-info {
   display: flex;

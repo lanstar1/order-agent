@@ -271,6 +271,70 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         await ws_manager.disconnect(websocket, job_id)
 
 
+# ─── 템플릿 목록 ───
+@router.get("/templates")
+async def list_templates(category: Optional[str] = Query(None)):
+    """사용 가능한 분석 템플릿 목록"""
+    from super_agent.agents.templates import get_templates, get_categories
+    templates = get_templates(category)
+    return {
+        "templates": templates,
+        "categories": get_categories(),
+    }
+
+
+# ─── 템플릿으로 Job 생성 ───
+@router.post("/templates/{template_id}/run")
+async def run_template(
+    template_id: str,
+    file: Optional[UploadFile] = File(None),
+):
+    """템플릿 기반 Job 실행"""
+    from super_agent.agents.templates import get_template_by_id
+
+    template = get_template_by_id(template_id)
+    if not template:
+        raise HTTPException(404, f"템플릿 '{template_id}'을 찾을 수 없습니다")
+
+    if template.get("requires_file") and not file:
+        raise HTTPException(400, "이 템플릿은 파일 업로드가 필요합니다")
+
+    job_id = str(uuid.uuid4())[:12]
+
+    # 파일 저장
+    file_path = None
+    if file and file.filename:
+        safe_name = f"{job_id}_{file.filename}"
+        file_path = str(UPLOAD_DIR / safe_name)
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+    job = {
+        "job_id": job_id,
+        "status": "queued",
+        "prompt": template["prompt"],
+        "deliverable_type": template["deliverable_type"],
+        "file_path": file_path,
+        "created_at": datetime.now().isoformat(),
+        "result": None,
+        "template_id": template_id,
+    }
+    _jobs[job_id] = job
+
+    asyncio.create_task(
+        _run_job_async(job_id, template["prompt"], file_path, template["deliverable_type"])
+    )
+
+    return JobResponse(
+        job_id=job_id,
+        status="queued",
+        deliverable_type=template["deliverable_type"],
+        title=template["title"],
+        created_at=job["created_at"],
+    )
+
+
 # ─── 퀵 분석 (파일 업로드 → 즉시 분석, Job 생성 없이) ───
 @router.post("/quick-analyze")
 async def quick_analyze(

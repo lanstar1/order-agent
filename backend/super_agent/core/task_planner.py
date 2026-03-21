@@ -28,6 +28,16 @@ PLANNER_PROMPT = """당신은 업무 자동화 시스템의 작업 계획 수립
 - chart_gen: 차트/그래프 생성
 - doc_gen: 문서(docx/pptx/xlsx) 생성
 - calculation: 수치 계산/통계
+- cross_verify: 결과 교차검증
+
+## 도메인별 추천 태스크 구성
+- sales_analysis: data_extraction → trend_analysis + segment_analysis → compose_report
+- client_analysis: customer_segmentation → health_scoring + churn_detection → compose_report
+- market_research: industry_research + competitor_analysis → market_synthesis → compose_report
+- meeting_prep: data_preparation + key_message_extraction → presentation_composition
+- inventory_analysis: inventory_classification → demand_forecast + risk_analysis → compose_report
+- pricing_analysis: margin_analysis + price_comparison → pricing_strategy → compose_report
+- executive_report: kpi_summary + issue_scan → executive_synthesis → compose_report
 
 ## 응답 형식 (JSON만 출력)
 {

@@ -13,6 +13,7 @@ from super_agent.core.intent_classifier import classify_intent
 from super_agent.core.task_planner import create_plan
 from super_agent.core.execution_engine import ExecutionEngine
 from super_agent.core.websocket_manager import ws_manager
+from super_agent.core.cross_verifier import verify_results, quick_number_check
 from super_agent.tools.file_parser import parse_file
 from super_agent.tools.doc_builder import build_document
 from super_agent.models.schemas import ExecutionPlan
@@ -123,6 +124,9 @@ class SuperAgentOrchestrator:
                 job_id, "running", "태스크 실행 중...", 30
             )
 
+            # 도메인 프롬프트 설정
+            self.engine.job_type = classification.get("job_type", "freeform")
+
             # 진행상황 콜백 설정
             async def progress_callback(**kwargs):
                 task_key = kwargs.get("task_key", "")
@@ -162,6 +166,26 @@ class SuperAgentOrchestrator:
             synthesis = self._synthesize_results(execution_result, plan)
             result["synthesis"] = synthesis
             result["stages"]["synthesis"] = {"status": "completed"}
+
+            # ─── Stage 5.5: 교차 검증 ───
+            await ws_manager.send_progress(
+                job_id, "running", "결과 검증 중...", 88
+            )
+            try:
+                verification = await verify_results(
+                    synthesis=synthesis,
+                    original_prompt=user_prompt,
+                    file_data=file_data,
+                )
+                result["verification"] = verification
+                if not verification.get("passed"):
+                    logger.warning(
+                        f"[Orchestrator] 검증 미달: {verification.get('overall_score', 0):.1f}/5, "
+                        f"이슈: {verification.get('issues', [])}"
+                    )
+            except Exception as ve:
+                logger.warning(f"[Orchestrator] 검증 스킵: {ve}")
+                result["verification"] = {"passed": True, "skipped": True}
 
             # ─── Stage 6: 문서 생성 ───
             await ws_manager.send_progress(
