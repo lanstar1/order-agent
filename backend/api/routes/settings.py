@@ -253,6 +253,86 @@ async def set_llm_config(req: LLMConfigRequest, user: dict = Depends(get_current
 
 
 # ─────────────────────────────────────────
+#  외부 API 키 관리
+# ─────────────────────────────────────────
+API_KEY_DEFINITIONS = [
+    {"key": "api_anthropic", "label": "Anthropic (Claude)", "env_var": "ANTHROPIC_API_KEY",
+     "description": "발주서 분석, AI 상담, Super Agent 핵심 모델", "prefix": "sk-ant-"},
+    {"key": "api_perplexity", "label": "Perplexity", "env_var": "PERPLEXITY_API_KEY",
+     "description": "Super Agent 실시간 웹검색", "prefix": "pplx-"},
+    {"key": "api_openai", "label": "OpenAI (GPT/DALL-E)", "env_var": "OPENAI_API_KEY",
+     "description": "Super Agent 문서작성(GPT-4o) + 이미지생성(DALL-E 3)", "prefix": "sk-"},
+    {"key": "api_google", "label": "Google (Gemini)", "env_var": "GOOGLE_API_KEY",
+     "description": "Super Agent 데이터 처리(Gemini Flash) + 이미지 생성", "prefix": "AIza"},
+    {"key": "api_tavily", "label": "Tavily", "env_var": "TAVILY_API_KEY",
+     "description": "웹검색 fallback (Perplexity 대안)", "prefix": "tvly-"},
+]
+
+
+@router.get("/api-keys")
+async def get_api_keys(user: dict = Depends(get_current_user)):
+    """외부 API 키 상태 조회 (키 값은 마스킹)"""
+    import os
+    ensure_settings_table()
+    conn = get_connection()
+    rows = conn.execute("SELECT key, value FROM app_settings WHERE key LIKE ?", ("api_%",)).fetchall()
+    conn.close()
+    db_keys = {r["key"]: r["value"] for r in rows}
+
+    result = []
+    for api_def in API_KEY_DEFINITIONS:
+        # DB 저장값 우선, 없으면 환경변수
+        stored = db_keys.get(api_def["key"], "")
+        env_val = os.getenv(api_def["env_var"], "")
+        actual = stored or env_val
+
+        result.append({
+            "key": api_def["key"],
+            "label": api_def["label"],
+            "description": api_def["description"],
+            "prefix": api_def["prefix"],
+            "is_set": bool(actual),
+            "source": "db" if stored else ("env" if env_val else "none"),
+            "masked": _mask_key(actual) if actual else "",
+        })
+    return {"api_keys": result}
+
+
+class ApiKeyUpdateRequest(BaseModel):
+    keys: Dict[str, str]  # {"api_perplexity": "pplx-xxx..."}
+
+
+@router.post("/api-keys")
+async def set_api_keys(req: ApiKeyUpdateRequest, user: dict = Depends(get_current_user)):
+    """외부 API 키 저장"""
+    import os
+    ensure_settings_table()
+    conn = get_connection()
+    changed = []
+
+    for api_def in API_KEY_DEFINITIONS:
+        k = api_def["key"]
+        if k in req.keys:
+            val = req.keys[k].strip()
+            if val:
+                _upsert_setting(conn, k, val)
+                # 런타임 환경변수도 업데이트
+                os.environ[api_def["env_var"]] = val
+                changed.append(api_def["label"])
+
+    conn.commit()
+    conn.close()
+    logger.info(f"[설정] API 키 업데이트: {changed} by {user['emp_cd']}")
+    return {"success": True, "changed": changed, "message": f"{len(changed)}개 API 키가 저장되었습니다"}
+
+
+def _mask_key(key: str) -> str:
+    if len(key) <= 8:
+        return "****"
+    return key[:6] + "..." + key[-4:]
+
+
+# ─────────────────────────────────────────
 #  레거시 호환 API (기존 모델 조회/변경)
 # ─────────────────────────────────────────
 class ModelSettingRequest(BaseModel):

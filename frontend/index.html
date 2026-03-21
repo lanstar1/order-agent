@@ -1373,6 +1373,21 @@ C규격품 200개
           <div id="llm-config-status" style="margin-top:16px;font-size:13px"></div>
         </div>
 
+        <!-- 외부 API 키 관리 -->
+        <div class="card">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>외부 API 키 관리</span>
+            <button class="btn btn-primary btn-sm" onclick="saveApiKeys()">API 키 저장</button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+            Super Agent 도구에서 사용하는 외부 API 키를 설정합니다. 환경변수(.env)에 설정된 키가 있으면 자동으로 사용됩니다.
+          </p>
+          <div id="api-keys-list" style="display:flex;flex-direction:column;gap:10px">
+            <p style="color:var(--gray-400);text-align:center;padding:16px">로딩 중...</p>
+          </div>
+          <div id="api-keys-status" style="margin-top:12px;font-size:13px"></div>
+        </div>
+
         <div class="card">
           <div class="card-title">API 연결 상태</div>
           <button class="btn btn-outline btn-sm" onclick="checkHealth()">연결 확인</button>
@@ -1842,7 +1857,7 @@ function switchSettingsTab(tab) {
   if (panel) panel.style.display = "block";
 
   // 탭별 초기화
-  if (tab === "api") loadLLMConfig();
+  if (tab === "api") { loadLLMConfig(); loadApiKeys(); }
   if (tab === "materials") { loadMaterialSources(); loadSettingsOlStatus(); }
   if (tab === "customers") {
     const searchEl = document.getElementById("settings-cust-search");
@@ -1971,6 +1986,75 @@ async function saveLLMConfig() {
 
 // 레거시 호환
 async function loadModels() { loadLLMConfig(); }
+
+// ── 외부 API 키 관리
+async function loadApiKeys() {
+  const container = document.getElementById("api-keys-list");
+  try {
+    const res = await api.get("/api/settings/api-keys");
+    const keys = res.api_keys || [];
+    renderApiKeys(keys);
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger);text-align:center">API 키 로드 실패: ${e.message}</p>`;
+  }
+}
+
+function renderApiKeys(keys) {
+  const container = document.getElementById("api-keys-list");
+  container.innerHTML = keys.map(k => {
+    const statusColor = k.is_set ? "var(--success)" : "var(--gray-400)";
+    const statusIcon = k.is_set ? "&#10003;" : "&#10007;";
+    const sourceLabel = k.source === "db" ? "DB 저장" : k.source === "env" ? "환경변수" : "미설정";
+    return `
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;
+        background:#fff;border:1px solid var(--gray-200);border-radius:10px">
+        <div style="flex-shrink:0;width:36px;height:36px;border-radius:8px;
+          background:${k.is_set ? '#f0fdf4' : '#f8fafc'};display:flex;align-items:center;justify-content:center;
+          color:${statusColor};font-size:18px;font-weight:700">${statusIcon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+            <span style="font-weight:600;font-size:14px;color:var(--gray-800)">${k.label}</span>
+            <span style="font-size:11px;padding:1px 8px;border-radius:10px;
+              background:${k.is_set ? '#dcfce7' : '#f1f5f9'};color:${k.is_set ? '#166534' : '#94a3b8'};
+              font-weight:600">${sourceLabel}</span>
+          </div>
+          <div style="font-size:12px;color:var(--gray-500)">${k.description}</div>
+          ${k.masked ? `<div style="font-size:11px;color:var(--gray-400);margin-top:2px;font-family:monospace">${k.masked}</div>` : ''}
+        </div>
+        <input type="password" class="form-control" data-api-key="${k.key}"
+          placeholder="${k.prefix}..." value=""
+          style="width:220px;flex-shrink:0;font-size:12px;font-family:monospace"
+          onfocus="this.type='text'" onblur="this.type='password'">
+      </div>`;
+  }).join("");
+}
+
+async function saveApiKeys() {
+  const inputs = document.querySelectorAll("[data-api-key]");
+  const keys = {};
+  let count = 0;
+  inputs.forEach(inp => {
+    if (inp.value.trim()) {
+      keys[inp.dataset.apiKey] = inp.value.trim();
+      count++;
+    }
+  });
+  if (count === 0) { toast("변경할 API 키를 입력하세요", "warning"); return; }
+
+  const statusEl = document.getElementById("api-keys-status");
+  statusEl.innerHTML = '<span style="color:var(--gray-500)">저장 중...</span>';
+  try {
+    const res = await api.post("/api/settings/api-keys", { keys });
+    toast(res.message, "success");
+    statusEl.innerHTML = `<span style="color:var(--success)">${res.message}</span>`;
+    setTimeout(() => { statusEl.innerHTML = ""; }, 3000);
+    inputs.forEach(inp => inp.value = "");
+    loadApiKeys();
+  } catch (e) {
+    toast("저장 실패: " + e.message, "error");
+    statusEl.innerHTML = `<span style="color:var(--danger)">저장 실패</span>`;
+  }
+}
 
 // ── 거래처 관리
 async function addCustomer() {
