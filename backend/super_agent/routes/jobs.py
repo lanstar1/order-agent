@@ -1,5 +1,6 @@
 """
 Super Agent API 라우터 — Job 관리 + WebSocket
+DB 기반 저장 + 사용자별 격리
 """
 import uuid
 import asyncio
@@ -16,6 +17,9 @@ from fastapi.responses import JSONResponse, FileResponse
 from super_agent.core.orchestrator import orchestrator
 from super_agent.core.websocket_manager import ws_manager
 from super_agent.models.schemas import JobResponse, JobListResponse
+from super_agent.db.sa_tables import save_job, update_job, get_job, list_jobs_by_user, delete_job_db
+from db.database import get_connection
+from security import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +29,8 @@ router = APIRouter(prefix="/api/super-agent", tags=["Super Agent"])
 UPLOAD_DIR = Path(__file__).parent.parent.parent.parent / "data" / "sa_uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# 인메모리 Job 스토어 (Phase 2에서 DB로 전환)
-_jobs: dict = {}
+# 실행 중인 Job 상태 (WebSocket용 인메모리 캐시 — DB 보조용)
+_running_jobs: dict = {}
 
 
 # ─── Job 생성 (프롬프트 + 선택적 파일 업로드) ───
@@ -35,9 +39,11 @@ async def create_job(
     prompt: str = Form(..., description="사용자 자연어 요청"),
     deliverable_type: Optional[str] = Form("report", description="결과물 유형"),
     file: Optional[UploadFile] = File(None, description="분석할 파일"),
+    user: dict = Depends(get_current_user),
 ):
     """새 Super Agent Job 생성 및 실행"""
     job_id = str(uuid.uuid4())[:12]
+    user_id = user["emp_cd"]
 
     # 파일 저장
     file_path = None
@@ -49,17 +55,27 @@ async def create_job(
             f.write(content)
         logger.info(f"[Job] 파일 업로드: {safe_name} ({len(content)} bytes)")
 
-    # Job 등록
-    job = {
+    # DB에 Job 저장
+    job_data = {
         "job_id": job_id,
         "status": "queued",
         "prompt": prompt,
         "deliverable_type": deliverable_type,
-        "file_path": file_path,
+        "file_path": file_path or "",
+        "created_by": user_id,
         "created_at": datetime.now().isoformat(),
         "result": None,
+        "title": prompt[:50],
     }
-    _jobs[job_id] = job
+
+    conn = get_connection()
+    try:
+        save_job(conn, job_data)
+    finally:
+        conn.close()
+
+    # 인메모리 캐시 (WebSocket + 비동기 실행용)
+    _running_jobs[job_id] = job_data
 
     # 비동기 실행 시작
     asyncio.create_task(_run_job_async(job_id, prompt, file_path, deliverable_type))
@@ -69,7 +85,7 @@ async def create_job(
         status="queued",
         deliverable_type=deliverable_type,
         title=prompt[:50],
-        created_at=job["created_at"],
+        created_at=job_data["created_at"],
     )
 
 
@@ -81,43 +97,110 @@ async def _run_job_async(
 ):
     """백그라운드 Job 실행"""
     try:
-        _jobs[job_id]["status"] = "running"
+        if job_id in _running_jobs:
+            _running_jobs[job_id]["status"] = "running"
+
+        # DB 상태 업데이트
+        conn = get_connection()
+        try:
+            update_job(conn, job_id, {"status": "running"})
+        finally:
+            conn.close()
+
         result = await orchestrator.run_job(
             job_id=job_id,
             user_prompt=prompt,
             file_path=file_path,
             deliverable_type=deliverable_type,
         )
-        _jobs[job_id]["status"] = result.get("status", "completed")
-        _jobs[job_id]["result"] = result
+
+        status = result.get("status", "completed")
+        classification = result.get("classification", {})
+        artifact = result.get("artifact", {})
+        cost = result.get("cost_summary", {})
+
+        # DB 업데이트
+        conn = get_connection()
+        try:
+            update_job(conn, job_id, {
+                "status": status,
+                "result": result,
+                "title": classification.get("title", prompt[:50]),
+                "job_type": classification.get("job_type", "freeform"),
+                "artifact_path": artifact.get("file_path", ""),
+                "artifact_name": artifact.get("file_name", ""),
+                "total_cost": cost.get("total_cost", 0),
+                "total_tokens": cost.get("total_tokens", 0),
+                "elapsed_ms": cost.get("elapsed_ms", 0),
+                "result_summary": result.get("synthesis", {}).get("summary", ""),
+            })
+        finally:
+            conn.close()
+
+        # 인메모리 캐시 업데이트
+        if job_id in _running_jobs:
+            _running_jobs[job_id]["status"] = status
+            _running_jobs[job_id]["result"] = result
+
     except Exception as e:
         logger.error(f"[Job] {job_id} 실행 실패: {e}", exc_info=True)
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["result"] = {"error": str(e)}
+
+        conn = get_connection()
+        try:
+            update_job(conn, job_id, {
+                "status": "failed",
+                "error_message": str(e),
+                "result": {"error": str(e)},
+            })
+        finally:
+            conn.close()
+
+        if job_id in _running_jobs:
+            _running_jobs[job_id]["status"] = "failed"
+            _running_jobs[job_id]["result"] = {"error": str(e)}
+
         await ws_manager.send_error(job_id, str(e))
+
+
+def _get_job_data(job_id: str, user_id: str) -> dict:
+    """Job 데이터 조회 (인메모리 캐시 우선, DB fallback)"""
+    # 실행 중인 Job은 인메모리에서 최신 상태 확인
+    if job_id in _running_jobs:
+        cached = _running_jobs[job_id]
+        if cached.get("created_by") == user_id:
+            return cached
+
+    # DB에서 조회
+    conn = get_connection()
+    try:
+        job = get_job(conn, job_id, user_id)
+    finally:
+        conn.close()
+
+    return job
 
 
 # ─── Job 상태 조회 ───
 @router.get("/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str):
+async def get_job_status(
+    job_id: str,
+    user: dict = Depends(get_current_user),
+):
     """Job 상태 및 결과 조회"""
-    job = _jobs.get(job_id)
+    job = _get_job_data(job_id, user["emp_cd"])
     if not job:
         raise HTTPException(404, "Job을 찾을 수 없습니다")
 
     result = job.get("result") or {}
     classification = result.get("classification", {})
-
-    progress = None
-    if result.get("cost_summary"):
-        progress = result["cost_summary"]
+    progress = result.get("cost_summary") if result.get("cost_summary") else None
 
     return JobResponse(
         job_id=job_id,
-        status=job["status"],
-        job_type=classification.get("job_type"),
+        status=job.get("status", "unknown"),
+        job_type=classification.get("job_type") or job.get("job_type"),
         deliverable_type=job.get("deliverable_type"),
-        title=classification.get("title", job.get("prompt", "")[:50]),
+        title=classification.get("title") or job.get("title", ""),
         progress=progress,
         current_summary=result.get("synthesis", {}).get("summary"),
         created_at=job.get("created_at"),
@@ -126,19 +209,22 @@ async def get_job(job_id: str):
 
 # ─── Job 결과 상세 ───
 @router.get("/jobs/{job_id}/result")
-async def get_job_result(job_id: str):
+async def get_job_result(
+    job_id: str,
+    user: dict = Depends(get_current_user),
+):
     """Job 실행 결과 상세"""
-    job = _jobs.get(job_id)
+    job = _get_job_data(job_id, user["emp_cd"])
     if not job:
         raise HTTPException(404, "Job을 찾을 수 없습니다")
 
     result = job.get("result")
     if not result:
-        return {"job_id": job_id, "status": job["status"], "message": "아직 결과가 없습니다"}
+        return {"job_id": job_id, "status": job.get("status"), "message": "아직 결과가 없습니다"}
 
     return {
         "job_id": job_id,
-        "status": job["status"],
+        "status": job.get("status"),
         "classification": result.get("classification"),
         "plan_summary": result.get("plan_summary"),
         "execution_result": result.get("execution_result"),
@@ -153,32 +239,40 @@ async def get_job_result(job_id: str):
 async def list_jobs(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    user: dict = Depends(get_current_user),
 ):
-    """Job 목록 조회"""
-    all_jobs = sorted(_jobs.values(), key=lambda x: x.get("created_at", ""), reverse=True)
-    total = len(all_jobs)
+    """사용자별 Job 목록 조회"""
+    conn = get_connection()
+    try:
+        data = list_jobs_by_user(conn, user["emp_cd"], limit, offset)
+    finally:
+        conn.close()
+
     items = []
-    for j in all_jobs[offset : offset + limit]:
-        r = j.get("result") or {}
-        cls_ = r.get("classification", {})
+    for j in data["items"]:
+        result = j.get("result") or {}
+        cls_ = result.get("classification", {})
         items.append(
             JobResponse(
-                job_id=j["job_id"],
-                status=j["status"],
-                job_type=cls_.get("job_type"),
+                job_id=j.get("job_id", ""),
+                status=j.get("status", "unknown"),
+                job_type=cls_.get("job_type") or j.get("job_type"),
                 deliverable_type=j.get("deliverable_type"),
-                title=cls_.get("title", j.get("prompt", "")[:50]),
+                title=cls_.get("title") or j.get("title", ""),
                 created_at=j.get("created_at"),
             )
         )
-    return JobListResponse(items=items, total=total)
+    return JobListResponse(items=items, total=data["total"])
 
 
 # ─── 아티팩트 다운로드 ───
 @router.get("/jobs/{job_id}/download")
-async def download_artifact(job_id: str):
-    """생성된 문서 파일 다운로드"""
-    job = _jobs.get(job_id)
+async def download_artifact(
+    job_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """생성된 문서 파일 다운로드 (소유자만)"""
+    job = _get_job_data(job_id, user["emp_cd"])
     if not job:
         raise HTTPException(404, "Job을 찾을 수 없습니다")
 
@@ -187,11 +281,11 @@ async def download_artifact(job_id: str):
         raise HTTPException(404, "아티팩트가 아직 생성되지 않았습니다")
 
     artifact = result["artifact"]
-    file_path = artifact.get("file_path")
+    file_path = artifact.get("file_path") or job.get("artifact_path")
     if not file_path or not Path(file_path).exists():
-        raise HTTPException(404, "파일을 찾을 수 없습니다")
+        raise HTTPException(404, "파일을 찾을 수 없습니다 (재배포 후 파일이 초기화되었을 수 있습니다)")
 
-    file_name = artifact.get("file_name", "report.md")
+    file_name = artifact.get("file_name") or job.get("artifact_name", "report.md")
     media_types = {
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -212,29 +306,31 @@ async def download_artifact(job_id: str):
 
 # ─── 합성 텍스트 (미리보기) ───
 @router.get("/jobs/{job_id}/preview")
-async def preview_result(job_id: str):
+async def preview_result(
+    job_id: str,
+    user: dict = Depends(get_current_user),
+):
     """실행 결과 텍스트 미리보기"""
-    job = _jobs.get(job_id)
+    job = _get_job_data(job_id, user["emp_cd"])
     if not job:
         raise HTTPException(404, "Job을 찾을 수 없습니다")
 
     result = job.get("result")
     if not result:
-        return {"job_id": job_id, "status": job["status"], "preview": ""}
+        return {"job_id": job_id, "status": job.get("status"), "preview": ""}
 
     synthesis = result.get("synthesis", {})
-    # parsed_report 우선
     if synthesis.get("parsed_report"):
         return {
             "job_id": job_id,
-            "status": job["status"],
+            "status": job.get("status"),
             "preview_type": "structured",
             "data": synthesis["parsed_report"],
         }
 
     return {
         "job_id": job_id,
-        "status": job["status"],
+        "status": job.get("status"),
         "preview_type": "text",
         "data": {
             "summary": synthesis.get("summary", ""),
@@ -249,8 +345,8 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     """Job 진행상황 실시간 스트리밍"""
     await ws_manager.connect(websocket, job_id)
     try:
-        # 현재 상태 전송
-        job = _jobs.get(job_id)
+        # 현재 상태 전송 (인메모리 캐시에서)
+        job = _running_jobs.get(job_id)
         if job:
             await ws_manager.send_progress(
                 job_id, job["status"],
@@ -258,10 +354,8 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                 0 if job["status"] == "queued" else 100 if job["status"] == "completed" else 50,
             )
 
-        # 연결 유지 (클라이언트 메시지 대기)
         while True:
             data = await websocket.receive_text()
-            # ping/pong 처리
             if data == "ping":
                 await websocket.send_text('{"type":"pong"}')
     except WebSocketDisconnect:
@@ -288,6 +382,7 @@ async def list_templates(category: Optional[str] = Query(None)):
 async def run_template(
     template_id: str,
     file: Optional[UploadFile] = File(None),
+    user: dict = Depends(get_current_user),
 ):
     """템플릿 기반 Job 실행"""
     from super_agent.agents.templates import get_template_by_id
@@ -300,8 +395,8 @@ async def run_template(
         raise HTTPException(400, "이 템플릿은 파일 업로드가 필요합니다")
 
     job_id = str(uuid.uuid4())[:12]
+    user_id = user["emp_cd"]
 
-    # 파일 저장
     file_path = None
     if file and file.filename:
         safe_name = f"{job_id}_{file.filename}"
@@ -310,17 +405,25 @@ async def run_template(
             content = await file.read()
             f.write(content)
 
-    job = {
+    job_data = {
         "job_id": job_id,
         "status": "queued",
         "prompt": template["prompt"],
         "deliverable_type": template["deliverable_type"],
-        "file_path": file_path,
+        "file_path": file_path or "",
+        "created_by": user_id,
         "created_at": datetime.now().isoformat(),
         "result": None,
-        "template_id": template_id,
+        "title": template["title"],
     }
-    _jobs[job_id] = job
+
+    conn = get_connection()
+    try:
+        save_job(conn, job_data)
+    finally:
+        conn.close()
+
+    _running_jobs[job_id] = job_data
 
     asyncio.create_task(
         _run_job_async(job_id, template["prompt"], file_path, template["deliverable_type"])
@@ -331,7 +434,7 @@ async def run_template(
         status="queued",
         deliverable_type=template["deliverable_type"],
         title=template["title"],
-        created_at=job["created_at"],
+        created_at=job_data["created_at"],
     )
 
 
@@ -340,21 +443,19 @@ async def run_template(
 async def quick_analyze(
     prompt: str = Form("이 데이터를 분석해주세요"),
     file: UploadFile = File(..., description="분석할 파일"),
+    user: dict = Depends(get_current_user),
 ):
     """파일 업로드 즉시 분석 (간단 모드)"""
     from super_agent.tools.file_parser import parse_file as _parse
     from super_agent.core.intent_classifier import classify_intent as _classify
 
-    # 임시 저장
     temp_name = f"quick_{uuid.uuid4().hex[:8]}_{file.filename}"
     temp_path = str(UPLOAD_DIR / temp_name)
     with open(temp_path, "wb") as f:
         f.write(await file.read())
 
-    # 파싱
     file_data = _parse(temp_path)
 
-    # 분류
     file_info = {
         "file_name": file.filename,
         "type": file_data.get("type"),
@@ -373,16 +474,22 @@ async def quick_analyze(
 
 # ─── 비용/통계 API ───
 @router.get("/stats")
-async def get_stats():
-    """사용량 통계 및 비용 요약"""
+async def get_stats(user: dict = Depends(get_current_user)):
+    """사용자별 사용량 통계"""
     from super_agent.tools.cost_tracker import get_cost_summary, check_budget
 
     summary = get_cost_summary(days=30)
     budget = check_budget()
 
-    # Job 통계 (인메모리)
+    # DB에서 사용자별 통계
+    conn = get_connection()
+    try:
+        data = list_jobs_by_user(conn, user["emp_cd"], limit=1000, offset=0)
+    finally:
+        conn.close()
+
     status_counts = {}
-    for j in _jobs.values():
+    for j in data["items"]:
         s = j.get("status", "unknown")
         status_counts[s] = status_counts.get(s, 0) + 1
 
@@ -390,7 +497,7 @@ async def get_stats():
         "cost_summary": summary,
         "budget": budget,
         "job_stats": {
-            "total": len(_jobs),
+            "total": data["total"],
             "by_status": status_counts,
         },
     }
@@ -398,21 +505,25 @@ async def get_stats():
 
 # ─── Job 삭제 ───
 @router.delete("/jobs/{job_id}")
-async def delete_job(job_id: str):
-    """Job 삭제"""
-    if job_id not in _jobs:
-        raise HTTPException(404, "Job을 찾을 수 없습니다")
-
-    job = _jobs[job_id]
-    if job["status"] == "running":
+async def delete_job(
+    job_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Job 삭제 (소유자만)"""
+    # 실행 중인 Job 확인
+    if job_id in _running_jobs and _running_jobs[job_id].get("status") == "running":
         raise HTTPException(400, "실행 중인 Job은 삭제할 수 없습니다")
 
-    # 파일 정리
-    if job.get("file_path"):
-        try:
-            Path(job["file_path"]).unlink(missing_ok=True)
-        except Exception:
-            pass
+    conn = get_connection()
+    try:
+        deleted = delete_job_db(conn, job_id, user["emp_cd"])
+    finally:
+        conn.close()
 
-    del _jobs[job_id]
+    if not deleted:
+        raise HTTPException(404, "Job을 찾을 수 없습니다")
+
+    # 인메모리 캐시에서도 제거
+    _running_jobs.pop(job_id, None)
+
     return {"message": "삭제 완료", "job_id": job_id}
