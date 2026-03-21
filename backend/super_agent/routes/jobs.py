@@ -369,3 +369,50 @@ async def quick_analyze(
         "data_preview": file_data.get("data_preview", [])[:5],
         "column_stats": file_data.get("column_stats", {}),
     }
+
+
+# ─── 비용/통계 API ───
+@router.get("/stats")
+async def get_stats():
+    """사용량 통계 및 비용 요약"""
+    from super_agent.tools.cost_tracker import get_cost_summary, check_budget
+
+    summary = get_cost_summary(days=30)
+    budget = check_budget()
+
+    # Job 통계 (인메모리)
+    status_counts = {}
+    for j in _jobs.values():
+        s = j.get("status", "unknown")
+        status_counts[s] = status_counts.get(s, 0) + 1
+
+    return {
+        "cost_summary": summary,
+        "budget": budget,
+        "job_stats": {
+            "total": len(_jobs),
+            "by_status": status_counts,
+        },
+    }
+
+
+# ─── Job 삭제 ───
+@router.delete("/jobs/{job_id}")
+async def delete_job(job_id: str):
+    """Job 삭제"""
+    if job_id not in _jobs:
+        raise HTTPException(404, "Job을 찾을 수 없습니다")
+
+    job = _jobs[job_id]
+    if job["status"] == "running":
+        raise HTTPException(400, "실행 중인 Job은 삭제할 수 없습니다")
+
+    # 파일 정리
+    if job.get("file_path"):
+        try:
+            Path(job["file_path"]).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    del _jobs[job_id]
+    return {"message": "삭제 완료", "job_id": job_id}

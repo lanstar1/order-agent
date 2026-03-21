@@ -13,6 +13,31 @@ const SA = {
 // ─── 초기화 ───
 function initSuperAgent() {
   loadSuperAgentHistory();
+  loadSA2Stats();
+}
+
+// ─── 통계 로드 ───
+async function loadSA2Stats() {
+  const el = document.getElementById("sa2-stats-bar");
+  if (!el) return;
+
+  try {
+    const token = localStorage.getItem("order_agent_token");
+    const resp = await fetch("/api/super-agent/stats", {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const cs = data.cost_summary || {};
+    const js = data.job_stats || {};
+
+    el.innerHTML = `
+      <span title="총 작업 수">📋 ${js.total || 0}건</span>
+      <span title="총 비용" style="margin-left:16px">💰 $${(cs.total_cost || 0).toFixed(3)}</span>
+      <span title="총 토큰" style="margin-left:16px">🔤 ${(cs.total_tokens || 0).toLocaleString()}</span>
+      <span title="평균 비용" style="margin-left:16px">📊 평균 $${(cs.avg_cost_per_job || 0).toFixed(4)}/건</span>
+    `;
+  } catch {}
 }
 
 // ─── Job 생성 (프롬프트 + 파일) ───
@@ -411,6 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
         initSA2Dropzone();
         loadSuperAgentHistory();
         loadSA2Templates();
+        loadSA2Stats();
       }, 100);
     });
   }
