@@ -55,6 +55,8 @@ def _sql_to_pg(sql):
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
                 'sa_uploads', 'sa_jobs', 'aicc_product_knowledge', 'aicc_unanswered',
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
+                'super_agent_jobs', 'super_agent_tasks', 'super_agent_artifacts',
+                'super_agent_uploads', 'super_agent_events',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")

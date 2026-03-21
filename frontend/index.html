@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 발주서 자동화 시스템</title>
   <link rel="stylesheet" href="/static/css/style.css?v=20260312b">
+  <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322a">
   <style>
     /* CS/RMA 파이프라인 탭 */
     .cs-pipe-tab{padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:#6b7280;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
@@ -189,6 +190,11 @@
       <div class="nav-item" data-page="ai_dashboard" draggable="true">
         <span class="icon">📊</span>
         <span>AI 대시보드</span>
+        <span class="drag-handle">⠿</span>
+      </div>
+      <div class="nav-item" data-page="super_agent" draggable="true">
+        <span class="icon">🤖</span>
+        <span>Super Agent</span>
         <span class="drag-handle">⠿</span>
       </div>
       <div class="nav-item" data-page="mail_agent" draggable="true">
@@ -1425,6 +1431,90 @@ C규격품 200개
     // 페이지 전환 시 대시보드 자동 로드
     const _origShowPage = typeof showPage === "function" ? showPage : null;
     </script>
+
+    <!-- ──────────────────────────────
+         페이지: Super Agent
+         ────────────────────────────── -->
+    <div class="page" id="page-super_agent">
+      <div class="sa2-container">
+
+        <!-- 프롬프트 입력 카드 -->
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div class="card-title" style="margin:0">🤖 Super Agent</div>
+            <select id="sa2-deliverable-type" class="sa2-type-select">
+              <option value="report">📄 보고서 (docx)</option>
+              <option value="slides">📊 프레젠테이션 (pptx)</option>
+              <option value="sheet">📋 스프레드시트 (xlsx)</option>
+              <option value="brief">📝 간단 요약</option>
+            </select>
+          </div>
+
+          <textarea id="sa2-prompt" class="sa2-prompt-input"
+            placeholder="무엇을 분석하거나 생성할까요?&#10;&#10;예: '이번 달 매출 데이터를 분석해서 경영진 보고서를 작성해줘'&#10;예: '거래처별 매출 추이를 파악하고 영업 전략을 제안해줘'&#10;예: '첨부한 CSV 파일의 재고 데이터를 분석해줘'"></textarea>
+
+          <!-- 예시 프롬프트 -->
+          <div class="sa2-example-chips">
+            <span class="sa2-example-chip" onclick="document.getElementById('sa2-prompt').value='이번 달 매출 데이터를 분석해서 경영진 보고서를 작성해줘'">📊 매출 분석 보고서</span>
+            <span class="sa2-example-chip" onclick="document.getElementById('sa2-prompt').value='거래처별 매출 추이를 파악하고 영업 전략을 제안해줘'">📈 영업 전략 제안</span>
+            <span class="sa2-example-chip" onclick="document.getElementById('sa2-prompt').value='시장 동향과 경쟁사를 조사하여 브리핑 자료를 만들어줘'">🔍 시장 조사</span>
+            <span class="sa2-example-chip" onclick="document.getElementById('sa2-prompt').value='첨부한 데이터를 분석하고 인사이트를 도출해줘'">📎 데이터 분석</span>
+          </div>
+
+          <!-- 파일 업로드 -->
+          <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+            <div id="sa2-dropzone" class="sa2-dropzone" style="flex:1;padding:14px">
+              <span style="font-size:20px">📂</span>
+              <span style="font-size:13px;color:#6b7280;margin-left:8px">파일을 끌어놓거나 클릭하여 업로드 (CSV, Excel, PDF, 텍스트)</span>
+              <input type="file" id="sa2-file" style="display:none" accept=".csv,.xlsx,.xls,.pdf,.txt,.json,.tsv,.md">
+            </div>
+            <button class="btn btn-primary" onclick="submitSuperAgentJob()" style="white-space:nowrap;padding:12px 24px;font-size:14px">
+              🚀 실행
+            </button>
+          </div>
+          <div id="sa2-file-label" style="display:none;font-size:13px;color:#374151;margin-top:8px"></div>
+        </div>
+
+        <!-- 진행 상황 -->
+        <div id="sa2-progress-area" class="card" style="display:none;margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:12px">⏳ 진행 상황</div>
+          <div class="sa2-progress-bar">
+            <div id="sa2-progress-fill" class="sa2-progress-fill"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:8px">
+            <span id="sa2-status-text" style="font-size:13px;color:#6b7280">대기 중...</span>
+            <span id="sa2-progress-text" style="font-size:13px;color:#6b7280;font-weight:600">0%</span>
+          </div>
+        </div>
+
+        <!-- 결과 표시 -->
+        <div id="sa2-result-area" style="display:none;margin-bottom:16px">
+          <div class="sa2-result-card">
+            <div class="sa2-result-header">
+              <span style="font-weight:600;color:#111827">📋 결과</span>
+              <div style="display:flex;gap:8px;align-items:center">
+                <div id="sa2-cost-info" class="sa2-cost-info"></div>
+                <a id="sa2-download-btn" class="sa2-download-btn" href="#" download style="display:none">
+                  ⬇️ 다운로드
+                </a>
+              </div>
+            </div>
+            <div id="sa2-preview-content" class="sa2-result-body">
+              <p style="color:#9ca3af;text-align:center">결과를 로드하는 중...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 작업 이력 -->
+        <div class="card">
+          <div class="card-title">📜 최근 작업 이력</div>
+          <div id="sa2-history-list" style="max-height:300px;overflow-y:auto">
+            <div style="text-align:center;padding:20px;color:#9ca3af;font-size:13px">아직 작업 이력이 없습니다</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
 
     <!-- ──────────────────────────────
          페이지 5: 설정
@@ -2843,5 +2933,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260319d"></script>
 <script src="/static/js/app.js?v=20260319k"></script>
+<script src="/static/js/super_agent.js?v=20260322a"></script>
 </body>
 </html>

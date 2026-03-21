@@ -32,6 +32,14 @@ from api.routes.aicc import router as aicc_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
+# Super Agent
+try:
+    from super_agent.routes.jobs import router as super_agent_router
+    _HAS_SUPER_AGENT = True
+except ImportError as _sa_err:
+    _HAS_SUPER_AGENT = False
+    logging.getLogger(__name__).warning(f"Super Agent 모듈 로드 실패: {_sa_err}")
+
 # ─────────────────────────────────────────
 #  로깅 설정
 # ─────────────────────────────────────────
@@ -137,6 +145,8 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/purchases/process-image"): "구매입력 이미지 분석",
     ("POST", "/api/purchases/confirm"): "구매입력 확정",
     ("POST", "/api/purchases/submit-erp"): "구매입력 ERP 전송",
+    ("POST", "/api/super-agent/jobs"): "Super Agent 작업 생성",
+    ("GET", "/api/super-agent/jobs"): "Super Agent 이력 조회",
 }
 
 @app.middleware("http")
@@ -233,6 +243,10 @@ app.include_router(sales_analytics_router)
 app.include_router(purchases_router)
 app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
 
+# Super Agent 라우터
+if _HAS_SUPER_AGENT:
+    app.include_router(super_agent_router)
+
 # AICC WebSocket 엔드포인트
 @app.websocket("/ws/aicc/chat/{session_id}")
 async def ws_chat(websocket: WebSocket, session_id: str):
@@ -285,6 +299,17 @@ async def startup():
     logger.info("=== Order Agent 시작 (v0.2.0) ===")
     init_db()
     logger.info("데이터베이스 초기화 완료")
+
+    # Super Agent DB 테이블 초기화
+    try:
+        from super_agent.db.sa_tables import init_super_agent_tables
+        from db.database import get_connection
+        sa_conn = get_connection()
+        init_super_agent_tables(sa_conn)
+        sa_conn.close()
+        logger.info("Super Agent 테이블 초기화 완료")
+    except Exception as e:
+        logger.warning(f"Super Agent 테이블 초기화 실패 (서비스는 계속): {e}")
 
     # AICC 데이터 로드
     try:
