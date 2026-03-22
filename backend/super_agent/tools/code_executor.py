@@ -90,8 +90,16 @@ plt.close('all')
         f.write(full_code)
 
     try:
+        # python3 또는 python 실행
+        python_cmd = "python3"
+        try:
+            test = await asyncio.create_subprocess_exec("python3", "--version", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            await test.communicate()
+        except FileNotFoundError:
+            python_cmd = "python"
+
         proc = await asyncio.create_subprocess_exec(
-            "python3", script_path,
+            python_cmd, script_path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(OUTPUT_DIR),
@@ -99,6 +107,7 @@ plt.close('all')
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         stdout_str = stdout.decode("utf-8", errors="replace")
         stderr_str = stderr.decode("utf-8", errors="replace")
+        logger.info(f"[CodeExec] returncode={proc.returncode}, stdout={len(stdout_str)}B, stderr={len(stderr_str)}B")
 
         # 생성된 차트 파일 추출
         chart_files = []

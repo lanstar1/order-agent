@@ -85,6 +85,7 @@ async def run_agent_loop(
     tool_calls_log = []
     total_cost = 0.0
     final_answer = None
+    _tool_fail_counts: Dict[str, int] = {}  # 도구별 실패 횟수 추적
 
     for iteration in range(MAX_ITERATIONS):
         if progress_callback:
@@ -131,9 +132,19 @@ async def run_agent_loop(
                 if progress_callback:
                     await progress_callback(f"도구 실행: {tool_name}")
 
+                # 같은 도구 연속 실패 시 포기
+                if _tool_fail_counts.get(tool_name, 0) >= 2:
+                    logger.warning(f"[AgentLoop] {tool_name} 2회 이상 실패, 도구 없이 진행")
+                    messages.append({"role": "assistant", "content": response_text})
+                    messages.append({"role": "user", "content": f"<observation>\n{tool_name} 도구를 사용할 수 없습니다. 이 도구 없이 현재까지 수집된 정보로 최종 답변을 작성하세요.\n</observation>"})
+                    continue
+
                 # 도구 실행
                 tool_result = await registry.execute(tool_name, tool_params)
                 total_cost += tool_result.cost
+
+                if not tool_result.success:
+                    _tool_fail_counts[tool_name] = _tool_fail_counts.get(tool_name, 0) + 1
 
                 tool_calls_log.append({
                     "iteration": iteration + 1,
