@@ -31,16 +31,17 @@ async def fetch_erp_sales_data(
 
         # sales_records 테이블 조회 (sales_analytics에서 수집된 데이터)
         query = """
-            SELECT slip_date, cust_code, cust_name, prod_code, prod_name,
-                   qty, unit_price, amount, wh_name
+            SELECT slip_date, slip_no, customer_name, item_code, item_name,
+                   model_name, quantity, unit_price, supply_amount, total_amount,
+                   warehouse, item_group, staff_name, gross_profit
             FROM sales_records
             WHERE slip_date BETWEEN ? AND ?
         """
         params = [period_start, period_end]
 
         if customer_code:
-            query += " AND cust_code = ?"
-            params.append(customer_code)
+            query += " AND customer_name LIKE ?"
+            params.append(f"%{customer_code}%")
 
         query += " ORDER BY slip_date DESC"
 
@@ -50,9 +51,9 @@ async def fetch_erp_sales_data(
         data = [dict(row) for row in rows]
 
         # 요약 통계
-        total_amount = sum(float(r.get("amount", 0) or 0) for r in data)
-        unique_customers = len(set(r.get("cust_code", "") for r in data))
-        unique_products = len(set(r.get("prod_code", "") for r in data))
+        total_amount = sum(float(r.get("total_amount", 0) or 0) for r in data)
+        unique_customers = len(set(r.get("customer_name", "") for r in data))
+        unique_products = len(set(r.get("item_code", "") for r in data))
 
         return {
             "success": True,
@@ -187,9 +188,9 @@ def format_erp_data_for_llm(data: Dict[str, Any], data_type: str = "sales") -> s
         # 상위 20건 미리보기
         for i, row in enumerate(data["data"][:20]):
             lines.append(
-                f"  {row.get('slip_date','')}\t{row.get('cust_name','')}\t"
-                f"{row.get('prod_name','')}\t수량:{row.get('qty','')}\t"
-                f"금액:{row.get('amount','')}"
+                f"  {row.get('slip_date','')}\t{row.get('customer_name','')}\t"
+                f"{row.get('item_name','')}\t수량:{row.get('quantity','')}\t"
+                f"금액:{row.get('total_amount','')}"
             )
 
     elif data_type == "inventory":

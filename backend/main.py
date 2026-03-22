@@ -309,6 +309,23 @@ async def startup():
     except Exception as e:
         logger.warning(f"Super Agent 테이블 초기화 실패 (서비스는 계속): {e}")
 
+    # DB에 저장된 API 키를 환경변수에 로드
+    try:
+        from api.routes.settings import ensure_settings_table, API_KEY_DEFINITIONS
+        from db.database import get_connection as _gc
+        ensure_settings_table()
+        _conn = _gc()
+        _rows = _conn.execute("SELECT key, value FROM app_settings WHERE key LIKE ?", ("api_%",)).fetchall()
+        _conn.close()
+        _db_keys = {r["key"]: r["value"] for r in _rows}
+        for api_def in API_KEY_DEFINITIONS:
+            val = _db_keys.get(api_def["key"], "")
+            if val and not os.environ.get(api_def["env_var"]):
+                os.environ[api_def["env_var"]] = val
+                logger.info(f"[Startup] DB에서 {api_def['label']} API 키 로드")
+    except Exception as e:
+        logger.warning(f"API 키 로드 실패: {e}")
+
     # Super Agent 도구 레지스트리 초기화
     try:
         from super_agent.tools.tool_registry import init_all_tools
