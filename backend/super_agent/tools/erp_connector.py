@@ -31,10 +31,10 @@ async def fetch_erp_sales_data(
 
         # sales_records 테이블 조회 (sales_analytics에서 수집된 데이터)
         query = """
-            SELECT sale_date, cust_code, cust_name, prod_code, prod_name,
+            SELECT slip_date, cust_code, cust_name, prod_code, prod_name,
                    qty, unit_price, amount, wh_name
             FROM sales_records
-            WHERE sale_date BETWEEN ? AND ?
+            WHERE slip_date BETWEEN ? AND ?
         """
         params = [period_start, period_end]
 
@@ -42,7 +42,7 @@ async def fetch_erp_sales_data(
             query += " AND cust_code = ?"
             params.append(customer_code)
 
-        query += " ORDER BY sale_date DESC"
+        query += " ORDER BY slip_date DESC"
 
         rows = conn.execute(query, params).fetchall()
         conn.close()
@@ -187,7 +187,7 @@ def format_erp_data_for_llm(data: Dict[str, Any], data_type: str = "sales") -> s
         # 상위 20건 미리보기
         for i, row in enumerate(data["data"][:20]):
             lines.append(
-                f"  {row.get('sale_date','')}\t{row.get('cust_name','')}\t"
+                f"  {row.get('slip_date','')}\t{row.get('cust_name','')}\t"
                 f"{row.get('prod_name','')}\t수량:{row.get('qty','')}\t"
                 f"금액:{row.get('amount','')}"
             )
