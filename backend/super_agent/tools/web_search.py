@@ -85,6 +85,7 @@ async def web_search(query: str, max_results: int = 5) -> "ToolResult":
     """웹 검색 실행 (Perplexity → Tavily fallback)"""
     from super_agent.tools.tool_registry import ToolResult
 
+    perplexity_err = None
     try:
         result = await _search_perplexity(query, max_results)
         return ToolResult(
@@ -94,6 +95,7 @@ async def web_search(query: str, max_results: int = 5) -> "ToolResult":
             metadata={"citations": result["citations"], "model": result["model"]},
         )
     except Exception as e:
+        perplexity_err = str(e)
         logger.warning(f"[WebSearch] Perplexity 실패: {e}, Tavily 시도")
 
     try:
@@ -106,7 +108,7 @@ async def web_search(query: str, max_results: int = 5) -> "ToolResult":
         )
     except Exception as e2:
         logger.error(f"[WebSearch] Tavily도 실패: {e2}")
-        return ToolResult(success=False, error=f"웹검색 실패: Perplexity({e}), Tavily({e2})")
+        return ToolResult(success=False, error=f"웹검색 실패: Perplexity({perplexity_err}), Tavily({e2})")
 
 
 def register_web_search_tool(registry):

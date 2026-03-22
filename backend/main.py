@@ -315,16 +315,29 @@ async def startup():
         from db.database import get_connection as _gc
         ensure_settings_table()
         _conn = _gc()
-        _rows = _conn.execute("SELECT key, value FROM app_settings WHERE key LIKE ?", ("api_%",)).fetchall()
+        # 모든 api_ 키를 개별 조회 (LIKE 호환성 문제 회피)
+        _db_keys = {}
+        for api_def in API_KEY_DEFINITIONS:
+            try:
+                _row = _conn.execute("SELECT value FROM app_settings WHERE key = ?", (api_def["key"],)).fetchone()
+                if _row:
+                    _db_keys[api_def["key"]] = _row["value"] if hasattr(_row, '__getitem__') else _row[0]
+            except Exception:
+                pass
         _conn.close()
-        _db_keys = {r["key"]: r["value"] for r in _rows}
+
+        loaded_count = 0
         for api_def in API_KEY_DEFINITIONS:
             val = _db_keys.get(api_def["key"], "")
-            if val and not os.environ.get(api_def["env_var"]):
+            if val:
                 os.environ[api_def["env_var"]] = val
-                logger.info(f"[Startup] DB에서 {api_def['label']} API 키 로드")
+                loaded_count += 1
+                logger.info(f"[Startup] DB에서 {api_def['label']} API 키 로드 완료")
+            elif os.environ.get(api_def["env_var"]):
+                logger.info(f"[Startup] {api_def['label']} 환경변수에서 이미 설정됨")
+        logger.info(f"[Startup] API 키 로드 완료: DB {loaded_count}개, 환경변수 기존 설정 포함")
     except Exception as e:
-        logger.warning(f"API 키 로드 실패: {e}")
+        logger.warning(f"API 키 로드 실패: {e}", exc_info=True)
 
     # Super Agent 도구 레지스트리 초기화
     try:
