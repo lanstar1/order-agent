@@ -22,7 +22,7 @@ async function loadSA2Stats() {
   if (!el) return;
 
   try {
-    const token = localStorage.getItem("order_agent_token");
+    const token = localStorage.getItem("jwt_token");
     const resp = await fetch("/api/super-agent/stats", {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -67,7 +67,7 @@ async function submitSuperAgentJob() {
   updateSA2Progress(0, "작업 제출 중...");
 
   try {
-    const token = localStorage.getItem("order_agent_token");
+    const token = localStorage.getItem("jwt_token");
     const resp = await fetch("/api/super-agent/jobs", {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -267,7 +267,7 @@ async function loadSA2Preview() {
   if (!SA.currentJobId) return;
 
   try {
-    const token = localStorage.getItem("order_agent_token");
+    const token = localStorage.getItem("jwt_token");
     const resp = await fetch(`/api/super-agent/jobs/${SA.currentJobId}/preview`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -308,7 +308,7 @@ async function loadSA2Preview() {
 // ─── 히스토리 ───
 async function loadSuperAgentHistory() {
   try {
-    const token = localStorage.getItem("order_agent_token");
+    const token = localStorage.getItem("jwt_token");
     const resp = await fetch("/api/super-agent/jobs?limit=20", {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -356,7 +356,7 @@ async function viewSA2Job(jobId) {
   SA.currentJobId = jobId;
 
   try {
-    const token = localStorage.getItem("order_agent_token");
+    const token = localStorage.getItem("jwt_token");
     const resp = await fetch(`/api/super-agent/jobs/${jobId}/result`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -430,7 +430,7 @@ async function loadSA2Templates() {
   if (!container) return;
 
   try {
-    const token = localStorage.getItem("order_agent_token");
+    const token = localStorage.getItem("jwt_token");
     const resp = await fetch("/api/super-agent/templates", {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
