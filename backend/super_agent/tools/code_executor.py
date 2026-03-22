@@ -108,6 +108,8 @@ plt.close('all')
         stdout_str = stdout.decode("utf-8", errors="replace")
         stderr_str = stderr.decode("utf-8", errors="replace")
         logger.info(f"[CodeExec] returncode={proc.returncode}, stdout={len(stdout_str)}B, stderr={len(stderr_str)}B")
+        if stderr_str:
+            logger.warning(f"[CodeExec] stderr: {stderr_str[:500]}")
 
         # 생성된 차트 파일 추출
         chart_files = []
