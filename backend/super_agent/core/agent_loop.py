@@ -57,6 +57,11 @@ async def run_agent_loop(
     """
     from super_agent.tools.litellm_gateway import call_llm
 
+    # Agent Loop 오케스트레이터는 반드시 Claude 사용 (XML 형식 준수 필요)
+    # GPT/Gemini는 도구(writer, 검색 등)로만 사용
+    if model_key not in ("claude-sonnet", "claude-haiku"):
+        model_key = "claude-haiku"
+
     tools_prompt = registry.get_tools_prompt()
     system = REACT_SYSTEM_PROMPT.format(tools_prompt=tools_prompt)
 
@@ -108,13 +113,18 @@ async def run_agent_loop(
             logger.info(f"[AgentLoop] 최종 답변 도출 (반복 {iteration + 1}회)")
             break
 
-        # tool_call 파싱
+        # tool_call 파싱 (여러 형식 지원)
         tool_match = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", response_text, re.DOTALL)
+        # JSON 블록 fallback (```json ... ```)
+        if not tool_match:
+            tool_match = re.search(r'```json\s*(\{"name".*?\})\s*```', response_text, re.DOTALL)
         if tool_match:
             try:
                 tool_req = json.loads(tool_match.group(1))
                 tool_name = tool_req.get("name", "")
-                tool_params = tool_req.get("params", {})
+                tool_params = tool_req.get("params", tool_req.get("arguments", tool_req.get("parameters", {})))
+                if not tool_name:
+                    raise ValueError("도구 이름 없음")
 
                 logger.info(f"[AgentLoop] 도구 호출: {tool_name}({list(tool_params.keys())})")
 
