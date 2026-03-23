@@ -2518,6 +2518,30 @@ async function loadCustERPSyncStatus() {
 }
 
 // ── 활동 로그 (관리자 전용) ──
+
+/** UTC 타임스탬프 → 한국표준시(KST, UTC+9) 문자열 변환 */
+function toKST(utcStr) {
+  if (!utcStr) return "";
+  try {
+    // PostgreSQL 형식: "2026-03-23 00:09:43.301611+00" → Date 파싱 가능하도록 변환
+    let normalized = utcStr.trim();
+    // "+00" 만 있는 경우 "+00:00"으로 보정
+    if (/\+\d{2}$/.test(normalized)) normalized += ":00";
+    // 타임존 정보가 없으면 UTC로 간주
+    if (!/[+-]\d{2}:\d{2}$/.test(normalized) && !normalized.endsWith("Z")) {
+      normalized += "+00:00";
+    }
+    const d = new Date(normalized.replace(" ", "T"));
+    if (isNaN(d.getTime())) return utcStr; // 파싱 실패 시 원본 반환
+    return d.toLocaleString("ko-KR", {
+      timeZone: "Asia/Seoul",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false
+    });
+  } catch { return utcStr; }
+}
+
 const ADMIN_EMP_CDS = new Set(["28", "01"]);
 
 function showActivityTabIfAdmin() {
@@ -2570,7 +2594,7 @@ async function loadActivityLogs(page = 1) {
         item.action.includes("분석") ? "#4299e1" :
         item.action.includes("동기화") ? "#9f7aea" : "#718096";
       html += `<tr style="border-bottom:1px solid var(--gray-100)">
-        <td style="padding:6px 10px;white-space:nowrap;color:var(--gray-500);font-size:12px">${item.created_at || ""}</td>
+        <td style="padding:6px 10px;white-space:nowrap;color:var(--gray-500);font-size:12px">${toKST(item.created_at)}</td>
         <td style="padding:6px 10px;white-space:nowrap"><strong>[${item.emp_cd}]</strong> ${item.emp_name || ""}</td>
         <td style="padding:6px 10px;white-space:nowrap">
           <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
@@ -2892,8 +2916,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
-<script src="/static/js/api.js?v=20260322a"></script>
-<script src="/static/js/app.js?v=20260322e"></script>
-<script src="/static/js/super_agent.js?v=20260322e"></script>
+<script src="/static/js/api.js?v=20260323a"></script>
+<script src="/static/js/app.js?v=20260323a"></script>
+<script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
