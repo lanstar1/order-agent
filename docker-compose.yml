@@ -9,8 +9,10 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - TZ=Asia/Seoul
     volumes:
-      # DB, 상품CSV, 업로드 파일 → NAS에 영구 저장
+      # DB(SQLite), 상품CSV, 업로드 파일 → NAS에 영구 저장
       - ./data:/app/data
     mem_limit: 512m
     logging:
