@@ -101,7 +101,7 @@ function toggleNavGroup(headerEl) {
 function navigateTo(pageId) {
   // AI 메일 에이전트는 외부 링크로 열기 (내부 페이지 전환 안 함)
   if (pageId === "mail_agent") {
-    window.open("https://mail-dqxh.onrender.com", "_blank");
+    window.open("https://lanstar-order.synology.me:8444/", "_blank");
     return;
   }
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
