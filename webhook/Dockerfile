@@ -1,6 +1,6 @@
 FROM python:3.11-alpine
 
-RUN apk add --no-cache git curl docker-cli
+RUN apk add --no-cache git curl
 
 WORKDIR /app
 COPY server.py /app/server.py
