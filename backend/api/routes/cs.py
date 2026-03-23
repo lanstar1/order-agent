@@ -666,7 +666,35 @@ async def add_memo(ticket_id: str, data: StatusUpdate, user: dict = Depends(get_
         conn.close()
 
 
-# ── [12] 대시보드 통계 ──
+# ── [12] 티켓 삭제 ──
+@router.delete("/tickets/{ticket_id}")
+async def delete_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    try:
+        ticket = conn.execute(
+            "SELECT ticket_id, current_status FROM cs_tickets WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()
+        if not ticket:
+            raise HTTPException(404, "티켓을 찾을 수 없습니다.")
+
+        # 관련 데이터 모두 삭제 (파일, 테스트 결과, 액션 로그)
+        conn.execute("DELETE FROM cs_files WHERE ticket_id = ?", (ticket_id,))
+        conn.execute("DELETE FROM cs_test_results WHERE ticket_id = ?", (ticket_id,))
+        conn.execute("DELETE FROM cs_action_logs WHERE ticket_id = ?", (ticket_id,))
+        conn.execute("DELETE FROM cs_tickets WHERE ticket_id = ?", (ticket_id,))
+        conn.commit()
+
+        return {"success": True, "message": f"티켓 {ticket_id} 삭제 완료"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, f"삭제 실패: {e}")
+    finally:
+        conn.close()
+
+
+# ── [13] 대시보드 통계 ──
 @router.get("/stats")
 async def cs_stats(user: dict = Depends(get_current_user)):
     conn = get_connection()

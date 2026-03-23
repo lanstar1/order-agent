@@ -101,7 +101,7 @@ function toggleNavGroup(headerEl) {
 function navigateTo(pageId) {
   // AI 메일 에이전트는 외부 링크로 열기 (내부 페이지 전환 안 함)
   if (pageId === "mail_agent") {
-    window.open("https://lanstar-order.synology.me:8444/", "_blank");
+    window.open("https://mail-dqxh.onrender.com", "_blank");
     return;
   }
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
@@ -4193,9 +4193,28 @@ async function csShowDetail(ticketId) {
         ${actionHtml ? `<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">${actionHtml}</div>` : ""}
 
         ${timelineHtml}
+
+        <!-- 삭제 버튼 -->
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:right">
+          <button onclick="csDeleteTicket('${t.ticket_id}')" style="padding:6px 16px;border:1px solid #dc2626;border-radius:6px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:13px;font-weight:500">🗑️ 접수 삭제</button>
+        </div>
       </div>`;
   } catch(e) {
     modal.innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444">오류: ${e.message || e}</div>`;
+  }
+}
+
+// ── 티켓 삭제 ──
+async function csDeleteTicket(ticketId) {
+  if (!confirm(`정말로 ${ticketId} 접수를 삭제하시겠습니까?\n\n관련된 첨부파일, 테스트 결과, 처리 이력이 모두 삭제됩니다.`)) return;
+  try {
+    const res = await api.delete(`/api/cs/tickets/${ticketId}`);
+    alert(res.message || "삭제 완료");
+    csCloseModal();
+    csLoadTickets();
+    csLoadStats();
+  } catch(e) {
+    alert("삭제 실패: " + (e.message || e));
   }
 }
 
