@@ -185,7 +185,12 @@ def _get_merged_sessions(menu: str = "") -> list:
     memory_sessions = session_manager.all_serialized()
     memory_ids = {s["session_id"] for s in memory_sessions}
 
-    db_sessions = aicc_db.get_all_sessions(limit=200)
+    try:
+        db_sessions = aicc_db.get_all_sessions(limit=200, include_empty=False)
+    except Exception as e:
+        print(f"[AICC WS] DB 세션 목록 조회 실패: {e}")
+        db_sessions = []
+
     for ds in db_sessions:
         if ds["id"] not in memory_ids:
             memory_sessions.append({
@@ -200,6 +205,7 @@ def _get_merged_sessions(menu: str = "") -> list:
                 "created_at": ds.get("created_at", ""),
                 "updated_at": ds.get("updated_at", ""),
                 "from_db": True,
+                "user_msg_count": ds.get("user_msg_count", 0),
             })
 
     if menu:
@@ -215,9 +221,15 @@ async def admin_list_ws_handler(websocket: WebSocket):
     session_manager.admin_list_sockets.append(websocket)
     try:
         # 연결 즉시 현재 세션 목록 전송 (인메모리 + DB 병합)
+        try:
+            sessions = _get_merged_sessions()
+        except Exception as e:
+            print(f"[AICC WS] 세션 목록 로드 실패: {e}")
+            sessions = session_manager.all_serialized()  # 인메모리만이라도 반환
+
         await websocket.send_json({
             "type": "sessions_list",
-            "sessions": _get_merged_sessions()
+            "sessions": sessions
         })
         while True:
             await websocket.receive_text()  # ping 유지

@@ -54,17 +54,36 @@ def save_message(sid: str, role: str, content: str, image_id: str = ""):
         conn.close()
 
 
-def get_all_sessions(limit: int = 100) -> List[dict]:
-    """전체 세션 목록 (최신순)"""
+def get_all_sessions(limit: int = 100, include_empty: bool = True) -> List[dict]:
+    """전체 세션 목록 (최신순), user_msg_count 포함"""
     conn = get_connection()
     try:
         rows = conn.execute(
-            """SELECT id, customer_name, selected_model, erp_code,
-                      selected_menu, status, created_at, updated_at
-               FROM aicc_sessions ORDER BY created_at DESC LIMIT ?""",
+            """SELECT s.id, s.customer_name, s.selected_model, s.erp_code,
+                      s.selected_menu, s.status, s.created_at, s.updated_at,
+                      COALESCE(mc.total_count, 0) as msg_count,
+                      COALESCE(mc.user_count, 0) as user_msg_count
+               FROM aicc_sessions s
+               LEFT JOIN (
+                   SELECT session_id,
+                          COUNT(*) as total_count,
+                          SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) as user_count
+                   FROM aicc_messages
+                   GROUP BY session_id
+               ) mc ON s.id = mc.session_id
+               ORDER BY s.created_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        results = []
+        for r in rows:
+            d = dict(r)
+            if not include_empty and d.get("user_msg_count", 0) == 0:
+                continue
+            results.append(d)
+        return results
+    except Exception as e:
+        print(f"[AICC DB] get_all_sessions 오류: {e}")
+        return []
     finally:
         conn.close()
 

@@ -294,12 +294,17 @@ async def get_models(q: str = ""):
 @router.get("/sessions")
 async def get_sessions(menu: str = "", current_user=Depends(get_current_user)):
     """관리자: 세션 목록 (인메모리 + DB 병합, 재배포 후에도 유지)"""
-    # 1. 인메모리 세션
+    # 1. 인메모리 세션 (실시간 활성 세션)
     memory_sessions = session_manager.all_serialized()
     memory_ids = {s["session_id"] for s in memory_sessions}
 
-    # 2. DB 세션 (인메모리에 없는 것만 추가)
-    db_sessions = aicc_db.get_all_sessions(limit=200)
+    # 2. DB 세션 (인메모리에 없는 것만 추가, 대화 없는 세션 제외)
+    try:
+        db_sessions = aicc_db.get_all_sessions(limit=200, include_empty=False)
+    except Exception as e:
+        print(f"[AICC] DB 세션 목록 조회 실패: {e}")
+        db_sessions = []
+
     for ds in db_sessions:
         if ds["id"] not in memory_ids:
             memory_sessions.append({
@@ -314,6 +319,7 @@ async def get_sessions(menu: str = "", current_user=Depends(get_current_user)):
                 "created_at": ds.get("created_at", ""),
                 "updated_at": ds.get("updated_at", ""),
                 "from_db": True,
+                "user_msg_count": ds.get("user_msg_count", 0),
             })
 
     # 3. 메뉴 필터
@@ -702,8 +708,12 @@ async def delete_knowledge(model_name: str, current_user=Depends(get_current_use
 
 @router.get("/history/sessions")
 async def get_chat_history_sessions(current_user=Depends(get_current_user)):
-    """저장된 전체 AICC 채팅 세션 목록"""
-    sessions = aicc_db.get_all_sessions(limit=200)
+    """저장된 전체 AICC 채팅 세션 목록 (실제 대화 있는 것만)"""
+    try:
+        sessions = aicc_db.get_all_sessions(limit=200, include_empty=False)
+    except Exception as e:
+        print(f"[AICC] 채팅 이력 세션 조회 실패: {e}")
+        sessions = []
     return {"sessions": sessions, "total": len(sessions)}
 
 
