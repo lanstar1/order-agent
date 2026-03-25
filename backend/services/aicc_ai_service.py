@@ -13,7 +13,7 @@ import anthropic
 from .aicc_data_loader import data_loader
 from .aicc_web_search import search_product_blog
 
-_AICC_DEFAULT_MODEL = "claude-sonnet-4-20250514"
+_AICC_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 def _get_aicc_model() -> str:
     """DB에서 AICC용 LLM 모델 조회"""
