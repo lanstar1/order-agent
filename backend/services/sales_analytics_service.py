@@ -1546,7 +1546,7 @@ class SalesAnalyticsService:
         import json
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=1024,
                 system="당신은 랜스타(IT/전자 액세서리 제조사)의 영업 분석 전문가입니다. "
                        "주어진 거래처 데이터를 분석하여 한국어로 인사이트를 제공하세요. "

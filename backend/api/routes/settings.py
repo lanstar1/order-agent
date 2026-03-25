@@ -67,7 +67,7 @@ LLM_FEATURES = [
         "label": "AI 상담 (AICC)",
         "description": "고객 상담 응답 생성에 사용하는 모델",
         "models": CLAUDE_MODELS,
-        "default": "claude-sonnet-4-20250514",
+        "default": "claude-haiku-4-5-20251001",
         "config_attr": None,
     },
     {
