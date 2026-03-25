@@ -133,13 +133,18 @@ SYSTEM_BASE = """당신은 "랜스타(Lanstar)" 제품의 기술 상담 전문 A
 - ❌ "시스템에 등록되어 있지 않아 안내가 어렵습니다" — DB/QnA를 먼저 꼼꼼히 확인하세요
 - ❌ DB에 있는 정보인데 "정보가 없다"고 답하는 것
 
-### ★ 도어락 관련 필수 규칙 (할루시네이션 방지)
+### ★ 도어락 관련 필수 규칙 (할루시네이션 방지) — 매우 중요
 - ❌ 절대 금지: "C타입 케이블 연결 시 등록되지 않은 지문도 인식된다" — 이것은 거짓 정보입니다
 - ❌ 절대 금지: "외부 전원 연결 시 보안이 해제된다" — 이것은 거짓 정보입니다
+- ❌ 절대 금지: "전지를 제거하고 다시 삽입" 같은 일반 도어락 초기화 절차를 안내하는 것 — LS-ANDOOR 시리즈는 이 방식이 아닙니다
+- ❌ 절대 금지: "설정 메뉴에서 초기화" — LS-ANDOOR 시리즈에는 설정 메뉴가 없습니다
+- ❌ 절대 금지: DB/QnA에 없는 초기화 절차, 등록 절차를 임의로 만들어내는 것
 - ✅ 진실: C타입 케이블은 **전원 공급만** 합니다. 보안은 해제되지 않습니다
 - ✅ 진실: C타입 연결 후에도 반드시 **등록된 지문** 또는 **등록된 비밀번호**로 해제해야 합니다
 - ✅ 진실: 모든 지문이 열리는 것은 **공장 출고 상태(지문 미등록 상태)**에서만 정상입니다
+- ✅ 진실: LS-ANDOOR 시리즈의 공장 초기화는 **손잡이 후면의 설정 버튼(홈)을 9초간 누름** → 녹색 LED 점등으로 완료
 - ⚠ QnA에 "지문등록 안되어있을때 모든 지문이 열린다"는 내용은 **공장 출고 상태**를 의미합니다. C타입 연결과 무관합니다
+- ⚠ 도어락 관련 질문에는 반드시 제품 지식 DB의 정보만 사용하세요. DB에 없으면 "고객센터(02-717-3386)로 문의" 안내하세요
 
 ### 4. 반드시 해야 할 것
 - ✅ DB의 절차/단계는 원문 그대로 번호 매겨 안내
@@ -276,7 +281,9 @@ def _format_knowledge_for_prompt(knowledge_data: dict) -> str:
     lines = []
     # 절차/단계 관련 키는 번호를 붙여서 더 명확하게
     step_keys = {"비밀번호등록", "지문등록", "초기화방법", "설치방법", "비밀번호변경", "카드등록", "사용방법",
-                  "상시열림모드_설정", "상시열림모드_해제", "상시열림모드설정", "상시열림모드해제"}
+                  "상시열림모드_설정", "상시열림모드_해제", "상시열림모드설정", "상시열림모드해제",
+                  "공장초기화", "음량조절", "첫지문등록", "추가지문등록",
+                  "첫비밀번호등록", "추가비밀번호등록", "USB급속충전", "마스터키사용"}
 
     for key, value in knowledge_data.items():
         if key.startswith("_") or key in ("카테고리", "category"):
@@ -370,14 +377,14 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     if menu == "배송문의":
         sys_prompt += f"\n## 배송 정책\n{data_loader.policy_delivery[:600]}\n"
 
-    # ── 고객 리뷰 (참고 자료) ──────────────────────────────
+    # ── 고객 리뷰 (적극 활용) ──────────────────────────────
     await _status("구매 리뷰 검색 중...", f"{model} 고객 후기 확인")
-    reviews = data_loader.search_reviews(model, max_reviews=5)
+    reviews = data_loader.search_reviews(model, max_reviews=8)
     if reviews:
         await _status("구매 리뷰 분석 중...", f"{model} 리뷰 {len(reviews)}건 발견")
-        sys_prompt += "\n## [참고] 고객 구매 리뷰\n실제 구매 고객이 작성한 리뷰입니다. 답변의 1차 근거로 사용하지 말고, '구매하신 고객분들 중에 이런 후기도 있었습니다' 정도로 자연스럽게 참고 언급하세요.\n"
+        sys_prompt += "\n## [참고] 고객 구매 리뷰 — 적극 활용하세요\n실제 구매 고객이 작성한 리뷰입니다. 고객 질문과 관련된 리뷰가 있으면 '실제 구매하신 고객분들의 후기에 따르면...' 형태로 적극 인용하세요. 특히 설치 후기, 사용 팁, 문제 해결 경험은 매우 유용한 정보입니다.\n"
         for rv in reviews:
-            sys_prompt += f"- {rv[:150]}\n"
+            sys_prompt += f"- {rv[:200]}\n"
     else:
         await _status("구매 리뷰 검색 완료", f"{model} 관련 리뷰 없음")
 
@@ -395,15 +402,15 @@ async def get_ai_response(session: dict, user_message: str, image_id: str = None
     else:
         await _status("QnA 검색 완료", "유사 문의 없음")
 
-    # ── 3차 소스: 네이버 블로그 검색 (보충 참고) ────────────────
+    # ── 3차 소스: 네이버 블로그 검색 (적극 활용) ────────────────
     await _status("네이버 블로그 검색 중...", f"'{model} {user_message[:15]}' 검색")
-    blog_results = await search_product_blog(model, user_message, max_results=3, product_specific=True)
+    blog_results = await search_product_blog(model, user_message, max_results=5, product_specific=True)
     if blog_results:
         blog_titles = [b['title'][:30] for b in blog_results]
         await _status("블로그 자료 분석 중...", f"{', '.join(blog_titles[:2])}")
-        sys_prompt += "\n## [3차 소스] 웹 검색 참고 (네이버 블로그)\n아래는 웹에서 검색한 블로그 글입니다. 공식 정보가 아니므로 보조 참고만 하세요. 1차/2차 소스와 상충하면 무시하세요.\n답변 마지막에 관련 블로그 글을 '[제목](링크)' 마크다운 링크로 안내해 주세요.\n"
+        sys_prompt += "\n## [3차 소스] 웹 검색 참고 (네이버 블로그) — 적극 활용하세요\n아래는 웹에서 검색한 블로그 글입니다. 1차/2차 소스와 상충하면 1차/2차를 우선하되, 보충 정보로 적극 활용하세요.\n고객에게 유용한 블로그 글이 있으면 답변에 자연스럽게 녹여내고, 답변 마지막에 '참고하실 수 있는 블로그 글도 안내드립니다' 정도로 '[제목](링크)' 마크다운 링크를 반드시 안내해 주세요.\n"
         for blog in blog_results:
-            sys_prompt += f"\n- [{blog['title']}]({blog['link']}) ({blog['bloggername']})\n  {blog['description'][:200]}\n"
+            sys_prompt += f"\n- [{blog['title']}]({blog['link']}) ({blog['bloggername']})\n  {blog['description'][:300]}\n"
     else:
         await _status("블로그 검색 완료", "관련 블로그 글 없음")
 

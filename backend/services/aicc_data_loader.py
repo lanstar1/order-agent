@@ -546,9 +546,12 @@ class AICCDataLoader:
 
     def search_relevant_qna(self, query: str, session_model: str, max_results: int = 10) -> List[dict]:
         """
+        강화된 QnA 검색:
         1. lanstar_technical_qna.json의 모든 제품 QnA 검색
         2. lanstar_unidentified_qna.json (미분류 QnA) 검색
         3. 같은 모델 = +5점, 관련 모델(ADOOR↔ANDOOR) = +4점, 키워드 매칭 = +1점/단어
+        4. [강화] 핵심 키워드(초기화, 등록, 설치 등) 매칭 시 가산점
+        5. [강화] 같은 모델 QnA는 최소 보장 슬롯 확보
         """
         upper = query.upper()
         words = [w for w in re.split(r'[\s,]+', upper) if len(w) >= 2]
@@ -556,6 +559,15 @@ class AICCDataLoader:
 
         # 관련 모델 그룹 (ADOOR↔ANDOOR, -S↔-B 등)
         related_models = self._get_related_models(session_model)
+
+        # [강화] 핵심 키워드 — 도어락/기술문의에서 자주 등장하는 단어에 가산점
+        _BOOST_KEYWORDS = {
+            "초기화": 3, "공장초기화": 4, "리셋": 3, "RESET": 3,
+            "등록": 2, "지문": 2, "비밀번호": 2, "패스워드": 2,
+            "설치": 2, "연결": 2, "인식": 2, "오류": 2, "안됨": 2, "안돼": 2,
+            "충전": 2, "배터리": 2, "건전지": 2, "마스터키": 3, "비상키": 3,
+            "음량": 2, "소리": 2, "볼륨": 2, "상시열림": 3,
+        }
 
         # 1. technical_qna (모델별 QnA)
         for product in self.technical_qna:
@@ -567,18 +579,30 @@ class AICCDataLoader:
                 text = (q_text + " " + a_text + " " + product_model).upper()
 
                 score = 0
+                is_same_model = False
                 # 정확히 같은 모델
                 if session_model and product_model_upper == session_model.upper():
                     score += 5
+                    is_same_model = True
                 # 관련 모델 (ADOOR↔ANDOOR 등) — 같은 제품군이므로 높은 점수
                 elif product_model_upper in related_models or any(
                     rm in product_model_upper or product_model_upper in rm
                     for rm in related_models
                 ):
                     score += 4
+                    is_same_model = True  # 관련 모델도 같은 제품군으로 취급
+
+                # 기본 키워드 매칭
                 for w in words:
                     if w in text:
                         score += 1
+
+                # [강화] 핵심 키워드 가산점 — 질문 의도와 QnA 내용이 일치할 때
+                for kw, boost in _BOOST_KEYWORDS.items():
+                    kw_upper = kw.upper()
+                    if kw_upper in upper and kw_upper in text:
+                        score += boost
+
                 if score > 0:
                     results.append({
                         "model": product_model,
@@ -586,6 +610,7 @@ class AICCDataLoader:
                         "question": q_text,
                         "answer": a_text,
                         "score": score,
+                        "_same_model": is_same_model,
                     })
 
         # 2. unidentified_qna (미분류 QnA — 도어락 등 특수 제품 커버)
@@ -595,12 +620,21 @@ class AICCDataLoader:
             text = (q_text + " " + a_text).upper()
 
             score = 0
+            is_same_model = False
             for w in words:
                 if w in text:
                     score += 1
             # 미분류지만 모델명이 포함되어 있으면 가산
             if session_model and session_model.upper() in text:
                 score += 3
+                is_same_model = True
+
+            # [강화] 핵심 키워드 가산점
+            for kw, boost in _BOOST_KEYWORDS.items():
+                kw_upper = kw.upper()
+                if kw_upper in upper and kw_upper in text:
+                    score += boost
+
             if score > 0:
                 results.append({
                     "model": qna.get("original_product_name", ""),
@@ -608,18 +642,33 @@ class AICCDataLoader:
                     "question": q_text,
                     "answer": a_text,
                     "score": score,
+                    "_same_model": is_same_model,
                 })
 
-        # 점수 내림차순 정렬
-        results.sort(key=lambda x: x["score"], reverse=True)
+        # [강화] 같은 모델/관련 모델 QnA를 최소 보장 (최소 절반은 같은 모델)
+        same_model_results = [r for r in results if r.get("_same_model")]
+        other_results = [r for r in results if not r.get("_same_model")]
+        same_model_results.sort(key=lambda x: x["score"], reverse=True)
+        other_results.sort(key=lambda x: x["score"], reverse=True)
+
+        # 같은 모델 QnA가 있으면 최소 절반 슬롯 보장
+        min_same = min(len(same_model_results), max(max_results // 2, 3))
+        combined = same_model_results[:min_same]
+        remaining_slots = max_results - len(combined)
+        # 나머지 슬롯은 점수순으로 채움 (같은 모델 남은 것 + 다른 모델)
+        leftover = same_model_results[min_same:] + other_results
+        leftover.sort(key=lambda x: x["score"], reverse=True)
+        combined.extend(leftover[:remaining_slots])
 
         # 중복 제거 (질문 앞 50자)
         seen = set()
         unique = []
-        for r in results:
+        for r in combined:
             key = r["question"][:50]
             if key not in seen:
                 seen.add(key)
+                # _same_model 내부 플래그 제거
+                r.pop("_same_model", None)
                 unique.append(r)
 
         return unique[:max_results]
