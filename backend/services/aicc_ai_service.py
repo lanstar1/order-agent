@@ -15,6 +15,42 @@ from .aicc_web_search import search_product_blog
 
 _AICC_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
+# ── 품목명에서 색상 추출 헬퍼 ──────────────────────────────
+_COLOR_MAP = {
+    "BLUE": "블루(Blue)", "BLU": "블루(Blue)",
+    "BLACK": "블랙(Black)", "BLK": "블랙(Black)", "BK": "블랙(Black)",
+    "WHITE": "화이트(White)", "WHT": "화이트(White)", "WH": "화이트(White)",
+    "RED": "레드(Red)",
+    "GRAY": "그레이(Gray)", "GREY": "그레이(Gray)", "GR": "그레이(Gray)",
+    "YELLOW": "옐로우(Yellow)", "YEL": "옐로우(Yellow)",
+    "GREEN": "그린(Green)", "GRN": "그린(Green)",
+    "ORANGE": "오렌지(Orange)",
+    "PINK": "핑크(Pink)",
+    "PURPLE": "퍼플(Purple)",
+    "SILVER": "실버(Silver)",
+    "GOLD": "골드(Gold)",
+    "BROWN": "브라운(Brown)",
+    "BEIGE": "베이지(Beige)",
+    "IVORY": "아이보리(Ivory)",
+    "TRANSPARENT": "투명(Transparent)",
+}
+
+def _extract_color_from_name(product_name: str) -> str:
+    """품목명(품명)에서 색상 키워드를 추출하여 한글 라벨로 반환.
+    예: '[LANstar] ... BLUE, 3M' → '블루(Blue)'
+    """
+    if not product_name:
+        return ""
+    upper = product_name.upper()
+    # 긴 키워드부터 매칭 (BLACK이 BLK보다 먼저, BLUE가 BLU보다 먼저)
+    for keyword in sorted(_COLOR_MAP.keys(), key=len, reverse=True):
+        # 단어 경계로 매칭 (부분 매칭 방지)
+        pattern = r'(?<![A-Z])' + _re.escape(keyword) + r'(?![A-Z])'
+        if _re.search(pattern, upper):
+            return _COLOR_MAP[keyword]
+    return ""
+
+
 def _get_aicc_model() -> str:
     """DB에서 AICC용 LLM 모델 조회"""
     try:
@@ -120,6 +156,13 @@ SYSTEM_BASE = """당신은 "랜스타(Lanstar)" 제품의 기술 상담 전문 A
 예: LS-5FTPSD-BK0.5M, LS-5FTPSD-BK1M → 모두 LS-5FTPSD-BK 계열 동일 제품
 따라서 특정 길이 모델의 데이터나 리뷰가 없더라도, 같은 베이스 모델의 다른 길이 제품 정보를 참고하여 답변하세요.
 
+## ★ 모델명 색상 접미사 규칙 — 매우 중요
+모델명 끝의 알파벳은 색상을 나타냅니다. **절대 추측하지 말고, 품목명(품명)에 표기된 색상을 그대로 사용하세요.**
+주요 색상 코드: B=Blue(블루), G=Gray(그레이), R=Red(레드), Y=Yellow(옐로우), W=White(화이트), BK=Black(블랙)
+예: LS-6UTPD-3MB → 3M + B(Blue) = 블루 3미터 / LS-6UTPD-3MG → 3M + G(Gray) = 그레이 3미터
+⚠ B와 BK를 혼동하지 마세요! B=Blue(블루), BK=Black(블랙)입니다.
+⚠ 색상을 모델명으로 추측하지 말고, 반드시 품목명에 표기된 색상(BLUE, RED, YELLOW 등)을 확인하세요.
+
 ## 기타 규칙
 - 경쟁사 제품을 언급하거나 비교하지 않습니다.
 - 가격 정보는 안내하지 않습니다. 가격 문의 시 공식 사이트나 고객센터를 안내합니다.
@@ -203,6 +246,12 @@ SYSTEM_PRODUCT_INQUIRY = """당신은 "랜스타(Lanstar)" 제품 추천 전문 
 예: LS-HF-10M, LS-HF-20M, LS-HF-30M → 모두 LS-HF 계열 동일 제품 (길이만 다름)
 예: LS-6UTPD-3M, LS-6UTPD-5M, LS-6UTPD-10M → 모두 LS-6UTPD 계열 동일 제품
 따라서 특정 길이 모델의 데이터나 리뷰가 없더라도, 같은 베이스 모델의 다른 길이 제품 정보를 참고하여 답변하세요.
+
+### 6-1. 모델명 색상 접미사 규칙 — 매우 중요
+모델명 끝의 알파벳은 색상을 나타냅니다. **절대 추측하지 말고, 품명에 표기된 색상을 그대로 사용하세요.**
+주요 색상 코드: B=Blue(블루), G=Gray(그레이), R=Red(레드), Y=Yellow(옐로우), W=White(화이트), BK=Black(블랙)
+⚠ B와 BK를 혼동하지 마세요! B=Blue(블루), BK=Black(블랙)입니다.
+⚠ 색상은 반드시 품명에 표기된 색상(BLUE, RED, YELLOW 등)을 확인하세요.
 
 ### 7. 기타
 - 경쟁사 제품 언급/비교 금지
@@ -487,7 +536,13 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
             price_tier = p.get("price_tier", 0)
             price_label = f"(가격등급: {price_tier})" if price_tier else ""
 
-            sys_prompt += f"\n- **{model}** | 카테고리: {p.get('category', '미분류')} | 품명: {p.get('product_name', '')[:80]}\n"
+            # 품목명에서 색상 추출
+            pname = p.get("product_name", "")
+            color_label = _extract_color_from_name(pname)
+
+            sys_prompt += f"\n- **{model}** | 카테고리: {p.get('category', '미분류')} | 품명: {pname[:80]}\n"
+            if color_label:
+                sys_prompt += f"  ★색상: {color_label}\n"
             sys_prompt += f"  특징: {feat_text}\n"
             sys_prompt += f"  제품URL: {product_url}\n"
             if price_label:
