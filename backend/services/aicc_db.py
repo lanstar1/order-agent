@@ -9,18 +9,19 @@ from db.database import get_connection, now_kst
 # ── 세션 영구 저장 ─────────────────────────────────────
 
 def save_session(sid: str, customer_name: str, model: str, erp_code: str,
-                 menu: str, status: str = "active"):
+                 menu: str, status: str = "active",
+                 channel: str = "shop", source: str = ""):
     """세션을 DB에 저장/업데이트"""
     conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO aicc_sessions (id, customer_name, selected_model, erp_code,
-                   selected_menu, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   selected_menu, status, channel, source, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET
                    status=excluded.status, updated_at=excluded.updated_at""",
             (sid, customer_name, model, erp_code, menu, status,
-             now_kst(), now_kst()),
+             channel, source, now_kst(), now_kst()),
         )
         conn.commit()
     finally:
@@ -54,13 +55,15 @@ def save_message(sid: str, role: str, content: str, image_id: str = ""):
         conn.close()
 
 
-def get_all_sessions(limit: int = 100, include_empty: bool = True) -> List[dict]:
-    """전체 세션 목록 (최신순), user_msg_count 포함"""
+def get_all_sessions(limit: int = 100, include_empty: bool = True,
+                     channel: str = "") -> List[dict]:
+    """전체 세션 목록 (최신순), user_msg_count 포함. channel 필터 지원."""
     conn = get_connection()
     try:
-        rows = conn.execute(
-            """SELECT s.id, s.customer_name, s.selected_model, s.erp_code,
+        base_sql = """SELECT s.id, s.customer_name, s.selected_model, s.erp_code,
                       s.selected_menu, s.status, s.created_at, s.updated_at,
+                      COALESCE(s.channel, 'shop') as channel,
+                      COALESCE(s.source, '') as source,
                       COALESCE(mc.total_count, 0) as msg_count,
                       COALESCE(mc.user_count, 0) as user_msg_count
                FROM aicc_sessions s
@@ -70,10 +73,15 @@ def get_all_sessions(limit: int = 100, include_empty: bool = True) -> List[dict]
                           SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) as user_count
                    FROM aicc_messages
                    GROUP BY session_id
-               ) mc ON s.id = mc.session_id
-               ORDER BY s.created_at DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
+               ) mc ON s.id = mc.session_id"""
+        params = []
+        if channel:
+            base_sql += " WHERE COALESCE(s.channel, 'shop') = ?"
+            params.append(channel)
+        base_sql += " ORDER BY s.created_at DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(base_sql, tuple(params)).fetchall()
         results = []
         for r in rows:
             d = dict(r)

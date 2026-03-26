@@ -39,9 +39,12 @@ async def customer_ws_handler(websocket: WebSocket, session_id: str):
     erp_code = params.get("erp_code", "")
     menu = params.get("menu", "기술문의")
     is_resume = params.get("resume", "") == "true"
+    channel = params.get("channel", "shop")
+    source = params.get("source", "")
 
     # 세션 생성
-    actual_sid = session_manager.create(name, model, erp_code, menu)
+    actual_sid = session_manager.create(name, model, erp_code, menu,
+                                         channel=channel, source=source)
     s = session_manager.get(actual_sid)
     s["customer_ws"] = websocket
 
@@ -180,8 +183,8 @@ async def admin_ws_handler(websocket: WebSocket, session_id: str):
         s["admin_ws"] = None
 
 
-def _get_merged_sessions(menu: str = "") -> list:
-    """인메모리 + DB 세션 병합 (API와 동일한 로직)"""
+def _get_merged_sessions(menu: str = "", channel: str = "") -> list:
+    """인메모리 + DB 세션 병합 (API와 동일한 로직). channel 필터 지원."""
     memory_sessions = session_manager.all_serialized()
     memory_ids = {s["session_id"] for s in memory_sessions}
 
@@ -201,6 +204,8 @@ def _get_merged_sessions(menu: str = "") -> list:
                 "selected_menu": ds.get("selected_menu", ""),
                 "status": ds.get("status", "closed"),
                 "is_admin_intervened": False,
+                "channel": ds.get("channel", "shop"),
+                "source": ds.get("source", ""),
                 "messages": [],
                 "created_at": ds.get("created_at", ""),
                 "updated_at": ds.get("updated_at", ""),
@@ -210,6 +215,8 @@ def _get_merged_sessions(menu: str = "") -> list:
 
     if menu:
         memory_sessions = [s for s in memory_sessions if s.get("selected_menu", "") == menu]
+    if channel:
+        memory_sessions = [s for s in memory_sessions if s.get("channel", "shop") == channel]
 
     memory_sessions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return memory_sessions

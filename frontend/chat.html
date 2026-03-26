@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>랜스타 AI 상담</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231a1a2e'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;overflow:hidden;font-family:'Noto Sans KR',sans-serif;background:#f5f7ff}
+
+    /* 전체 레이아웃 */
+    .chat-wrap{display:flex;flex-direction:column;height:100vh;height:100dvh;max-width:480px;margin:0 auto;background:#fff;box-shadow:0 0 40px rgba(0,0,0,.08)}
+
+    /* 헤더 */
+    .chat-header{background:#1a1a2e;color:#fff;padding:16px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+    .chat-header .logo{width:36px;height:36px;background:linear-gradient(135deg,#e63946,#c62828);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px}
+    .chat-header .title{font-size:16px;font-weight:700}
+    .chat-header .title span{color:#e63946}
+    .chat-header .subtitle{font-size:11px;opacity:.7;margin-top:2px}
+
+    /* 상단 정보 바 */
+    .chat-info{background:#f5f7ff;padding:10px 16px;font-size:12px;color:#555;border-bottom:1px solid #e8e8e8;flex-shrink:0;display:none}
+    .chat-info strong{color:#1a1a2e}
+
+    /* 메뉴 화면 */
+    .screen{display:none;flex:1;overflow-y:auto;flex-direction:column}
+    .screen.active{display:flex}
+
+    #screen-menu{padding:24px 20px}
+    .greeting{font-size:15px;color:#333;margin-bottom:20px;line-height:1.7}
+    .greeting strong{color:#1a1a2e}
+    .menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .menu-btn{padding:18px 12px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;cursor:pointer;font-size:14px;font-family:inherit;text-align:center;transition:all .15s;color:#333}
+    .menu-btn:hover{border-color:#1a1a2e;background:#f5f7ff;color:#1a1a2e;transform:translateY(-1px)}
+    .menu-icon{display:block;font-size:24px;margin-bottom:6px}
+    .menu-wide{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:16px 18px;background:linear-gradient(135deg,#f5f7ff,#e8ecff);border-color:#c5cdf5}
+    .menu-wide .menu-icon{margin-bottom:0;font-size:22px}
+    .menu-wide .menu-sub{font-size:11px;color:#888;margin-left:4px}
+
+    /* 모델 선택 화면 */
+    #screen-model{padding:20px}
+    .back-btn{background:none;border:none;color:#666;font-size:13px;cursor:pointer;padding:0 0 14px;display:flex;align-items:center;gap:4px;font-family:inherit}
+    .back-btn:hover{color:#1a1a2e}
+    #screen-model h3{font-size:15px;color:#333;margin-bottom:14px}
+    .model-input-wrap{position:relative;margin-bottom:8px}
+    #model-input{width:100%;padding:12px 14px;border:1.5px solid #ddd;border-radius:10px;font-size:14px;font-family:inherit;outline:none}
+    #model-input:focus{border-color:#1a1a2e}
+    #model-dropdown{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #ddd;border-radius:10px;max-height:280px;overflow-y:auto;z-index:10;box-shadow:0 4px 16px rgba(0,0,0,.1);display:none;list-style:none}
+    #model-dropdown li{padding:12px 14px;font-size:13px;cursor:pointer;border-bottom:1px solid #f0f0f0}
+    #model-dropdown li:hover{background:#f5f7ff}
+    #model-dropdown li .code{font-weight:700;color:#1a1a2e}
+    #model-dropdown li .name{color:#666;font-size:11px;display:block;margin-top:2px}
+    .model-next{width:100%;padding:14px;background:#1a1a2e;color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer;margin-top:10px;font-family:inherit}
+    .model-next:disabled{background:#ccc;cursor:not-allowed}
+
+    /* 채팅 화면 */
+    #screen-chat{flex-direction:column}
+    .messages{flex:1;overflow-y:auto;padding:14px 16px}
+    .msg{margin-bottom:12px;display:flex;flex-direction:column}
+    .msg.user{align-items:flex-end}
+    .msg.ai,.msg.system{align-items:flex-start}
+    .msg-label{font-size:10px;color:#999;margin-bottom:3px}
+    .msg-bubble{max-width:85%;padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+    .msg.user .msg-bubble{background:#1a1a2e;color:#fff;border-bottom-right-radius:4px}
+    .msg.ai .msg-bubble{background:#f1f3f8;color:#333;border-bottom-left-radius:4px}
+    .msg.system .msg-bubble{background:#e8f5e9;color:#2e7d32;border-radius:8px;font-size:12px;width:100%;text-align:center}
+
+    /* 타이핑 인디케이터 */
+    #typing{padding:10px 16px;display:none;flex-direction:column;gap:6px;font-size:12px;flex-shrink:0}
+    #status-main{display:flex;align-items:center;gap:8px;color:#1a1a2e;font-weight:600;font-size:13px}
+    .dot{width:6px;height:6px;border-radius:50%;background:#1a1a2e;animation:bounce .8s infinite}
+    .dot:nth-child(2){animation-delay:.15s}
+    .dot:nth-child(3){animation-delay:.3s}
+    @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+    #status-details{display:flex;flex-direction:column;gap:2px;padding-left:4px}
+    .status-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#1a1a2e;font-weight:500;animation:fadeSlide .35s ease-out}
+    .status-item.fading{opacity:0;max-height:0;margin:0;transition:all .6s}
+    .status-item .icon{font-size:10px;width:14px;text-align:center}
+    @keyframes fadeSlide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+
+    /* 추천 질문 */
+    .suggestions{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:0 4px}
+    .suggest-btn{background:#fff;border:1.5px solid #d0d5e0;border-radius:20px;padding:9px 15px;font-size:12.5px;color:#1a1a2e;cursor:pointer;text-align:left;transition:all .2s;font-family:inherit;line-height:1.4}
+    .suggest-btn:hover{background:#f0f2ff;border-color:#1a1a2e;transform:translateX(4px)}
+
+    /* 이미지 미리보기 */
+    #img-preview{display:none;padding:6px 14px;border-top:1px solid #eee;background:#fafafa;flex-shrink:0}
+    #img-preview .wrap{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:4px 8px}
+    #img-preview img{max-height:48px;max-width:80px;border-radius:4px;object-fit:cover}
+    #img-preview .remove{background:none;border:none;color:#999;cursor:pointer;font-size:16px;padding:0}
+
+    /* 하단 입력 */
+    .chat-bottom{padding:12px 14px;border-top:1px solid #eee;display:flex;gap:8px;flex-shrink:0;background:#fff;align-items:flex-end}
+    .img-btn{width:40px;height:40px;border-radius:50%;background:none;border:1.5px solid #ddd;cursor:pointer;font-size:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#666}
+    .img-btn:hover{border-color:#1a1a2e;color:#1a1a2e}
+    #chat-input{flex:1;padding:10px 14px;border:1.5px solid #ddd;border-radius:20px;font-size:14px;font-family:inherit;outline:none;resize:none;max-height:80px;line-height:1.4}
+    #chat-input:focus{border-color:#1a1a2e}
+    #send-btn{width:40px;height:40px;border-radius:50%;background:#1a1a2e;color:#fff;border:none;cursor:pointer;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+    #send-btn:disabled{background:#ccc;cursor:not-allowed}
+    #file-input{display:none}
+
+    /* 재고 화면 */
+    #screen-inventory{padding:16px}
+    .inv-card{border:1.5px solid #e0e0e0;border-radius:12px;padding:18px;margin-bottom:12px}
+    .inv-model{font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:14px}
+    .inv-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13.5px}
+    .inv-row:last-child{border-bottom:none;font-weight:700;color:#e63946}
+
+    /* 유튜브 카드 */
+    .yt-card{display:block;text-decoration:none!important;background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin:8px 0 4px;transition:box-shadow .2s}
+    .yt-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.15)}
+    .yt-thumb-wrap{position:relative;width:100%;aspect-ratio:16/9;background:#000}
+    .yt-thumb{width:100%;height:100%;object-fit:cover;display:block}
+    .yt-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);opacity:.85}
+    .yt-title{padding:8px 10px;font-size:12px;font-weight:600;color:#1a1a2e;line-height:1.4}
+
+    /* 이미지 확대 */
+    .msg-img{max-width:200px;border-radius:8px;margin-bottom:6px;cursor:pointer}
+    .msg-img:hover{opacity:.9}
+
+    /* 견적 화면 */
+    #screen-quote{padding:20px}
+    .quote-info{background:#f5f7ff;border-radius:12px;padding:18px;font-size:13.5px;line-height:1.8}
+    .quote-info h3{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:12px}
+    .quote-info ol{padding-left:16px;color:#555}
+    .quote-link{display:block;text-align:center;margin-top:16px;padding:14px;background:#1a1a2e;color:#fff;border-radius:10px;text-decoration:none;font-size:14px}
+
+    /* 주문조회 화면 */
+    #screen-orders{padding:16px;flex-direction:column}
+    .phone-form{padding:16px 0}
+    .phone-form p{font-size:14px;color:#333;margin-bottom:12px;line-height:1.6}
+    .phone-form input{width:100%;padding:12px 14px;border:1.5px solid #ddd;border-radius:10px;font-size:14px;font-family:inherit;outline:none}
+    .phone-form input:focus{border-color:#1a1a2e}
+    .phone-form button{width:100%;padding:14px;background:#1a1a2e;color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer;margin-top:10px;font-family:inherit}
+    .orders-scroll{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:12px;padding:4px 0 8px;scrollbar-width:none}
+    .orders-scroll::-webkit-scrollbar{display:none}
+    .order-card{min-width:calc(100% - 8px);scroll-snap-align:start;border:1.5px solid #e0e0e0;border-radius:12px;padding:16px;flex-shrink:0;background:#fff}
+    .order-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+    .order-row:last-child{border-bottom:none}
+
+    /* 외부 출처 배지 */
+    .source-badge{display:inline-block;background:#e63946;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;margin-left:8px;font-weight:600}
+
+    /* 반응형 */
+    @media(min-width:481px){
+      .chat-wrap{border-radius:0}
+    }
+    @media(max-width:480px){
+      .chat-wrap{max-width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-wrap">
+    <!-- 헤더 -->
+    <div class="chat-header">
+      <div class="logo">L</div>
+      <div>
+        <div class="title"><span>LAN</span>star AI 상담</div>
+        <div class="subtitle">제품 기술 상담 · 문의</div>
+      </div>
+    </div>
+
+    <!-- 상단 정보 -->
+    <div class="chat-info" id="chat-info">
+      <span id="chat-info-text"></span>
+    </div>
+
+    <!-- 메뉴 선택 -->
+    <div class="screen active" id="screen-menu">
+      <div class="greeting" id="greeting-text">
+        안녕하세요! <strong>랜스타 AI 상담</strong>입니다.<br>
+        어떤 도움이 필요하신가요?
+      </div>
+      <div class="menu-grid">
+        <button class="menu-btn" onclick="selectMenu('기술문의')">
+          <span class="menu-icon">🔧</span>기술문의
+        </button>
+        <button class="menu-btn" onclick="selectMenu('제품문의')">
+          <span class="menu-icon">📦</span>제품문의
+        </button>
+        <button class="menu-btn menu-wide" onclick="showScreen('inventory')">
+          <span class="menu-icon">📊</span>
+          <span>재고 조회<span class="menu-sub">실시간 재고 확인</span></span>
+        </button>
+        <button class="menu-btn menu-wide" onclick="showScreen('quote')">
+          <span class="menu-icon">📋</span>
+          <span>견적 요청<span class="menu-sub">대량 구매 상담</span></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 모델 선택 -->
+    <div class="screen" id="screen-model">
+      <button class="back-btn" onclick="goBack('menu')">← 돌아가기</button>
+      <h3>상담할 제품을 선택해주세요</h3>
+      <div class="model-input-wrap">
+        <input type="text" id="model-input" placeholder="모델명 또는 제품명 검색..." autocomplete="off">
+        <ul id="model-dropdown"></ul>
+      </div>
+      <p id="model-selected" style="font-size:13px;color:#1a1a2e;padding:8px 0;display:none"></p>
+      <button class="model-next" id="model-next" disabled onclick="startChat()">상담 시작</button>
+      <p style="font-size:12px;color:#999;margin-top:10px;text-align:center">
+        모델명을 모르시면 <a href="#" style="color:#1a1a2e" onclick="event.preventDefault();skipModel()">건너뛰기</a>
+      </p>
+    </div>
+
+    <!-- 채팅 -->
+    <div class="screen" id="screen-chat">
+      <div class="messages" id="messages"></div>
+      <div id="typing">
+        <div id="status-main">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span>AI가 답변을 준비하고 있어요</span>
+        </div>
+        <div id="status-details"></div>
+      </div>
+      <div id="img-preview">
+        <div class="wrap">
+          <img id="preview-img" src="">
+          <button class="remove" onclick="clearImage()">×</button>
+        </div>
+      </div>
+      <div class="chat-bottom">
+        <button class="img-btn" onclick="document.getElementById('file-input').click()">📷</button>
+        <input type="file" id="file-input" accept="image/*" onchange="handleImage(event)">
+        <textarea id="chat-input" rows="1" placeholder="메시지를 입력하세요..." disabled
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+        <button id="send-btn" disabled onclick="sendMessage()">➤</button>
+      </div>
+    </div>
+
+    <!-- 재고 조회 -->
+    <div class="screen" id="screen-inventory">
+      <button class="back-btn" onclick="goBack('menu')">← 돌아가기</button>
+      <h3 style="font-size:15px;margin-bottom:14px">재고 조회</h3>
+      <div class="model-input-wrap">
+        <input type="text" id="inv-model-input" placeholder="조회할 모델명 검색..." autocomplete="off">
+        <ul id="inv-model-dropdown"></ul>
+      </div>
+      <button class="model-next" onclick="checkInventory()" style="margin-top:8px">조회하기</button>
+      <div id="inv-result" style="margin-top:16px"></div>
+    </div>
+
+    <!-- 견적 안내 -->
+    <div class="screen" id="screen-quote">
+      <button class="back-btn" onclick="goBack('menu')">← 돌아가기</button>
+      <div class="quote-info">
+        <h3>견적 요청 안내</h3>
+        <p>대량 구매 및 견적이 필요하시면 아래 방법으로 문의해 주세요.</p>
+        <ol>
+          <li>전화 문의: <strong>02-717-3386</strong></li>
+          <li>이메일: <strong>sales@lanstar.co.kr</strong></li>
+          <li>카카오톡 채널: <strong>랜스타</strong></li>
+        </ol>
+        <a class="quote-link" href="tel:02-717-3386">📞 전화 문의하기</a>
+      </div>
+    </div>
+
+    <!-- 주문 조회 -->
+    <div class="screen" id="screen-orders">
+      <button class="back-btn" onclick="goBack('chat')">← 돌아가기</button>
+      <div class="phone-form" id="phone-form">
+        <p>주문 내역을 조회하려면<br>전화번호를 입력해 주세요.</p>
+        <input type="tel" id="phone-input" placeholder="010-1234-5678">
+        <button onclick="lookupOrders()">조회하기</button>
+      </div>
+      <div id="orders-result"></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ── 설정 ──
+  const BACKEND = location.origin;
+  const WS_BASE = BACKEND.replace(/^http/, 'ws');
+
+  // URL 파라미터 파싱
+  const params = new URLSearchParams(location.search);
+  const _source = params.get('source') || 'direct';
+  const _channel = 'external';  // 이 페이지는 항상 external
+
+  // ── 상태 ──
+  let _selectedMenu = '';
+  let _selectedModel = null;
+  let _sessionId = null;
+  let _ws = null;
+  let _isSending = false;
+  let _allModels = [];
+  let _imageData = null;  // {id, media_type, base64_data, file_name}
+  let _placeholderExamples = [];
+  let _techPlaceholders = [];
+
+  // ── 유틸리티 ──
+  function escHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+  function uuid() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  // ── 화면 전환 ──
+  window.showScreen = function(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    var el = document.getElementById('screen-' + name);
+    if (el) el.classList.add('active');
+    if (name === 'chat') {
+      document.getElementById('chat-info').style.display = 'block';
+    } else {
+      document.getElementById('chat-info').style.display = 'none';
+    }
+  };
+
+  window.goBack = function(target) {
+    showScreen(target);
+  };
+
+  // ── 메뉴 선택 ──
+  window.selectMenu = function(menu) {
+    _selectedMenu = menu;
+    showScreen('model');
+    if (_allModels.length === 0) fetchModels();
+  };
+
+  // ── 모델 검색 ──
+  async function fetchModels() {
+    try {
+      var res = await fetch(BACKEND + '/api/aicc/models');
+      var data = await res.json();
+      _allModels = data.models || [];
+    } catch(e) { console.error('[Chat] 모델 로드 실패:', e); }
+  }
+
+  function filterModels(q) {
+    q = q.toUpperCase();
+    return _allModels.filter(m =>
+      m.model_name.toUpperCase().includes(q) ||
+      (m.product_name || '').toUpperCase().includes(q)
+    ).slice(0, 15);
+  }
+
+  // 모델 드롭다운 (메인)
+  var modelInput = document.getElementById('model-input');
+  var modelDrop = document.getElementById('model-dropdown');
+  modelInput.addEventListener('input', function() {
+    var q = this.value.trim();
+    if (q.length < 1) { modelDrop.style.display = 'none'; return; }
+    var list = filterModels(q);
+    if (!list.length) { modelDrop.style.display = 'none'; return; }
+    modelDrop.innerHTML = list.map(m =>
+      '<li data-idx="' + _allModels.indexOf(m) + '"><span class="code">' + escHtml(m.model_name) + '</span>' +
+      (m.product_name ? '<span class="name">' + escHtml(m.product_name) + '</span>' : '') + '</li>'
+    ).join('');
+    modelDrop.style.display = 'block';
+  });
+  modelDrop.addEventListener('click', function(e) {
+    var li = e.target.closest('li');
+    if (!li) return;
+    var m = _allModels[+li.dataset.idx];
+    _selectedModel = m;
+    modelInput.value = m.model_name;
+    modelDrop.style.display = 'none';
+    document.getElementById('model-selected').textContent = m.product_name ? m.model_name + ' — ' + m.product_name : m.model_name;
+    document.getElementById('model-selected').style.display = 'block';
+    document.getElementById('model-next').disabled = false;
+  });
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.model-input-wrap')) modelDrop.style.display = 'none';
+    if (!e.target.closest('#screen-inventory')) {
+      var invDrop = document.getElementById('inv-model-dropdown');
+      if (invDrop) invDrop.style.display = 'none';
+    }
+  });
+
+  window.skipModel = function() {
+    _selectedModel = { model_name: '', erp_code: '', product_name: '' };
+    startChat();
+  };
+
+  // ── 채팅 시작 ──
+  window.startChat = function() {
+    var modelText = _selectedModel && _selectedModel.model_name
+      ? '<strong>' + escHtml(_selectedModel.model_name) + '</strong> | ' : '';
+    document.getElementById('chat-info-text').innerHTML =
+      modelText + '<strong>' + escHtml(_selectedMenu) + '</strong>' +
+      '<span class="source-badge">' + escHtml(_source) + '</span>';
+
+    showScreen('chat');
+    document.getElementById('chat-input').disabled = false;
+    document.getElementById('send-btn').disabled = false;
+
+    // placeholder 설정
+    if (_selectedMenu === '제품문의') {
+      fetchPlaceholders();
+    } else if (_selectedMenu === '기술문의' && _selectedModel && _selectedModel.model_name) {
+      fetchTechPlaceholders(_selectedModel.model_name);
+    }
+
+    connectWS();
+  };
+
+  // ── WebSocket ──
+  function connectWS() {
+    _sessionId = uuid();
+    var modelName = _selectedModel ? _selectedModel.model_name : '';
+    var erpCode = _selectedModel ? (_selectedModel.erp_code || '') : '';
+    var wsUrl = WS_BASE + '/ws/aicc/chat/' + _sessionId +
+      '?name=&model=' + encodeURIComponent(modelName) +
+      '&erp_code=' + encodeURIComponent(erpCode) +
+      '&menu=' + encodeURIComponent(_selectedMenu) +
+      '&channel=' + encodeURIComponent(_channel) +
+      '&source=' + encodeURIComponent(_source);
+
+    _ws = new WebSocket(wsUrl);
+
+    _ws.onopen = function() { console.log('[Chat] WS 연결됨'); };
+    _ws.onclose = function() { console.log('[Chat] WS 종료'); };
+    _ws.onerror = function(e) { console.error('[Chat] WS 오류:', e); };
+
+    _ws.onmessage = function(e) {
+      var data = JSON.parse(e.data);
+
+      if (data.type === 'ai_message') {
+        hideTyping();
+        _isSending = false;
+        addMessage('ai', data.content);
+        if (data.suggestions && data.suggestions.length) {
+          showSuggestions(data.suggestions);
+        }
+      } else if (data.type === 'admin_message') {
+        addMessage('system', '👤 담당자: ' + data.content);
+      } else if (data.type === 'admin_joined') {
+        addMessage('system', data.content);
+      } else if (data.type === 'session_closed') {
+        addMessage('system', data.content);
+      } else if (data.type === 'status') {
+        showStatus(data.step, data.detail);
+      }
+    };
+  }
+
+  // ── 메시지 전송 ──
+  window.sendMessage = function() {
+    var input = document.getElementById('chat-input');
+    var text = input.value.trim();
+    if (!text && !_imageData) return;
+    if (_isSending || !_ws || _ws.readyState !== 1) return;
+
+    _isSending = true;
+    if (text) addMessage('user', text);
+
+    var payload = { type: 'chat', content: text };
+    if (_imageData) {
+      payload.image_id = _imageData.id;
+      addImageMsg('user', _imageData);
+    }
+
+    _ws.send(JSON.stringify(payload));
+    input.value = '';
+    input.style.height = 'auto';
+    clearImage();
+    showTyping();
+
+    // placeholder 갱신
+    if (_selectedMenu === '제품문의') {
+      input.placeholder = getRandomPlaceholder();
+    }
+  };
+
+  // ── 메시지 표시 ──
+  function addMessage(role, content) {
+    var mc = document.getElementById('messages');
+    var cls = role === 'user' ? 'user' : (role === 'system' ? 'system' : 'ai');
+    var label = role === 'user' ? '나' : (role === 'system' ? '시스템' : 'AI 상담사');
+
+    // 마크다운 → HTML 간단 변환
+    var html = formatContent(content);
+
+    var div = document.createElement('div');
+    div.className = 'msg ' + cls;
+    div.innerHTML = '<div class="msg-label">' + label + '</div><div class="msg-bubble">' + html + '</div>';
+    mc.appendChild(div);
+    mc.scrollTop = mc.scrollHeight;
+  }
+
+  function addImageMsg(role, imgData) {
+    var mc = document.getElementById('messages');
+    var div = document.createElement('div');
+    div.className = 'msg ' + role;
+    div.innerHTML = '<img class="msg-img" src="data:' + imgData.media_type + ';base64,' + imgData.base64_data + '">';
+    mc.appendChild(div);
+    mc.scrollTop = mc.scrollHeight;
+  }
+
+  function formatContent(text) {
+    if (!text) return '';
+    // 유튜브 링크를 카드로 변환
+    var s = escHtml(text);
+    s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" style="color:#1a1a2e">$1</a>');
+    return s;
+  }
+
+  // ── 추천 질문 ──
+  function showSuggestions(list) {
+    var mc = document.getElementById('messages');
+    var wrap = document.createElement('div');
+    wrap.className = 'suggestions';
+    list.forEach(function(q) {
+      var btn = document.createElement('button');
+      btn.className = 'suggest-btn';
+      btn.textContent = q;
+      btn.onclick = function() {
+        document.getElementById('chat-input').value = q;
+        sendMessage();
+        wrap.remove();
+      };
+      wrap.appendChild(btn);
+    });
+    mc.appendChild(wrap);
+    mc.scrollTop = mc.scrollHeight;
+  }
+
+  // ── 상태 인디케이터 ──
+  function showTyping() {
+    document.getElementById('typing').style.display = 'flex';
+    document.getElementById('status-details').innerHTML = '';
+  }
+  function hideTyping() {
+    document.getElementById('typing').style.display = 'none';
+    document.getElementById('status-details').innerHTML = '';
+  }
+  function showStatus(step, detail) {
+    document.getElementById('typing').style.display = 'flex';
+    var sd = document.getElementById('status-details');
+    var icons = { searching: '🔍', analyzing: '🧠', composing: '✍️', matching: '🔗', default: '⚙️' };
+    var icon = icons[step] || icons.default;
+    var item = document.createElement('div');
+    item.className = 'status-item';
+    item.innerHTML = '<span class="icon">' + icon + '</span><span>' + escHtml(detail || step) + '</span>';
+    sd.appendChild(item);
+    // 오래된 항목 정리
+    var items = sd.querySelectorAll('.status-item');
+    if (items.length > 3) {
+      items[0].classList.add('fading');
+      setTimeout(function() { items[0].remove(); }, 600);
+    }
+  }
+
+  // ── 이미지 업로드 ──
+  window.handleImage = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert('5MB 이하 이미지만 업로드 가능합니다.'); return; }
+
+    var reader = new FileReader();
+    reader.onload = async function() {
+      var base64 = reader.result.split(',')[1];
+      var mediaType = file.type || 'image/jpeg';
+      var imageId = uuid();
+
+      // 서버에 업로드
+      try {
+        await fetch(BACKEND + '/api/aicc/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: _sessionId,
+            image_id: imageId,
+            media_type: mediaType,
+            base64_data: base64,
+            file_name: file.name
+          })
+        });
+      } catch(err) { console.error('[Chat] 이미지 업로드 실패:', err); }
+
+      _imageData = { id: imageId, media_type: mediaType, base64_data: base64, file_name: file.name };
+      document.getElementById('img-preview').style.display = 'block';
+      document.getElementById('preview-img').src = 'data:' + mediaType + ';base64,' + base64;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  window.clearImage = function() {
+    _imageData = null;
+    document.getElementById('img-preview').style.display = 'none';
+    document.getElementById('preview-img').src = '';
+  };
+
+  // ── placeholder 예시 ──
+  async function fetchPlaceholders() {
+    try {
+      var res = await fetch(BACKEND + '/api/aicc/placeholder-examples?count=8');
+      var data = await res.json();
+      _placeholderExamples = data.examples || [];
+      document.getElementById('chat-input').placeholder = getRandomPlaceholder();
+    } catch(e) {}
+  }
+  function getRandomPlaceholder() {
+    if (!_placeholderExamples.length) return '궁금한 점을 물어보세요...';
+    return _placeholderExamples[Math.floor(Math.random() * _placeholderExamples.length)];
+  }
+  async function fetchTechPlaceholders(model) {
+    try {
+      var res = await fetch(BACKEND + '/api/aicc/placeholder-examples/tech?model=' + encodeURIComponent(model) + '&count=5');
+      var data = await res.json();
+      _techPlaceholders = data.examples || [];
+      if (_techPlaceholders.length) {
+        document.getElementById('chat-input').placeholder = _techPlaceholders[0];
+      }
+    } catch(e) {}
+  }
+
+  // ── 재고 조회 ──
+  var invInput = document.getElementById('inv-model-input');
+  var invDrop = document.getElementById('inv-model-dropdown');
+  var _invSelectedModel = null;
+
+  invInput.addEventListener('input', function() {
+    var q = this.value.trim();
+    if (q.length < 1) { invDrop.style.display = 'none'; return; }
+    if (!_allModels.length) { fetchModels().then(function() { invInput.dispatchEvent(new Event('input')); }); return; }
+    var list = filterModels(q);
+    if (!list.length) { invDrop.style.display = 'none'; return; }
+    invDrop.innerHTML = list.map(m =>
+      '<li data-idx="' + _allModels.indexOf(m) + '"><span class="code">' + escHtml(m.model_name) + '</span></li>'
+    ).join('');
+    invDrop.style.display = 'block';
+  });
+  invDrop.addEventListener('click', function(e) {
+    var li = e.target.closest('li');
+    if (!li) return;
+    _invSelectedModel = _allModels[+li.dataset.idx];
+    invInput.value = _invSelectedModel.model_name;
+    invDrop.style.display = 'none';
+  });
+
+  window.checkInventory = async function() {
+    var model = _invSelectedModel ? _invSelectedModel.model_name : invInput.value.trim();
+    if (!model) return;
+    var result = document.getElementById('inv-result');
+    result.innerHTML = '<p style="text-align:center;color:#999">조회 중...</p>';
+    try {
+      var res = await fetch(BACKEND + '/api/aicc/inventory/' + encodeURIComponent(model));
+      var data = await res.json();
+      if (data.items && data.items.length) {
+        result.innerHTML = data.items.map(function(item) {
+          return '<div class="inv-card"><div class="inv-model">' + escHtml(item.model || model) + '</div>' +
+            (item.warehouses || []).map(function(w) {
+              return '<div class="inv-row"><span>' + escHtml(w.name) + '</span><span>' + w.qty + '개</span></div>';
+            }).join('') +
+            '<div class="inv-row"><span>합계</span><span>' + item.total + '개</span></div></div>';
+        }).join('');
+      } else {
+        result.innerHTML = '<p style="text-align:center;color:#999;padding:20px">' + (data.message || '재고 정보가 없습니다.') + '</p>';
+      }
+    } catch(e) {
+      result.innerHTML = '<p style="text-align:center;color:#e63946;padding:20px">조회 중 오류가 발생했습니다.</p>';
+    }
+  };
+
+  // ── 주문 조회 ──
+  window.lookupOrders = async function() {
+    var phone = document.getElementById('phone-input').value.trim();
+    if (!phone) return;
+    var result = document.getElementById('orders-result');
+    result.innerHTML = '<p style="text-align:center;color:#999">조회 중...</p>';
+    try {
+      var res = await fetch(BACKEND + '/api/aicc/orders?phone=' + encodeURIComponent(phone));
+      var data = await res.json();
+      if (data.orders && data.orders.length) {
+        result.innerHTML = '<div class="orders-scroll">' + data.orders.map(function(o) {
+          return '<div class="order-card">' +
+            '<div class="order-row"><span class="label">주문번호</span><span class="value">' + escHtml(o.order_no || '-') + '</span></div>' +
+            '<div class="order-row"><span class="label">상품</span><span class="value">' + escHtml(o.product || '-') + '</span></div>' +
+            '<div class="order-row"><span class="label">상태</span><span class="value">' + escHtml(o.status || '-') + '</span></div>' +
+            '<div class="order-row"><span class="label">날짜</span><span class="value">' + escHtml(o.date || '-') + '</span></div>' +
+            '</div>';
+        }).join('') + '</div>';
+      } else {
+        result.innerHTML = '<p style="text-align:center;color:#999;padding:20px">주문 내역이 없습니다.</p>';
+      }
+    } catch(e) {
+      result.innerHTML = '<p style="text-align:center;color:#e63946;padding:20px">조회 중 오류가 발생했습니다.</p>';
+    }
+  };
+
+  // ── textarea 자동 높이 조절 ──
+  document.getElementById('chat-input').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 80) + 'px';
+  });
+
+  // ── 초기 모델 로드 ──
+  fetchModels();
+
+})();
+</script>
+</body>
+</html>

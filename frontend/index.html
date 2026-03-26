@@ -934,6 +934,13 @@ C규격품 200개
             <button class="aicc-tab" data-menu="제품문의" onclick="setAiccMenuFilter(this,'제품문의')" style="flex:1;padding:6px;border:1.5px solid #d1d5db;border-radius:6px;background:#fff;color:#333;cursor:pointer;font-size:11px;font-weight:600">제품문의</button>
             <button class="aicc-tab" data-menu="기술문의" onclick="setAiccMenuFilter(this,'기술문의')" style="flex:1;padding:6px;border:1.5px solid #d1d5db;border-radius:6px;background:#fff;color:#333;cursor:pointer;font-size:11px;font-weight:600">기술문의</button>
           </div>
+          <div style="margin-bottom:8px">
+            <select id="aicc-channel-filter" onchange="setAiccChannelFilter(this.value)" style="width:100%;padding:6px 8px;border:1.5px solid #d1d5db;border-radius:6px;font-size:11px;font-weight:600;background:#fff;cursor:pointer;color:#333">
+              <option value="">📡 전체 채널</option>
+              <option value="shop">🛒 쇼핑몰</option>
+              <option value="external">🌐 외부 유입</option>
+            </select>
+          </div>
           <div id="aicc-session-list" style="font-size:13px"></div>
 
           <!-- 미답변 패널 (토글) -->
@@ -956,6 +963,7 @@ C규격품 200개
                 <strong id="aicc-d-name"></strong>
                 <span id="aicc-d-model" style="background:#4f46e5;color:#fff;padding:1px 8px;border-radius:4px;font-size:11px;margin-left:6px"></span>
                 <span id="aicc-d-menu" style="background:#6b7280;color:#fff;padding:1px 8px;border-radius:4px;font-size:11px;margin-left:4px"></span>
+                <span id="aicc-d-channel" style="padding:1px 8px;border-radius:4px;font-size:11px;margin-left:4px;display:none"></span>
               </div>
               <div style="display:flex;gap:6px">
                 <button id="aicc-btn-intervene" onclick="aiccIntervene()" style="padding:4px 12px;background:#f59e0b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">개입하기</button>

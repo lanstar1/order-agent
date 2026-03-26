@@ -289,6 +289,26 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+# 외부 전용 채팅 랜딩 페이지 (/chat)
+@app.get("/chat")
+async def serve_chat_page():
+    """외부 URL에서 직접 접근 가능한 전체화면 AI 상담 페이지.
+    사용 예: https://order-agent-ffr7.onrender.com/chat?source=naver_store
+    """
+    chat_html = FRONTEND_DIR / "chat.html"
+    if not chat_html.exists():
+        return JSONResponse({"error": "chat.html not found"}, status_code=404)
+    return FileResponse(
+        chat_html,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
 # ─────────────────────────────────────────
 #  시작 이벤트
 # ─────────────────────────────────────────

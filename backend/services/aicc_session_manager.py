@@ -12,7 +12,8 @@ class AICCSessionManager:
         self.sessions: Dict[str, dict] = {}
         self.admin_list_sockets: List[WebSocket] = []
 
-    def create(self, name: str, model: str, erp_code: str, menu: str) -> str:
+    def create(self, name: str, model: str, erp_code: str, menu: str,
+               channel: str = "shop", source: str = "") -> str:
         sid = str(uuid.uuid4())
         self.sessions[sid] = {
             "session_id": sid,
@@ -22,6 +23,8 @@ class AICCSessionManager:
             "selected_menu": menu,
             "status": "active",
             "is_admin_intervened": False,
+            "channel": channel,
+            "source": source,
             "messages": [],
             "images": {},           # image_id → {media_type, base64_data}
             "customer_ws": None,
@@ -30,7 +33,7 @@ class AICCSessionManager:
             "updated_at": datetime.now(),
         }
         # DB 영구 저장
-        self._db_save_session(sid, name, model, erp_code, menu)
+        self._db_save_session(sid, name, model, erp_code, menu, channel, source)
         return sid
 
     def get(self, sid: str) -> Optional[dict]:
@@ -119,11 +122,12 @@ class AICCSessionManager:
 
     # ── DB 영구 저장 (비동기가 아닌 동기 — 빠르므로 문제없음) ──────
 
-    def _db_save_session(self, sid, name, model, erp_code, menu):
+    def _db_save_session(self, sid, name, model, erp_code, menu,
+                         channel="shop", source=""):
         try:
             from .aicc_db import save_session
-            save_session(sid, name, model, erp_code, menu)
-            print(f"[AICC DB] 세션 저장 OK: {sid[:8]}… ({name}, {menu})")
+            save_session(sid, name, model, erp_code, menu, channel=channel, source=source)
+            print(f"[AICC DB] 세션 저장 OK: {sid[:8]}… ({name}, {menu}, ch={channel}, src={source})")
         except Exception as e:
             import traceback
             print(f"[AICC DB] 세션 저장 오류: {e}\n{traceback.format_exc()}")

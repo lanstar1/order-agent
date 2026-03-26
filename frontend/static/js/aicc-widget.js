@@ -676,6 +676,7 @@
       + '&model=' + encodeURIComponent(modelName)
       + '&erp_code=' + encodeURIComponent(erpCode)
       + '&menu=' + encodeURIComponent(_selectedMenu)
+      + '&channel=shop&source=godomall'
       + (_isResuming ? '&resume=true' : '');
 
     _ws = new WebSocket(url);

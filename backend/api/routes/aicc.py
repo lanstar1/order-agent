@@ -292,8 +292,9 @@ async def get_models(q: str = ""):
 
 
 @router.get("/sessions")
-async def get_sessions(menu: str = "", current_user=Depends(get_current_user)):
-    """관리자: 세션 목록 (인메모리 + DB 병합, 재배포 후에도 유지)"""
+async def get_sessions(menu: str = "", channel: str = "",
+                       current_user=Depends(get_current_user)):
+    """관리자: 세션 목록 (인메모리 + DB 병합, 재배포 후에도 유지). channel 필터 지원."""
     # 1. 인메모리 세션 (실시간 활성 세션)
     memory_sessions = session_manager.all_serialized()
     memory_ids = {s["session_id"] for s in memory_sessions}
@@ -315,6 +316,8 @@ async def get_sessions(menu: str = "", current_user=Depends(get_current_user)):
                 "selected_menu": ds.get("selected_menu", ""),
                 "status": ds.get("status", "closed"),
                 "is_admin_intervened": False,
+                "channel": ds.get("channel", "shop"),
+                "source": ds.get("source", ""),
                 "messages": [],
                 "created_at": ds.get("created_at", ""),
                 "updated_at": ds.get("updated_at", ""),
@@ -325,6 +328,8 @@ async def get_sessions(menu: str = "", current_user=Depends(get_current_user)):
     # 3. 메뉴 필터
     if menu:
         memory_sessions = [s for s in memory_sessions if s.get("selected_menu", "") == menu]
+    if channel:
+        memory_sessions = [s for s in memory_sessions if s.get("channel", "shop") == channel]
 
     # 최신순 정렬
     memory_sessions.sort(key=lambda x: x.get("created_at", ""), reverse=True)

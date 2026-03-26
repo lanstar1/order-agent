@@ -4370,6 +4370,7 @@ let _aiccAdminWs = null;
 let _aiccListWs = null;
 let _aiccPolling = null;
 let _aiccMenuFilter = '';  // '', '제품문의', '기술문의'
+let _aiccChannelFilter = '';  // '', 'shop', 'external'
 
 // 탭 진입 시 호출
 async function initAiccTab() {
@@ -4421,7 +4422,10 @@ function connectAiccListWS() {
 async function loadAiccSessions() {
   try {
     var url = '/api/aicc/sessions';
-    if (_aiccMenuFilter) url += '?menu=' + encodeURIComponent(_aiccMenuFilter);
+    var params = [];
+    if (_aiccMenuFilter) params.push('menu=' + encodeURIComponent(_aiccMenuFilter));
+    if (_aiccChannelFilter) params.push('channel=' + encodeURIComponent(_aiccChannelFilter));
+    if (params.length) url += '?' + params.join('&');
     const data = await api.get(url);
     renderAiccSessions(data.sessions);
   } catch (e) { console.warn('AICC 세션 로드 실패', e); }
@@ -4436,6 +4440,11 @@ function setAiccMenuFilter(btn, menu) {
       t.style.background = '#fff'; t.style.color = '#333'; t.style.borderColor = '#d1d5db';
     }
   });
+  loadAiccSessions();
+}
+
+function setAiccChannelFilter(channel) {
+  _aiccChannelFilter = channel;
   loadAiccSessions();
 }
 
@@ -4469,9 +4478,14 @@ function renderAiccSessions(sessions) {
           timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
         } catch(e) { timeStr = s.created_at.substring(5, 16); }
       }
+      var chBadge = '';
+      if (s.channel === 'external') {
+        var srcLabel = s.source || 'external';
+        chBadge = '<span style="display:inline-block;background:#e63946;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px;font-weight:700">🌐 ' + srcLabel + '</span>';
+      }
       html +=
         '<div class="aicc-session-item" data-sid="' + s.session_id + '" style="padding:8px;margin-bottom:4px;border-radius:6px;cursor:pointer;background:' + (active ? '#1a1a2e' : '#f8f9fa') + ';color:' + (active ? '#fff' : '#333') + '">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;font-size:13px">' + (s.customer_name || '비회원') + '</span><span style="font-size:10px;opacity:.5">' + timeStr + '</span></div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;font-size:13px">' + (s.customer_name || '비회원') + chBadge + '</span><span style="font-size:10px;opacity:.5">' + timeStr + '</span></div>' +
           '<div style="font-size:11px;opacity:.75">' + modelInfo + s.selected_menu + '</div>' +
         '</div>';
     });
@@ -4514,6 +4528,22 @@ async function selectAiccSession(id) {
   document.getElementById('aicc-d-name').textContent = s.customer_name || '비회원';
   document.getElementById('aicc-d-model').textContent = s.selected_model || '-';
   document.getElementById('aicc-d-menu').textContent = s.selected_menu;
+
+  // 채널/출처 배지
+  var chEl = document.getElementById('aicc-d-channel');
+  if (chEl) {
+    if (s.channel === 'external') {
+      chEl.style.display = '';
+      chEl.style.background = '#e63946';
+      chEl.style.color = '#fff';
+      chEl.textContent = '🌐 ' + (s.source || 'external');
+    } else {
+      chEl.style.display = '';
+      chEl.style.background = '#10b981';
+      chEl.style.color = '#fff';
+      chEl.textContent = '🛒 쇼핑몰';
+    }
+  }
 
   const intervened = s.is_admin_intervened;
   document.getElementById('aicc-btn-intervene').style.display = intervened ? 'none' : '';

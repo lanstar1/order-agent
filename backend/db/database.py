@@ -550,6 +550,20 @@ def init_db():
         except Exception:
             pass
 
+    # ── AICC 마이그레이션: channel, source 컬럼 추가 ──
+    if not column_exists(conn, 'aicc_sessions', 'channel'):
+        try:
+            cur_or_conn.execute("ALTER TABLE aicc_sessions ADD COLUMN channel TEXT DEFAULT 'shop'")
+            logger.info("[DB] aicc_sessions.channel 컬럼 추가")
+        except Exception:
+            pass
+    if not column_exists(conn, 'aicc_sessions', 'source'):
+        try:
+            cur_or_conn.execute("ALTER TABLE aicc_sessions ADD COLUMN source TEXT DEFAULT ''")
+            logger.info("[DB] aicc_sessions.source 컬럼 추가")
+        except Exception:
+            pass
+
     # ── 판매에이전트: 업로드 파일 + 분석 작업 ──
     _sa_init_tables(conn, cur_or_conn)
 
@@ -624,6 +638,8 @@ def init_db():
         selected_menu TEXT DEFAULT '',
         status TEXT DEFAULT 'active',
         is_admin_intervened INTEGER DEFAULT 0,
+        channel TEXT DEFAULT 'shop',
+        source TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
@@ -693,6 +709,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_alert_read ON sales_alerts(is_read);
         CREATE INDEX IF NOT EXISTS idx_aicc_msg ON aicc_messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_aicc_status ON aicc_sessions(status);
+        CREATE INDEX IF NOT EXISTS idx_aicc_channel ON aicc_sessions(channel);
         CREATE INDEX IF NOT EXISTS idx_aicc_pk_cat ON aicc_product_knowledge(category);
         CREATE INDEX IF NOT EXISTS idx_aicc_unans_resolved ON aicc_unanswered(resolved);
     """)
