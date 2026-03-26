@@ -742,9 +742,17 @@ async def _generate_suggestions(model: str, user_question: str, ai_answer: str, 
             messages=[{"role": "user", "content": "\n".join(context_parts)}],
         ))
         raw = resp.content[0].text.strip()
+        # Claude가 ```json ... ``` 마크다운으로 감싸는 경우 처리
+        import re as _re
+        json_match = _re.search(r'\[.*\]', raw, _re.DOTALL)
+        if json_match:
+            raw = json_match.group(0)
+        print(f"[AICC] 추천질문 raw: {raw[:200]}")
         suggestions = _json.loads(raw)
         if isinstance(suggestions, list):
-            return [s for s in suggestions if isinstance(s, str)][:3]
+            result = [s for s in suggestions if isinstance(s, str)][:3]
+            print(f"[AICC] 추천질문 파싱 성공: {result}")
+            return result
     except Exception as e:
         print(f"[AICC] 추천질문 생성 오류: {e}")
     return []
