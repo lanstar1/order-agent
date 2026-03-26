@@ -171,23 +171,24 @@
     <!-- 메뉴 선택 -->
     <div class="screen active" id="screen-menu">
       <div class="greeting" id="greeting-text">
-        안녕하세요! <strong>랜스타 AI 상담</strong>입니다.<br>
-        어떤 도움이 필요하신가요?
+        안녕하세요! 랜스타 AI 상담사입니다.<br>무엇을 도와드릴까요?
       </div>
+      <button class="menu-btn menu-wide" onclick="selectMenu('제품문의')" style="margin-bottom:8px">
+        <span class="menu-icon">🔍</span>
+        <span>제품 문의<span class="menu-sub">용도·규격에 맞는 제품 추천</span></span>
+      </button>
       <div class="menu-grid">
         <button class="menu-btn" onclick="selectMenu('기술문의')">
-          <span class="menu-icon">🔧</span>기술문의
+          <span class="menu-icon">📋</span>기술 문의
         </button>
-        <button class="menu-btn" onclick="selectMenu('제품문의')">
-          <span class="menu-icon">📦</span>제품문의
+        <button class="menu-btn" onclick="selectMenu('배송문의')">
+          <span class="menu-icon">🚚</span>배송 문의
         </button>
-        <button class="menu-btn menu-wide" onclick="showScreen('inventory')">
-          <span class="menu-icon">📊</span>
-          <span>재고 조회<span class="menu-sub">실시간 재고 확인</span></span>
+        <button class="menu-btn" onclick="selectMenu('재고조회')">
+          <span class="menu-icon">📦</span>재고 조회
         </button>
-        <button class="menu-btn menu-wide" onclick="showScreen('quote')">
-          <span class="menu-icon">📋</span>
-          <span>견적 요청<span class="menu-sub">대량 구매 상담</span></span>
+        <button class="menu-btn" onclick="selectMenu('견적문의')">
+          <span class="menu-icon">📄</span>견적 문의
         </button>
       </div>
     </div>
@@ -321,9 +322,30 @@
     showScreen(target);
   };
 
-  // ── 메뉴 선택 ──
+  // ── 메뉴 선택 (쇼핑몰 위젯과 동일 로직) ──
   window.selectMenu = function(menu) {
     _selectedMenu = menu;
+    _selectedModel = null;
+
+    if (menu === '견적문의') {
+      showScreen('quote');
+      return;
+    }
+    if (menu === '배송문의') {
+      showScreen('orders');
+      return;
+    }
+    if (menu === '제품문의') {
+      // 제품문의: 모델 선택 없이 바로 채팅
+      startChat();
+      return;
+    }
+    if (menu === '재고조회') {
+      showScreen('inventory');
+      if (_allModels.length === 0) fetchModels();
+      return;
+    }
+    // 기술문의 → 모델 선택 화면
     showScreen('model');
     if (_allModels.length === 0) fetchModels();
   };
