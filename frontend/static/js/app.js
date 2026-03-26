@@ -4449,10 +4449,22 @@ function setAiccChannelFilter(channel) {
 }
 
 function renderAiccSessions(sessions) {
+  // 클라이언트 사이드 필터 (WebSocket 이벤트 등 필터 없이 들어온 경우 대비)
+  var filtered = sessions;
+  if (_aiccMenuFilter) {
+    filtered = filtered.filter(function(s) { return s.selected_menu === _aiccMenuFilter; });
+  }
+  if (_aiccChannelFilter) {
+    filtered = filtered.filter(function(s) {
+      var ch = s.channel || 'shop';  // NULL/undefined → 'shop' (기존 세션 호환)
+      return ch === _aiccChannelFilter;
+    });
+  }
+
   const groups = {
-    '🔴 신규': sessions.filter(function(s) { return s.status === 'active'; }),
-    '🟡 진행중': sessions.filter(function(s) { return s.status === 'intervened' || s.status === 'waiting_admin'; }),
-    '⚫ 종료': sessions.filter(function(s) { return s.status === 'closed'; }).slice(0, 30),
+    '🔴 신규': filtered.filter(function(s) { return s.status === 'active'; }),
+    '🟡 진행중': filtered.filter(function(s) { return s.status === 'intervened' || s.status === 'waiting_admin'; }),
+    '⚫ 종료': filtered.filter(function(s) { return s.status === 'closed'; }).slice(0, 30),
   };
 
   const newCount = groups['🔴 신규'].length;
