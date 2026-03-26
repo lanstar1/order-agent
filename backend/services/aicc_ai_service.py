@@ -711,14 +711,14 @@ async def get_product_inquiry_response(session: dict, user_message: str, image_i
 
 
 async def _generate_suggestions(model: str, user_question: str, ai_answer: str, blog_results: list) -> list[str]:
-    """AI 답변 기반으로 추천 질문 2~3개 생성 (비동기)"""
+    """AI 답변 맥락에 맞는 고객 예상 응답 카드 2~3개 생성 (비동기)"""
     import asyncio
     import json as _json
     try:
-        context_parts = [f"고객질문: {user_question[:100]}"]
+        context_parts = [f"고객질문: {user_question[:200]}"]
         if model:
             context_parts.append(f"제품: {model}")
-        context_parts.append(f"AI답변 요약: {ai_answer[:300]}")
+        context_parts.append(f"AI답변: {ai_answer[:500]}")
         if blog_results:
             blog_titles = ", ".join(b["title"][:40] for b in blog_results[:2])
             context_parts.append(f"관련 블로그: {blog_titles}")
@@ -727,16 +727,21 @@ async def _generate_suggestions(model: str, user_question: str, ai_answer: str, 
         loop = asyncio.get_event_loop()
         resp = await loop.run_in_executor(None, lambda: client.messages.create(
             model=_get_aicc_model(),
-            max_tokens=150,
+            max_tokens=200,
             system=(
-                "당신은 랜스타(Lanstar) IT 주변기기 상담 어시스턴트입니다.\n"
-                "고객의 질문과 AI 답변을 보고, 고객이 추가로 궁금해할 만한 질문 2~3개를 생성하세요.\n"
-                "규칙:\n"
-                "- 각 질문은 20자 이내로 짧고 자연스럽게\n"
-                "- 이미 답변된 내용을 다시 묻는 질문 금지\n"
-                "- 제품 사용법, 호환성, 비교, 설치 팁 등 실용적인 질문\n"
-                "- 웹/블로그에서 찾을 수 있는 심화 정보 관련 질문도 포함\n"
-                "- JSON 배열 형식으로만 출력. 예: [\"질문1\", \"질문2\", \"질문3\"]\n"
+                "당신은 랜스타(Lanstar) IT 주변기기 쇼핑몰의 고객 상담 어시스턴트입니다.\n"
+                "AI 상담사의 답변을 읽고, 고객이 다음에 보낼 법한 자연스러운 응답 메시지 3개를 생성하세요.\n\n"
+                "핵심 규칙:\n"
+                "- AI가 질문을 했다면(용도, 길이, 예산 등) → 고객이 그 질문에 답하는 형태의 메시지를 생성\n"
+                "  예) AI가 '어디에 사용하실 건가요?' → '게임기와 PC 모니터 연결용이에요'\n"
+                "  예) AI가 '몇 미터가 필요하세요?' → '거실 TV와 노트북 연결이라 3m 정도요'\n"
+                "  예) AI가 '예산은 어느 정도인가요?' → '만원 이내로 추천해주세요'\n"
+                "- AI가 제품을 추천했다면 → 해당 제품에 대한 구체적 후속 질문을 생성\n"
+                "  예) '이 제품 재고 있나요?', '배송은 며칠 걸리나요?'\n"
+                "- AI가 정보를 설명했다면 → 설명 내용에서 파생되는 실용적 질문을 생성\n"
+                "- 각 메시지는 25자 이내, 고객이 실제로 쓸 법한 자연스러운 구어체\n"
+                "- 반드시 AI 답변의 맥락과 직접 연결되는 내용만 생성\n"
+                "- JSON 배열 형식으로만 출력. 예: [\"응답1\", \"응답2\", \"응답3\"]\n"
                 "- 다른 텍스트 없이 JSON만 출력"
             ),
             messages=[{"role": "user", "content": "\n".join(context_parts)}],
