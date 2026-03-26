@@ -4486,9 +4486,15 @@ function renderAiccSessions(sessions) {
       var timeStr = '';
       if (s.created_at) {
         try {
-          var d = new Date(s.created_at);
-          timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-        } catch(e) { timeStr = s.created_at.substring(5, 16); }
+          // DB에 KST 문자열로 저장됨 → 그대로 파싱 (UTC 변환 방지)
+          var raw = String(s.created_at).replace('T', ' ');
+          var parts = raw.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+          if (parts) {
+            timeStr = parseInt(parts[2]) + '/' + parseInt(parts[3]) + ' ' + parts[4] + ':' + parts[5];
+          } else {
+            timeStr = raw.substring(5, 16);
+          }
+        } catch(e) { timeStr = String(s.created_at).substring(5, 16); }
       }
       var chBadge = '';
       if (s.channel === 'external') {
