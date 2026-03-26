@@ -227,8 +227,7 @@
       <div class="chat-bottom">
         <button class="img-btn" onclick="document.getElementById('file-input').click()">📷</button>
         <input type="file" id="file-input" accept="image/*" onchange="handleImage(event)">
-        <textarea id="chat-input" rows="1" placeholder="메시지를 입력하세요..." disabled
-          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+        <textarea id="chat-input" rows="1" placeholder="메시지를 입력하세요..." disabled></textarea>
         <button id="send-btn" disabled onclick="sendMessage()">➤</button>
       </div>
     </div>
@@ -714,8 +713,20 @@
     }
   };
 
+  // ── textarea 한글 조합(IME) 처리 + Enter 전송 ──
+  var _isComposing = false;
+  var chatInput = document.getElementById('chat-input');
+  chatInput.addEventListener('compositionstart', function() { _isComposing = true; });
+  chatInput.addEventListener('compositionend', function() { _isComposing = false; });
+  chatInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey && !_isComposing) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
   // ── textarea 자동 높이 조절 ──
-  document.getElementById('chat-input').addEventListener('input', function() {
+  chatInput.addEventListener('input', function() {
     this.style.height = 'auto';
     this.style.height = Math.min(this.scrollHeight, 80) + 'px';
   });
