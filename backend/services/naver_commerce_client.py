@@ -99,7 +99,7 @@ class NaverCommerceClient:
         if to_dt:
             params["to"] = to_dt
 
-        all_orders = []
+        all_order_ids = []
         async with httpx.AsyncClient() as client:
             while True:
                 resp = await client.get(
@@ -112,17 +112,29 @@ class NaverCommerceClient:
                     logger.error(f"[NaverCommerce] 주문 조회 실패: {resp.status_code} {resp.text}")
                     raise Exception(f"주문 조회 실패: {resp.status_code}")
 
-                data = resp.json()
-                items = data.get("data", [])
-                all_orders.extend(items)
+                body = resp.json()
+                logger.info(f"[NaverCommerce] 주문 조회 응답 키: {list(body.keys()) if isinstance(body, dict) else type(body)}")
+
+                # 응답: {"data": {"count": N, "productOrderIds": [...]}} 또는 {"data": [...]}
+                data = body.get("data", {})
+                if isinstance(data, dict):
+                    items = data.get("productOrderIds", [])
+                    total_count = data.get("count", 0)
+                    logger.info(f"[NaverCommerce] 주문 조회: count={total_count}, ids={len(items)}건")
+                elif isinstance(data, list):
+                    items = data
+                else:
+                    items = []
+
+                all_order_ids.extend(items)
 
                 # 페이징 처리
                 if len(items) < page_size:
                     break
                 params["page"] = params.get("page", 1) + 1
 
-        logger.info(f"[NaverCommerce] 주문 {len(all_orders)}건 수집 완료")
-        return all_orders
+        logger.info(f"[NaverCommerce] 상품주문번호 총 {len(all_order_ids)}건 수집")
+        return all_order_ids
 
     # ─── 변경 주문 조회 ───
     async def fetch_changed_orders(
