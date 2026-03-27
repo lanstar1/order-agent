@@ -147,12 +147,18 @@ async def fetch_orders(req: FetchOrdersRequest, user=Depends(get_current_user)):
         if not raw_orders:
             return {"success": True, "message": "수집된 주문이 없습니다.", "count": 0, "orders": []}
 
-        # 상품주문 상세 조회를 위해 productOrderId 목록 추출
+        # raw_orders는 상품주문번호 문자열 리스트 또는 dict 리스트일 수 있음
         product_order_ids = []
         for order in raw_orders:
-            poid = order.get("productOrderId", "")
-            if poid:
-                product_order_ids.append(poid)
+            if isinstance(order, str):
+                # API가 문자열 리스트를 반환하는 경우
+                product_order_ids.append(order)
+            elif isinstance(order, dict):
+                poid = order.get("productOrderId", "")
+                if poid:
+                    product_order_ids.append(poid)
+
+        logger.info(f"[SmartStore] 상품주문번호 {len(product_order_ids)}건 추출")
 
         # 상품주문 상세 조회 (30건씩 분할)
         all_details = []
@@ -194,7 +200,13 @@ async def _fetch_product_order_details(client, product_order_ids: list[str]) -> 
             logger.error(f"[SmartStore] 상세 조회 실패: {resp.status_code} {resp.text}")
             raise Exception(f"상품주문 상세 조회 실패: {resp.status_code}")
         data = resp.json()
-        return data.get("data", [])
+        result = data.get("data", [])
+        logger.info(f"[SmartStore] 상세 조회 {len(result)}건 (요청 {len(product_order_ids)}건)")
+        # 응답 구조 디버그 로그
+        if result:
+            sample = result[0]
+            logger.info(f"[SmartStore] 상세 응답 샘플 키: {list(sample.keys()) if isinstance(sample, dict) else type(sample)}")
+        return result
 
 
 def _save_orders_to_db(orders: list[dict]) -> int:
