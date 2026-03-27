@@ -58,6 +58,7 @@ def _sql_to_pg(sql):
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
                 'super_agent_jobs', 'super_agent_tasks', 'super_agent_artifacts',
                 'super_agent_uploads', 'super_agent_events',
+                'smartstore_orders', 'smartstore_product_map',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -679,6 +680,41 @@ def init_db():
         resolved_at TIMESTAMP
     )""")
 
+    # ── 스마트스토어 주문 테이블 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS smartstore_orders (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_order_id    TEXT UNIQUE NOT NULL,
+        order_id            TEXT NOT NULL,
+        product_no          TEXT DEFAULT '',
+        product_name        TEXT DEFAULT '',
+        option_info         TEXT DEFAULT '',
+        qty                 INTEGER DEFAULT 1,
+        price               REAL DEFAULT 0,
+        settlement_amount   REAL DEFAULT 0,
+        rcv_name            TEXT DEFAULT '',
+        rcv_tel1            TEXT DEFAULT '',
+        rcv_tel2            TEXT DEFAULT '',
+        rcv_addr            TEXT DEFAULT '',
+        rcv_addr_detail     TEXT DEFAULT '',
+        rcv_zip             TEXT DEFAULT '',
+        delivery_fee_type   TEXT DEFAULT '',
+        delivery_fee        REAL DEFAULT 0,
+        status              TEXT DEFAULT 'PAYED',
+        tracking_number     TEXT DEFAULT '',
+        item_code           TEXT DEFAULT '',
+        collected_at        TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+    # ── 스마트스토어 품목코드 매칭 테이블 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS smartstore_product_map (
+        naver_product_no    TEXT PRIMARY KEY,
+        item_code           TEXT NOT NULL,
+        model_name          TEXT DEFAULT '',
+        created_at          TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -712,6 +748,10 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_aicc_channel ON aicc_sessions(channel);
         CREATE INDEX IF NOT EXISTS idx_aicc_pk_cat ON aicc_product_knowledge(category);
         CREATE INDEX IF NOT EXISTS idx_aicc_unans_resolved ON aicc_unanswered(resolved);
+        CREATE INDEX IF NOT EXISTS idx_ss_orders_order_id ON smartstore_orders(order_id);
+        CREATE INDEX IF NOT EXISTS idx_ss_orders_status ON smartstore_orders(status);
+        CREATE INDEX IF NOT EXISTS idx_ss_orders_collected ON smartstore_orders(collected_at);
+        CREATE INDEX IF NOT EXISTS idx_ss_orders_rcv_name ON smartstore_orders(rcv_name);
     """)
 
     conn.commit()

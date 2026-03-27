@@ -94,3 +94,14 @@ ALLOWED_ORIGINS = [
 #  Rate Limiting
 # ─────────────────────────────────────────
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
+
+# ─────────────────────────────────────────
+#  네이버 커머스 API (스마트스토어)
+# ─────────────────────────────────────────
+NAVER_COMMERCE_CLIENT_ID     = os.getenv("NAVER_COMMERCE_CLIENT_ID", "")
+NAVER_COMMERCE_CLIENT_SECRET = os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "")
+
+# 스마트스토어 ERP 연동 고정값
+SMARTSTORE_CUST_CODE = os.getenv("SMARTSTORE_CUST_CODE", "")   # 스마트스토어 거래처코드
+SMARTSTORE_EMP_CODE  = os.getenv("SMARTSTORE_EMP_CODE", "")    # 담당자 코드
+SMARTSTORE_WH_CODE   = os.getenv("SMARTSTORE_WH_CODE", "30")   # 출하창고 코드

@@ -131,6 +131,7 @@ function navigateTo(pageId) {
     doc_search:   "자료검색",
     price_sheet:  "단가표 조회",
     training:     "발주서 학습",
+    smartstore:   "스마트스토어",
     shipping:     "택배조회",
     cs_rma:       "CS/RMA",
     aicc:         "AI 상담",
@@ -141,6 +142,8 @@ function navigateTo(pageId) {
   if (pageId === "aicc") initAiccTab();
   // CS/RMA 페이지 진입 시 초기화
   if (pageId === "cs_rma") csInit();
+  // 스마트스토어 페이지 진입 시 초기화
+  if (pageId === "smartstore") initSmartstorePage();
   // 택배조회 페이지 진입 시 통계 로드
   if (pageId === "shipping") initShippingPage();
   // 주문서 페이지 진입 시 드롭존 초기화
@@ -4916,6 +4919,354 @@ async function addKnowledgeDirect() {
     // 기존 데이터 새로고침
     kbSelectModel(_kbSelectedModel, '');
   } catch(e) { toast('DB 추가 실패: ' + (e.message || ''), 'error'); }
+}
+
+// ═══════════════════════════════════════
+//  스마트스토어 주문 자동화
+// ═══════════════════════════════════════
+
+let _ssOrders = [];
+let _ssTrackingMap = {};
+
+function initSmartstorePage() {
+  // 날짜 기본값: 오늘
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('ss-from-date').value = today;
+  document.getElementById('ss-to-date').value = today;
+  ssLoadOrders();
+}
+
+function switchSSTab(tabId) {
+  document.querySelectorAll('.ss-tab-panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('[data-ss-tab]').forEach(b => b.classList.remove('active'));
+  const panel = document.getElementById('ss-panel-' + tabId);
+  if (panel) panel.style.display = '';
+  const btn = document.querySelector(`[data-ss-tab="${tabId}"]`);
+  if (btn) btn.classList.add('active');
+
+  if (tabId === 'mapping') ssLoadMapping();
+  if (tabId === 'tracking') ssLoadTrackingTable();
+}
+
+// ── 주문수집 ──
+async function ssFetchOrders() {
+  const fromDate = document.getElementById('ss-from-date').value;
+  const toDate = document.getElementById('ss-to-date').value;
+  showProcessing('네이버 주문 수집 중...');
+  try {
+    const res = await api('/api/smartstore/fetch-orders', {
+      method: 'POST',
+      body: JSON.stringify({ from_date: fromDate, to_date: toDate }),
+    });
+    hideProcessing();
+    if (res.success) {
+      toast(`주문 ${res.count}건 수집 완료`, 'success');
+      ssLoadOrders();
+    } else {
+      toast('수집 실패: ' + (res.message || ''), 'error');
+    }
+  } catch(e) {
+    hideProcessing();
+    toast('주문수집 오류: ' + (e.message || ''), 'error');
+  }
+}
+
+// ── 주문 목록 로드 ──
+async function ssLoadOrders() {
+  try {
+    const res = await api('/api/smartstore/orders?status=PAYED');
+    if (!res.success) {
+      document.getElementById('ss-orders-table').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444">' + (res.message || '로드 실패') + '</div>';
+      return;
+    }
+    _ssOrders = res.orders || [];
+    document.getElementById('ss-order-count').textContent = `발송대기 ${_ssOrders.length}건`;
+    document.getElementById('ss-stats-badge').textContent = `주문 ${_ssOrders.length}건`;
+
+    if (_ssOrders.length === 0) {
+      document.getElementById('ss-orders-table').innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af">발송대기 주문이 없습니다.</div>';
+      return;
+    }
+
+    // 주문번호별 그룹핑
+    const groups = {};
+    _ssOrders.forEach(o => {
+      const oid = o.order_id;
+      if (!groups[oid]) groups[oid] = [];
+      groups[oid].push(o);
+    });
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html += '<thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">';
+    html += '<th style="padding:8px;text-align:left">주문번호</th>';
+    html += '<th style="padding:8px;text-align:left">수취인</th>';
+    html += '<th style="padding:8px;text-align:left">상품명</th>';
+    html += '<th style="padding:8px;text-align:left">옵션/모델</th>';
+    html += '<th style="padding:8px;text-align:center">수량</th>';
+    html += '<th style="padding:8px;text-align:right">정산금액</th>';
+    html += '<th style="padding:8px;text-align:left">품목코드</th>';
+    html += '<th style="padding:8px;text-align:left">배송비</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const [oid, items] of Object.entries(groups)) {
+      items.forEach((o, idx) => {
+        const rowBg = idx === 0 ? '' : 'background:#fafbfc;';
+        const matchClass = o.item_code_matched ? 'color:#059669;font-weight:600' : 'color:#ef4444';
+        html += `<tr style="border-bottom:1px solid #f0f0f0;${rowBg}">`;
+        if (idx === 0) {
+          html += `<td style="padding:6px 8px" rowspan="${items.length}">${_escHtml(oid.slice(-8))}</td>`;
+          html += `<td style="padding:6px 8px" rowspan="${items.length}">${_escHtml(o.rcv_name || o.rcvName || '')}</td>`;
+        }
+        html += `<td style="padding:6px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(o.product_name || o.productName || '')}">${_escHtml((o.product_name || o.productName || '').slice(0, 30))}</td>`;
+        html += `<td style="padding:6px 8px"><code style="font-size:11px">${_escHtml(o.model_code || '')}</code></td>`;
+        html += `<td style="padding:6px 8px;text-align:center">${o.qty}</td>`;
+        html += `<td style="padding:6px 8px;text-align:right">${(o.settlement_amount || o.settlementAmount || 0).toLocaleString()}</td>`;
+        html += `<td style="padding:6px 8px;${matchClass}">${_escHtml(o.item_code_matched || '미매칭')}</td>`;
+        if (idx === 0) {
+          const feeType = o.delivery_fee_type || o.deliveryFeeType || '';
+          const fee = o.delivery_fee || o.deliveryFee || 0;
+          const feeLabel = feeType === 'FREE' ? '무료' : feeType === 'PAID' ? `착불 ${fee.toLocaleString()}` : feeType === 'CONDITIONAL_FREE' ? '조건부무료' : fee > 0 ? fee.toLocaleString() : '-';
+          html += `<td style="padding:6px 8px" rowspan="${items.length}">${feeLabel}</td>`;
+        }
+        html += '</tr>';
+      });
+    }
+    html += '</tbody></table>';
+    document.getElementById('ss-orders-table').innerHTML = html;
+  } catch(e) {
+    document.getElementById('ss-orders-table').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444">로드 오류: ' + (e.message || '') + '</div>';
+  }
+}
+
+// ── ERP 다운로드 ──
+function ssDownloadERP() {
+  const token = localStorage.getItem('token');
+  const a = document.createElement('a');
+  a.href = '/api/smartstore/download-erp?token=' + encodeURIComponent(token);
+  a.click();
+  toast('ERP 판매입력 파일 다운로드 시작', 'info');
+}
+
+// ── 택배 다운로드 ──
+function ssDownloadDelivery() {
+  const token = localStorage.getItem('token');
+  const a = document.createElement('a');
+  a.href = '/api/smartstore/download-delivery?token=' + encodeURIComponent(token);
+  a.click();
+  toast('택배 업로드 파일 다운로드 시작', 'info');
+}
+
+// ── 송장 테이블 로드 ──
+async function ssLoadTrackingTable() {
+  try {
+    const res = await api('/api/smartstore/orders?status=PAYED');
+    _ssOrders = res.orders || [];
+
+    if (_ssOrders.length === 0) {
+      document.getElementById('ss-tracking-table').innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af">발송대기 주문이 없습니다.</div>';
+      document.getElementById('ss-dispatch-btn').style.display = 'none';
+      return;
+    }
+
+    // 주문번호별 그룹핑
+    const groups = {};
+    _ssOrders.forEach(o => {
+      const oid = o.order_id;
+      if (!groups[oid]) groups[oid] = [];
+      groups[oid].push(o);
+    });
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html += '<thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">';
+    html += '<th style="padding:8px;text-align:left">주문번호</th>';
+    html += '<th style="padding:8px;text-align:left">수취인</th>';
+    html += '<th style="padding:8px;text-align:left">상품</th>';
+    html += '<th style="padding:8px;text-align:left;min-width:200px">송장번호</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const [oid, items] of Object.entries(groups)) {
+      const first = items[0];
+      const goods = items.map(i => (i.model_code || (i.product_name || i.productName || '').slice(0, 15)) + ' x' + i.qty).join(', ');
+      const existing = _ssTrackingMap[oid] || first.tracking_number || '';
+      html += `<tr style="border-bottom:1px solid #f0f0f0">`;
+      html += `<td style="padding:8px">${_escHtml(oid.slice(-8))}</td>`;
+      html += `<td style="padding:8px">${_escHtml(first.rcv_name || first.rcvName || '')}</td>`;
+      html += `<td style="padding:8px;font-size:12px">${_escHtml(goods)}</td>`;
+      html += `<td style="padding:8px"><input type="text" class="ss-tracking-input" data-order-id="${oid}" value="${_escHtml(existing)}" placeholder="운송장번호 입력" style="width:100%;padding:6px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:13px"></td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    document.getElementById('ss-tracking-table').innerHTML = html;
+    document.getElementById('ss-dispatch-btn').style.display = '';
+  } catch(e) {
+    document.getElementById('ss-tracking-table').innerHTML = '<div style="padding:20px;color:#ef4444">로드 오류: ' + (e.message || '') + '</div>';
+  }
+}
+
+// ── 택배 결과 엑셀 업로드 ──
+async function ssUploadTracking(input) {
+  if (!input.files.length) return;
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+
+  document.getElementById('ss-tracking-upload-status').textContent = '업로드 중...';
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/smartstore/upload-tracking', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: formData,
+    }).then(r => r.json());
+
+    if (res.success) {
+      document.getElementById('ss-tracking-upload-status').textContent = res.message;
+      toast(res.message, 'success');
+
+      // 매칭된 송장번호를 주문번호 기준으로 매핑
+      _ssTrackingMap = {};
+      (res.matched || []).forEach(m => {
+        _ssTrackingMap[m.orderId] = m.trackingNumber;
+      });
+
+      // 테이블 새로고침 (매칭된 값 반영)
+      ssLoadTrackingTable();
+    } else {
+      document.getElementById('ss-tracking-upload-status').textContent = '실패: ' + (res.message || '');
+      toast('송장 업로드 실패: ' + (res.message || ''), 'error');
+    }
+  } catch(e) {
+    document.getElementById('ss-tracking-upload-status').textContent = '오류: ' + (e.message || '');
+    toast('업로드 오류', 'error');
+  }
+  input.value = '';
+}
+
+// ── 발송처리 ──
+async function ssDispatchAll() {
+  // 입력된 송장번호 수집
+  const inputs = document.querySelectorAll('.ss-tracking-input');
+  const dispatchMap = {};  // orderId → trackingNumber
+
+  inputs.forEach(inp => {
+    const oid = inp.dataset.orderId;
+    const tn = inp.value.trim();
+    if (tn) dispatchMap[oid] = tn;
+  });
+
+  if (Object.keys(dispatchMap).length === 0) {
+    toast('송장번호가 입력된 주문이 없습니다.', 'error');
+    return;
+  }
+
+  // 주문번호 → 상품주문번호 매핑 (동일 주문건 내 모든 상품주문번호에 동일 송장)
+  const items = [];
+  _ssOrders.forEach(o => {
+    const oid = o.order_id;
+    if (dispatchMap[oid]) {
+      items.push({
+        product_order_id: o.product_order_id,
+        tracking_number: dispatchMap[oid],
+      });
+    }
+  });
+
+  if (!confirm(`${items.length}건 발송처리를 실행하시겠습니까?`)) return;
+
+  showProcessing('네이버 발송처리 중...');
+  try {
+    const res = await api('/api/smartstore/dispatch', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+    hideProcessing();
+    if (res.success) {
+      toast(res.message, 'success');
+      ssLoadOrders();
+      ssLoadTrackingTable();
+    } else {
+      toast('발송처리 실패: ' + (res.message || ''), 'error');
+    }
+  } catch(e) {
+    hideProcessing();
+    toast('발송처리 오류: ' + (e.message || ''), 'error');
+  }
+}
+
+// ── 품목매칭 로드 ──
+async function ssLoadMapping() {
+  try {
+    const res = await api('/api/smartstore/product-map');
+    const items = res.items || [];
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html += '<thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">';
+    html += '<th style="padding:8px;text-align:left">상품번호</th>';
+    html += '<th style="padding:8px;text-align:left">품목코드</th>';
+    html += '<th style="padding:8px;text-align:left">모델명</th>';
+    html += '<th style="padding:8px;width:60px">삭제</th>';
+    html += '</tr></thead><tbody id="ss-mapping-body">';
+
+    items.forEach((item, idx) => {
+      html += `<tr data-idx="${idx}" style="border-bottom:1px solid #f0f0f0">`;
+      html += `<td style="padding:4px 8px"><input type="text" class="ss-map-pno" value="${_escHtml(item.naver_product_no || '')}" style="width:100%;padding:4px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:13px"></td>`;
+      html += `<td style="padding:4px 8px"><input type="text" class="ss-map-code" value="${_escHtml(item.item_code || '')}" style="width:100%;padding:4px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:13px"></td>`;
+      html += `<td style="padding:4px 8px"><input type="text" class="ss-map-model" value="${_escHtml(item.model_name || '')}" style="width:100%;padding:4px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:13px"></td>`;
+      html += `<td style="padding:4px 8px;text-align:center"><button onclick="this.closest('tr').remove()" style="color:#ef4444;border:none;background:none;cursor:pointer;font-size:16px">✕</button></td>`;
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('ss-mapping-table').innerHTML = html;
+  } catch(e) {
+    document.getElementById('ss-mapping-table').innerHTML = '<div style="padding:20px;color:#ef4444">로드 오류</div>';
+  }
+}
+
+function ssAddMappingRow() {
+  const tbody = document.getElementById('ss-mapping-body');
+  if (!tbody) { ssLoadMapping(); return; }
+  const tr = document.createElement('tr');
+  tr.style.borderBottom = '1px solid #f0f0f0';
+  tr.innerHTML = `
+    <td style="padding:4px 8px"><input type="text" class="ss-map-pno" placeholder="상품번호" style="width:100%;padding:4px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:13px"></td>
+    <td style="padding:4px 8px"><input type="text" class="ss-map-code" placeholder="품목코드" style="width:100%;padding:4px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:13px"></td>
+    <td style="padding:4px 8px"><input type="text" class="ss-map-model" placeholder="모델명 (선택)" style="width:100%;padding:4px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:13px"></td>
+    <td style="padding:4px 8px;text-align:center"><button onclick="this.closest('tr').remove()" style="color:#ef4444;border:none;background:none;cursor:pointer;font-size:16px">✕</button></td>
+  `;
+  tbody.appendChild(tr);
+  tr.querySelector('.ss-map-pno').focus();
+}
+
+async function ssSaveMapping() {
+  const rows = document.querySelectorAll('#ss-mapping-body tr');
+  const items = [];
+  rows.forEach(tr => {
+    const pno = tr.querySelector('.ss-map-pno')?.value?.trim() || '';
+    const code = tr.querySelector('.ss-map-code')?.value?.trim() || '';
+    const model = tr.querySelector('.ss-map-model')?.value?.trim() || '';
+    if (pno && code) {
+      items.push({ naver_product_no: pno, item_code: code, model_name: model });
+    }
+  });
+
+  if (items.length === 0) {
+    toast('저장할 매칭 데이터가 없습니다.', 'error');
+    return;
+  }
+
+  try {
+    const res = await api('/api/smartstore/product-map', {
+      method: 'POST',
+      body: JSON.stringify(items),
+    });
+    if (res.success) {
+      toast(res.message, 'success');
+    } else {
+      toast('저장 실패: ' + (res.message || ''), 'error');
+    }
+  } catch(e) {
+    toast('저장 오류: ' + (e.message || ''), 'error');
+  }
 }
 
 

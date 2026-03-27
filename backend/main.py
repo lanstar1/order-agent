@@ -29,6 +29,7 @@ from api.routes.cs import router as cs_router
 from api.routes.sales_analytics import router as sales_analytics_router
 from api.routes.purchases import router as purchases_router
 from api.routes.aicc import router as aicc_router
+from api.routes.smartstore import router as smartstore_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -145,6 +146,11 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/purchases/submit-erp"): "구매입력 ERP 전송",
     ("POST", "/api/super-agent/jobs"): "Super Agent 작업 생성",
     ("GET", "/api/super-agent/jobs"): "Super Agent 이력 조회",
+    ("POST", "/api/smartstore/fetch-orders"): "스마트스토어 주문수집",
+    ("GET", "/api/smartstore/download-erp"): "스마트스토어 ERP 다운로드",
+    ("GET", "/api/smartstore/download-delivery"): "스마트스토어 택배 다운로드",
+    ("POST", "/api/smartstore/dispatch"): "스마트스토어 발송처리",
+    ("POST", "/api/smartstore/upload-tracking"): "스마트스토어 송장 업로드",
 }
 
 @app.middleware("http")
@@ -240,6 +246,7 @@ app.include_router(cs_router)
 app.include_router(sales_analytics_router)
 app.include_router(purchases_router)
 app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
+app.include_router(smartstore_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:

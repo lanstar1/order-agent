@@ -266,6 +266,10 @@ API_KEY_DEFINITIONS = [
      "description": "Super Agent 데이터 처리(Gemini Flash) + 이미지 생성", "prefix": "AIza"},
     {"key": "api_tavily", "label": "Tavily", "env_var": "TAVILY_API_KEY",
      "description": "웹검색 fallback (Perplexity 대안)", "prefix": "tvly-"},
+    {"key": "api_naver_commerce_id", "label": "네이버 커머스 Client ID", "env_var": "NAVER_COMMERCE_CLIENT_ID",
+     "description": "스마트스토어 주문수집/발송처리 API", "prefix": ""},
+    {"key": "api_naver_commerce_secret", "label": "네이버 커머스 Client Secret", "env_var": "NAVER_COMMERCE_CLIENT_SECRET",
+     "description": "스마트스토어 API 전자서명용 BCrypt 시크릿", "prefix": "$2a$"},
 ]
 
 
