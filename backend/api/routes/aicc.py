@@ -331,8 +331,8 @@ async def get_sessions(menu: str = "", channel: str = "",
     if channel:
         memory_sessions = [s for s in memory_sessions if s.get("channel", "shop") == channel]
 
-    # 최신순 정렬
-    memory_sessions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    # 최신순 정렬 (created_at이 str/datetime 혼재할 수 있으므로 str 변환)
+    memory_sessions.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
     return {"sessions": memory_sessions}
 
 
