@@ -25,8 +25,9 @@ KST = timezone(timedelta(hours=9))
 
 # ─── Request / Response 모델 ───────────────────
 class FetchOrdersRequest(BaseModel):
-    from_date: str = ""      # YYYY-MM-DD (비어있으면 오늘)
-    to_date: str = ""        # YYYY-MM-DD (비어있으면 from_date+1)
+    from_date: str = ""      # YYYY-MM-DD (비어있으면 7일 전)
+    to_date: str = ""        # YYYY-MM-DD (비어있으면 오늘)
+    statuses: str = ""       # 쉼표 구분 상태 (비어있으면 PAYED,DELIVERING,DELIVERED)
 
 
 class DispatchItem(BaseModel):
@@ -129,20 +130,39 @@ async def fetch_orders(req: FetchOrdersRequest, user=Depends(get_current_user)):
     try:
         client = _get_naver_client()
 
-        # 날짜 설정
+        # 날짜 설정 (기본: 7일 전 ~ 오늘)
         now = datetime.now(KST)
         if req.from_date:
             from_dt = req.from_date + "T00:00:00.000+09:00"
         else:
-            from_dt = now.strftime("%Y-%m-%d") + "T00:00:00.000+09:00"
+            week_ago = now - timedelta(days=7)
+            from_dt = week_ago.strftime("%Y-%m-%d") + "T00:00:00.000+09:00"
 
         if req.to_date:
             to_dt = req.to_date + "T23:59:59.999+09:00"
         else:
             to_dt = now.strftime("%Y-%m-%d") + "T23:59:59.999+09:00"
 
-        # 주문 수집
-        raw_orders = await client.fetch_new_orders(from_dt, to_dt)
+        # 상태 설정 (기본: 신규주문~배송완료)
+        statuses = req.statuses if req.statuses else "PAYED,DELIVERING,DELIVERED,PURCHASE_DECIDED"
+
+        logger.info(f"[SmartStore] 주문 수집 요청: {from_dt} ~ {to_dt}, 상태={statuses}")
+
+        # 각 상태별로 주문 수집
+        all_product_order_ids = []
+        for status in statuses.split(","):
+            status = status.strip()
+            if not status:
+                continue
+            try:
+                ids = await client.fetch_new_orders(from_dt, to_dt, status=status)
+                logger.info(f"[SmartStore] 상태={status}: {len(ids)}건")
+                all_product_order_ids.extend(ids)
+            except Exception as e:
+                logger.warning(f"[SmartStore] 상태={status} 조회 실패: {e}")
+
+        # 중복 제거
+        raw_orders = list(dict.fromkeys(all_product_order_ids))
 
         if not raw_orders:
             return {"success": True, "message": "수집된 주문이 없습니다.", "count": 0, "orders": []}

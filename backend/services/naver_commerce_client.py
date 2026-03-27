@@ -83,16 +83,28 @@ class NaverCommerceClient:
         from_dt: str,
         to_dt: Optional[str] = None,
         page_size: int = 300,
-    ) -> list[dict]:
+        status: str = "PAYED",
+    ) -> list[str]:
         """
-        발송대기(PAYED) 상태 주문 조회
+        주문 상태별 상품주문번호 조회
         from_dt: ISO 형식 (예: 2026-02-13T00:00:00.000+09:00)
+        status: PAYED, DELIVERING, DELIVERED, PURCHASE_DECIDED 등
         """
         headers = await self._headers()
+
+        # 상태에 따라 rangeType 설정
+        range_type_map = {
+            "PAYED": "PAYED_DATETIME",
+            "DELIVERING": "PAYED_DATETIME",
+            "DELIVERED": "PAYED_DATETIME",
+            "PURCHASE_DECIDED": "PAYED_DATETIME",
+        }
+        range_type = range_type_map.get(status, "PAYED_DATETIME")
+
         params = {
             "from": from_dt,
-            "rangeType": "PAYED_DATETIME",
-            "productOrderStatuses": "PAYED",
+            "rangeType": range_type,
+            "productOrderStatuses": status,
             "pageSize": page_size,
             "page": 1,
         }

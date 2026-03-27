@@ -884,13 +884,24 @@ C규격품 200개
         <!-- 주문수집 카드 -->
         <div class="card" style="margin-bottom:16px">
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
-            <div style="min-width:160px">
+            <div style="min-width:140px">
               <label style="font-size:12px;font-weight:600;color:#374151">조회 시작일</label>
               <input type="date" id="ss-from-date" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
             </div>
-            <div style="min-width:160px">
+            <div style="min-width:140px">
               <label style="font-size:12px;font-weight:600;color:#374151">조회 종료일</label>
               <input type="date" id="ss-to-date" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+            </div>
+            <div style="min-width:180px">
+              <label style="font-size:12px;font-weight:600;color:#374151">주문 상태</label>
+              <select id="ss-fetch-status" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;background:#fff">
+                <option value="">전체 (신규~구매확정)</option>
+                <option value="PAYED">발송대기 (PAYED)</option>
+                <option value="DELIVERING">배송중</option>
+                <option value="DELIVERED">배송완료</option>
+                <option value="PURCHASE_DECIDED">구매확정</option>
+                <option value="PAYED,DELIVERING">발송대기+배송중</option>
+              </select>
             </div>
             <button onclick="ssFetchOrders()" style="padding:8px 20px;background:#03c75a;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">
               🔄 주문수집
@@ -898,6 +909,9 @@ C규격품 200개
             <button onclick="ssLoadOrders()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">
               📋 목록 새로고침
             </button>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:#6b7280">
+            ℹ️ 날짜 미입력 시 최근 7일 기준으로 조회합니다. 상태 '전체' 선택 시 신규주문~구매확정까지 모두 수집합니다.
           </div>
         </div>
 
@@ -3026,7 +3040,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260327b"></script>
+<script src="/static/js/app.js?v=20260327c"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

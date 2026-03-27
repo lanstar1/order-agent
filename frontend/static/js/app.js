@@ -4952,9 +4952,10 @@ function switchSSTab(tabId) {
 async function ssFetchOrders() {
   const fromDate = document.getElementById('ss-from-date').value;
   const toDate = document.getElementById('ss-to-date').value;
+  const statuses = document.getElementById('ss-fetch-status') ? document.getElementById('ss-fetch-status').value : '';
   showProcessing('네이버 주문 수집 중...');
   try {
-    const res = await api.post('/api/smartstore/fetch-orders', { from_date: fromDate, to_date: toDate });
+    const res = await api.post('/api/smartstore/fetch-orders', { from_date: fromDate, to_date: toDate, statuses: statuses });
     hideProcessing();
     if (res.success) {
       toast(`주문 ${res.count}건 수집 완료`, 'success');
@@ -4971,13 +4972,14 @@ async function ssFetchOrders() {
 // ── 주문 목록 로드 ──
 async function ssLoadOrders() {
   try {
-    const res = await api.get('/api/smartstore/orders?status=PAYED');
+    const res = await api.get('/api/smartstore/orders?status=');
     if (!res.success) {
       document.getElementById('ss-orders-table').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444">' + (res.message || '로드 실패') + '</div>';
       return;
     }
     _ssOrders = res.orders || [];
-    document.getElementById('ss-order-count').textContent = `발송대기 ${_ssOrders.length}건`;
+    const payedCount = _ssOrders.filter(o => o.status === 'PAYED').length;
+    document.getElementById('ss-order-count').textContent = `전체 ${_ssOrders.length}건 (발송대기 ${payedCount}건)`;
     document.getElementById('ss-stats-badge').textContent = `주문 ${_ssOrders.length}건`;
 
     if (_ssOrders.length === 0) {
