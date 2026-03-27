@@ -4954,10 +4954,7 @@ async function ssFetchOrders() {
   const toDate = document.getElementById('ss-to-date').value;
   showProcessing('네이버 주문 수집 중...');
   try {
-    const res = await api('/api/smartstore/fetch-orders', {
-      method: 'POST',
-      body: JSON.stringify({ from_date: fromDate, to_date: toDate }),
-    });
+    const res = await api.post('/api/smartstore/fetch-orders', { from_date: fromDate, to_date: toDate });
     hideProcessing();
     if (res.success) {
       toast(`주문 ${res.count}건 수집 완료`, 'success');
@@ -4974,7 +4971,7 @@ async function ssFetchOrders() {
 // ── 주문 목록 로드 ──
 async function ssLoadOrders() {
   try {
-    const res = await api('/api/smartstore/orders?status=PAYED');
+    const res = await api.get('/api/smartstore/orders?status=PAYED');
     if (!res.success) {
       document.getElementById('ss-orders-table').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444">' + (res.message || '로드 실패') + '</div>';
       return;
@@ -5040,7 +5037,7 @@ async function ssLoadOrders() {
 
 // ── ERP 다운로드 ──
 function ssDownloadERP() {
-  const token = localStorage.getItem('token');
+  const token = api.getToken();
   const a = document.createElement('a');
   a.href = '/api/smartstore/download-erp?token=' + encodeURIComponent(token);
   a.click();
@@ -5049,7 +5046,7 @@ function ssDownloadERP() {
 
 // ── 택배 다운로드 ──
 function ssDownloadDelivery() {
-  const token = localStorage.getItem('token');
+  const token = api.getToken();
   const a = document.createElement('a');
   a.href = '/api/smartstore/download-delivery?token=' + encodeURIComponent(token);
   a.click();
@@ -5059,7 +5056,7 @@ function ssDownloadDelivery() {
 // ── 송장 테이블 로드 ──
 async function ssLoadTrackingTable() {
   try {
-    const res = await api('/api/smartstore/orders?status=PAYED');
+    const res = await api.get('/api/smartstore/orders?status=PAYED');
     _ssOrders = res.orders || [];
 
     if (_ssOrders.length === 0) {
@@ -5111,12 +5108,7 @@ async function ssUploadTracking(input) {
 
   document.getElementById('ss-tracking-upload-status').textContent = '업로드 중...';
   try {
-    const token = localStorage.getItem('token');
-    const res = await fetch('/api/smartstore/upload-tracking', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
-      body: formData,
-    }).then(r => r.json());
+    const res = await api.postForm('/api/smartstore/upload-tracking', formData);
 
     if (res.success) {
       document.getElementById('ss-tracking-upload-status').textContent = res.message;
@@ -5174,10 +5166,7 @@ async function ssDispatchAll() {
 
   showProcessing('네이버 발송처리 중...');
   try {
-    const res = await api('/api/smartstore/dispatch', {
-      method: 'POST',
-      body: JSON.stringify({ items }),
-    });
+    const res = await api.post('/api/smartstore/dispatch', { items });
     hideProcessing();
     if (res.success) {
       toast(res.message, 'success');
@@ -5195,7 +5184,7 @@ async function ssDispatchAll() {
 // ── 품목매칭 로드 ──
 async function ssLoadMapping() {
   try {
-    const res = await api('/api/smartstore/product-map');
+    const res = await api.get('/api/smartstore/product-map');
     const items = res.items || [];
 
     let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
@@ -5255,10 +5244,7 @@ async function ssSaveMapping() {
   }
 
   try {
-    const res = await api('/api/smartstore/product-map', {
-      method: 'POST',
-      body: JSON.stringify(items),
-    });
+    const res = await api.post('/api/smartstore/product-map', items);
     if (res.success) {
       toast(res.message, 'success');
     } else {
