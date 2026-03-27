@@ -407,6 +407,36 @@ async def startup():
     except Exception as e:
         logger.warning(f"AICC 제품 지식 DB 로드 실패 (서비스는 계속): {e}")
 
+    # 스마트스토어 품목매칭 JSON → DB 자동 로드 (매 배포시 최신 반영)
+    try:
+        import json as _json
+        ss_map_path = Path(__file__).parent.parent / "data" / "smartstore_product_map.json"
+        if ss_map_path.exists():
+            with open(ss_map_path, encoding="utf-8") as f:
+                ss_items = _json.load(f)
+            from db.database import get_connection as _gc_ss
+            _conn_ss = _gc_ss()
+            _loaded = 0
+            for item in ss_items:
+                pno = str(item.get("naver_product_no", "")).strip()
+                code = str(item.get("item_code", "")).strip()
+                model = str(item.get("model_name", "")).strip()
+                if pno and code:
+                    _conn_ss.execute(
+                        "INSERT OR IGNORE INTO smartstore_product_map (naver_product_no, item_code, model_name) VALUES (?, ?, ?)",
+                        (pno, code, model),
+                    )
+                    _conn_ss.execute(
+                        "UPDATE smartstore_product_map SET item_code=?, model_name=? WHERE naver_product_no=?",
+                        (code, model, pno),
+                    )
+                    _loaded += 1
+            _conn_ss.commit()
+            _conn_ss.close()
+            logger.info(f"스마트스토어 품목매칭 로드 완료: {_loaded}건 (JSON → DB)")
+    except Exception as e:
+        logger.warning(f"스마트스토어 품목매칭 로드 실패 (서비스는 계속): {e}")
+
     # products.csv 확인
     from config import PRODUCTS_CSV
     if PRODUCTS_CSV.exists():
