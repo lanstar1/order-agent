@@ -705,6 +705,15 @@ async def health():
         checks["database"] = f"error: {e}"
         checks["status"] = "degraded"
 
+    # 서버 아웃바운드 IP 확인
+    try:
+        import httpx
+        async with httpx.AsyncClient() as _hc:
+            _ip_resp = await _hc.get("https://api.ipify.org?format=json", timeout=5)
+            checks["outbound_ip"] = _ip_resp.json().get("ip", "")
+    except Exception:
+        checks["outbound_ip"] = "unknown"
+
     return checks
 
 
