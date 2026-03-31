@@ -344,7 +344,7 @@
     try {
       var res = await fetch(BACKEND + '/api/aicc/models');
       var data = await res.json();
-      _allModels = data.models || [];
+      _allModels = Array.isArray(data) ? data : (data.models || []);
     } catch(e) { console.error('[Chat] 모델 로드 실패:', e); }
   }
 
