@@ -142,7 +142,7 @@
         <div class="sidebar-user-avatar" id="sidebar-user-avatar">U</div>
         <div class="sidebar-user-detail">
           <span id="sidebar-username" class="sidebar-user-name"></span>
-          <span class="sidebar-user-role">관리자</span>
+          <span class="sidebar-user-role" id="sidebar-user-role"></span>
         </div>
       </div>
       <button onclick="logout()" class="sidebar-logout-btn">
@@ -3002,10 +3002,12 @@ function updateSidebarUser() {
   const el = document.getElementById("sidebar-user");
   const nm = document.getElementById("sidebar-username");
   const avatar = document.getElementById("sidebar-user-avatar");
+  const roleEl = document.getElementById("sidebar-user-role");
   if (user) {
     el.style.display = "flex";
     nm.textContent = user.name;
     if (avatar && user.name) avatar.textContent = user.name.charAt(0).toUpperCase();
+    if (roleEl) roleEl.textContent = ADMIN_EMP_CDS.has(user.emp_cd) ? "관리자" : "담당자";
   } else {
     el.style.display = "none";
   }
@@ -3156,7 +3158,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260401b"></script>
+<script src="/static/js/app.js?v=20260401c"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
