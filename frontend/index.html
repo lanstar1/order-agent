@@ -2958,6 +2958,7 @@ async function initLogin() {
   try {
     const data = await api.getEmployees();
     const sel = document.getElementById("login-emp-select");
+    sel.innerHTML = '<option value="">-- 담당자 선택 --</option>';
     data.employees.forEach(e => {
       const opt = document.createElement("option");
       opt.value = e.emp_cd;
@@ -3155,7 +3156,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260401a"></script>
+<script src="/static/js/app.js?v=20260401b"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
