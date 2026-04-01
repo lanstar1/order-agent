@@ -6,6 +6,8 @@
 - POST /api/auth/reset-password  : 관리자 비밀번호 초기화
 - GET  /api/auth/me              : 현재 로그인 사용자 정보
 - POST /api/auth/refresh         : 토큰 갱신
+- POST /api/auth/employees/add   : 담당자 추가 (관리자 전용)
+- DELETE /api/auth/employees/{emp_cd} : 담당자 삭제 (관리자 전용)
 """
 import logging
 from fastapi import APIRouter, HTTPException, Depends
@@ -37,6 +39,16 @@ class ChangePasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     emp_cd: str = Field(..., min_length=1, max_length=20)
+    admin_emp_cd: str = Field(..., min_length=1, max_length=20)
+
+
+class AddEmployeeRequest(BaseModel):
+    emp_cd: str = Field(..., min_length=1, max_length=20)
+    name: str = Field(..., min_length=1, max_length=50)
+    admin_emp_cd: str = Field(..., min_length=1, max_length=20)
+
+
+class DeleteEmployeeRequest(BaseModel):
     admin_emp_cd: str = Field(..., min_length=1, max_length=20)
 
 
@@ -172,3 +184,63 @@ async def reset_password(req: ResetPasswordRequest):
 
     logger.info(f"[Auth] 비밀번호 초기화: {row['name']}({req.emp_cd}) by {req.admin_emp_cd}")
     return {"success": True, "message": f"{row['name']}님의 비밀번호가 초기화되었습니다."}
+
+
+@router.post("/employees/add")
+async def add_employee(req: AddEmployeeRequest):
+    """관리자가 새 담당자를 추가 (초기 비밀번호 = 담당자코드)"""
+    if req.admin_emp_cd not in ADMIN_EMP_CDS:
+        raise HTTPException(403, "담당자 추가 권한이 없습니다.")
+
+    emp_cd = req.emp_cd.strip()
+    name = req.name.strip()
+
+    if not emp_cd or not name:
+        raise HTTPException(400, "담당자 코드와 이름을 모두 입력하세요.")
+
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT emp_cd FROM employees WHERE emp_cd=?", (emp_cd,)
+    ).fetchone()
+
+    if existing:
+        conn.close()
+        raise HTTPException(409, f"담당자 코드 [{emp_cd}]은(는) 이미 존재합니다.")
+
+    # 초기 비밀번호 = 담당자코드 (bcrypt 해싱)
+    pw_hash = hash_password(emp_cd)
+    conn.execute(
+        "INSERT INTO employees (emp_cd, name, password_hash) VALUES (?, ?, ?)",
+        (emp_cd, name, pw_hash)
+    )
+    conn.commit()
+    conn.close()
+
+    logger.info(f"[Auth] 담당자 추가: [{emp_cd}] {name} by {req.admin_emp_cd}")
+    return {"success": True, "message": f"[{emp_cd}] {name} 담당자가 추가되었습니다."}
+
+
+@router.delete("/employees/{emp_cd}")
+async def delete_employee(emp_cd: str, admin_emp_cd: str):
+    """관리자가 담당자를 삭제"""
+    if admin_emp_cd not in ADMIN_EMP_CDS:
+        raise HTTPException(403, "담당자 삭제 권한이 없습니다.")
+
+    if emp_cd in ADMIN_EMP_CDS:
+        raise HTTPException(400, "관리자 계정은 삭제할 수 없습니다.")
+
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT emp_cd, name FROM employees WHERE emp_cd=?", (emp_cd,)
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        raise HTTPException(404, "해당 담당자를 찾을 수 없습니다.")
+
+    conn.execute("DELETE FROM employees WHERE emp_cd=?", (emp_cd,))
+    conn.commit()
+    conn.close()
+
+    logger.info(f"[Auth] 담당자 삭제: [{emp_cd}] {row['name']} by {admin_emp_cd}")
+    return {"success": True, "message": f"[{emp_cd}] {row['name']} 담당자가 삭제되었습니다."}
