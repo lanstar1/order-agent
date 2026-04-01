@@ -29,7 +29,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── 상수 ──
 CS_STATUSES = ["접수완료", "물류수령", "기술인계", "테스트완료", "처리종결"]
-FINAL_ACTIONS = ["교환발송", "환불처리", "정상반송"]
+FINAL_ACTIONS = ["교환발송", "환불처리", "정상반송", "단순변심 반송"]
 TEST_RESULTS = ["정상", "의심", "불량"]
 
 
@@ -354,6 +354,41 @@ async def resolve_ticket(ticket_id: str, data: FinalAction, user: dict = Depends
         conn.commit()
 
         return {"success": True, "message": f"티켓 종결 ({data.action})"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        conn.close()
+
+
+# ── [7-2] 물류수령 단계에서 바로 처리종결 (단순변심 등) ──
+@router.put("/tickets/{ticket_id}/quick-resolve")
+async def quick_resolve(ticket_id: str, data: FinalAction, user: dict = Depends(get_current_user)):
+    """물류수령 단계에서 기술인계 없이 바로 처리종결 (단순변심 반송 등)"""
+    conn = get_connection()
+    try:
+        ticket = conn.execute(
+            "SELECT current_status FROM cs_tickets WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()
+        if not ticket:
+            raise HTTPException(404, "티켓을 찾을 수 없습니다.")
+        if ticket["current_status"] != "물류수령":
+            raise HTTPException(400, f"현재 상태({ticket['current_status']})에서는 바로 종결할 수 없습니다. 물류수령 단계에서만 가능합니다.")
+
+        now = now_kst()
+        conn.execute(
+            """UPDATE cs_tickets SET current_status = ?, final_action = ?,
+               resolved_by = ?, resolved_at = ?, updated_at = ?
+               WHERE ticket_id = ?""",
+            ("처리종결", data.action, user["emp_cd"], now, now, ticket_id)
+        )
+        _log_action(conn, ticket_id, "처리종결", user["emp_cd"], user["name"],
+                     f"즉시 종결: {data.action}" + (f" - {data.memo}" if data.memo else ""))
+        conn.commit()
+
+        return {"success": True, "message": f"티켓 즉시 종결 ({data.action})"}
     except HTTPException:
         raise
     except Exception as e:

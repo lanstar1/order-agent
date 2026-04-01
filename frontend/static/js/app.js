@@ -3889,9 +3889,11 @@ async function csLoadStats() {
       { label: "테스트완료", num: sc["테스트완료"] || 0, color: "#059669" },
       { label: "처리종결", num: sc["처리종결"] || 0, color: "#374151" },
     ];
-    bar.innerHTML = items.map(i =>
-      `<div class="cs-stat-card"><div class="num" style="color:${i.color}">${i.num}</div><div class="label">${i.label}</div></div>`
-    ).join("");
+    bar.innerHTML = items.map(i => {
+      // "전체"와 "오늘 접수"는 전체 필터로, 나머지는 해당 상태 필터로
+      const filterStatus = (i.label === "전체" || i.label === "오늘 접수") ? "" : i.label;
+      return `<div class="cs-stat-card" style="cursor:pointer" onclick="csStatCardClick('${filterStatus}')"><div class="num" style="color:${i.color}">${i.num}</div><div class="label">${i.label}</div></div>`;
+    }).join("");
     // 탭 카운트 업데이트
     document.querySelectorAll(".cs-pipe-tab").forEach(tab => {
       const st = tab.getAttribute("data-status");
@@ -3961,6 +3963,12 @@ function csSwitchTab(el, status) {
   _csStatus = status;
   _csPage = 1;
   csLoadTickets();
+}
+
+function csStatCardClick(status) {
+  // 대시보드 카드 클릭 → 해당 상태의 탭을 찾아서 활성화
+  const tab = document.querySelector(`.cs-pipe-tab[data-status="${status}"]`);
+  if (tab) csSwitchTab(tab, status);
 }
 
 function csSearch() {
@@ -4085,7 +4093,10 @@ async function csShowDetail(ticketId) {
     if (t.current_status === "접수완료") {
       actionHtml = `<button onclick="csAction('${t.ticket_id}','receive')" class="btn btn-primary" style="font-size:13px">📦 택배 수령</button>`;
     } else if (t.current_status === "물류수령") {
-      actionHtml = `<button onclick="csAction('${t.ticket_id}','handover')" class="btn btn-primary" style="font-size:13px">🔬 기술 담당자 인계</button>`;
+      actionHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button onclick="csAction('${t.ticket_id}','handover')" class="btn btn-primary" style="font-size:13px">🔬 기술 담당자 인계</button>
+        <button onclick="csQuickResolve('${t.ticket_id}')" style="padding:6px 16px;border:1px solid #f59e0b;border-radius:6px;background:#fffbeb;color:#b45309;cursor:pointer;font-size:13px;font-weight:500">↩️ 단순변심 처리종결</button>
+      </div>`;
     } else if (t.current_status === "기술인계") {
       actionHtml = `<button onclick="csShowTestForm('${t.ticket_id}')" class="btn btn-primary" style="font-size:13px">🧪 테스트 결과 입력</button>`;
     } else if (t.current_status === "테스트완료") {
@@ -4279,6 +4290,18 @@ async function csResolve(ticketId, action) {
   const memo = document.getElementById("cs-memo-input")?.value.trim() || "";
   try {
     const res = await api.put(`/api/cs/tickets/${ticketId}/resolve`, { action, memo });
+    alert(res.message || "처리 완료");
+    csShowDetail(ticketId);
+    csLoadStats();
+    csLoadTickets();
+  } catch(e) { alert("오류: " + (e.message || e)); }
+}
+
+async function csQuickResolve(ticketId) {
+  if (!confirm("단순변심으로 즉시 처리종결 하시겠습니까?\n(기술인계/테스트 단계를 건너뜁니다)")) return;
+  const memo = document.getElementById("cs-memo-input")?.value.trim() || "단순변심";
+  try {
+    const res = await api.put(`/api/cs/tickets/${ticketId}/quick-resolve`, { action: "단순변심 반송", memo });
     alert(res.message || "처리 완료");
     csShowDetail(ticketId);
     csLoadStats();
