@@ -763,7 +763,7 @@ def init_db():
     )""")
 
     # 기본 제외 키워드
-    _default_inv_keywords = ["BOOT", "부트", "콘넥터후드", "Hood케이스", "모듈러", "콘넥터", "먼지"]
+    _default_inv_keywords = ["BOOT", "부트", "콘넥터후드", "Hood케이스", "모듈러", "콘넥터", "먼지", "커플러", "키스톤"]
     for _kw in _default_inv_keywords:
         cur_or_conn.execute(
             "INSERT OR IGNORE INTO inventory_exclude_keywords (keyword, created_at) VALUES (?, ?)",

@@ -226,7 +226,7 @@ def save_alert_history(conn, alerts: list, check_date: str):
 
 # ─── 설정/키워드 관리 (동기 DB) ─────────────────────────────────
 
-DEFAULT_EXCLUDE_KEYWORDS = ["BOOT", "부트", "콘넥터후드", "Hood케이스", "모듈러", "콘넥터", "먼지"]
+DEFAULT_EXCLUDE_KEYWORDS = ["BOOT", "부트", "콘넥터후드", "Hood케이스", "모듈러", "콘넥터", "먼지", "커플러", "키스톤"]
 
 def get_exclude_keywords(conn) -> list:
     try:
