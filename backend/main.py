@@ -30,6 +30,7 @@ from api.routes.sales_analytics import router as sales_analytics_router
 from api.routes.purchases import router as purchases_router
 from api.routes.aicc import router as aicc_router
 from api.routes.smartstore import router as smartstore_router
+from api.routes.inventory_alert import router as inventory_alert_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -151,6 +152,9 @@ _ACTIVITY_ACTIONS = {
     ("GET", "/api/smartstore/download-delivery"): "스마트스토어 택배 다운로드",
     ("POST", "/api/smartstore/dispatch"): "스마트스토어 발송처리",
     ("POST", "/api/smartstore/upload-tracking"): "스마트스토어 송장 업로드",
+    ("POST", "/api/inventory-monitor/run"): "재고 모니터링 수동 실행",
+    ("PUT", "/api/inventory-monitor/settings"): "재고 모니터링 설정 변경",
+    ("POST", "/api/inventory-monitor/telegram/test"): "텔레그램 연결 테스트",
 }
 
 @app.middleware("http")
@@ -247,6 +251,7 @@ app.include_router(sales_analytics_router)
 app.include_router(purchases_router)
 app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
 app.include_router(smartstore_router)
+app.include_router(inventory_alert_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -492,6 +497,63 @@ async def startup():
         logger.info("SmartLogen 자동 동기화 스케줄러 등록 완료 (1시간 간격)")
     except Exception as e:
         logger.warning(f"택배 스케줄러 시작 실패: {e}")
+
+    # 재고 변동 모니터링 스케줄러 (평일 09:00 KST = UTC 00:00)
+    try:
+        from services.scheduler_service import _scheduler_state as _inv_sched_state
+        _inv_scheduler = _inv_sched_state.get("scheduler")
+        if _inv_scheduler:
+            from apscheduler.triggers.cron import CronTrigger as _InvCronTrigger
+
+            def _inventory_monitor_job():
+                """재고 모니터링 스케줄러 잡 (동기 래퍼)"""
+                try:
+                    import asyncio as _inv_asyncio
+                    from services.inventory_monitor import run_inventory_monitor, get_alert_settings
+                    from services.telegram_service import TelegramService
+                    from db.database import get_connection as _inv_gc
+
+                    _inv_conn = _inv_gc()
+                    try:
+                        settings = get_alert_settings(_inv_conn)
+                    finally:
+                        _inv_conn.close()
+
+                    if not settings.get("enabled", True):
+                        logger.info("[재고모니터] 알림 비활성화 → 스킵")
+                        return
+
+                    telegram = None
+                    if settings["telegram_bot_token"] and settings["telegram_chat_id"]:
+                        telegram = TelegramService(settings["telegram_bot_token"], settings["telegram_chat_id"])
+
+                    from services.scheduler_service import _main_loop as _inv_main_loop
+                    if _inv_main_loop and _inv_main_loop.is_running():
+                        future = _inv_asyncio.run_coroutine_threadsafe(
+                            run_inventory_monitor(telegram_service=telegram), _inv_main_loop
+                        )
+                        future.result(timeout=120)
+                    else:
+                        loop = _inv_asyncio.new_event_loop()
+                        _inv_asyncio.set_event_loop(loop)
+                        try:
+                            loop.run_until_complete(run_inventory_monitor(telegram_service=telegram))
+                        finally:
+                            loop.close()
+                except Exception as e:
+                    logger.error(f"[재고모니터] 스케줄러 실행 오류: {e}", exc_info=True)
+
+            # 평일(월~금) KST 09:00 = UTC 00:00
+            _inv_scheduler.add_job(
+                _inventory_monitor_job,
+                _InvCronTrigger(hour=0, minute=0, day_of_week="mon-fri", timezone="UTC"),
+                id="inventory_monitor_daily",
+                name="재고 변동 모니터링 (평일 09:00 KST)",
+                replace_existing=True,
+            )
+            logger.info("재고 모니터링 스케줄러 등록 완료 (평일 09:00 KST)")
+    except Exception as e:
+        logger.warning(f"재고 모니터링 스케줄러 등록 실패: {e}")
 
     # 판매현황 자동 수집 + 에이전트 스케줄러
     try:

@@ -102,6 +102,7 @@
         <div class="nav-group-items">
           <div class="nav-item" data-page="smartstore"><span>스마트스토어</span></div>
           <div class="nav-item" data-page="shipping"><span>택배조회</span></div>
+          <div class="nav-item" data-page="inventory_monitor"><span>재고모니터</span></div>
           <div class="nav-item" data-page="cs_rma"><span>CS / RMA</span></div>
         </div>
       </div>
@@ -632,6 +633,110 @@ C규격품 200개
         </div>
         <!-- 페이지네이션 -->
         <div id="ol-pagination" style="margin-top:12px;text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 재고모니터
+         ────────────────────────────── -->
+    <div class="page" id="page-inventory_monitor">
+      <h2>📦 재고 변동 모니터링</h2>
+      <p style="color:#666; margin-bottom:20px;">
+        ℹ️ 매일 평일 오전 9시에 전일 대비 재고 감소 품목을 자동 감지하여 텔레그램으로 알려드립니다.
+      </p>
+
+      <!-- 상단 액션 카드 -->
+      <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px;">
+        <div class="card" style="flex:1; min-width:280px;">
+          <h3>🔄 수동 실행</h3>
+          <p style="color:#888; font-size:14px;">지금 즉시 재고 비교를 실행합니다.</p>
+          <button id="btn-monitor-run" onclick="runMonitorNow()" style="width:100%; padding:12px; background:#4CAF50; color:white; border:none; border-radius:8px; font-size:16px; cursor:pointer; margin-top:8px;">▶ 지금 실행</button>
+          <div id="monitor-run-result" style="margin-top:12px; display:none;"></div>
+        </div>
+        <div class="card" style="flex:1; min-width:280px;">
+          <h3>📱 텔레그램 연결</h3>
+          <button onclick="testTelegram()" style="width:100%; padding:10px; background:#0088cc; color:white; border:none; border-radius:8px; cursor:pointer;">테스트 메시지 보내기</button>
+          <div id="telegram-test-result" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <!-- 알림 이력 -->
+      <div class="card" style="margin-bottom:24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3>📋 알림 이력</h3>
+          <select id="history-days" onchange="loadAlertHistory()" style="padding:6px 12px; border-radius:6px; border:1px solid #ddd;">
+            <option value="7">최근 7일</option>
+            <option value="14">최근 14일</option>
+            <option value="30" selected>최근 30일</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:14px;">
+            <thead>
+              <tr style="background:#f5f5f5; text-align:left;">
+                <th style="padding:10px; border-bottom:2px solid #ddd;">날짜</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd;">품목코드</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd;">품목명</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd;">모델명</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">단가</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">전일</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">금일</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">감소량</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">감소금액</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd;">트리거</th>
+              </tr>
+            </thead>
+            <tbody id="alert-history-body">
+              <tr><td colspan="10" style="padding:20px; text-align:center; color:#888;">페이지를 로딩하면 이력이 표시됩니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 설정 패널 -->
+      <div style="display:flex; gap:16px; flex-wrap:wrap;">
+        <div class="card" style="flex:1; min-width:320px;">
+          <h3>⚙️ 알림 설정</h3>
+          <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+            <div>
+              <label style="font-weight:bold; font-size:14px;">금액 임계값 (원)</label>
+              <input id="setting-threshold-amount" type="number" value="500000" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; margin-top:4px;">
+              <span style="color:#888; font-size:12px;">단가 × 감소수량이 이 금액 이상이면 알림</span>
+            </div>
+            <div>
+              <label style="font-weight:bold; font-size:14px;">수량 임계값 (개)</label>
+              <input id="setting-threshold-qty" type="number" value="100" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; margin-top:4px;">
+              <span style="color:#888; font-size:12px;">감소수량이 이 수량 이상이면 알림 (저가 예외품목은 금액 기준만 적용)</span>
+            </div>
+            <div>
+              <label style="font-weight:bold; font-size:14px;">텔레그램 봇 토큰</label>
+              <input id="setting-telegram-token" type="password" placeholder="BotFather에서 발급받은 토큰" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; margin-top:4px;">
+            </div>
+            <div>
+              <label style="font-weight:bold; font-size:14px;">텔레그램 Chat ID</label>
+              <input id="setting-telegram-chatid" type="text" placeholder="@userinfobot에게 /start 보내면 확인" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; margin-top:4px;">
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input id="setting-enabled" type="checkbox" checked>
+              <label for="setting-enabled" style="font-weight:bold; font-size:14px;">알림 활성화</label>
+            </div>
+            <button onclick="saveAlertSettings()" style="padding:10px; background:#2196F3; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px;">💾 설정 저장</button>
+            <div id="settings-save-result"></div>
+          </div>
+        </div>
+
+        <div class="card" style="flex:1; min-width:320px;">
+          <h3>🏷️ 저가 예외 키워드</h3>
+          <p style="color:#888; font-size:13px; margin-bottom:12px;">
+            이 키워드가 품목명에 포함된 제품은 <b>수량 기준 알림에서 제외</b>됩니다.<br>
+            단, 금액 기준(50만원↑)에 해당하면 여전히 알림이 옵니다.
+          </p>
+          <div id="keywords-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
+          <div style="display:flex; gap:8px;">
+            <input id="new-keyword-input" type="text" placeholder="새 키워드 입력" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:6px;" onkeypress="if(event.key==='Enter') addKeyword()">
+            <button onclick="addKeyword()" style="padding:8px 16px; background:#FF9800; color:white; border:none; border-radius:6px; cursor:pointer;">+ 추가</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -3159,7 +3264,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260402f"></script>
+<script src="/static/js/app.js?v=20260402g"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

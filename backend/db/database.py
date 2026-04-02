@@ -63,6 +63,11 @@ def _sql_to_pg(sql):
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
                 return None
+            # 재고 모니터링 테이블 추가
+            _ALLOWED_TABLES.update({
+                'inventory_snapshots', 'inventory_alert_history',
+                'inventory_exclude_keywords', 'inventory_alert_settings',
+            })
             if table.lower() not in _ALLOWED_TABLES:
                 logger.warning(f"[DB] PRAGMA table_info 거부: 미허용 테이블 '{table}'")
                 return None
@@ -723,6 +728,61 @@ def init_db():
         created_at          TEXT DEFAULT (datetime('now','localtime'))
     )""")
 
+    # ── 재고 모니터링 테이블 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS inventory_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snapshot_date TEXT NOT NULL,
+        prod_cd TEXT NOT NULL,
+        bal_qty REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(snapshot_date, prod_cd)
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS inventory_alert_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        check_date TEXT NOT NULL,
+        prod_cd TEXT NOT NULL,
+        prod_name TEXT,
+        model_name TEXT,
+        unit_price REAL DEFAULT 0,
+        prev_qty REAL DEFAULT 0,
+        curr_qty REAL DEFAULT 0,
+        diff_qty REAL DEFAULT 0,
+        diff_amount REAL DEFAULT 0,
+        trigger_type TEXT,
+        created_at TEXT NOT NULL
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS inventory_exclude_keywords (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        keyword TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+    )""")
+
+    # 기본 제외 키워드
+    _default_inv_keywords = ["BOOT", "부트", "콘넥터후드", "Hood케이스", "모듈러", "콘넥터", "먼지"]
+    for _kw in _default_inv_keywords:
+        cur_or_conn.execute(
+            "INSERT OR IGNORE INTO inventory_exclude_keywords (keyword, created_at) VALUES (?, ?)",
+            (_kw, "2026-04-02T00:00:00")
+        )
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS inventory_alert_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )""")
+
+    # 기본 알림 설정
+    for _k, _v in [("threshold_amount", "500000"), ("threshold_qty", "100"),
+                    ("telegram_bot_token", ""), ("telegram_chat_id", ""), ("enabled", "true")]:
+        cur_or_conn.execute(
+            "INSERT OR IGNORE INTO inventory_alert_settings (key, value) VALUES (?, ?)", (_k, _v)
+        )
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -760,6 +820,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_ss_orders_status ON smartstore_orders(status);
         CREATE INDEX IF NOT EXISTS idx_ss_orders_collected ON smartstore_orders(collected_at);
         CREATE INDEX IF NOT EXISTS idx_ss_orders_rcv_name ON smartstore_orders(rcv_name);
+        CREATE INDEX IF NOT EXISTS idx_inv_snapshots_date ON inventory_snapshots(snapshot_date);
+        CREATE INDEX IF NOT EXISTS idx_inv_alert_date ON inventory_alert_history(check_date);
     """)
 
     conn.commit()

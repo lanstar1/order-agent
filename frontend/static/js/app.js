@@ -133,6 +133,7 @@ function navigateTo(pageId) {
     training:     "발주서 학습",
     smartstore:   "스마트스토어",
     shipping:     "택배조회",
+    inventory_monitor: "재고모니터",
     cs_rma:       "CS/RMA",
     aicc:         "AI 상담",
     ai_dashboard: "AI 대시보드",
@@ -144,6 +145,8 @@ function navigateTo(pageId) {
   if (pageId === "cs_rma") csInit();
   // 스마트스토어 페이지 진입 시 초기화
   if (pageId === "smartstore") initSmartstorePage();
+  // 재고모니터 페이지 진입 시 초기화
+  if (pageId === "inventory_monitor") initInventoryMonitor();
   // 택배조회 페이지 진입 시 통계 로드
   if (pageId === "shipping") initShippingPage();
   // 주문서 페이지 진입 시 드롭존 초기화
@@ -5327,6 +5330,173 @@ async function ssSaveMapping() {
   } catch(e) {
     toast('저장 오류: ' + (e.message || ''), 'error');
   }
+}
+
+// ═══════════════════════════════════════════════════════
+//  재고 변동 모니터링
+// ═══════════════════════════════════════════════════════
+
+async function initInventoryMonitor() {
+  await Promise.all([
+    loadAlertSettings(),
+    loadAlertHistory(),
+    loadExcludeKeywords(),
+  ]);
+}
+
+async function runMonitorNow() {
+  const btn = document.getElementById('btn-monitor-run');
+  const resultDiv = document.getElementById('monitor-run-result');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 실행 중...';
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<span style="color:#888;">ERP 재고 조회 및 비교 중입니다. 잠시 기다려주세요...</span>';
+
+  try {
+    const data = await apiFetch('/api/inventory-monitor/run', { method: 'POST', body: JSON.stringify({}) });
+
+    if (data.status === 'ok') {
+      resultDiv.innerHTML = `<div style="padding:12px; background:#E8F5E9; border-radius:8px;"><b>✅ 완료!</b><br>알림 대상: <b>${data.alerts_count}건</b><br>${data.message}</div>`;
+      loadAlertHistory();
+    } else if (data.status === 'no_prev') {
+      resultDiv.innerHTML = `<div style="padding:12px; background:#FFF3E0; border-radius:8px;"><b>ℹ️ 첫 실행</b><br>${data.message}<br>내일부터 비교가 시작됩니다.</div>`;
+    } else {
+      resultDiv.innerHTML = `<div style="padding:12px; background:#FFEBEE; border-radius:8px;"><b>❌ 오류</b><br>${data.message}</div>`;
+    }
+  } catch (err) {
+    resultDiv.innerHTML = `<div style="padding:12px; background:#FFEBEE; border-radius:8px;"><b>❌ 실행 실패</b><br>${err.message || err}</div>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '▶ 지금 실행';
+}
+
+async function loadAlertHistory() {
+  const days = document.getElementById('history-days')?.value || 30;
+  const tbody = document.getElementById('alert-history-body');
+  if (!tbody) return;
+
+  try {
+    const data = await apiFetch(`/api/inventory-monitor/history?days=${days}`);
+    const items = data.items || [];
+
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" style="padding:20px; text-align:center; color:#888;">알림 이력이 없습니다.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = items.map(item => {
+      const triggerBadge = {
+        'amount': '<span style="background:#E3F2FD; color:#1565C0; padding:2px 8px; border-radius:12px; font-size:12px;">💰 금액</span>',
+        'qty': '<span style="background:#FFF3E0; color:#E65100; padding:2px 8px; border-radius:12px; font-size:12px;">📉 수량</span>',
+        'both': '<span style="background:#FCE4EC; color:#C62828; padding:2px 8px; border-radius:12px; font-size:12px;">🔥 복합</span>',
+      }[item.trigger_type] || item.trigger_type;
+
+      const dateStr = `${item.check_date.substring(0,4)}-${item.check_date.substring(4,6)}-${item.check_date.substring(6)}`;
+
+      return `<tr style="border-bottom:1px solid #eee;">
+        <td style="padding:8px;">${dateStr}</td>
+        <td style="padding:8px; font-family:monospace; font-size:12px;">${item.prod_cd}</td>
+        <td style="padding:8px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${item.prod_name}">${item.prod_name}</td>
+        <td style="padding:8px;">${item.model_name || '-'}</td>
+        <td style="padding:8px; text-align:right;">${Number(item.unit_price).toLocaleString()}원</td>
+        <td style="padding:8px; text-align:right;">${Number(item.prev_qty).toLocaleString()}</td>
+        <td style="padding:8px; text-align:right;">${Number(item.curr_qty).toLocaleString()}</td>
+        <td style="padding:8px; text-align:right; color:#D32F2F; font-weight:bold;">-${Number(item.diff_qty).toLocaleString()}</td>
+        <td style="padding:8px; text-align:right; font-weight:bold;">${Number(item.diff_amount).toLocaleString()}원</td>
+        <td style="padding:8px;">${triggerBadge}</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="10" style="padding:20px; text-align:center; color:#D32F2F;">이력 로딩 실패: ${err.message || err}</td></tr>`;
+  }
+}
+
+async function loadAlertSettings() {
+  try {
+    const settings = await apiFetch('/api/inventory-monitor/settings');
+    const el = (id) => document.getElementById(id);
+    if (el('setting-threshold-amount')) el('setting-threshold-amount').value = settings.threshold_amount || 500000;
+    if (el('setting-threshold-qty')) el('setting-threshold-qty').value = settings.threshold_qty || 100;
+    if (el('setting-enabled')) el('setting-enabled').checked = settings.enabled !== false;
+    if (settings.telegram_chat_id && el('setting-telegram-chatid')) el('setting-telegram-chatid').value = settings.telegram_chat_id;
+    if (settings.telegram_bot_token_masked && el('setting-telegram-token')) el('setting-telegram-token').placeholder = settings.telegram_bot_token_masked;
+  } catch (err) { console.error('알림 설정 로딩 실패:', err); }
+}
+
+async function saveAlertSettings() {
+  const resultDiv = document.getElementById('settings-save-result');
+  const body = {
+    threshold_amount: parseInt(document.getElementById('setting-threshold-amount').value),
+    threshold_qty: parseInt(document.getElementById('setting-threshold-qty').value),
+    enabled: document.getElementById('setting-enabled').checked,
+  };
+  const token = document.getElementById('setting-telegram-token').value;
+  if (token && !token.includes('...')) body.telegram_bot_token = token;
+  const chatId = document.getElementById('setting-telegram-chatid').value;
+  if (chatId) body.telegram_chat_id = chatId;
+
+  try {
+    await apiFetch('/api/inventory-monitor/settings', { method: 'PUT', body: JSON.stringify(body) });
+    resultDiv.innerHTML = '<span style="color:#4CAF50;">✅ 설정이 저장되었습니다.</span>';
+    setTimeout(() => { resultDiv.innerHTML = ''; }, 3000);
+  } catch (err) {
+    resultDiv.innerHTML = `<span style="color:#D32F2F;">❌ 저장 실패: ${err.message || err}</span>`;
+  }
+}
+
+async function testTelegram() {
+  const resultDiv = document.getElementById('telegram-test-result');
+  resultDiv.innerHTML = '<span style="color:#888;">테스트 중...</span>';
+  try {
+    const data = await apiFetch('/api/inventory-monitor/telegram/test', { method: 'POST', body: JSON.stringify({}) });
+    if (data.message_sent) {
+      resultDiv.innerHTML = `<span style="color:#4CAF50;">✅ 발송 성공! 텔레그램을 확인하세요. (@${data.bot_info?.bot_username || ''})</span>`;
+    } else {
+      resultDiv.innerHTML = '<span style="color:#D32F2F;">❌ 발송 실패. 토큰과 Chat ID를 확인하세요.</span>';
+    }
+  } catch (err) {
+    resultDiv.innerHTML = `<span style="color:#D32F2F;">❌ ${err.message || err}</span>`;
+  }
+}
+
+async function loadExcludeKeywords() {
+  try {
+    const data = await apiFetch('/api/inventory-monitor/keywords');
+    renderKeywords(data.keywords || []);
+  } catch (err) { console.error('키워드 로딩 실패:', err); }
+}
+
+function renderKeywords(keywords) {
+  const container = document.getElementById('keywords-list');
+  if (!container) return;
+  container.innerHTML = keywords.map(kw => `
+    <span style="display:inline-flex; align-items:center; gap:4px; padding:6px 12px; background:#FFF3E0; border-radius:20px; font-size:14px;">
+      ${kw}
+      <button onclick="removeKeyword('${kw}')" style="background:none; border:none; cursor:pointer; color:#E65100; font-size:16px; padding:0 2px;">✕</button>
+    </span>
+  `).join('');
+  if (keywords.length === 0) container.innerHTML = '<span style="color:#888; font-size:14px;">등록된 키워드가 없습니다.</span>';
+}
+
+async function addKeyword() {
+  const input = document.getElementById('new-keyword-input');
+  const keyword = input.value.trim();
+  if (!keyword) return;
+  try {
+    await apiFetch('/api/inventory-monitor/keywords', { method: 'POST', body: JSON.stringify({ keyword }) });
+    input.value = '';
+    loadExcludeKeywords();
+  } catch (err) { toast('키워드 추가 실패: ' + (err.message || err), 'error'); }
+}
+
+async function removeKeyword(keyword) {
+  if (!confirm(`"${keyword}" 키워드를 삭제하시겠습니까?`)) return;
+  try {
+    await apiFetch(`/api/inventory-monitor/keywords/${encodeURIComponent(keyword)}`, { method: 'DELETE' });
+    loadExcludeKeywords();
+  } catch (err) { toast('키워드 삭제 실패: ' + (err.message || err), 'error'); }
 }
 
 
