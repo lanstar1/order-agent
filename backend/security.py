@@ -173,6 +173,9 @@ def validate_code(code: str, field_name: str = "코드", max_length: int = 50) -
 ALLOWED_IMAGE_MIMES = {
     "image/jpeg", "image/png", "image/gif", "image/webp",
 }
+ALLOWED_VIDEO_MIMES = {
+    "video/mp4", "video/quicktime", "video/webm", "video/x-msvideo",
+}
 ALLOWED_DOC_MIMES = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # xlsx

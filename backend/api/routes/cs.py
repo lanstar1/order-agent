@@ -13,7 +13,7 @@ import logging
 import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List
 from security import get_current_user
@@ -418,24 +418,37 @@ async def upload_file(
 
     # 파일 검증
     ext = Path(file.filename).suffix.lower() if file.filename else ".bin"
-    allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".pdf"}
+    allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".avi", ".webm", ".pdf"}
     if ext not in allowed_exts:
         raise HTTPException(400, f"허용되지 않는 파일 형식: {ext}")
 
-    content = await file.read()
-    if len(content) > 50 * 1024 * 1024:  # 50MB 제한
-        raise HTTPException(400, "파일 크기가 50MB를 초과합니다.")
+    # 대용량 파일 스트리밍 읽기 (영상 파일 대응)
+    chunks = []
+    total_size = 0
+    max_size = 50 * 1024 * 1024  # 50MB 제한
+    while True:
+        chunk = await file.read(1024 * 1024)  # 1MB씩 읽기
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > max_size:
+            raise HTTPException(400, f"파일 크기가 50MB를 초과합니다. (현재: {total_size // (1024*1024)}MB+)")
+        chunks.append(chunk)
+    content = b"".join(chunks)
 
-    file_type = "video" if ext in {".mp4", ".mov"} else "image" if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"} else "document"
+    video_exts = {".mp4", ".mov", ".avi", ".webm"}
+    image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    file_type = "video" if ext in video_exts else "image" if ext in image_exts else "document"
 
     # MIME 타입 결정
     mime_map = {
         ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
         ".gif": "image/gif", ".webp": "image/webp",
         ".mp4": "video/mp4", ".mov": "video/quicktime",
+        ".avi": "video/x-msvideo", ".webm": "video/webm",
         ".pdf": "application/pdf",
     }
-    mime_type = mime_map.get(ext, "application/octet-stream")
+    mime_type = mime_map.get(ext, file.content_type or "application/octet-stream")
 
     original_name = file.filename or f"file{ext}"
     file_url = f"/api/cs/files/db/{0}"  # DB ID로 서빙 (아래에서 업데이트)
@@ -480,9 +493,10 @@ async def upload_file(
 
 # ── [9] 파일 서빙 (DB에서 바이너리 읽기) ──
 @router.get("/files/db/{file_id}")
-async def serve_file_from_db(file_id: int):
-    """DB에 저장된 파일 서빙 (이미지 미리보기용)"""
+async def serve_file_from_db(file_id: int, request: Request = None):
+    """DB에 저장된 파일 서빙 (이미지/영상 미리보기용, Range 요청 지원)"""
     from fastapi.responses import Response
+    from starlette.requests import Request as StarletteRequest
     conn = get_connection()
     try:
         row = conn.execute(
@@ -491,11 +505,30 @@ async def serve_file_from_db(file_id: int):
         if not row or not row["file_data"]:
             raise HTTPException(404, "파일을 찾을 수 없습니다.")
         data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
-        return Response(
-            content=data,
-            media_type=row["mime_type"] or "application/octet-stream",
-            headers={"Cache-Control": "public, max-age=86400"},
-        )
+        mime = row["mime_type"] or "application/octet-stream"
+        headers = {
+            "Cache-Control": "public, max-age=86400",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(len(data)),
+        }
+
+        # Range 요청 지원 (영상 시크/스트리밍용)
+        if request and request.headers.get("range"):
+            range_header = request.headers["range"]
+            try:
+                range_spec = range_header.replace("bytes=", "").strip()
+                start_str, end_str = range_spec.split("-", 1)
+                start = int(start_str) if start_str else 0
+                end = int(end_str) if end_str else len(data) - 1
+                end = min(end, len(data) - 1)
+                chunk = data[start:end + 1]
+                headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
+                headers["Content-Length"] = str(len(chunk))
+                return Response(content=chunk, status_code=206, media_type=mime, headers=headers)
+            except Exception:
+                pass  # Range 파싱 실패 시 전체 파일 반환
+
+        return Response(content=data, media_type=mime, headers=headers)
     finally:
         conn.close()
 

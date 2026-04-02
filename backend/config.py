@@ -63,7 +63,7 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 #  파일 업로드
 # ─────────────────────────────────────────
 UPLOAD_DIR      = BASE_DIR / "data" / "uploads"
-MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB (영상 파일 업로드 지원)
 
 # ─────────────────────────────────────────
 #  AI 파라미터
