@@ -64,7 +64,7 @@ async def fetch_inventory_from_erp(base_date: str = None, wh_cd: str = "") -> li
         base_date = datetime.now(KST).strftime("%Y%m%d")
 
     erp = ERPClient()
-    session_id = await erp.get_session()
+    session_id = await erp.ensure_session()
     zone = (erp._zone or ERP_ZONE).lower()
 
     url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus"
