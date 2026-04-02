@@ -4315,12 +4315,12 @@ async function csUploadFile(ticketId, input) {
   if (!file) return;
   if (file.size > 50 * 1024 * 1024) { alert("파일 크기가 50MB를 초과합니다."); return; }
 
-  // 진행률 오버레이 생성
+  // 진행률 오버레이
   const overlay = document.createElement("div");
   overlay.id = "cs-upload-overlay";
   overlay.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10000">
     <div style="background:#fff;border-radius:12px;padding:24px 32px;min-width:280px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
-      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📎 파일 업로드 중...</div>
+      <div id="cs-upload-title" style="font-size:14px;font-weight:600;margin-bottom:12px">📎 파일 업로드 중...</div>
       <div style="background:#e5e7eb;border-radius:8px;height:8px;overflow:hidden;margin-bottom:8px">
         <div id="cs-upload-bar" style="background:#2563eb;height:100%;width:0%;transition:width 0.2s;border-radius:8px"></div>
       </div>
@@ -4346,6 +4346,10 @@ async function csUploadFile(ticketId, input) {
           const txt = document.getElementById("cs-upload-pct");
           if (bar) bar.style.width = pct + "%";
           if (txt) txt.textContent = pct + "% (" + (e.loaded / 1024 / 1024).toFixed(1) + "MB / " + (e.total / 1024 / 1024).toFixed(1) + "MB)";
+          if (pct >= 100) {
+            const title = document.getElementById("cs-upload-title");
+            if (title) title.textContent = "⏳ 서버 처리 중...";
+          }
         }
       };
       xhr.onload = () => {
@@ -4356,10 +4360,12 @@ async function csUploadFile(ticketId, input) {
         }
       };
       xhr.onerror = () => reject(new Error("네트워크 오류"));
-      xhr.timeout = 300000; // 5분 타임아웃
+      xhr.timeout = 300000;
       xhr.ontimeout = () => reject(new Error("업로드 시간 초과 (5분)"));
       xhr.send(formData);
     });
+    // 백그라운드 DB 저장 대기 후 새로고침
+    await new Promise(r => setTimeout(r, 1000));
     csShowDetail(ticketId);
   } catch(e) { alert("업로드 오류: " + (e.message || e)); }
   finally { overlay.remove(); }

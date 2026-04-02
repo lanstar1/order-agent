@@ -13,7 +13,7 @@ import logging
 import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, UploadFile, File, Form, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List
 from security import get_current_user
@@ -401,11 +401,50 @@ async def quick_resolve(ticket_id: str, data: FinalAction, user: dict = Depends(
 # ── [8] 파일 업로드 (DB 바이너리 저장) ──
 FILE_SIZE_DB_LIMIT = 5 * 1024 * 1024  # 5MB 이하만 DB BLOB, 초과 시 파일시스템
 
+
+def _save_file_metadata_bg(ticket_id, original_name, file_type, total_size, emp_cd, emp_name, mime_type, disk_filename, file_blob):
+    """백그라운드에서 DB 메타데이터 저장 (응답 지연 방지)"""
+    try:
+        conn = get_connection()
+        try:
+            if file_blob is not None:
+                conn.execute(
+                    """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (ticket_id, original_name, "", file_type, total_size, emp_cd, now_kst(), mime_type, file_blob, disk_filename)
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
+                    (ticket_id, original_name, "", file_type, total_size, emp_cd, now_kst(), mime_type, disk_filename)
+                )
+
+            row = conn.execute(
+                "SELECT id FROM cs_files WHERE ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,)
+            ).fetchone()
+            file_id = row["id"] if row else 0
+            file_url = f"/api/cs/files/db/{file_id}"
+
+            conn.execute("UPDATE cs_files SET file_url = ? WHERE id = ?", (file_url, file_id))
+            _log_action(conn, ticket_id, "파일업로드", emp_cd, emp_name, f"{original_name} ({file_type})")
+            conn.commit()
+            logger.info(f"[CS] 파일 DB 저장 완료: {original_name} ({total_size} bytes) → id={file_id}")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"[CS] 파일 DB 저장 실패: {e}")
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"[CS] 파일 메타데이터 백그라운드 저장 예외: {e}")
+
+
 @router.post("/tickets/{ticket_id}/upload")
 async def upload_file(
     ticket_id: str,
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
+    background_tasks: BackgroundTasks = None,
 ):
     # 티켓 존재 확인
     conn = get_connection()
@@ -439,7 +478,7 @@ async def upload_file(
     original_name = file.filename or f"file{ext}"
     max_size = 50 * 1024 * 1024  # 50MB
 
-    # ── 디스크에 직접 스트리밍 저장 (메모리 버퍼링 최소화) ──
+    # ── 1단계: 디스크에 직접 스트리밍 저장 ──
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     disk_filename = f"{ticket_id}_{uuid.uuid4().hex[:8]}{ext}"
     disk_path = UPLOAD_DIR / disk_filename
@@ -448,7 +487,7 @@ async def upload_file(
     try:
         with open(disk_path, "wb") as fp:
             while True:
-                chunk = await file.read(256 * 1024)  # 256KB씩 스트리밍
+                chunk = await file.read(256 * 1024)
                 if not chunk:
                     break
                 total_size += len(chunk)
@@ -463,58 +502,33 @@ async def upload_file(
         disk_path.unlink(missing_ok=True)
         raise HTTPException(500, f"파일 저장 실패: {e}")
 
-    # ── 하이브리드: 5MB 이하 소용량은 DB BLOB에도 저장 (영속성) ──
-    use_db_blob = total_size <= FILE_SIZE_DB_LIMIT
-    file_blob_for_db = None
-    if use_db_blob:
+    # ── 2단계: 소용량은 DB BLOB 준비, 대용량은 NULL ──
+    file_blob = None
+    if total_size <= FILE_SIZE_DB_LIMIT:
         raw = disk_path.read_bytes()
         from db.database import USE_PG
         if USE_PG:
             import psycopg2
-            file_blob_for_db = psycopg2.Binary(raw)
+            file_blob = psycopg2.Binary(raw)
         else:
-            file_blob_for_db = raw
+            file_blob = raw
 
-    # DB에 메타데이터 저장
-    conn = get_connection()
-    try:
-        if use_db_blob:
-            conn.execute(
-                """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (ticket_id, original_name, "", file_type, total_size, user["emp_cd"], now_kst(), mime_type, file_blob_for_db, disk_filename)
-            )
-        else:
-            conn.execute(
-                """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
-                (ticket_id, original_name, "", file_type, total_size, user["emp_cd"], now_kst(), mime_type, disk_filename)
-            )
+    # ── 3단계: DB 메타데이터를 백그라운드로 저장 → 즉시 응답 ──
+    if background_tasks is not None:
+        background_tasks.add_task(
+            _save_file_metadata_bg,
+            ticket_id, original_name, file_type, total_size,
+            user["emp_cd"], user["name"], mime_type, disk_filename, file_blob,
+        )
+    else:
+        # fallback: 동기 저장
+        _save_file_metadata_bg(
+            ticket_id, original_name, file_type, total_size,
+            user["emp_cd"], user["name"], mime_type, disk_filename, file_blob,
+        )
 
-        row = conn.execute(
-            "SELECT id FROM cs_files WHERE ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,)
-        ).fetchone()
-        file_id = row["id"] if row else 0
-        file_url = f"/api/cs/files/db/{file_id}"
-
-        conn.execute("UPDATE cs_files SET file_url = ? WHERE id = ?", (file_url, file_id))
-        _log_action(conn, ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{original_name} ({file_type})")
-        conn.commit()
-
-        logger.info(f"[CS] 파일 저장 완료: {original_name} ({len(content)} bytes) → id={file_id}, disk={use_filesystem}")
-        return {"success": True, "file_url": file_url, "file_name": original_name, "file_id": file_id}
-    except Exception as e:
-        conn.rollback()
-        # 디스크 파일 롤백
-        if use_filesystem and disk_filename:
-            try:
-                (UPLOAD_DIR / disk_filename).unlink(missing_ok=True)
-            except Exception:
-                pass
-        logger.error(f"[CS] 파일 저장 실패: {e}")
-        raise HTTPException(500, f"파일 저장 실패: {e}")
-    finally:
-        conn.close()
+    logger.info(f"[CS] 파일 디스크 저장 완료 (DB 백그라운드): {original_name} ({total_size} bytes)")
+    return {"success": True, "file_name": original_name, "file_size": total_size}
 
 
 # ── 파일 데이터 로딩 헬퍼 (DB BLOB 또는 디스크) ──
