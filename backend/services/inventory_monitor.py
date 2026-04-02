@@ -305,9 +305,17 @@ async def run_inventory_monitor(telegram_service=None) -> dict:
             prev_snapshot = get_snapshot(conn, prev_date)
 
             if not prev_snapshot:
-                msg = f"전일({prev_date}) 스냅샷이 없습니다. 오늘 스냅샷만 저장했습니다. (최초 실행 시 정상)"
-                logger.warning(msg)
-                return {"status": "no_prev", "alerts_count": 0, "message": msg}
+                # DB에 전일 스냅샷이 없으면 ERP API로 전일 재고 직접 조회
+                logger.info(f"[재고모니터] 전일({prev_date}) 스냅샷 없음 → ERP API로 전일 재고 조회...")
+                prev_inventory = await fetch_inventory_from_erp(prev_date)
+                if prev_inventory:
+                    save_snapshot(conn, prev_inventory, prev_date)
+                    prev_snapshot = {item["PROD_CD"]: item["BAL_QTY"] for item in prev_inventory}
+                    logger.info(f"[재고모니터] 전일 스냅샷 ERP 조회 및 저장 완료: {len(prev_snapshot)}개 품목")
+                else:
+                    msg = f"전일({prev_date}) ERP 재고 데이터도 없습니다. 내일부터 비교가 시작됩니다."
+                    logger.warning(msg)
+                    return {"status": "no_prev", "alerts_count": 0, "message": msg}
 
             # 3. 설정 로딩
             settings = get_alert_settings(conn)
