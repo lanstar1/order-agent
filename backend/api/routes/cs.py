@@ -399,6 +399,8 @@ async def quick_resolve(ticket_id: str, data: FinalAction, user: dict = Depends(
 
 
 # ── [8] 파일 업로드 (DB 바이너리 저장) ──
+FILE_SIZE_DB_LIMIT = 5 * 1024 * 1024  # 5MB 이하만 DB BLOB, 초과 시 파일시스템
+
 @router.post("/tickets/{ticket_id}/upload")
 async def upload_file(
     ticket_id: str,
@@ -422,7 +424,7 @@ async def upload_file(
     if ext not in allowed_exts:
         raise HTTPException(400, f"허용되지 않는 파일 형식: {ext}")
 
-    # 대용량 파일 스트리밍 읽기 (영상 파일 대응)
+    # 파일 읽기 (스트리밍)
     chunks = []
     total_size = 0
     max_size = 50 * 1024 * 1024  # 50MB 제한
@@ -432,7 +434,7 @@ async def upload_file(
             break
         total_size += len(chunk)
         if total_size > max_size:
-            raise HTTPException(400, f"파일 크기가 50MB를 초과합니다. (현재: {total_size // (1024*1024)}MB+)")
+            raise HTTPException(400, f"파일 크기가 50MB를 초과합니다.")
         chunks.append(chunk)
     content = b"".join(chunks)
 
@@ -440,7 +442,6 @@ async def upload_file(
     image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     file_type = "video" if ext in video_exts else "image" if ext in image_exts else "document"
 
-    # MIME 타입 결정
     mime_map = {
         ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
         ".gif": "image/gif", ".webp": "image/webp",
@@ -449,97 +450,117 @@ async def upload_file(
         ".pdf": "application/pdf",
     }
     mime_type = mime_map.get(ext, file.content_type or "application/octet-stream")
-
     original_name = file.filename or f"file{ext}"
-    file_url = f"/api/cs/files/db/{0}"  # DB ID로 서빙 (아래에서 업데이트)
 
-    # DB에 파일 바이너리 + 메타데이터 저장
-    from db.database import USE_PG, DATABASE_URL
-    import traceback
+    # ── 하이브리드 저장: 5MB 이하 → DB BLOB, 초과 → 파일시스템 ──
+    use_filesystem = len(content) > FILE_SIZE_DB_LIMIT
+    disk_filename = ""
 
+    if use_filesystem:
+        # 파일시스템에 저장 (영상 등 대용량)
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        disk_filename = f"{ticket_id}_{uuid.uuid4().hex[:8]}{ext}"
+        disk_path = UPLOAD_DIR / disk_filename
+        disk_path.write_bytes(content)
+        logger.info(f"[CS] 대용량 파일 디스크 저장: {disk_path} ({len(content)} bytes)")
+
+    # DB에 메타데이터 저장 (+ 작은 파일은 바이너리도 함께)
+    conn = get_connection()
     try:
-        if USE_PG:
-            # PostgreSQL: 대용량 BYTEA 저장을 위해 전용 연결 (타임아웃 확대)
-            import psycopg2
-            import psycopg2.extras
-            pg_conn = psycopg2.connect(DATABASE_URL, connect_timeout=30, options="-c statement_timeout=120000")
-            try:
-                cur = pg_conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-                file_blob = psycopg2.Binary(content)
-
-                cur.execute(
-                    """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                    (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, file_blob)
-                )
-                row = cur.fetchone()
-                file_id = row[0] if row else 0
-                file_url = f"/api/cs/files/db/{file_id}"
-
-                cur.execute("UPDATE cs_files SET file_url = %s WHERE id = %s", (file_url, file_id))
-
-                # 이력 로그
-                cur.execute(
-                    """INSERT INTO cs_action_logs (ticket_id, action_type, actor_cd, actor_name, detail, created_at)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
-                    (ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{original_name} ({file_type})", now_kst())
-                )
-                pg_conn.commit()
-                logger.info(f"[CS] 파일 PG 저장 완료: {original_name} ({len(content)} bytes) → id={file_id}")
-                return {"success": True, "file_url": file_url, "file_name": original_name, "file_id": file_id}
-            except Exception as e:
-                pg_conn.rollback()
-                logger.error(f"[CS] 파일 PG 저장 실패: {e}\n{traceback.format_exc()}")
-                raise HTTPException(500, f"파일 저장 실패: {e}")
-            finally:
-                pg_conn.close()
+        if use_filesystem:
+            # 대용량: file_data = NULL, disk_filename 컬럼에 파일명 저장
+            conn.execute(
+                """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
+                (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, disk_filename)
+            )
         else:
-            # SQLite
-            conn = get_connection()
-            try:
-                conn.execute(
-                    """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, content)
-                )
-                row = conn.execute(
-                    "SELECT id FROM cs_files WHERE ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,)
-                ).fetchone()
-                file_id = row["id"] if row else 0
-                file_url = f"/api/cs/files/db/{file_id}"
-                conn.execute("UPDATE cs_files SET file_url = ? WHERE id = ?", (file_url, file_id))
-                _log_action(conn, ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{original_name} ({file_type})")
-                conn.commit()
-                logger.info(f"[CS] 파일 DB 저장 완료: {original_name} ({len(content)} bytes) → id={file_id}")
-                return {"success": True, "file_url": file_url, "file_name": original_name, "file_id": file_id}
-            except Exception as e:
-                conn.rollback()
-                logger.error(f"[CS] 파일 DB 저장 실패: {e}")
-                raise HTTPException(500, f"파일 저장 실패: {e}")
-            finally:
-                conn.close()
-    except HTTPException:
-        raise
+            # 소용량: DB BLOB에 저장 (기존 방식)
+            from db.database import USE_PG
+            if USE_PG:
+                import psycopg2
+                file_blob = psycopg2.Binary(content)
+            else:
+                file_blob = content
+            conn.execute(
+                """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')""",
+                (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, file_blob)
+            )
+
+        # 방금 삽입된 ID 가져오기
+        row = conn.execute(
+            "SELECT id FROM cs_files WHERE ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,)
+        ).fetchone()
+        file_id = row["id"] if row else 0
+        file_url = f"/api/cs/files/db/{file_id}"
+
+        conn.execute("UPDATE cs_files SET file_url = ? WHERE id = ?", (file_url, file_id))
+        _log_action(conn, ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{original_name} ({file_type})")
+        conn.commit()
+
+        logger.info(f"[CS] 파일 저장 완료: {original_name} ({len(content)} bytes) → id={file_id}, disk={use_filesystem}")
+        return {"success": True, "file_url": file_url, "file_name": original_name, "file_id": file_id}
     except Exception as e:
-        logger.error(f"[CS] 파일 업로드 예외: {e}\n{traceback.format_exc()}")
-        raise HTTPException(500, f"파일 업로드 실패: {e}")
+        conn.rollback()
+        # 디스크 파일 롤백
+        if use_filesystem and disk_filename:
+            try:
+                (UPLOAD_DIR / disk_filename).unlink(missing_ok=True)
+            except Exception:
+                pass
+        logger.error(f"[CS] 파일 저장 실패: {e}")
+        raise HTTPException(500, f"파일 저장 실패: {e}")
+    finally:
+        conn.close()
 
 
-# ── [9] 파일 서빙 (DB에서 바이너리 읽기) ──
+# ── 파일 데이터 로딩 헬퍼 (DB BLOB 또는 디스크) ──
+def _load_file_data(row) -> bytes:
+    """cs_files row에서 파일 바이너리를 가져온다 (디스크 우선, DB 폴백)"""
+    # 1) 디스크 파일 확인
+    disk_fn = row["disk_filename"] if "disk_filename" in row.keys() else ""
+    if disk_fn:
+        disk_path = UPLOAD_DIR / disk_fn
+        if disk_path.exists():
+            return disk_path.read_bytes()
+    # 2) DB BLOB
+    if row["file_data"]:
+        data = row["file_data"]
+        return bytes(data) if not isinstance(data, bytes) else data
+    return b""
+
+
+# ── [9] 파일 서빙 (하이브리드: 디스크 + DB BLOB) ──
 @router.get("/files/db/{file_id}")
 async def serve_file_from_db(file_id: int, request: Request = None):
-    """DB에 저장된 파일 서빙 (이미지/영상 미리보기용, Range 요청 지원)"""
-    from fastapi.responses import Response
-    from starlette.requests import Request as StarletteRequest
+    """DB/디스크에 저장된 파일 서빙 (이미지/영상 미리보기용, Range 요청 지원)"""
+    from fastapi.responses import Response, FileResponse
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT file_name, mime_type, file_data FROM cs_files WHERE id = ?", (file_id,)
+            "SELECT file_name, mime_type, file_data, disk_filename FROM cs_files WHERE id = ?", (file_id,)
         ).fetchone()
-        if not row or not row["file_data"]:
+        if not row:
             raise HTTPException(404, "파일을 찾을 수 없습니다.")
-        data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
+
         mime = row["mime_type"] or "application/octet-stream"
+
+        # 디스크 파일이 있으면 FileResponse로 효율적 서빙 (Range 자동 지원)
+        disk_fn = row["disk_filename"] if "disk_filename" in row.keys() else ""
+        if disk_fn:
+            disk_path = UPLOAD_DIR / disk_fn
+            if disk_path.exists():
+                return FileResponse(
+                    path=str(disk_path),
+                    media_type=mime,
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+
+        # DB BLOB 서빙
+        if not row["file_data"]:
+            raise HTTPException(404, "파일 데이터가 없습니다.")
+        data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
         headers = {
             "Cache-Control": "public, max-age=86400",
             "Accept-Ranges": "bytes",
@@ -560,30 +581,44 @@ async def serve_file_from_db(file_id: int, request: Request = None):
                 headers["Content-Length"] = str(len(chunk))
                 return Response(content=chunk, status_code=206, media_type=mime, headers=headers)
             except Exception:
-                pass  # Range 파싱 실패 시 전체 파일 반환
+                pass
 
         return Response(content=data, media_type=mime, headers=headers)
     finally:
         conn.close()
 
 
-# ── [9-0] 파일 다운로드 (DB에서 바이너리 읽기) ──
+# ── [9-0] 파일 다운로드 (하이브리드) ──
 @router.get("/download/{file_id}")
 async def download_file(file_id: int, user: dict = Depends(get_current_user)):
     """첨부파일 다운로드"""
-    from fastapi.responses import Response
+    from fastapi.responses import Response, FileResponse
+    from urllib.parse import quote
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT file_name, mime_type, file_data FROM cs_files WHERE id = ?", (file_id,)
+            "SELECT file_name, mime_type, file_data, disk_filename FROM cs_files WHERE id = ?", (file_id,)
         ).fetchone()
         if not row:
             raise HTTPException(404, "파일 레코드를 찾을 수 없습니다.")
-        if not row["file_data"]:
-            raise HTTPException(404, "파일 데이터가 없습니다. (DB 저장 이전에 업로드된 파일)")
-        from urllib.parse import quote
-        data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
+
         encoded_name = quote(row["file_name"])
+
+        # 디스크 파일 우선
+        disk_fn = row["disk_filename"] if "disk_filename" in row.keys() else ""
+        if disk_fn:
+            disk_path = UPLOAD_DIR / disk_fn
+            if disk_path.exists():
+                return FileResponse(
+                    path=str(disk_path),
+                    media_type="application/octet-stream",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"},
+                )
+
+        # DB BLOB 다운로드
+        if not row["file_data"]:
+            raise HTTPException(404, "파일 데이터가 없습니다.")
+        data = bytes(row["file_data"]) if not isinstance(row["file_data"], bytes) else row["file_data"]
         return Response(
             content=data,
             media_type="application/octet-stream",

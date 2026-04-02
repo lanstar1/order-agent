@@ -543,6 +543,14 @@ def init_db():
         except Exception as e:
             logger.debug(f"[DB] cs_files.mime_type 추가 스킵: {e}")
 
+    # ── CS 마이그레이션: disk_filename 컬럼 추가 (대용량 파일 디스크 저장용) ──
+    if not column_exists(conn, 'cs_files', 'disk_filename'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN disk_filename TEXT DEFAULT ''")
+            logger.info("[DB] cs_files.disk_filename 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_files.disk_filename 추가 스킵: {e}")
+
     # ── AICC 마이그레이션: image_id 컬럼 추가 ──
     if not column_exists(conn, 'aicc_messages', 'image_id'):
         try:

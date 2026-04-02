@@ -23,7 +23,7 @@ COPY frontend/ /app/frontend/
 COPY data/ /app/data/
 
 # 업로드/피드백 디렉토리 보장
-RUN mkdir -p /app/data/uploads /app/data/feedback
+RUN mkdir -p /app/data/uploads /app/data/feedback /app/data/cs_files
 
 # 포트
 EXPOSE 8000
