@@ -543,12 +543,12 @@ async def startup():
                 except Exception as e:
                     logger.error(f"[재고모니터] 스케줄러 실행 오류: {e}", exc_info=True)
 
-            # 평일(월~금) KST 09:00 = UTC 00:00
+            # 평일(월~금) KST 11:00 = UTC 02:00
             _inv_scheduler.add_job(
                 _inventory_monitor_job,
-                _InvCronTrigger(hour=0, minute=0, day_of_week="mon-fri", timezone="UTC"),
+                _InvCronTrigger(hour=2, minute=0, day_of_week="mon-fri", timezone="UTC"),
                 id="inventory_monitor_daily",
-                name="재고 변동 모니터링 (평일 09:00 KST)",
+                name="재고 변동 모니터링 (평일 11:00 KST)",
                 replace_existing=True,
             )
             logger.info("재고 모니터링 스케줄러 등록 완료 (평일 09:00 KST)")
