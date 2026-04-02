@@ -5354,7 +5354,7 @@ async function runMonitorNow() {
   resultDiv.innerHTML = '<span style="color:#888;">ERP 재고 조회 및 비교 중입니다. 잠시 기다려주세요...</span>';
 
   try {
-    const data = await apiFetch('/api/inventory-monitor/run', { method: 'POST', body: JSON.stringify({}) });
+    const data = await api.post('/api/inventory-monitor/run', {});
 
     if (data.status === 'ok') {
       resultDiv.innerHTML = `<div style="padding:12px; background:#E8F5E9; border-radius:8px;"><b>✅ 완료!</b><br>알림 대상: <b>${data.alerts_count}건</b><br>${data.message}</div>`;
@@ -5378,7 +5378,7 @@ async function loadAlertHistory() {
   if (!tbody) return;
 
   try {
-    const data = await apiFetch(`/api/inventory-monitor/history?days=${days}`);
+    const data = await api.get(`/api/inventory-monitor/history?days=${days}`);
     const items = data.items || [];
 
     if (items.length === 0) {
@@ -5415,7 +5415,7 @@ async function loadAlertHistory() {
 
 async function loadAlertSettings() {
   try {
-    const settings = await apiFetch('/api/inventory-monitor/settings');
+    const settings = await api.get('/api/inventory-monitor/settings');
     const el = (id) => document.getElementById(id);
     if (el('setting-threshold-amount')) el('setting-threshold-amount').value = settings.threshold_amount || 500000;
     if (el('setting-threshold-qty')) el('setting-threshold-qty').value = settings.threshold_qty || 100;
@@ -5438,7 +5438,7 @@ async function saveAlertSettings() {
   if (chatId) body.telegram_chat_id = chatId;
 
   try {
-    await apiFetch('/api/inventory-monitor/settings', { method: 'PUT', body: JSON.stringify(body) });
+    await api.put('/api/inventory-monitor/settings', body);
     resultDiv.innerHTML = '<span style="color:#4CAF50;">✅ 설정이 저장되었습니다.</span>';
     setTimeout(() => { resultDiv.innerHTML = ''; }, 3000);
   } catch (err) {
@@ -5450,7 +5450,7 @@ async function testTelegram() {
   const resultDiv = document.getElementById('telegram-test-result');
   resultDiv.innerHTML = '<span style="color:#888;">테스트 중...</span>';
   try {
-    const data = await apiFetch('/api/inventory-monitor/telegram/test', { method: 'POST', body: JSON.stringify({}) });
+    const data = await api.post('/api/inventory-monitor/telegram/test', {});
     if (data.message_sent) {
       resultDiv.innerHTML = `<span style="color:#4CAF50;">✅ 발송 성공! 텔레그램을 확인하세요. (@${data.bot_info?.bot_username || ''})</span>`;
     } else {
@@ -5463,7 +5463,7 @@ async function testTelegram() {
 
 async function loadExcludeKeywords() {
   try {
-    const data = await apiFetch('/api/inventory-monitor/keywords');
+    const data = await api.get('/api/inventory-monitor/keywords');
     renderKeywords(data.keywords || []);
   } catch (err) { console.error('키워드 로딩 실패:', err); }
 }
@@ -5485,7 +5485,7 @@ async function addKeyword() {
   const keyword = input.value.trim();
   if (!keyword) return;
   try {
-    await apiFetch('/api/inventory-monitor/keywords', { method: 'POST', body: JSON.stringify({ keyword }) });
+    await api.post('/api/inventory-monitor/keywords', { keyword });
     input.value = '';
     loadExcludeKeywords();
   } catch (err) { toast('키워드 추가 실패: ' + (err.message || err), 'error'); }
@@ -5494,7 +5494,7 @@ async function addKeyword() {
 async function removeKeyword(keyword) {
   if (!confirm(`"${keyword}" 키워드를 삭제하시겠습니까?`)) return;
   try {
-    await apiFetch(`/api/inventory-monitor/keywords/${encodeURIComponent(keyword)}`, { method: 'DELETE' });
+    await api.delete(`/api/inventory-monitor/keywords/${encodeURIComponent(keyword)}`);
     loadExcludeKeywords();
   } catch (err) { toast('키워드 삭제 실패: ' + (err.message || err), 'error'); }
 }
