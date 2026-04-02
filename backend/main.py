@@ -218,7 +218,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     else:
         # 프로덕션: 에러 유형별 사용자 친화적 메시지
         exc_str = str(exc).lower()
-        if "connection" in exc_str or "timeout" in exc_str:
+        if ("connection" in exc_str or "timeout" in exc_str) and "upload" not in exc_str:
             detail = "데이터베이스 연결에 실패했습니다. 잠시 후 다시 시도해주세요."
         elif "permission" in exc_str or "access" in exc_str:
             detail = "접근 권한이 없습니다."

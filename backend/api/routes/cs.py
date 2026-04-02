@@ -454,41 +454,75 @@ async def upload_file(
     file_url = f"/api/cs/files/db/{0}"  # DB ID로 서빙 (아래에서 업데이트)
 
     # DB에 파일 바이너리 + 메타데이터 저장
-    from db.database import USE_PG
-    conn = get_connection()
+    from db.database import USE_PG, DATABASE_URL
+    import traceback
+
     try:
-        # PostgreSQL은 psycopg2.Binary, SQLite는 bytes 그대로
         if USE_PG:
+            # PostgreSQL: 대용량 BYTEA 저장을 위해 전용 연결 (타임아웃 확대)
             import psycopg2
-            file_blob = psycopg2.Binary(content)
+            import psycopg2.extras
+            pg_conn = psycopg2.connect(DATABASE_URL, connect_timeout=30, options="-c statement_timeout=120000")
+            try:
+                cur = pg_conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+                file_blob = psycopg2.Binary(content)
+
+                cur.execute(
+                    """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, file_blob)
+                )
+                row = cur.fetchone()
+                file_id = row[0] if row else 0
+                file_url = f"/api/cs/files/db/{file_id}"
+
+                cur.execute("UPDATE cs_files SET file_url = %s WHERE id = %s", (file_url, file_id))
+
+                # 이력 로그
+                cur.execute(
+                    """INSERT INTO cs_action_logs (ticket_id, action_type, actor_cd, actor_name, detail, created_at)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{original_name} ({file_type})", now_kst())
+                )
+                pg_conn.commit()
+                logger.info(f"[CS] 파일 PG 저장 완료: {original_name} ({len(content)} bytes) → id={file_id}")
+                return {"success": True, "file_url": file_url, "file_name": original_name, "file_id": file_id}
+            except Exception as e:
+                pg_conn.rollback()
+                logger.error(f"[CS] 파일 PG 저장 실패: {e}\n{traceback.format_exc()}")
+                raise HTTPException(500, f"파일 저장 실패: {e}")
+            finally:
+                pg_conn.close()
         else:
-            file_blob = content
-
-        conn.execute(
-            """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, file_blob)
-        )
-
-        # 방금 삽입된 ID 가져오기
-        row = conn.execute(
-            "SELECT id FROM cs_files WHERE ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,)
-        ).fetchone()
-        file_id = row["id"] if row else 0
-        file_url = f"/api/cs/files/db/{file_id}"
-
-        conn.execute("UPDATE cs_files SET file_url = ? WHERE id = ?", (file_url, file_id))
-        _log_action(conn, ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{original_name} ({file_type})")
-        conn.commit()
-
-        logger.info(f"[CS] 파일 DB 저장 완료: {original_name} ({len(content)} bytes) → id={file_id}")
-        return {"success": True, "file_url": file_url, "file_name": original_name, "file_id": file_id}
+            # SQLite
+            conn = get_connection()
+            try:
+                conn.execute(
+                    """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, content)
+                )
+                row = conn.execute(
+                    "SELECT id FROM cs_files WHERE ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,)
+                ).fetchone()
+                file_id = row["id"] if row else 0
+                file_url = f"/api/cs/files/db/{file_id}"
+                conn.execute("UPDATE cs_files SET file_url = ? WHERE id = ?", (file_url, file_id))
+                _log_action(conn, ticket_id, "파일업로드", user["emp_cd"], user["name"], f"{original_name} ({file_type})")
+                conn.commit()
+                logger.info(f"[CS] 파일 DB 저장 완료: {original_name} ({len(content)} bytes) → id={file_id}")
+                return {"success": True, "file_url": file_url, "file_name": original_name, "file_id": file_id}
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"[CS] 파일 DB 저장 실패: {e}")
+                raise HTTPException(500, f"파일 저장 실패: {e}")
+            finally:
+                conn.close()
+    except HTTPException:
+        raise
     except Exception as e:
-        conn.rollback()
-        logger.error(f"[CS] 파일 DB 저장 실패: {e}")
-        raise HTTPException(500, str(e))
-    finally:
-        conn.close()
+        logger.error(f"[CS] 파일 업로드 예외: {e}\n{traceback.format_exc()}")
+        raise HTTPException(500, f"파일 업로드 실패: {e}")
 
 
 # ── [9] 파일 서빙 (DB에서 바이너리 읽기) ──
