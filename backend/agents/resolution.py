@@ -386,9 +386,17 @@ def _expand_hint(hint: str) -> List[str]:
     - LS- 접두어 추가 버전
     - 숫자+알파벳 끝자리 변형 (2mg↔2mb 등)
     - 약어 확장
+    - hint 내 모델명 패턴 추출 (LS-XXX, LSP-XXX, LSN-XXX, ZOT-XXX 등)
     """
     variants = [hint.strip()]
     h = hint.strip()
+
+    # 모델명 패턴 추출: hint 안에 LS-XXX, LSP-XXX, LSN-XXX, ZOT-XXX 패턴이 있으면 추출
+    model_patterns = re.findall(r'(?:LS|LSP|LSN|ZOT)-[A-Za-z0-9\-]+', h, re.IGNORECASE)
+    for mp in model_patterns:
+        mp_clean = mp.strip().rstrip('.,;:)]\'"')
+        if mp_clean and mp_clean.lower() != h.lower():
+            variants.append(mp_clean)
 
     # 약어 확장
     h_lower = h.lower()
@@ -410,6 +418,13 @@ def _expand_hint(hint: str) -> List[str]:
             variants.append(h_lower[:-1] + alt)
             if not h.upper().startswith("LS-"):
                 variants.append(f"LS-{h_lower[:-1]}{alt}")
+
+    # 추출된 모델명 패턴에 대해서도 끝자리 변형 생성
+    for mp in model_patterns:
+        mp_clean = mp.strip().rstrip('.,;:)]\'"').lower()
+        if len(mp_clean) > 2 and mp_clean[-1] in similar_chars:
+            for alt in similar_chars[mp_clean[-1]]:
+                variants.append(mp_clean[:-1] + alt)
 
     return list(set(v.lower() for v in variants if v.strip()))
 
@@ -727,7 +742,20 @@ async def resolve_product(
             logger.warning(f"[Resolution] 학습 데이터 매칭 실패: {e}")
 
     # ── 1단계: 완전 일치 (product_hint + normalized_hints) ──
-    all_hints_to_try = [product_hint] + extra_hints
+    # hint 내 모델명 패턴(LS-XXX, LSP-XXX, LSN-XXX, ZOT-XXX)도 직접 시도
+    embedded_models = re.findall(r'(?:LS|LSP|LSN|ZOT)-[A-Za-z0-9\-]+', full_hint, re.IGNORECASE)
+    embedded_models = [m.strip().rstrip('.,;:)]\'"') for m in embedded_models]
+    all_hints_to_try = [product_hint] + extra_hints + embedded_models
+    # 중복 제거하되 순서 유지
+    seen = set()
+    unique_hints = []
+    for h in all_hints_to_try:
+        h_lower = h.strip().lower()
+        if h_lower and h_lower not in seen:
+            seen.add(h_lower)
+            unique_hints.append(h.strip())
+    all_hints_to_try = unique_hints
+
     for try_hint in all_hints_to_try:
         exact = exact_match(try_hint, products)
         if exact:
