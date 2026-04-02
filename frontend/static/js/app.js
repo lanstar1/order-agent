@@ -4313,13 +4313,51 @@ async function csQuickResolve(ticketId) {
 async function csUploadFile(ticketId, input) {
   const file = input.files[0];
   if (!file) return;
+  if (file.size > 50 * 1024 * 1024) { alert("파일 크기가 50MB를 초과합니다."); return; }
+
+  // 진행률 오버레이 생성
+  const overlay = document.createElement("div");
+  overlay.id = "cs-upload-overlay";
+  overlay.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10000">
+    <div style="background:#fff;border-radius:12px;padding:24px 32px;min-width:280px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📎 파일 업로드 중...</div>
+      <div style="background:#e5e7eb;border-radius:8px;height:8px;overflow:hidden;margin-bottom:8px">
+        <div id="cs-upload-bar" style="background:#2563eb;height:100%;width:0%;transition:width 0.2s;border-radius:8px"></div>
+      </div>
+      <div id="cs-upload-pct" style="font-size:13px;color:#6b7280">0%</div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
   const formData = new FormData();
   formData.append("file", file);
+
   try {
-    const res = await api.postForm(`/api/cs/tickets/${ticketId}/upload`, formData);
-    alert("파일 업로드 완료");
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/cs/tickets/${ticketId}/upload`);
+      const token = localStorage.getItem("jwt_token");
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round(e.loaded / e.total * 100);
+          const bar = document.getElementById("cs-upload-bar");
+          const txt = document.getElementById("cs-upload-pct");
+          if (bar) bar.style.width = pct + "%";
+          if (txt) txt.textContent = pct + "% (" + (e.loaded / 1024 / 1024).toFixed(1) + "MB / " + (e.total / 1024 / 1024).toFixed(1) + "MB)";
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
+        else reject(new Error(xhr.responseText || `업로드 실패 (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new Error("네트워크 오류"));
+      xhr.send(formData);
+    });
     csShowDetail(ticketId);
   } catch(e) { alert("업로드 오류: " + (e.message || e)); }
+  finally { overlay.remove(); }
 }
 
 // ── 파일 삭제 ──

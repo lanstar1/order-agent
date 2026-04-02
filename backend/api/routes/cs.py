@@ -424,20 +424,6 @@ async def upload_file(
     if ext not in allowed_exts:
         raise HTTPException(400, f"허용되지 않는 파일 형식: {ext}")
 
-    # 파일 읽기 (스트리밍)
-    chunks = []
-    total_size = 0
-    max_size = 50 * 1024 * 1024  # 50MB 제한
-    while True:
-        chunk = await file.read(1024 * 1024)  # 1MB씩 읽기
-        if not chunk:
-            break
-        total_size += len(chunk)
-        if total_size > max_size:
-            raise HTTPException(400, f"파일 크기가 50MB를 초과합니다.")
-        chunks.append(chunk)
-    content = b"".join(chunks)
-
     video_exts = {".mp4", ".mov", ".avi", ".webm"}
     image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     file_type = "video" if ext in video_exts else "image" if ext in image_exts else "document"
@@ -451,44 +437,60 @@ async def upload_file(
     }
     mime_type = mime_map.get(ext, file.content_type or "application/octet-stream")
     original_name = file.filename or f"file{ext}"
+    max_size = 50 * 1024 * 1024  # 50MB
 
-    # ── 하이브리드 저장: 5MB 이하 → DB BLOB, 초과 → 파일시스템 ──
-    use_filesystem = len(content) > FILE_SIZE_DB_LIMIT
-    disk_filename = ""
+    # ── 디스크에 직접 스트리밍 저장 (메모리 버퍼링 최소화) ──
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    disk_filename = f"{ticket_id}_{uuid.uuid4().hex[:8]}{ext}"
+    disk_path = UPLOAD_DIR / disk_filename
+    total_size = 0
 
-    if use_filesystem:
-        # 파일시스템에 저장 (영상 등 대용량)
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        disk_filename = f"{ticket_id}_{uuid.uuid4().hex[:8]}{ext}"
-        disk_path = UPLOAD_DIR / disk_filename
-        disk_path.write_bytes(content)
-        logger.info(f"[CS] 대용량 파일 디스크 저장: {disk_path} ({len(content)} bytes)")
+    try:
+        with open(disk_path, "wb") as fp:
+            while True:
+                chunk = await file.read(256 * 1024)  # 256KB씩 스트리밍
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > max_size:
+                    fp.close()
+                    disk_path.unlink(missing_ok=True)
+                    raise HTTPException(400, "파일 크기가 50MB를 초과합니다.")
+                fp.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        disk_path.unlink(missing_ok=True)
+        raise HTTPException(500, f"파일 저장 실패: {e}")
 
-    # DB에 메타데이터 저장 (+ 작은 파일은 바이너리도 함께)
+    # ── 하이브리드: 5MB 이하 소용량은 DB BLOB에도 저장 (영속성) ──
+    use_db_blob = total_size <= FILE_SIZE_DB_LIMIT
+    file_blob_for_db = None
+    if use_db_blob:
+        raw = disk_path.read_bytes()
+        from db.database import USE_PG
+        if USE_PG:
+            import psycopg2
+            file_blob_for_db = psycopg2.Binary(raw)
+        else:
+            file_blob_for_db = raw
+
+    # DB에 메타데이터 저장
     conn = get_connection()
     try:
-        if use_filesystem:
-            # 대용량: file_data = NULL, disk_filename 컬럼에 파일명 저장
+        if use_db_blob:
+            conn.execute(
+                """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (ticket_id, original_name, "", file_type, total_size, user["emp_cd"], now_kst(), mime_type, file_blob_for_db, disk_filename)
+            )
+        else:
             conn.execute(
                 """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
-                (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, disk_filename)
-            )
-        else:
-            # 소용량: DB BLOB에 저장 (기존 방식)
-            from db.database import USE_PG
-            if USE_PG:
-                import psycopg2
-                file_blob = psycopg2.Binary(content)
-            else:
-                file_blob = content
-            conn.execute(
-                """INSERT INTO cs_files (ticket_id, file_name, file_url, file_type, file_size, uploaded_by, created_at, mime_type, file_data, disk_filename)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')""",
-                (ticket_id, original_name, "", file_type, len(content), user["emp_cd"], now_kst(), mime_type, file_blob)
+                (ticket_id, original_name, "", file_type, total_size, user["emp_cd"], now_kst(), mime_type, disk_filename)
             )
 
-        # 방금 삽입된 ID 가져오기
         row = conn.execute(
             "SELECT id FROM cs_files WHERE ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,)
         ).fetchone()
