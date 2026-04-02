@@ -4130,9 +4130,9 @@ async function csShowDetail(ticketId) {
               : (f.file_url || `/api/cs/files/db/${f.id}`);
             const viewUrl = imgSrc;
             const delBtn = t.current_status !== "처리종결"
-              ? `<button onclick="csDeleteFile(${f.id},'${f.ticket_id}')" title="삭제" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#dc2626;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0">✕</button>`
+              ? `<button onclick="event.stopPropagation();csDeleteFile(${f.id},'${f.ticket_id}')" title="삭제" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#dc2626;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;z-index:10">✕</button>`
               : "";
-            const dlBtn = `<button onclick="csDownloadFile(${f.id},'${_esc(f.file_name)}')" title="다운로드" style="position:absolute;bottom:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#2563eb;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0">⬇</button>`;
+            const dlBtn = `<button onclick="event.stopPropagation();csDownloadFile(${f.id},'${_esc(f.file_name)}')" title="다운로드" style="position:absolute;bottom:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#2563eb;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;z-index:10">⬇</button>`;
             if (f.file_type === "image") {
               return `<div style="position:relative;display:inline-block">${delBtn}${dlBtn}<a href="${viewUrl}" target="_blank"><img src="${imgSrc}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span style="display:none;width:80px;height:80px;align-items:center;justify-content:center;background:#f3f4f6;border-radius:6px;font-size:24px;border:1px solid #e5e7eb">🖼️</span></a></div>`;
             } else if (f.file_type === "video") {
@@ -4349,10 +4349,15 @@ async function csUploadFile(ticketId, input) {
         }
       };
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
-        else reject(new Error(xhr.responseText || `업로드 실패 (${xhr.status})`));
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); } catch(_) { resolve({}); }
+        } else {
+          reject(new Error(xhr.responseText || `업로드 실패 (${xhr.status})`));
+        }
       };
       xhr.onerror = () => reject(new Error("네트워크 오류"));
+      xhr.timeout = 300000; // 5분 타임아웃
+      xhr.ontimeout = () => reject(new Error("업로드 시간 초과 (5분)"));
       xhr.send(formData);
     });
     csShowDetail(ticketId);
