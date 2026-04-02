@@ -778,7 +778,8 @@ def init_db():
 
     # 기본 알림 설정
     for _k, _v in [("threshold_amount", "500000"), ("threshold_qty", "100"),
-                    ("telegram_bot_token", ""), ("telegram_chat_id", ""), ("enabled", "true")]:
+                    ("telegram_bot_token", "8506776023:AAE1KlZ9ZraSLdwTKDtiJolwqqGZthkUcZs"),
+                    ("telegram_chat_id", "8521021134"), ("enabled", "true")]:
         cur_or_conn.execute(
             "INSERT OR IGNORE INTO inventory_alert_settings (key, value) VALUES (?, ?)", (_k, _v)
         )
