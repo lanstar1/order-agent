@@ -38,7 +38,15 @@ reconcile_sessions: dict = {}
 # 거래처 데이터 캐시 (메모리)
 _vendor_cache: Optional[list[dict]] = None
 
-# 판매현황 캐시 (메모리) — 한 번 업로드하면 유지
+# 구매현황 캐시 (메모리) — 한 번 업로드하면 삭제 전까지 유지
+_purchase_cache: dict = {
+    "items": [],
+    "total": 0,
+    "filename": "",
+    "cached": False,
+}
+
+# 판매현황 캐시 (메모리) — 한 번 업로드하면 삭제 전까지 유지
 _sales_cache: dict = {
     "items": [],
     "total": 0,
@@ -310,16 +318,35 @@ async def upload_erp_data(
     return result
 
 
-@router.get("/sales-cache-status")
-async def get_sales_cache_status(
+@router.get("/erp-cache-status")
+async def get_erp_cache_status(
     user: dict = Depends(get_current_user),
 ):
-    """판매현황 캐시 상태 조회"""
+    """구매현황 + 판매현황 캐시 상태 조회"""
     return {
-        "cached": _sales_cache["cached"],
-        "total": _sales_cache["total"],
-        "filename": _sales_cache["filename"],
+        "purchase": {
+            "cached": _purchase_cache["cached"],
+            "total": _purchase_cache["total"],
+            "filename": _purchase_cache["filename"],
+        },
+        "sales": {
+            "cached": _sales_cache["cached"],
+            "total": _sales_cache["total"],
+            "filename": _sales_cache["filename"],
+        },
     }
+
+
+@router.delete("/clear-purchase-cache")
+async def clear_purchase_cache(
+    user: dict = Depends(get_current_user),
+):
+    """구매현황 캐시 삭제"""
+    global _purchase_cache
+    old = _purchase_cache["filename"]
+    _purchase_cache = {"items": [], "total": 0, "filename": "", "cached": False}
+    logger.info(f"구매현황 캐시 삭제됨 (이전: {old})")
+    return {"success": True, "message": f"구매현황 캐시 삭제됨 ({old})"}
 
 
 @router.delete("/clear-sales-cache")
@@ -328,16 +355,301 @@ async def clear_sales_cache(
 ):
     """판매현황 캐시 삭제"""
     global _sales_cache
-    old_filename = _sales_cache["filename"]
-    old_total = _sales_cache["total"]
-    _sales_cache = {
-        "items": [],
-        "total": 0,
-        "filename": "",
-        "cached": False,
+    old = _sales_cache["filename"]
+    _sales_cache = {"items": [], "total": 0, "filename": "", "cached": False}
+    logger.info(f"판매현황 캐시 삭제됨 (이전: {old})")
+    return {"success": True, "message": f"판매현황 캐시 삭제됨 ({old})"}
+
+
+# ──── 일괄 처리 (거래처원장 여러 개 + 구매현황 + 판매현황 한 번에) ────
+
+def _match_vendor_to_purchase(vendor_name: str, purchase_items: list[dict]) -> list[dict]:
+    """거래처명으로 전체 구매현황에서 해당 거래처 항목만 필터링.
+
+    vendor_name(거래처 원장의 시트명/파일명)과 ERP 구매현황의 cust_name을 매칭.
+    부분 문자열 포함(예: '유니정보' in '(주)유니정보통신')도 허용.
+    """
+    if not vendor_name:
+        return []
+
+    v_clean = vendor_name.replace("(주)", "").replace("주식회사", "").strip()
+
+    exact = [p for p in purchase_items if p.get("cust_name", "") == vendor_name]
+    if exact:
+        return exact
+
+    partial = [
+        p for p in purchase_items
+        if v_clean and (
+            v_clean in p.get("cust_name", "").replace("(주)", "").replace("주식회사", "")
+            or p.get("cust_name", "").replace("(주)", "").replace("주식회사", "") in v_clean
+        )
+    ]
+    return partial
+
+
+def _find_vendor_code(vendor_name: str) -> str:
+    """vendors.json 캐시에서 거래처코드 찾기"""
+    global _vendor_cache
+    if not _vendor_cache or not vendor_name:
+        return ""
+    v_clean = vendor_name.replace("(주)", "").replace("주식회사", "").strip()
+    for v in _vendor_cache:
+        name = v.get("name", "")
+        if name == vendor_name:
+            return v.get("code", "")
+        n_clean = name.replace("(주)", "").replace("주식회사", "").strip()
+        if v_clean and (v_clean in n_clean or n_clean in v_clean):
+            return v.get("code", "")
+    return ""
+
+
+@router.post("/batch-reconcile")
+async def batch_reconcile(
+    vendor_files: list[UploadFile] = File(...),
+    purchase_file: Optional[UploadFile] = File(None),
+    sales_file: Optional[UploadFile] = File(None),
+    user: dict = Depends(get_current_user),
+):
+    """거래처원장 여러 개 + 구매현황(전체) + 판매현황을 한 번에 업로드하여 일괄 정산
+
+    - vendor_files: 거래처 원장 엑셀 파일 여러 개 (파일명에 거래처명 포함)
+    - purchase_file: 전체 구매현황 엑셀/CSV (거래처 필터 없이 전체)
+    - sales_file: 판매현황 CSV/엑셀 (없으면 캐시 사용)
+    """
+    global _purchase_cache, _sales_cache
+
+    os.makedirs(str(UPLOAD_DIR), exist_ok=True)
+
+    # ── 1. 구매현황 파싱 (새 파일 있으면 캐시 갱신, 없으면 캐시 사용) ──
+    all_purchase_items = []
+    purchase_info = {"filename": "", "from_cache": False}
+    if purchase_file and purchase_file.filename:
+        try:
+            ext = os.path.splitext(purchase_file.filename)[1]
+            saved = os.path.join(str(UPLOAD_DIR), f"erp_purchase_{uuid.uuid4().hex[:8]}{ext}")
+            with open(saved, "wb") as f:
+                f.write(await purchase_file.read())
+            data = parse_erp_purchase(saved)
+            all_purchase_items = data["items"]
+            _purchase_cache = {
+                "items": data["items"],
+                "total": data["total"],
+                "filename": purchase_file.filename,
+                "cached": True,
+            }
+            purchase_info = {"filename": purchase_file.filename, "from_cache": False}
+            logger.info(f"[일괄] 구매현황 파싱 (캐시 갱신): {len(all_purchase_items)}건")
+        except Exception as e:
+            logger.error(f"[일괄] 구매현황 파싱 실패: {e}", exc_info=True)
+            raise HTTPException(400, f"구매현황 파싱 실패: {str(e)}")
+    elif _purchase_cache["cached"]:
+        all_purchase_items = _purchase_cache["items"]
+        purchase_info = {"filename": _purchase_cache["filename"], "from_cache": True}
+        logger.info(f"[일괄] 구매현황 캐시 사용: {len(all_purchase_items)}건")
+
+    # ── 2. 판매현황 파싱 (새 파일 있으면 캐시 갱신, 없으면 캐시 사용) ──
+    all_sales_items = []
+    sales_info = {"filename": "", "from_cache": False}
+    if sales_file and sales_file.filename:
+        try:
+            ext = os.path.splitext(sales_file.filename)[1]
+            saved = os.path.join(str(UPLOAD_DIR), f"erp_sales_{uuid.uuid4().hex[:8]}{ext}")
+            with open(saved, "wb") as f:
+                f.write(await sales_file.read())
+            data = parse_erp_sales(saved)
+            all_sales_items = data["items"]
+            _sales_cache = {
+                "items": data["items"],
+                "total": data["total"],
+                "filename": sales_file.filename,
+                "cached": True,
+            }
+            sales_info = {"filename": sales_file.filename, "from_cache": False}
+            logger.info(f"[일괄] 판매현황 파싱 (캐시 갱신): {len(all_sales_items)}건")
+        except Exception as e:
+            logger.error(f"[일괄] 판매현황 파싱 실패: {e}", exc_info=True)
+    elif _sales_cache["cached"]:
+        all_sales_items = _sales_cache["items"]
+        sales_info = {"filename": _sales_cache["filename"], "from_cache": True}
+        logger.info(f"[일괄] 판매현황 캐시 사용: {len(all_sales_items)}건")
+
+    # ── 3. 거래처 원장들 파싱 + 매칭 ──
+    vendor_results = []
+
+    # vendors.json 미리 로드
+    global _vendor_cache
+    if _vendor_cache is None:
+        try:
+            vendor_path = Path(__file__).parent.parent.parent.parent / "data" / "vendors.json"
+            if vendor_path.exists():
+                with open(vendor_path, "r", encoding="utf-8") as f:
+                    _vendor_cache = json.load(f)
+        except Exception:
+            pass
+
+    for vf in vendor_files:
+        if not vf.filename:
+            continue
+
+        vf_result = {
+            "filename": vf.filename,
+            "vendor_name": "",
+            "vendor_code": "",
+            "error": "",
+            "summary": {},
+            "matched": [],
+            "unmatched": [],
+            "sales_check": [],
+            "shipping_items": [],
+            "amount_mismatches": [],
+        }
+
+        try:
+            # 파일 저장 및 파싱
+            ext = os.path.splitext(vf.filename)[1]
+            saved = os.path.join(str(UPLOAD_DIR), f"vendor_{uuid.uuid4().hex[:8]}{ext}")
+            with open(saved, "wb") as f:
+                f.write(await vf.read())
+
+            ledger = parse_vendor_ledger(saved)
+            vendor_name = ledger.get("vendor_name", "")
+
+            # 파일명에서 거래처명 추출 시도 (시트명보다 파일명이 더 정확할 수 있음)
+            if not vendor_name or vendor_name == "Sheet1" or vendor_name == "Sheet":
+                fn_base = os.path.splitext(vf.filename)[0]
+                # 흔한 패턴: "거래장부내역_유니정보통신", "202603_파워네트" 등
+                parts = fn_base.replace("-", "_").split("_")
+                vendor_name = parts[-1] if parts else fn_base
+
+            vf_result["vendor_name"] = vendor_name
+            vf_result["vendor_code"] = _find_vendor_code(vendor_name)
+
+            # 거래처 원장에서 "매출" 항목 = 우리의 매입
+            all_vendor_items = ledger.get("sales_items", [])
+            if not all_vendor_items:
+                # tx_type 없는 경우 전체 사용
+                all_vendor_items = ledger.get("transactions", [])
+                all_vendor_items = [
+                    item for item in all_vendor_items
+                    if item.get("tx_type") == "매출" or not item.get("tx_type")
+                ]
+
+            if not all_vendor_items:
+                vf_result["error"] = "거래처 원장에 매출 항목이 없습니다"
+                vendor_results.append(vf_result)
+                continue
+
+            # 배송료 분리
+            shipping_items = [item for item in all_vendor_items if _is_shipping_item(item)]
+            regular_items = [item for item in all_vendor_items if not _is_shipping_item(item)]
+
+            # 구매현황에서 해당 거래처만 필터
+            filtered_purchase = _match_vendor_to_purchase(vendor_name, all_purchase_items)
+            logger.info(f"[일괄] '{vendor_name}': 원장 {len(all_vendor_items)}건, 구매현황 {len(filtered_purchase)}건")
+
+            # 1단계: 규칙 기반 매칭 (날짜/금액/수량)
+            match_results = await match_products_ai(regular_items, filtered_purchase)
+
+            matched = [r for r in match_results if r["match_type"] != "unmatched"]
+            unmatched = [r for r in match_results if r["match_type"] == "unmatched"]
+
+            # 금액 차이 감지
+            amount_mismatches = []
+            for r in matched:
+                v = r.get("vendor_item", {})
+                e = r.get("erp_match", {})
+                v_amt = float(v.get("amount", 0) or 0)
+                e_amt = float(_get_field(e, "total", "합계", default=0) or 0)
+                try:
+                    e_amt = float(str(e_amt).replace(",", ""))
+                except:
+                    e_amt = 0
+                v_qty = int(v.get("qty", 0) or 0)
+                e_qty = int(str(_get_field(e, "qty", "수량", default=0) or 0).replace(",", ""))
+
+                if v_amt and e_amt and abs(v_amt - e_amt) > 1:
+                    r["amount_diff"] = v_amt - e_amt
+                    r["amount_diff_pct"] = round((v_amt - e_amt) / max(v_amt, 1) * 100, 1)
+                    amount_mismatches.append(r)
+                if v_qty and e_qty and v_qty != e_qty:
+                    r["qty_diff"] = v_qty - e_qty
+
+            # 2단계: 누락 건 → 판매이력 확인 (AI)
+            sales_check = []
+            if unmatched and all_sales_items:
+                unmatched_vendor_items = [r["vendor_item"] for r in unmatched]
+                sales_check = await check_sales_history(
+                    unmatched_vendor_items, all_sales_items
+                )
+
+            # 배송료 매칭
+            shipping_match_results = []
+            if shipping_items and filtered_purchase:
+                shipping_match_results = await match_products_ai(
+                    shipping_items, filtered_purchase
+                )
+
+            vf_result["matched"] = matched
+            vf_result["unmatched"] = unmatched
+            vf_result["sales_check"] = sales_check
+            vf_result["shipping_items"] = [
+                {
+                    "vendor_item": item,
+                    "erp_match": next((r.get("erp_match") for r in shipping_match_results
+                                       if r.get("vendor_item") == item and r.get("match_type") != "unmatched"), None),
+                    "match_type": next((r.get("match_type") for r in shipping_match_results
+                                        if r.get("vendor_item") == item and r.get("match_type") != "unmatched"), "unmatched"),
+                }
+                for item in shipping_items
+            ]
+            vf_result["amount_mismatches"] = amount_mismatches
+            vf_result["summary"] = {
+                "total_vendor_items": len(all_vendor_items),
+                "matched_count": len(matched),
+                "unmatched_count": len(unmatched),
+                "with_sales_history": sum(1 for s in sales_check if s.get("has_sales_history")),
+                "shipping_count": len(shipping_items),
+                "amount_mismatch_count": len(amount_mismatches),
+                "purchase_filtered": len(filtered_purchase),
+            }
+
+        except Exception as e:
+            logger.error(f"[일괄] '{vf.filename}' 처리 실패: {e}", exc_info=True)
+            vf_result["error"] = str(e)
+
+        vendor_results.append(vf_result)
+
+    # ── 4. 세션 저장 & 응답 ──
+    session_id = uuid.uuid4().hex[:12]
+    reconcile_sessions[session_id] = {
+        "batch": True,
+        "vendor_results": vendor_results,
+        "purchase_total": len(all_purchase_items),
+        "sales_total": len(all_sales_items),
+        "purchase_info": purchase_info,
+        "sales_info": sales_info,
     }
-    logger.info(f"판매현황 캐시 삭제됨 (이전: {old_filename}, {old_total}건)")
-    return {"success": True, "message": f"판매현황 캐시 삭제됨 ({old_filename})"}
+
+    # 전체 요약
+    total_summary = {
+        "vendor_count": len(vendor_results),
+        "total_matched": sum(r["summary"].get("matched_count", 0) for r in vendor_results),
+        "total_unmatched": sum(r["summary"].get("unmatched_count", 0) for r in vendor_results),
+        "total_shipping": sum(r["summary"].get("shipping_count", 0) for r in vendor_results),
+        "total_amount_mismatch": sum(r["summary"].get("amount_mismatch_count", 0) for r in vendor_results),
+        "purchase_total": len(all_purchase_items),
+        "purchase_from_cache": purchase_info["from_cache"],
+        "sales_total": len(all_sales_items),
+        "sales_from_cache": sales_info["from_cache"],
+        "errors": [r["filename"] for r in vendor_results if r.get("error")],
+    }
+
+    return {
+        "session_id": session_id,
+        "summary": total_summary,
+        "vendor_results": vendor_results,
+    }
 
 
 @router.post("/compare")
@@ -590,6 +902,7 @@ async def download_result_excel(
     red_fill = PatternFill("solid", fgColor="FCE4EC")
     yellow_fill = PatternFill("solid", fgColor="FFF9C4")
     blue_fill = PatternFill("solid", fgColor="DBEAFE")
+    orange_fill = PatternFill("solid", fgColor="FFF3E0")
     thin_border = Border(
         left=Side(style="thin"), right=Side(style="thin"),
         top=Side(style="thin"), bottom=Side(style="thin")
@@ -609,153 +922,358 @@ async def download_result_excel(
         if fill:
             cell.fill = fill
 
-    # ── Sheet 1: 비교 요약 ──
-    ws1 = wb.active
-    ws1.title = "비교요약"
-    matched = data.get("matched", [])
-    unmatched = data.get("unmatched", [])
-    sales_check = data.get("sales_check", [])
-    shipping = data.get("shipping_items", [])
-    amt_mismatch = data.get("amount_mismatches", [])
+    # ── 배치 세션 vs 단일 세션 분기 ──
+    is_batch = data.get("batch", False)
 
-    ws1["A1"] = "매입정산 비교 결과"
-    ws1["A1"].font = Font(bold=True, size=14)
-    ws1.merge_cells("A1:D1")
+    if is_batch:
+        # ━━━ 배치 모드: 거래처별 시트 생성 ━━━
+        vendor_results = data.get("vendor_results", [])
 
-    summary_data = [
-        ["구분", "건수", "비고"],
-        ["✅ 매칭됨", len(matched), "거래처 원장 = ERP 구매현황"],
-        ["🔴 매입전표 누락", len(unmatched), "거래처 원장에 있으나 ERP에 없음"],
-        ["📦 판매이력 확인", sum(1 for s in sales_check if s.get("has_sales_history")), "판매이력은 있으나 매입전표 누락"],
-        ["🚚 배송료/운송비", len(shipping), "배송 관련 항목"],
-        ["⚠️ 금액 불일치", len(amt_mismatch), "매칭되었으나 금액이 다른 항목"],
-        ["전체", len(matched) + len(unmatched) + len(shipping), ""],
-    ]
-    for r_idx, row_data in enumerate(summary_data, start=3):
-        for c_idx, val in enumerate(row_data, start=1):
-            cell = ws1.cell(row=r_idx, column=c_idx, value=val)
-            style_data_cell(cell)
-    style_header(ws1, 3, 3)
-    ws1.column_dimensions["A"].width = 20
-    ws1.column_dimensions["B"].width = 12
-    ws1.column_dimensions["C"].width = 40
+        # Sheet 1: 전체 요약
+        ws1 = wb.active
+        ws1.title = "전체요약"
+        ws1["A1"] = "매입정산 일괄 비교 결과"
+        ws1["A1"].font = Font(bold=True, size=14)
+        ws1.merge_cells("A1:E1")
 
-    # ── Sheet 2: 매칭 상세 ──
-    ws2 = wb.create_sheet("매칭됨")
-    headers2 = ["#", "비교결과", "거래처 날짜", "거래처 품목명", "수량", "금액",
-                 "ERP 품목코드", "ERP 품목명", "ERP 수량", "ERP 금액", "금액차이", "신뢰도", "비고"]
-    for c, h in enumerate(headers2, 1):
-        ws2.cell(row=1, column=c, value=h)
-    style_header(ws2, 1, len(headers2))
+        total_matched = sum(len(vr.get("matched", [])) for vr in vendor_results)
+        total_unmatched = sum(len(vr.get("unmatched", [])) for vr in vendor_results)
+        total_shipping = sum(len(vr.get("shipping_items", [])) for vr in vendor_results)
+        total_sales_check = sum(
+            sum(1 for s in vr.get("sales_check", []) if s.get("has_sales_history"))
+            for vr in vendor_results
+        )
+        total_amt_mismatch = sum(len(vr.get("amount_mismatches", [])) for vr in vendor_results)
 
-    for i, r in enumerate(matched, 1):
-        v = r.get("vendor_item", {})
-        e = r.get("erp_match", {}) or {}
-        row = i + 1
-        v_amt = float(v.get("amount", 0) or 0)
-        e_amt = float(str(e.get("total", e.get("합계", 0)) or 0).replace(",", ""))
-        diff = v_amt - e_amt if v_amt and e_amt else 0
-        conf = round((r.get("confidence", 0)) * 100)
+        summary_headers = ["구분", "건수", "비고"]
+        for c, h in enumerate(summary_headers, 1):
+            ws1.cell(row=3, column=c, value=h)
+        style_header(ws1, 3, 3)
 
-        vals = [
-            i,
-            "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이",
-            v.get("date", ""),
-            v.get("product_name", ""),
-            v.get("qty", 0),
-            v_amt,
-            e.get("prod_cd", e.get("품목코드", "")),
-            e.get("prod_name", e.get("품명 및 모델", "")),
-            e.get("qty", e.get("수량", "")),
-            e_amt,
-            diff if abs(diff) > 1 else 0,
-            f"{conf}%",
-            r.get("reason", ""),
+        summary_rows = [
+            ["✅ 매칭됨", total_matched, "거래처 원장 = ERP 구매현황"],
+            ["🔴 매입전표 누락", total_unmatched, "거래처 원장에 있으나 ERP에 없음"],
+            ["📦 판매이력 확인", total_sales_check, "판매이력은 있으나 매입전표 누락"],
+            ["🚚 배송료/운송비", total_shipping, "배송 관련 항목"],
+            ["⚠️ 금액 불일치", total_amt_mismatch, "매칭되었으나 금액이 다른 항목"],
+            ["전체", total_matched + total_unmatched + total_shipping, ""],
         ]
-        fill = yellow_fill if abs(diff) > 1 else green_fill
-        for c, val in enumerate(vals, 1):
-            cell = ws2.cell(row=row, column=c, value=val)
-            style_data_cell(cell, fill)
+        for r_idx, row_data in enumerate(summary_rows, start=4):
+            for c_idx, val in enumerate(row_data, start=1):
+                cell = ws1.cell(row=r_idx, column=c_idx, value=val)
+                style_data_cell(cell)
 
-    for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L","M"]:
-        ws2.column_dimensions[col_letter].width = 15
-    ws2.column_dimensions["D"].width = 30
-    ws2.column_dimensions["H"].width = 30
-    ws2.column_dimensions["M"].width = 25
+        # 거래처별 요약 테이블
+        v_start = 4 + len(summary_rows) + 2
+        ws1.cell(row=v_start, column=1, value="거래처별 요약").font = Font(bold=True, size=12)
+        v_headers = ["거래처명", "매칭", "미매칭", "배송료", "금액차이", "합계"]
+        for c, h in enumerate(v_headers, 1):
+            ws1.cell(row=v_start + 1, column=c, value=h)
+        style_header(ws1, v_start + 1, len(v_headers))
 
-    # ── Sheet 3: 매입전표 누락 ──
-    ws3 = wb.create_sheet("매입전표누락")
-    headers3 = ["#", "거래처 날짜", "품목명", "모델명", "수량", "단가", "금액", "판매이력", "검색범위", "추천 품목코드", "추천 품목명", "신뢰도", "추천사항"]
-    for c, h in enumerate(headers3, 1):
-        ws3.cell(row=1, column=c, value=h)
-    style_header(ws3, 1, len(headers3))
-
-    row_idx = 2
-    # First add unmatched items that have sales check
-    sales_check_map = {id(s.get("vendor_item", {})): s for s in sales_check}
-
-    for i, r in enumerate(unmatched):
-        v = r.get("vendor_item", {})
-        # Find matching sales_check entry
-        sc = None
-        for s in sales_check:
-            sv = s.get("vendor_item", {})
-            if sv.get("product_name") == v.get("product_name") and sv.get("date") == v.get("date"):
-                sc = s
-                break
-
-        best = sc.get("best_candidate", {}) if sc else {}
-        fill = blue_fill if (sc and sc.get("has_sales_history")) else red_fill
-
-        vals = [
-            i + 1,
-            v.get("date", ""),
-            v.get("product_name", ""),
-            v.get("model_name", ""),
-            v.get("qty", 0),
-            v.get("unit_price", 0),
-            v.get("amount", 0),
-            "있음" if (sc and sc.get("has_sales_history")) else "없음",
-            sc.get("search_range", "") if sc else "",
-            best.get("product_code", "") if best else "",
-            best.get("product_name", "") if best else "",
-            f"{round((best.get('confidence', 0)) * 100)}%" if best else "",
-            sc.get("recommendation", "") if sc else "확인 필요",
-        ]
-        for c, val in enumerate(vals, 1):
-            cell = ws3.cell(row=row_idx, column=c, value=val)
-            style_data_cell(cell, fill)
-        row_idx += 1
-
-    for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L","M"]:
-        ws3.column_dimensions[col_letter].width = 15
-    ws3.column_dimensions["C"].width = 30
-    ws3.column_dimensions["K"].width = 30
-    ws3.column_dimensions["M"].width = 35
-
-    # ── Sheet 4: 배송료 ──
-    if shipping:
-        ws4 = wb.create_sheet("배송료")
-        headers4 = ["#", "날짜", "품목명", "수량", "금액", "ERP매칭", "비고"]
-        for c, h in enumerate(headers4, 1):
-            ws4.cell(row=1, column=c, value=h)
-        style_header(ws4, 1, len(headers4))
-        for i, s in enumerate(shipping, 1):
-            v = s.get("vendor_item", {})
-            e_match = s.get("erp_match")
+        for vi, vr in enumerate(vendor_results):
+            row = v_start + 2 + vi
+            m_cnt = len(vr.get("matched", []))
+            u_cnt = len(vr.get("unmatched", []))
+            s_cnt = len(vr.get("shipping_items", []))
+            a_cnt = len(vr.get("amount_mismatches", []))
             vals = [
-                i, v.get("date", ""), v.get("product_name", ""),
-                v.get("qty", 0), v.get("amount", 0),
-                "매칭됨" if e_match else "미매칭",
-                s.get("match_type", ""),
+                vr.get("vendor_name", vr.get("filename", "")),
+                m_cnt, u_cnt, s_cnt, a_cnt,
+                m_cnt + u_cnt + s_cnt,
             ]
-            fill = green_fill if e_match else yellow_fill
             for c, val in enumerate(vals, 1):
-                cell = ws4.cell(row=i+1, column=c, value=val)
+                cell = ws1.cell(row=row, column=c, value=val)
+                style_data_cell(cell)
+
+        ws1.column_dimensions["A"].width = 25
+        ws1.column_dimensions["B"].width = 12
+        ws1.column_dimensions["C"].width = 40
+
+        # 거래처별 상세 시트
+        for vr in vendor_results:
+            vname = vr.get("vendor_name", "Unknown")[:25]  # 시트명 길이 제한
+            if vr.get("error"):
+                continue
+
+            matched = vr.get("matched", [])
+            unmatched = vr.get("unmatched", [])
+            sales_check = vr.get("sales_check", [])
+            shipping = vr.get("shipping_items", [])
+
+            # 시트명 중복 방지
+            sheet_name = vname
+            existing = [ws.title for ws in wb.worksheets]
+            idx = 1
+            while sheet_name in existing:
+                sheet_name = f"{vname[:22]}_{idx}"
+                idx += 1
+
+            ws = wb.create_sheet(sheet_name)
+
+            ws["A1"] = f"거래처: {vr.get('vendor_name', '')}"
+            ws["A1"].font = Font(bold=True, size=12)
+            ws.merge_cells("A1:F1")
+
+            curr_row = 3
+
+            # 매칭됨
+            if matched:
+                ws.cell(row=curr_row, column=1, value="✅ 매칭됨").font = Font(bold=True, size=11)
+                curr_row += 1
+                m_headers = ["#", "비교결과", "거래처 날짜", "거래처 품목명", "수량", "금액",
+                             "ERP 품목코드", "ERP 품목명", "ERP 수량", "ERP 금액", "금액차이", "신뢰도"]
+                for c, h in enumerate(m_headers, 1):
+                    ws.cell(row=curr_row, column=c, value=h)
+                style_header(ws, curr_row, len(m_headers))
+                curr_row += 1
+
+                for i, r in enumerate(matched, 1):
+                    v = r.get("vendor_item", {})
+                    e = r.get("erp_match", {}) or {}
+                    v_amt = float(v.get("amount", 0) or 0)
+                    e_amt = float(str(e.get("total", e.get("합계", 0)) or 0).replace(",", ""))
+                    diff = v_amt - e_amt if v_amt and e_amt else 0
+                    conf = round((r.get("confidence", 0)) * 100)
+
+                    vals = [
+                        i,
+                        "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이",
+                        v.get("date", ""),
+                        v.get("product_name", ""),
+                        v.get("qty", 0),
+                        v_amt,
+                        e.get("prod_cd", e.get("품목코드", "")),
+                        e.get("prod_name", e.get("품명 및 모델", "")),
+                        e.get("qty", e.get("수량", "")),
+                        e_amt,
+                        diff if abs(diff) > 1 else 0,
+                        f"{conf}%",
+                    ]
+                    fill = yellow_fill if abs(diff) > 1 else green_fill
+                    for c, val in enumerate(vals, 1):
+                        cell = ws.cell(row=curr_row, column=c, value=val)
+                        style_data_cell(cell, fill)
+                    curr_row += 1
+                curr_row += 1
+
+            # 미매칭
+            if unmatched:
+                ws.cell(row=curr_row, column=1, value="🔴 매입전표 누락").font = Font(bold=True, size=11)
+                curr_row += 1
+                u_headers = ["#", "날짜", "품목명", "모델명", "수량", "단가", "금액",
+                             "판매이력", "추천 품목코드", "추천 품목명", "신뢰도"]
+                for c, h in enumerate(u_headers, 1):
+                    ws.cell(row=curr_row, column=c, value=h)
+                style_header(ws, curr_row, len(u_headers))
+                curr_row += 1
+
+                for i, r in enumerate(unmatched, 1):
+                    v = r.get("vendor_item", {})
+                    sc = None
+                    for s in sales_check:
+                        sv = s.get("vendor_item", {})
+                        if sv.get("product_name") == v.get("product_name") and sv.get("date") == v.get("date"):
+                            sc = s
+                            break
+                    best = sc.get("best_candidate", {}) if sc else {}
+                    fill = blue_fill if (sc and sc.get("has_sales_history")) else red_fill
+
+                    vals = [
+                        i,
+                        v.get("date", ""),
+                        v.get("product_name", ""),
+                        v.get("model_name", ""),
+                        v.get("qty", 0),
+                        v.get("unit_price", 0),
+                        v.get("amount", 0),
+                        "있음" if (sc and sc.get("has_sales_history")) else "없음",
+                        best.get("product_code", "") if best else "",
+                        best.get("product_name", "") if best else "",
+                        f"{round((best.get('confidence', 0)) * 100)}%" if best else "",
+                    ]
+                    for c, val in enumerate(vals, 1):
+                        cell = ws.cell(row=curr_row, column=c, value=val)
+                        style_data_cell(cell, fill)
+                    curr_row += 1
+                curr_row += 1
+
+            # 배송료
+            if shipping:
+                ws.cell(row=curr_row, column=1, value="🚚 배송료/운송비").font = Font(bold=True, size=11)
+                curr_row += 1
+                s_headers = ["#", "날짜", "품목명", "수량", "금액", "ERP매칭"]
+                for c, h in enumerate(s_headers, 1):
+                    ws.cell(row=curr_row, column=c, value=h)
+                style_header(ws, curr_row, len(s_headers))
+                curr_row += 1
+
+                for i, s_item in enumerate(shipping, 1):
+                    sv = s_item.get("vendor_item", {})
+                    e_match = s_item.get("erp_match")
+                    vals = [
+                        i, sv.get("date", ""), sv.get("product_name", ""),
+                        sv.get("qty", 0), sv.get("amount", 0),
+                        "매칭됨" if e_match else "미매칭",
+                    ]
+                    fill_s = green_fill if e_match else orange_fill
+                    for c, val in enumerate(vals, 1):
+                        cell = ws.cell(row=curr_row, column=c, value=val)
+                        style_data_cell(cell, fill_s)
+                    curr_row += 1
+
+            # 열 너비 설정
+            for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L"]:
+                ws.column_dimensions[col_letter].width = 15
+            ws.column_dimensions["D"].width = 30
+            ws.column_dimensions["H"].width = 30
+            ws.column_dimensions["J"].width = 30
+
+    else:
+        # ━━━ 단일 거래처 모드 (기존 로직) ━━━
+        # Sheet 1: 비교 요약
+        ws1 = wb.active
+        ws1.title = "비교요약"
+        matched = data.get("matched", [])
+        unmatched = data.get("unmatched", [])
+        sales_check = data.get("sales_check", [])
+        shipping = data.get("shipping_items", [])
+        amt_mismatch = data.get("amount_mismatches", [])
+
+        ws1["A1"] = "매입정산 비교 결과"
+        ws1["A1"].font = Font(bold=True, size=14)
+        ws1.merge_cells("A1:D1")
+
+        summary_data = [
+            ["구분", "건수", "비고"],
+            ["✅ 매칭됨", len(matched), "거래처 원장 = ERP 구매현황"],
+            ["🔴 매입전표 누락", len(unmatched), "거래처 원장에 있으나 ERP에 없음"],
+            ["📦 판매이력 확인", sum(1 for s in sales_check if s.get("has_sales_history")), "판매이력은 있으나 매입전표 누락"],
+            ["🚚 배송료/운송비", len(shipping), "배송 관련 항목"],
+            ["⚠️ 금액 불일치", len(amt_mismatch), "매칭되었으나 금액이 다른 항목"],
+            ["전체", len(matched) + len(unmatched) + len(shipping), ""],
+        ]
+        for r_idx, row_data in enumerate(summary_data, start=3):
+            for c_idx, val in enumerate(row_data, start=1):
+                cell = ws1.cell(row=r_idx, column=c_idx, value=val)
+                style_data_cell(cell)
+        style_header(ws1, 3, 3)
+        ws1.column_dimensions["A"].width = 20
+        ws1.column_dimensions["B"].width = 12
+        ws1.column_dimensions["C"].width = 40
+
+        # Sheet 2: 매칭 상세
+        ws2 = wb.create_sheet("매칭됨")
+        headers2 = ["#", "비교결과", "거래처 날짜", "거래처 품목명", "수량", "금액",
+                     "ERP 품목코드", "ERP 품목명", "ERP 수량", "ERP 금액", "금액차이", "신뢰도", "비고"]
+        for c, h in enumerate(headers2, 1):
+            ws2.cell(row=1, column=c, value=h)
+        style_header(ws2, 1, len(headers2))
+
+        for i, r in enumerate(matched, 1):
+            v = r.get("vendor_item", {})
+            e = r.get("erp_match", {}) or {}
+            row = i + 1
+            v_amt = float(v.get("amount", 0) or 0)
+            e_amt = float(str(e.get("total", e.get("합계", 0)) or 0).replace(",", ""))
+            diff = v_amt - e_amt if v_amt and e_amt else 0
+            conf = round((r.get("confidence", 0)) * 100)
+
+            vals = [
+                i,
+                "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이",
+                v.get("date", ""),
+                v.get("product_name", ""),
+                v.get("qty", 0),
+                v_amt,
+                e.get("prod_cd", e.get("품목코드", "")),
+                e.get("prod_name", e.get("품명 및 모델", "")),
+                e.get("qty", e.get("수량", "")),
+                e_amt,
+                diff if abs(diff) > 1 else 0,
+                f"{conf}%",
+                r.get("reason", ""),
+            ]
+            fill = yellow_fill if abs(diff) > 1 else green_fill
+            for c, val in enumerate(vals, 1):
+                cell = ws2.cell(row=row, column=c, value=val)
                 style_data_cell(cell, fill)
-        for col_letter in ["A","B","C","D","E","F","G"]:
-            ws4.column_dimensions[col_letter].width = 18
-        ws4.column_dimensions["C"].width = 30
+
+        for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L","M"]:
+            ws2.column_dimensions[col_letter].width = 15
+        ws2.column_dimensions["D"].width = 30
+        ws2.column_dimensions["H"].width = 30
+        ws2.column_dimensions["M"].width = 25
+
+        # Sheet 3: 매입전표 누락
+        ws3 = wb.create_sheet("매입전표누락")
+        headers3 = ["#", "거래처 날짜", "품목명", "모델명", "수량", "단가", "금액", "판매이력", "검색범위", "추천 품목코드", "추천 품목명", "신뢰도", "추천사항"]
+        for c, h in enumerate(headers3, 1):
+            ws3.cell(row=1, column=c, value=h)
+        style_header(ws3, 1, len(headers3))
+
+        row_idx = 2
+        for i, r in enumerate(unmatched):
+            v = r.get("vendor_item", {})
+            sc = None
+            for s in sales_check:
+                sv = s.get("vendor_item", {})
+                if sv.get("product_name") == v.get("product_name") and sv.get("date") == v.get("date"):
+                    sc = s
+                    break
+
+            best = sc.get("best_candidate", {}) if sc else {}
+            fill = blue_fill if (sc and sc.get("has_sales_history")) else red_fill
+
+            vals = [
+                i + 1,
+                v.get("date", ""),
+                v.get("product_name", ""),
+                v.get("model_name", ""),
+                v.get("qty", 0),
+                v.get("unit_price", 0),
+                v.get("amount", 0),
+                "있음" if (sc and sc.get("has_sales_history")) else "없음",
+                sc.get("search_range", "") if sc else "",
+                best.get("product_code", "") if best else "",
+                best.get("product_name", "") if best else "",
+                f"{round((best.get('confidence', 0)) * 100)}%" if best else "",
+                sc.get("recommendation", "") if sc else "확인 필요",
+            ]
+            for c, val in enumerate(vals, 1):
+                cell = ws3.cell(row=row_idx, column=c, value=val)
+                style_data_cell(cell, fill)
+            row_idx += 1
+
+        for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L","M"]:
+            ws3.column_dimensions[col_letter].width = 15
+        ws3.column_dimensions["C"].width = 30
+        ws3.column_dimensions["K"].width = 30
+        ws3.column_dimensions["M"].width = 35
+
+        # Sheet 4: 배송료
+        if shipping:
+            ws4 = wb.create_sheet("배송료")
+            headers4 = ["#", "날짜", "품목명", "수량", "금액", "ERP매칭", "비고"]
+            for c, h in enumerate(headers4, 1):
+                ws4.cell(row=1, column=c, value=h)
+            style_header(ws4, 1, len(headers4))
+            for i, s in enumerate(shipping, 1):
+                v = s.get("vendor_item", {})
+                e_match = s.get("erp_match")
+                vals = [
+                    i, v.get("date", ""), v.get("product_name", ""),
+                    v.get("qty", 0), v.get("amount", 0),
+                    "매칭됨" if e_match else "미매칭",
+                    s.get("match_type", ""),
+                ]
+                fill = green_fill if e_match else yellow_fill
+                for c, val in enumerate(vals, 1):
+                    cell = ws4.cell(row=i+1, column=c, value=val)
+                    style_data_cell(cell, fill)
+            for col_letter in ["A","B","C","D","E","F","G"]:
+                ws4.column_dimensions[col_letter].width = 18
+            ws4.column_dimensions["C"].width = 30
 
     # Save to buffer
     buffer = io.BytesIO()

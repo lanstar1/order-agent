@@ -450,52 +450,38 @@ C규격품 200개
          ────────────────────────────── -->
     <div class="page" id="page-reconcile">
       <div class="card">
-        <div class="card-title">매입정산 (거래처 원장 비교)</div>
+        <div class="card-title">매입정산 (일괄 비교)</div>
         <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
-          거래처 원장을 업로드하고 ERP 구매현황과 비교하여 매입전표 누락 건을 찾아 자동 입력합니다.
+          거래처 원장 여러 개 + 구매현황 + 판매현황을 한 번에 업로드하면 모든 거래처를 일괄 비교합니다.
         </p>
 
         <!-- 스텝 인디케이터 -->
         <div id="reconcile-steps" style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-          <div class="step-badge active" data-step="1">1. 데이터 준비</div>
-          <div class="step-badge" data-step="2">2. 원장 업로드</div>
-          <div class="step-badge" data-step="3">3. 비교 결과</div>
-          <div class="step-badge" data-step="4">4. 전표 입력</div>
-          <div class="step-badge" data-step="5">5. 결과</div>
+          <div class="step-badge active" data-step="1">1. 파일 업로드</div>
+          <div class="step-badge" data-step="2">2. 비교 결과</div>
+          <div class="step-badge" data-step="3">3. 전표 입력</div>
+          <div class="step-badge" data-step="4">4. 결과</div>
         </div>
 
-        <!-- STEP 1: 데이터 준비 -->
+        <!-- STEP 1: 일괄 파일 업로드 -->
         <div id="reconcile-step1">
           <div style="background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
-            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">거래처 선택</h4>
+            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">거래처 원장</h4>
             <p style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
-              정산할 거래처를 선택하세요.
+              거래처에서 받은 원장 엑셀 파일을 모두 선택하세요. (여러 파일 동시 선택 가능)
             </p>
-            <div style="position:relative;max-width:420px">
-              <input type="text" id="reconcile-vendor-input" class="form-input"
-                     placeholder="거래처명 또는 코드를 입력하세요..."
-                     autocomplete="off"
-                     style="width:100%;font-size:13px;padding-right:36px">
-              <span id="reconcile-vendor-clear" onclick="reconcileVendorClear()"
-                    style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray-400);font-size:16px;display:none">&times;</span>
-              <div id="reconcile-vendor-dropdown"
-                   style="display:none;position:absolute;top:100%;left:0;right:0;max-height:260px;overflow-y:auto;
-                          background:#fff;border:1px solid var(--gray-300);border-radius:0 0 8px 8px;
-                          box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:100"></div>
-              <input type="hidden" id="reconcile-cust-code">
-              <input type="hidden" id="reconcile-cust-name">
-            </div>
-            <div id="reconcile-vendor-selected" style="margin-top:8px;font-size:12px;color:var(--gray-500)"></div>
+            <input type="file" id="reconcile-vendor-files" accept=".xlsx,.xls" multiple class="form-input" style="font-size:12px">
+            <div id="reconcile-vendor-file-list" style="margin-top:8px;font-size:12px;color:var(--gray-600)"></div>
           </div>
 
           <div style="background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
-            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">ERP 데이터 업로드</h4>
+            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">ERP 데이터</h4>
             <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">
-              ECOUNT에서 다운로드한 구매현황·판매현황 파일을 업로드하세요.
+              ECOUNT에서 다운로드한 구매현황(전체)·판매현황 파일을 업로드하세요.
             </p>
             <div style="display:flex;gap:16px;flex-wrap:wrap">
               <div style="flex:1;min-width:200px">
-                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">구매현황 (.xlsx)</label>
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">구매현황 - 전체 (.xlsx/.csv)</label>
                 <input type="file" id="reconcile-erp-purchase-file" accept=".xlsx,.xls,.csv" class="form-input" style="font-size:12px">
               </div>
               <div style="flex:1;min-width:200px">
@@ -503,7 +489,6 @@ C규격품 200개
                 <div id="reconcile-sales-file-wrap">
                   <input type="file" id="reconcile-erp-sales-file" accept=".csv,.xlsx,.xls" class="form-input" style="font-size:12px">
                 </div>
-                <!-- 캐시된 판매현황 표시 (JS에서 토글) -->
                 <div id="reconcile-sales-cached" style="display:none;margin-top:6px;padding:8px 12px;background:#e0f2fe;border-radius:6px;font-size:12px;color:#0369a1;align-items:center;gap:8px">
                   <span id="reconcile-sales-cached-info" style="flex:1"></span>
                   <button onclick="reconcileClearSalesCache()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:bold;padding:0 4px" title="판매현황 캐시 삭제">&times;</button>
@@ -512,93 +497,50 @@ C규격품 200개
             </div>
           </div>
 
-          <!-- 업로드 결과 표시 -->
-          <div id="reconcile-erp-upload-status" style="display:none;background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
-            <div style="display:flex;gap:16px;flex-wrap:wrap">
-              <div style="flex:1;min-width:180px">
-                <span style="font-size:12px;font-weight:600">구매현황</span>
-                <div id="reconcile-erp-purchase-status" style="font-size:12px;color:var(--gray-600);margin-top:4px">대기 중</div>
-              </div>
-              <div style="flex:1;min-width:180px">
-                <span style="font-size:12px;font-weight:600">판매현황</span>
-                <div id="reconcile-erp-sales-status" style="font-size:12px;color:var(--gray-600);margin-top:4px">대기 중</div>
-              </div>
+          <!-- 진행 상태 -->
+          <div id="reconcile-batch-progress" style="display:none;background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
+            <div id="reconcile-batch-progress-text" style="font-size:13px;color:var(--gray-700)">처리 중...</div>
+            <div style="background:var(--gray-200);border-radius:4px;height:6px;margin-top:8px;overflow:hidden">
+              <div id="reconcile-batch-progress-bar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s"></div>
             </div>
           </div>
 
-          <button class="btn btn-primary" onclick="reconcileUploadERPAndGoStep2()" id="btn-reconcile-step2">
-            ERP 파일 업로드 후 다음 →
+          <button class="btn btn-primary" onclick="reconcileBatchStart()" id="btn-reconcile-batch" style="font-size:14px;padding:10px 24px">
+            일괄 정산 시작
           </button>
         </div>
 
-        <!-- STEP 2: 거래처 원장 업로드 -->
+        <!-- STEP 2: 일괄 비교 결과 (거래처별 아코디언) -->
         <div id="reconcile-step2" style="display:none">
-          <div style="background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
-            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">거래처 원장 업로드</h4>
-            <p style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
-              거래처에서 받은 원장 엑셀 파일을 업로드하세요. (여러 파일 가능)
-            </p>
-            <input type="file" id="reconcile-vendor-files" accept=".xlsx,.xls" multiple class="form-input" style="font-size:12px">
-          </div>
-          <div id="reconcile-vendor-list" style="margin-bottom:16px"></div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-outline" onclick="reconcileGoBack(1)">← 이전</button>
-            <button class="btn btn-primary" onclick="reconcileUploadAndParse()" id="btn-reconcile-parse">
-              업로드 및 파싱
-            </button>
-            <button class="btn btn-success" onclick="reconcileRunCompare()" id="btn-reconcile-compare" style="display:none">
-              AI 비교 분석 시작
-            </button>
-          </div>
-        </div>
-
-        <!-- STEP 3: 비교 결과 -->
-        <div id="reconcile-step3" style="display:none">
-          <div id="reconcile-summary" style="margin-bottom:16px"></div>
-
-          <!-- 탭 -->
-          <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:16px;flex-wrap:wrap">
-            <button class="reconcile-tab active" onclick="reconcileSwitchTab('matched')" id="tab-matched">매칭됨</button>
-            <button class="reconcile-tab" onclick="reconcileSwitchTab('unmatched')" id="tab-unmatched">매입전표 누락</button>
-            <button class="reconcile-tab" onclick="reconcileSwitchTab('sales')" id="tab-sales">판매이력 확인</button>
-            <button class="reconcile-tab" onclick="reconcileSwitchTab('shipping')" id="tab-shipping">배송료/운송비</button>
-            <button class="reconcile-tab" onclick="reconcileSwitchTab('amt-diff')" id="tab-amt-diff">금액 불일치</button>
-          </div>
-
-          <div id="reconcile-tab-matched"></div>
-          <div id="reconcile-tab-unmatched" style="display:none"></div>
-          <div id="reconcile-tab-sales" style="display:none"></div>
-          <div id="reconcile-tab-shipping" style="display:none"></div>
-          <div id="reconcile-tab-amt-diff" style="display:none"></div>
+          <div id="reconcile-batch-summary" style="margin-bottom:16px"></div>
+          <div id="reconcile-vendor-accordion"></div>
 
           <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-            <button class="btn btn-outline" onclick="reconcileGoBack(2)">← 이전</button>
-            <button class="btn btn-outline" onclick="reconcileDownloadExcel()" id="btn-reconcile-download">
-              엑셀 다운로드
-            </button>
-            <button class="btn btn-primary" onclick="reconcilePrepareInput()" id="btn-reconcile-prepare">
+            <button class="btn btn-outline" onclick="reconcileGoBack(1)">← 이전</button>
+            <button class="btn btn-outline" onclick="reconcileBatchDownloadExcel()">엑셀 다운로드</button>
+            <button class="btn btn-primary" onclick="reconcileBatchPrepareInput()">
               매입전표 입력 준비 →
             </button>
           </div>
         </div>
 
-        <!-- STEP 4: 매입전표 입력 확인 -->
-        <div id="reconcile-step4" style="display:none">
+        <!-- STEP 3: 매입전표 입력 확인 -->
+        <div id="reconcile-step3" style="display:none">
           <h4 style="margin:0 0 12px 0;font-size:14px">매입전표 입력 항목 확인</h4>
           <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">
             아래 항목을 확인·수정한 후 ERP에 입력합니다.
           </p>
           <div id="reconcile-purchase-list"></div>
           <div style="display:flex;gap:8px;margin-top:16px">
-            <button class="btn btn-outline" onclick="reconcileGoBack(3)">← 이전</button>
+            <button class="btn btn-outline" onclick="reconcileGoBack(2)">← 이전</button>
             <button class="btn btn-success" onclick="reconcileSubmitERP()" id="btn-reconcile-submit">
               ERP 구매입력 전송
             </button>
           </div>
         </div>
 
-        <!-- STEP 5: 결과 -->
-        <div id="reconcile-step5" style="display:none">
+        <!-- STEP 4: 결과 -->
+        <div id="reconcile-step4" style="display:none">
           <div id="reconcile-result"></div>
           <button class="btn btn-primary" onclick="reconcileReset()" style="margin-top:16px">
             새 정산 시작
