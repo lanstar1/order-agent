@@ -1581,3 +1581,90 @@ class SalesAnalyticsService:
         except Exception as e:
             logger.error(f"[AI분석] Claude API 오류: {e}")
             return {"error": str(e)}
+
+
+    # ══════════════════════════════════════════════
+    #  일별 거래처 전일대비 판매 현황
+    # ══════════════════════════════════════════════
+
+    async def get_daily_compare(self, target_date: str = None) -> dict:
+        """특정 날짜와 전날의 거래처별 품목 판매수량 비교
+
+        Returns:
+            {
+              "target_date": "2026-04-03",
+              "prev_date":   "2026-04-02",
+              "customers": [
+                {
+                  "customer_name": "쿠팡",
+                  "today_qty":  100, "prev_qty": 80, "diff": 20,
+                  "items": [
+                    {"item_code":"A", "item_name":"상품A",
+                     "today_qty":10, "prev_qty":8, "diff":2}
+                  ]
+                }, ...
+              ]
+            }
+        """
+        from db.database import get_connection
+        from datetime import datetime, timedelta
+
+        if not target_date:
+            target_date = _today_str()
+
+        # 전날 계산
+        dt = datetime.strptime(target_date, "%Y-%m-%d")
+        prev_dt = dt - timedelta(days=1)
+        prev_date = prev_dt.strftime("%Y-%m-%d")
+
+        conn = get_connection()
+        try:
+            # 두 날짜의 거래처별 품목별 수량 한번에 조회
+            rows = conn.execute("""
+                SELECT
+                    customer_name,
+                    item_code,
+                    MAX(item_name) as item_name,
+                    COALESCE(SUM(CASE WHEN slip_date = ? THEN quantity ELSE 0 END), 0) as today_qty,
+                    COALESCE(SUM(CASE WHEN slip_date = ? THEN quantity ELSE 0 END), 0) as prev_qty
+                FROM sales_records
+                WHERE slip_date IN (?, ?)
+                  AND customer_name != ''
+                  AND quantity > 0
+                GROUP BY customer_name, item_code
+                ORDER BY customer_name, item_code
+            """, (target_date, prev_date, target_date, prev_date)).fetchall()
+
+            # 거래처별로 그룹핑
+            cust_map = {}
+            for r in rows:
+                cname = r["customer_name"]
+                today_q = int(r["today_qty"] or 0)
+                prev_q  = int(r["prev_qty"] or 0)
+                if cname not in cust_map:
+                    cust_map[cname] = {"customer_name": cname, "today_qty": 0, "prev_qty": 0, "items": []}
+                cust_map[cname]["today_qty"] += today_q
+                cust_map[cname]["prev_qty"]  += prev_q
+                cust_map[cname]["items"].append({
+                    "item_code":  r["item_code"] or "",
+                    "item_name":  r["item_name"] or "",
+                    "today_qty":  today_q,
+                    "prev_qty":   prev_q,
+                    "diff":       today_q - prev_q,
+                })
+
+            customers = []
+            for c in cust_map.values():
+                c["diff"] = c["today_qty"] - c["prev_qty"]
+                customers.append(c)
+
+            # 금일 판매량 내림차순 정렬
+            customers.sort(key=lambda x: x["today_qty"], reverse=True)
+
+            return {
+                "target_date": target_date,
+                "prev_date":   prev_date,
+                "customers":   customers,
+            }
+        finally:
+            conn.close()

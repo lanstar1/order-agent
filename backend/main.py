@@ -360,6 +360,23 @@ async def serve_smartstore_page():
     )
 
 
+@app.get("/sales-daily", include_in_schema=False)
+async def serve_sales_daily_page():
+    """일별 거래처 전일대비 판매현황 페이지"""
+    html = FRONTEND_DIR / "sales_daily.html"
+    if not html.exists():
+        return JSONResponse({"error": "sales_daily.html not found"}, status_code=404)
+    return FileResponse(
+        html,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
 # ─────────────────────────────────────────
 #  시작 이벤트
 # ─────────────────────────────────────────

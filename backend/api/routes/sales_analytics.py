@@ -63,6 +63,18 @@ async def scheduler_run_now(
 
 
 # ══════════════════════════════════════════════
+#  일별 거래처 전일대비 판매 현황
+# ══════════════════════════════════════════════
+
+@router.get("/daily-compare")
+async def get_daily_compare(
+    date: str = Query(None, description="조회 날짜 (YYYY-MM-DD), 기본값: 오늘"),
+    user: dict = Depends(get_current_user),
+):
+    return await _get_svc().get_daily_compare(date)
+
+
+# ══════════════════════════════════════════════
 #  뷰1: 전체 대시보드
 # ══════════════════════════════════════════════
 

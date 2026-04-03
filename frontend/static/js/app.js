@@ -114,6 +114,11 @@ function navigateTo(pageId) {
     window.open("/barcode", "_blank");
     return;
   }
+  // 일별 판매현황은 별도 페이지로 열기
+  if (pageId === "sales_daily") {
+    window.open("/sales-daily", "_blank");
+    return;
+  }
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   const page = document.getElementById("page-" + pageId);
