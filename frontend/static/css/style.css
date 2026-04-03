@@ -896,6 +896,11 @@ textarea.form-control { resize: vertical; min-height: 120px; }
 .rc-vendor-name-row .rc-vnr-status {
   flex: 0 0 auto; font-size: 16px; line-height: 1;
 }
+.rc-vendor-name-row .rc-vnr-delete {
+  flex: 0 0 auto; border: none; background: none; cursor: pointer;
+  color: var(--gray-400); font-size: 18px; padding: 0 4px; line-height: 1;
+}
+.rc-vendor-name-row .rc-vnr-delete:hover { color: var(--danger); }
 
 /* 로그 패널 */
 .rc-log-panel {

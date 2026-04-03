@@ -5187,33 +5187,50 @@ const _rc = {
   step: 1,
   batchResult: null,
   purchaseQueue: [],
+  vendorFiles: [],  // {file, name, status} 누적 관리
 };
 
 function initReconcilePage() {
   reconcileSetStep(1);
   reconcileCheckErpCache();
+  _rc.vendorFiles = [];
 
-  // 드래그&드롭 + 파일 선택
   const dropzone = document.getElementById("rc-vendor-dropzone");
   const vf = document.getElementById("reconcile-vendor-files");
   if (dropzone && vf) {
     dropzone.addEventListener("click", (e) => {
-      if (e.target === vf) return; // input 자체 클릭 시 무시
+      if (e.target === vf) return;
       vf.click();
     });
     dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
     dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
     dropzone.addEventListener("drop", e => {
       e.preventDefault(); dropzone.classList.remove("dragover");
-      if (e.dataTransfer.files.length) { vf.files = e.dataTransfer.files; _renderVendorFileList(); }
+      if (e.dataTransfer.files.length) _addVendorFiles(Array.from(e.dataTransfer.files));
     });
-    vf.addEventListener("change", () => _renderVendorFileList());
+    vf.addEventListener("change", () => {
+      if (vf.files.length) _addVendorFiles(Array.from(vf.files));
+      vf.value = ""; // 같은 파일 다시 선택 가능하도록 리셋
+    });
   }
+}
+
+function _addVendorFiles(newFiles) {
+  // 중복 파일명 제거하면서 추가
+  for (const f of newFiles) {
+    const exists = _rc.vendorFiles.some(v => v.file.name === f.name && v.file.size === f.size);
+    if (!exists) _rc.vendorFiles.push({ file: f, name: "", status: "pending" });
+  }
+  _renderVendorFileList();
+}
+
+function _removeVendorFile(idx) {
+  _rc.vendorFiles.splice(idx, 1);
+  _renderVendorFileList();
 }
 
 function _extractVendorName(filename) {
   let base = filename.replace(/\.(xlsx|xls)$/i, "");
-  // UUID suffix 제거 (드래그앤드롭 시 -79021bc2 같은 suffix)
   base = base.replace(/-[0-9a-f]{6,12}$/, "");
   const parts = base.replace(/-/g, "_").split("_");
   const skipPrefixes = new Set(["거래장부내역","거래내역","거래확인서","거래원장","원장"]);
@@ -5221,63 +5238,103 @@ function _extractVendorName(filename) {
   return nameParts.length ? nameParts[nameParts.length - 1] : base;
 }
 
+function _fuzzyMatchVendor(extracted, vendors) {
+  // (주), 주식회사 등 제거 후 비교
+  const clean = s => s.replace(/\(주\)|주식회사|\s/g, "").trim();
+  const ec = clean(extracted);
+  if (!ec) return null;
+
+  // 1순위: 정확 매칭
+  const exact = vendors.find(v => v.name === extracted);
+  if (exact) return exact;
+
+  // 2순위: clean 후 정확 매칭
+  const cleanExact = vendors.find(v => clean(v.name) === ec);
+  if (cleanExact) return cleanExact;
+
+  // 3순위: 부분 포함 (한쪽이 다른쪽을 포함)
+  const partial = vendors.find(v => {
+    const vc = clean(v.name);
+    return vc.includes(ec) || ec.includes(vc);
+  });
+  if (partial) return partial;
+
+  // 4순위: 첫 번째 결과 (API가 이미 q로 필터링했으므로 관련성 높음)
+  return vendors[0] || null;
+}
+
 async function _renderVendorFileList() {
-  const vf = document.getElementById("reconcile-vendor-files");
   const el = document.getElementById("reconcile-vendor-file-list");
   const confirmArea = document.getElementById("reconcile-vendor-confirm");
   const nameList = document.getElementById("reconcile-vendor-name-list");
-  if (!el || !vf) return;
-  const files = vf.files;
-  if (!files.length) {
+  if (!el) return;
+
+  if (!_rc.vendorFiles.length) {
     el.innerHTML = "";
     if (confirmArea) confirmArea.style.display = "none";
     return;
   }
-  // 파일 태그 표시
-  el.innerHTML = Array.from(files).map(f =>
-    `<span class="rc-file-tag">📄 ${f.name}</span>`
+
+  // 파일 태그 (삭제 버튼 포함)
+  el.innerHTML = _rc.vendorFiles.map((v, i) =>
+    `<span class="rc-file-tag">📄 ${v.file.name} <button onclick="_removeVendorFile(${i})" style="border:none;background:none;cursor:pointer;color:#999;font-size:14px;padding:0 2px">&times;</button></span>`
   ).join("");
 
-  // 거래처 확인 영역: 파일명 추출 → vendor-list API로 공식 거래처명 매칭
-  if (confirmArea && nameList) {
-    confirmArea.style.display = "block";
-    // 먼저 파일명에서 추출한 이름으로 임시 표시
-    const fileArr = Array.from(files);
-    const extracted = fileArr.map(f => _extractVendorName(f.name));
-    nameList.innerHTML = fileArr.map((f, i) =>
-      `<div class="rc-vendor-name-row">
-        <span class="rc-vnr-file" title="${f.name}">📄 ${f.name}</span>
-        <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${extracted[i]}" placeholder="거래처명 검색 중...">
-        <span class="rc-vnr-status" id="rc-vnr-status-${i}">🔍</span>
-      </div>`
-    ).join("");
+  // 거래처 확인 영역
+  if (!confirmArea || !nameList) return;
+  confirmArea.style.display = "block";
 
-    // vendor-list API로 공식 거래처명 매칭
-    for (let i = 0; i < extracted.length; i++) {
-      const statusEl = document.getElementById(`rc-vnr-status-${i}`);
-      const inputEl = nameList.querySelector(`input[data-idx="${i}"]`);
-      try {
-        const res = await api.get(`/api/reconcile/vendor-list?q=${encodeURIComponent(extracted[i])}`);
-        const vendors = res.vendors || [];
-        if (vendors.length > 0) {
-          // 가장 유사한 거래처를 찾기: 정확 매칭 > 부분 매칭
-          const exact = vendors.find(v => v.name === extracted[i]);
-          const partial = vendors.find(v => {
-            const vc = v.name.replace(/\(주\)|주식회사/g,"").trim();
-            const ec = extracted[i].replace(/\(주\)|주식회사/g,"").trim();
-            return vc.includes(ec) || ec.includes(vc);
-          });
-          const best = exact || partial || vendors[0];
-          if (inputEl) inputEl.value = best.name;
-          if (statusEl) statusEl.textContent = "✅";
-        } else {
-          if (statusEl) statusEl.textContent = "⚠️";
-        }
-      } catch (e) {
-        if (statusEl) statusEl.textContent = "❌";
+  // 매칭이 필요한 항목만 처리 (status가 pending인 것)
+  const pendingIndices = _rc.vendorFiles
+    .map((v, i) => v.status === "pending" ? i : -1)
+    .filter(i => i >= 0);
+
+  // 전체 리스트 렌더
+  _renderVendorNameRows();
+
+  // pending 항목에 대해 API 매칭
+  for (const i of pendingIndices) {
+    const v = _rc.vendorFiles[i];
+    const extracted = _extractVendorName(v.file.name);
+    const statusEl = document.getElementById(`rc-vnr-status-${i}`);
+    const inputEl = nameList.querySelector(`input[data-idx="${i}"]`);
+
+    try {
+      const res = await api.get(`/api/reconcile/vendor-list?q=${encodeURIComponent(extracted)}`);
+      const vendors = res.vendors || [];
+      const best = _fuzzyMatchVendor(extracted, vendors);
+      if (best) {
+        v.name = best.name;
+        v.status = "matched";
+        if (inputEl) inputEl.value = best.name;
+        if (statusEl) statusEl.textContent = "✅";
+      } else {
+        v.name = extracted;
+        v.status = "unmatched";
+        if (statusEl) statusEl.textContent = "⚠️";
       }
+    } catch (e) {
+      v.name = extracted;
+      v.status = "error";
+      if (statusEl) statusEl.textContent = "❌";
     }
   }
+}
+
+function _renderVendorNameRows() {
+  const nameList = document.getElementById("reconcile-vendor-name-list");
+  if (!nameList) return;
+  nameList.innerHTML = _rc.vendorFiles.map((v, i) => {
+    const extracted = _extractVendorName(v.file.name);
+    const displayName = v.name || extracted;
+    const icon = v.status === "matched" ? "✅" : v.status === "unmatched" ? "⚠️" : v.status === "error" ? "❌" : "🔍";
+    return `<div class="rc-vendor-name-row">
+      <span class="rc-vnr-file" title="${v.file.name}">📄 ${v.file.name}</span>
+      <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${displayName}">
+      <span class="rc-vnr-status" id="rc-vnr-status-${i}">${icon}</span>
+      <button onclick="_removeVendorFile(${i})" class="rc-vnr-delete" title="삭제">&times;</button>
+    </div>`;
+  }).join("");
 }
 
 function reconcileSetStep(n) {
@@ -5358,12 +5415,10 @@ async function reconcileClearSalesCache() {
 // ── STEP 1: 일괄 정산 시작 ──
 
 async function reconcileBatchStart() {
-  const vendorInput = document.getElementById("reconcile-vendor-files");
   const purchaseFile = document.getElementById("reconcile-erp-purchase-file");
   const salesFileEl = document.getElementById("reconcile-erp-sales-file");
 
-  const vendorFiles = vendorInput?.files;
-  if (!vendorFiles || !vendorFiles.length) {
+  if (!_rc.vendorFiles.length) {
     toast("거래처 원장 파일을 하나 이상 선택하세요", "error"); return;
   }
 
@@ -5375,7 +5430,7 @@ async function reconcileBatchStart() {
     toast("구매현황 파일을 업로드하거나 캐시가 필요합니다", "error"); return;
   }
 
-  // 확인된 거래처명 수집
+  // 확인된 거래처명 수집 (input에서 최신값 읽기)
   const nameInputs = document.querySelectorAll(".rc-vendor-name-input");
   const confirmedNames = Array.from(nameInputs).map(inp => inp.value.trim());
 
@@ -5404,7 +5459,7 @@ async function reconcileBatchStart() {
 
   try {
     const formData = new FormData();
-    for (const f of vendorFiles) formData.append("vendor_files", f);
+    for (const v of _rc.vendorFiles) formData.append("vendor_files", v.file);
     if (pFile) formData.append("purchase_file", pFile);
     if (sFile) formData.append("sales_file", sFile);
     formData.append("vendor_names_json", JSON.stringify(confirmedNames));
