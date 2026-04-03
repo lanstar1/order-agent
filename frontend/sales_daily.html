@@ -43,6 +43,21 @@ header{position:relative;z-index:10;background:var(--surface);border-bottom:1px 
 }
 .btn-load:hover{opacity:.85;}
 .btn-load:disabled{opacity:.4;cursor:not-allowed;}
+.btn-collect{
+  background:var(--surface2);color:var(--warning);
+  border:1px solid rgba(255,176,32,.4);border-radius:8px;
+  padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;
+  transition:all .15s;display:flex;align-items:center;gap:6px;margin-left:auto;
+}
+.btn-collect:hover{background:rgba(255,176,32,.1);border-color:var(--warning);}
+.btn-collect:disabled{opacity:.4;cursor:not-allowed;}
+.collect-status{
+  font-size:12px;padding:6px 14px;border-radius:8px;
+  background:rgba(0,212,204,.08);border:1px solid rgba(0,212,204,.25);
+  color:var(--accent);display:none;align-items:center;gap:6px;
+}
+.collect-status.show{display:flex;}
+.mini-spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(0,212,204,.3);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
 
 /* ── 날짜 헤더 ── */
 .date-header{
@@ -146,12 +161,17 @@ header{position:relative;z-index:10;background:var(--surface);border-bottom:1px 
     <input type="date" id="dateInput">
     <button class="btn-load" id="loadBtn" onclick="loadData()">조회</button>
     <button class="btn-load" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border2);" onclick="goToday()">오늘</button>
+    <button class="btn-collect" id="collectBtn" onclick="fetchEcount()">
+      <span id="collectIcon">⚡</span> 이카운트 자동 수집
+    </button>
+    <span class="collect-status" id="collectStatus">
+      <span class="mini-spinner"></span> 수집 중...
+    </span>
   </div>
 
   <!-- ERP 데이터 없음 안내 -->
   <div class="no-data-hint" id="noDataHint">
-    ⚠ 해당 날짜의 판매 데이터가 없습니다. 먼저 이카운트 ERP에서 데이터를 수집해주세요.
-    (<strong>AI 대시보드 → 이카운트 자동 수집</strong>)
+    ⚠ 해당 날짜의 판매 데이터가 없습니다. 아래 <strong>이카운트 자동 수집</strong> 버튼을 눌러 데이터를 가져오세요.
   </div>
 
   <!-- 날짜 헤더 -->
@@ -381,6 +401,50 @@ function render(data) {
 
 function toggleCard(header) {
   header.parentElement.classList.toggle("open");
+}
+
+// ── 이카운트 자동 수집 ──
+async function fetchEcount() {
+  const btn = document.getElementById("collectBtn");
+  const status = document.getElementById("collectStatus");
+  const icon = document.getElementById("collectIcon");
+
+  btn.disabled = true;
+  icon.textContent = "⏳";
+  status.classList.add("show");
+
+  try {
+    const res = await fetch(`${API_BASE}/fetch-ecount`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    if (res.status === 401) {
+      alert("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
+      window.location.href = "/";
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    // 수집은 백그라운드에서 실행 → 약 5초 후 자동 재조회
+    status.innerHTML = '<span class="mini-spinner"></span> 수집 중... (완료 후 자동 새로고침)';
+    await waitAndRefresh(5000);
+  } catch(e) {
+    status.classList.remove("show");
+    alert("수집 요청 실패: " + e.message);
+  } finally {
+    btn.disabled = false;
+    icon.textContent = "⚡";
+  }
+}
+
+function waitAndRefresh(ms) {
+  return new Promise(resolve => {
+    setTimeout(async () => {
+      await loadData();
+      document.getElementById("collectStatus").classList.remove("show");
+      resolve();
+    }, ms);
+  });
 }
 </script>
 </body>
