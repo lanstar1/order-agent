@@ -32,6 +32,7 @@ from api.routes.aicc import router as aicc_router
 from api.routes.inventory_alert import router as inventory_alert_router
 from api.routes.barcode import router as barcode_router
 from api.routes.smartstore import router as smartstore_router
+from api.routes.purchase_reconciliation import router as reconcile_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -157,6 +158,9 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/barcode/send-to-ecount"): "바코드 이카운트 전송",
     ("POST", "/api/barcode/download-po"): "바코드 PO 다운로드",
     ("POST", "/api/barcode/upload-master"): "바코드 마스터 업로드",
+    ("POST", "/api/reconcile/upload-vendor-ledger"): "매입정산 원장 업로드",
+    ("POST", "/api/reconcile/compare"): "매입정산 비교 분석",
+    ("POST", "/api/reconcile/save-purchase"): "매입정산 전표 입력",
 }
 
 @app.middleware("http")
@@ -255,6 +259,7 @@ app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
 app.include_router(inventory_alert_router)
 app.include_router(barcode_router)
 app.include_router(smartstore_router)
+app.include_router(reconcile_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:

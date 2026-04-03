@@ -611,3 +611,75 @@ textarea.form-control { resize: vertical; min-height: 120px; }
 .sales-table tbody tr:hover { background: #f9fafb; }
 .sales-table tbody tr { cursor: pointer; transition: background .1s; }
 
+/* ─── 매입정산 (Reconcile) ─── */
+.step-badge {
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: var(--gray-100); color: var(--gray-500); cursor: default;
+  transition: all .2s;
+}
+.step-badge.active { background: var(--primary); color: #fff; }
+.step-badge.done { background: var(--success, #22c55e); color: #fff; }
+
+.reconcile-tab {
+  padding: 8px 16px; font-size: 13px; font-weight: 600; border: none;
+  background: none; color: var(--gray-500); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s;
+}
+.reconcile-tab:hover { color: var(--gray-700); }
+.reconcile-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.reconcile-match-card {
+  background: #fff; border: 1px solid var(--gray-200); border-radius: 8px;
+  padding: 12px 16px; margin-bottom: 8px; transition: box-shadow .15s;
+}
+.reconcile-match-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+
+.reconcile-match-card .match-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
+}
+.reconcile-match-card .match-badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+}
+.match-badge.exact { background: #dcfce7; color: #166534; }
+.match-badge.similar { background: #fef3c7; color: #92400e; }
+.match-badge.unmatched { background: #fecaca; color: #991b1b; }
+.match-badge.has-sales { background: #dbeafe; color: #1e40af; }
+
+.reconcile-match-card .match-detail {
+  font-size: 12px; color: var(--gray-600); line-height: 1.6;
+}
+.reconcile-match-card .match-detail strong { color: var(--gray-800); }
+
+.candidates-table {
+  width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px;
+}
+.candidates-table th {
+  background: var(--gray-50); padding: 6px 8px; text-align: left;
+  font-weight: 600; border-bottom: 1px solid var(--gray-200);
+}
+.candidates-table td { padding: 6px 8px; border-bottom: 1px solid var(--gray-100); }
+.candidates-table tr.selected { background: #eff6ff; }
+.candidates-table tr:hover { background: #f9fafb; cursor: pointer; }
+
+.purchase-edit-card {
+  background: #fff; border: 1px solid var(--gray-200); border-radius: 8px;
+  padding: 14px 16px; margin-bottom: 10px;
+}
+.purchase-edit-card .edit-row {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 6px;
+}
+.purchase-edit-card .edit-row label {
+  font-size: 11px; font-weight: 600; color: var(--gray-600); min-width: 60px;
+}
+.purchase-edit-card .edit-row input {
+  font-size: 12px; padding: 4px 8px; border: 1px solid var(--gray-300);
+  border-radius: 4px; flex: 1; min-width: 80px;
+}
+
+.reconcile-result-box {
+  padding: 20px; border-radius: 8px; text-align: center;
+}
+.reconcile-result-box.success { background: #dcfce7; color: #166534; }
+.reconcile-result-box.partial { background: #fef3c7; color: #92400e; }
+.reconcile-result-box.error { background: #fecaca; color: #991b1b; }
+
