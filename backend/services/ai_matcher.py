@@ -1,10 +1,10 @@
-"""AI 품목명 매칭 서비스 (Claude API)
+"""매입정산 매칭 서비스
 거래처 원장의 상품명 ↔ ERP 구매현황/판매현황의 품명 매칭
 
 핵심 로직:
-1. 구매현황 매칭: 거래처 원장 vs ERP 구매현황 비교
-2. 판매이력 확인: 누락 건에 대해 동일날짜 → ±1주 → ±2주 확장 검색
-3. AI 후보군: 품명이 다를 수 있으므로 가능성 높은 순 5개 후보 추천
+1. 구매현황 매칭 (규칙 기반): 날짜 + 금액 + 수량으로 매칭 — AI 불필요
+2. 판매이력 확인 (AI): 누락 건에 대해 날짜 확장 검색 + Claude AI 후보 추천
+   (품명이 다를 수 있으므로 AI 추론이 필요)
 """
 import json
 import re
@@ -55,99 +55,12 @@ def _is_shipping_item(item: dict) -> bool:
 
 async def match_products_ai(vendor_items: list[dict],
                              erp_items: list[dict]) -> list[dict]:
-    """AI를 사용하여 거래처 원장 항목과 ERP 구매현황 매칭"""
-    if not client:
-        return _rule_based_match(vendor_items, erp_items)
+    """거래처 원장 vs ERP 구매현황 매칭 (규칙 기반: 날짜 + 금액 + 수량)
 
-    vendor_summary = [
-        {
-            "idx": i,
-            "name": item.get("product_name", ""),
-            "model": item.get("model_name", ""),
-            "category": item.get("product_category", ""),
-            "qty": item.get("qty", 0),
-            "amount": item.get("amount", 0),
-            "date": item.get("date", ""),
-        }
-        for i, item in enumerate(vendor_items)
-    ]
-
-    erp_summary = [
-        {
-            "idx": i,
-            "code": _get_field(item, "prod_cd", "품목코드", "product_code", default=""),
-            "name": _get_field(item, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default=""),
-            "qty": _get_field(item, "qty", "수량", default=0),
-            "amount": _get_field(item, "total", "합계", default=0),
-            "vendor": _get_field(item, "cust_name", "구매처명", "판매처명", "vendor_name", default=""),
-            "date": _get_field(item, "date", "월/일", "연/월/일", default=""),
-        }
-        for i, item in enumerate(erp_items)
-    ]
-
-    prompt = f"""당신은 ERP 매입 정산 전문가입니다. 거래처 원장(거래처가 보낸 매출 내역)과 우리 ERP 구매현황을 비교하여 매칭해야 합니다.
-
-## 거래처 원장 항목 (거래처가 우리에게 판매한 것 = 우리의 매입)
-{json.dumps(vendor_summary, ensure_ascii=False, indent=2)}
-
-## ERP 구매현황 (우리가 입력한 매입 전표)
-{json.dumps(erp_summary, ensure_ascii=False, indent=2)}
-
-## 매칭 규칙
-1. 품목명/모델명이 동일하거나 유사하면 매칭 (브랜드명 차이, 약어 차이 무시)
-2. 수량과 금액이 일치하면 매칭 신뢰도 높음
-3. 날짜가 같은 달이면 매칭 가능
-4. 거래처 원장의 "매출"은 우리 입장에서 "매입"임을 주의
-5. 색상명은 다를 수 있음 (황색=노란색=Yellow, 적색=빨간색=Red 등)
-
-## 응답 형식 (반드시 JSON 배열로)
-[
-  {{
-    "vendor_idx": 0,
-    "erp_idx": 3,
-    "match_type": "exact" | "similar" | "unmatched",
-    "confidence": 0.95,
-    "reason": "매칭 근거 설명"
-  }}
-]
-
-매칭되지 않는 항목은 erp_idx를 null로 설정하세요.
-JSON 배열만 출력하세요."""
-
-    try:
-        response = await client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        result_text = response.content[0].text.strip()
-        if result_text.startswith("["):
-            matches = json.loads(result_text)
-        else:
-            json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
-            if json_match:
-                matches = json.loads(json_match.group())
-            else:
-                return _rule_based_match(vendor_items, erp_items)
-
-        results = []
-        for match in matches:
-            v_idx = match.get("vendor_idx", 0)
-            e_idx = match.get("erp_idx")
-            results.append({
-                "vendor_item": vendor_items[v_idx] if v_idx < len(vendor_items) else {},
-                "erp_match": erp_items[e_idx] if e_idx is not None and e_idx < len(erp_items) else None,
-                "match_type": match.get("match_type", "unmatched"),
-                "confidence": match.get("confidence", 0.0),
-                "reason": match.get("reason", ""),
-            })
-        return results
-
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"AI 매칭 실패, 규칙 기반으로 폴백: {e}")
-        return _rule_based_match(vendor_items, erp_items)
+    1단계 매칭은 AI 없이 날짜/금액/수량으로 충분.
+    매칭 안 된 건만 2단계(check_sales_history)에서 AI를 사용.
+    """
+    return _rule_based_match(vendor_items, erp_items)
 
 
 # ============================================================
@@ -448,15 +361,24 @@ def _safe_num(val) -> float:
 
 def _rule_based_match(vendor_items: list[dict],
                        erp_items: list[dict]) -> list[dict]:
-    """규칙 기반 품목 매칭 (AI 없이)"""
+    """규칙 기반 품목 매칭 — 날짜 + 금액 + 수량 우선
+
+    매칭 스코어 배분 (총 100):
+      - 날짜 일치:  30점 (동일일), 15점 (±3일 이내)
+      - 금액 일치:  35점 (오차 1원 이내), 25점 (오차 5% 이내)
+      - 수량 일치:  20점
+      - 품명 유사:  15점 (보조 — 동일 날짜·금액에 여러 건일 때 구별용)
+    매칭 임계값: 50점 이상
+    """
     results = []
     used_erp_indices = set()
 
     for v_item in vendor_items:
         v_name = _normalize_product_name(v_item.get("product_name", ""))
         v_model = _normalize_product_name(v_item.get("model_name", ""))
-        v_qty = v_item.get("qty", 0)
-        v_amount = v_item.get("amount", 0)
+        v_qty = _safe_num(v_item.get("qty", 0))
+        v_amount = _safe_num(v_item.get("amount", 0))
+        v_date = _parse_date(v_item.get("date", ""))
 
         best_match = None
         best_score = 0
@@ -471,41 +393,70 @@ def _rule_based_match(vendor_items: list[dict],
             e_code = _get_field(e_item, "prod_cd", "품목코드", "product_code", default="").upper()
             e_qty = _safe_num(_get_field(e_item, "qty", "수량", default=0))
             e_amount = _safe_num(_get_field(e_item, "total", "합계", default=0))
+            e_date_str = _get_field(e_item, "date", "월/일", "연/월/일", default="")
+            e_date = _parse_date(e_date_str)
 
             score = 0
+            reasons = []
 
+            # ── 날짜 매칭 (30점) ──
+            if v_date and e_date:
+                day_diff = abs((v_date - e_date).days)
+                if day_diff == 0:
+                    score += 30
+                    reasons.append("날짜 일치")
+                elif day_diff <= 3:
+                    score += 15
+                    reasons.append(f"날짜 ±{day_diff}일")
+
+            # ── 금액 매칭 (35점) ──
+            if v_amount and e_amount:
+                amt_diff = abs(v_amount - e_amount)
+                if amt_diff <= 1:
+                    score += 35
+                    reasons.append("금액 일치")
+                elif amt_diff / max(v_amount, 1) < 0.05:
+                    score += 25
+                    reasons.append(f"금액 유사 (차이 {int(amt_diff)}원)")
+
+            # ── 수량 매칭 (20점) ──
+            if v_qty and e_qty:
+                if v_qty == e_qty:
+                    score += 20
+                    reasons.append("수량 일치")
+
+            # ── 품명 유사도 (15점, 보조) ──
             if v_name and e_name:
                 if v_name in e_name or e_name in v_name:
-                    score += 50
+                    score += 15
+                    reasons.append("품명 포함")
                 elif v_model and v_model in e_name:
-                    score += 40
-                common = _longest_common_substring(v_name, e_name)
-                if len(common) >= 4:
-                    score += min(len(common) * 3, 25)
+                    score += 10
+                    reasons.append("모델명 포함")
+                else:
+                    common = _longest_common_substring(v_name, e_name)
+                    if len(common) >= 4:
+                        score += min(len(common) * 2, 10)
+                        reasons.append(f"품명 유사 ({common})")
 
             if v_name and e_code and v_name in e_code.replace("-", ""):
-                score += 30
-
-            if v_qty and e_qty and v_qty == e_qty:
-                score += 25
-            if v_amount and e_amount:
-                if abs(v_amount - e_amount) / max(v_amount, 1) < 0.05:
-                    score += 25
+                score += 10
+                reasons.append("품명↔품목코드 유사")
 
             if score > best_score:
                 best_score = score
-                best_match = (e_idx, e_item, score)
+                best_match = (e_idx, e_item, score, reasons)
 
         if best_match and best_match[2] >= 50:
-            e_idx, e_item, score = best_match
+            e_idx, e_item, score, reasons = best_match
             used_erp_indices.add(e_idx)
-            match_type = "exact" if score >= 75 else "similar"
+            match_type = "exact" if score >= 80 else "similar"
             results.append({
                 "vendor_item": v_item,
                 "erp_match": e_item,
                 "match_type": match_type,
                 "confidence": min(score / 100, 1.0),
-                "reason": f"규칙 기반 매칭 (점수: {score}/100)",
+                "reason": ", ".join(reasons),
             })
         else:
             results.append({
