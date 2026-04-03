@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LANstar Agent</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/css/style.css?v=20260404b">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260404c">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
   <style>
     /* CS/RMA 파이프라인 탭 */
@@ -494,14 +494,14 @@ C규격품 200개
                 <p>거래처에서 받은 원장 엑셀 파일을 선택하세요 (여러 파일 동시 선택 가능)</p>
               </div>
             </div>
-            <label class="rc-dropzone" id="rc-vendor-dropzone">
+            <div class="rc-dropzone" id="rc-vendor-dropzone">
               <input type="file" id="reconcile-vendor-files" accept=".xlsx,.xls" multiple hidden>
               <div class="rc-dropzone-content">
                 <span class="rc-dropzone-icon">📎</span>
                 <span class="rc-dropzone-text">파일을 선택하거나 드래그하세요</span>
                 <span class="rc-dropzone-hint">.xlsx, .xls 지원 · 다중 파일 가능</span>
               </div>
-            </label>
+            </div>
             <div id="reconcile-vendor-file-list" class="rc-file-list"></div>
           </div>
 
@@ -3330,7 +3330,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260404b"></script>
+<script src="/static/js/app.js?v=20260404c"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

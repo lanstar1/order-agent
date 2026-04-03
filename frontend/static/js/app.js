@@ -5197,14 +5197,17 @@ function initReconcilePage() {
   const dropzone = document.getElementById("rc-vendor-dropzone");
   const vf = document.getElementById("reconcile-vendor-files");
   if (dropzone && vf) {
-    dropzone.addEventListener("click", () => vf.click());
+    dropzone.addEventListener("click", (e) => {
+      if (e.target === vf) return; // input 자체 클릭 시 무시
+      vf.click();
+    });
     dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
     dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
     dropzone.addEventListener("drop", e => {
       e.preventDefault(); dropzone.classList.remove("dragover");
       if (e.dataTransfer.files.length) { vf.files = e.dataTransfer.files; _renderVendorFileList(); }
     });
-    vf.addEventListener("change", _renderVendorFileList);
+    vf.addEventListener("change", () => _renderVendorFileList());
   }
 }
 
@@ -5223,6 +5226,10 @@ function _renderVendorFileList() {
   const el = document.getElementById("reconcile-vendor-file-list");
   const confirmArea = document.getElementById("reconcile-vendor-confirm");
   const nameList = document.getElementById("reconcile-vendor-name-list");
+  console.log("[매입정산] _renderVendorFileList 호출", {
+    vf: !!vf, el: !!el, confirmArea: !!confirmArea, nameList: !!nameList,
+    fileCount: vf?.files?.length || 0,
+  });
   if (!el || !vf) return;
   const files = vf.files;
   if (!files.length) {
@@ -5236,14 +5243,18 @@ function _renderVendorFileList() {
   ).join("");
   // 거래처 확인 영역 표시
   if (confirmArea && nameList) {
-    confirmArea.style.display = "";
-    nameList.innerHTML = Array.from(files).map((f, i) => {
+    confirmArea.style.display = "block";
+    const html = Array.from(files).map((f, i) => {
       const extracted = _extractVendorName(f.name);
       return `<div class="rc-vendor-name-row">
         <span class="rc-vnr-file" title="${f.name}">📄 ${f.name}</span>
         <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${extracted}">
       </div>`;
     }).join("");
+    nameList.innerHTML = html;
+    console.log("[매입정산] 거래처 확인 영역 표시:", html.substring(0, 200));
+  } else {
+    console.warn("[매입정산] confirmArea 또는 nameList를 찾을 수 없음");
   }
 }
 
@@ -5354,7 +5365,7 @@ async function reconcileBatchStart() {
   const progressText = document.getElementById("reconcile-batch-progress-text");
   const progressBar = document.getElementById("reconcile-batch-progress-bar");
   const logContent = document.getElementById("reconcile-log-content");
-  progressArea.style.display = "";
+  progressArea.style.display = "block";
   progressText.textContent = "서버 연결 중...";
   progressBar.style.width = "5%";
   progressBar.style.background = "";
