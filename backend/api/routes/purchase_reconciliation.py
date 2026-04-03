@@ -27,6 +27,7 @@ from services.vendor_parser import parse_vendor_ledger
 from services.ai_matcher import match_products_ai, check_sales_history, _is_shipping_item, _get_field
 from services.erp_client import erp_client
 from services.erp_web_scraper import erp_web_scraper
+from services.erp_data_parser import parse_erp_purchase, parse_erp_sales
 
 router = APIRouter(prefix="/api/reconcile", tags=["purchase-reconciliation"])
 logger = logging.getLogger(__name__)
@@ -215,6 +216,67 @@ async def upload_vendor_ledger(
     except Exception as e:
         logger.error(f"거래처 원장 파싱 실패: {e}")
         raise HTTPException(500, f"파싱 실패: {str(e)}")
+
+
+@router.post("/upload-erp-data")
+async def upload_erp_data(
+    purchase_file: Optional[UploadFile] = File(None),
+    sales_file: Optional[UploadFile] = File(None),
+    user: dict = Depends(get_current_user),
+):
+    """ERP 구매현황/판매현황 엑셀·CSV 업로드 및 파싱
+
+    - purchase_file: 구매현황 엑셀(.xlsx) or CSV
+    - sales_file: 판매현황 CSV or 엑셀(.xlsx)
+    - 둘 중 하나만 업로드해도 됨
+    """
+    result = {
+        "purchase": {"success": False, "items": [], "total": 0, "error": ""},
+        "sales": {"success": False, "items": [], "total": 0, "error": ""},
+    }
+
+    os.makedirs(str(UPLOAD_DIR), exist_ok=True)
+
+    # 구매현황 파싱
+    if purchase_file and purchase_file.filename:
+        try:
+            ext = os.path.splitext(purchase_file.filename)[1]
+            saved = os.path.join(str(UPLOAD_DIR), f"erp_purchase_{uuid.uuid4().hex[:8]}{ext}")
+            with open(saved, "wb") as f:
+                f.write(await purchase_file.read())
+            data = parse_erp_purchase(saved)
+            result["purchase"] = {
+                "success": True,
+                "items": data["items"],
+                "total": data["total"],
+                "meta": data.get("meta", ""),
+                "error": "",
+            }
+            logger.info(f"구매현황 파싱 완료: {data['total']}건")
+        except Exception as e:
+            logger.error(f"구매현황 파싱 실패: {e}", exc_info=True)
+            result["purchase"]["error"] = str(e)
+
+    # 판매현황 파싱
+    if sales_file and sales_file.filename:
+        try:
+            ext = os.path.splitext(sales_file.filename)[1]
+            saved = os.path.join(str(UPLOAD_DIR), f"erp_sales_{uuid.uuid4().hex[:8]}{ext}")
+            with open(saved, "wb") as f:
+                f.write(await sales_file.read())
+            data = parse_erp_sales(saved)
+            result["sales"] = {
+                "success": True,
+                "items": data["items"],
+                "total": data["total"],
+                "error": "",
+            }
+            logger.info(f"판매현황 파싱 완료: {data['total']}건")
+        except Exception as e:
+            logger.error(f"판매현황 파싱 실패: {e}", exc_info=True)
+            result["sales"]["error"] = str(e)
+
+    return result
 
 
 @router.post("/compare")

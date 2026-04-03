@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LANstar Agent</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/css/style.css?v=20260401a">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260403f">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
   <style>
     /* CS/RMA 파이프라인 탭 */
@@ -467,19 +467,9 @@ C규격품 200개
         <!-- STEP 1: 데이터 준비 -->
         <div id="reconcile-step1">
           <div style="background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
-            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">정산 기간 설정</h4>
-            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-              <label style="font-size:13px">시작일</label>
-              <input type="date" id="reconcile-date-from" class="form-input" style="width:160px">
-              <label style="font-size:13px">종료일</label>
-              <input type="date" id="reconcile-date-to" class="form-input" style="width:160px">
-            </div>
-          </div>
-
-          <div style="background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
             <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">거래처 선택</h4>
             <p style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
-              정산할 거래처를 선택하면 ERP 구매현황·판매현황을 자동으로 가져옵니다.
+              정산할 거래처를 선택하세요.
             </p>
             <div style="position:relative;max-width:420px">
               <input type="text" id="reconcile-vendor-input" class="form-input"
@@ -498,27 +488,39 @@ C규격품 200개
             <div id="reconcile-vendor-selected" style="margin-top:8px;font-size:12px;color:var(--gray-500)"></div>
           </div>
 
-          <!-- ERP 데이터 자동 조회 상태 표시 -->
-          <div id="reconcile-erp-fetch-status" style="display:none;background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
-            <h4 style="margin:0 0 8px 0;font-size:14px;color:var(--gray-800)">ERP 데이터 조회</h4>
+          <div style="background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
+            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">ERP 데이터 업로드</h4>
+            <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">
+              ECOUNT에서 다운로드한 구매현황·판매현황 파일을 업로드하세요.
+            </p>
             <div style="display:flex;gap:16px;flex-wrap:wrap">
-              <div style="flex:1;min-width:180px">
-                <span style="font-size:12px;font-weight:600">구매현황</span>
-                <div id="reconcile-erp-purchase-status" style="font-size:12px;color:var(--gray-600);margin-top:4px">
-                  대기 중
-                </div>
+              <div style="flex:1;min-width:200px">
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">구매현황 (.xlsx)</label>
+                <input type="file" id="reconcile-erp-purchase-file" accept=".xlsx,.xls,.csv" class="form-input" style="font-size:12px">
               </div>
-              <div style="flex:1;min-width:180px">
-                <span style="font-size:12px;font-weight:600">판매현황</span>
-                <div id="reconcile-erp-sales-status" style="font-size:12px;color:var(--gray-600);margin-top:4px">
-                  대기 중
-                </div>
+              <div style="flex:1;min-width:200px">
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">판매현황 (.csv/.xlsx)</label>
+                <input type="file" id="reconcile-erp-sales-file" accept=".csv,.xlsx,.xls" class="form-input" style="font-size:12px">
               </div>
             </div>
           </div>
 
-          <button class="btn btn-primary" onclick="reconcileFetchAndGoStep2()" id="btn-reconcile-step2">
-            ERP 데이터 조회 후 다음 →
+          <!-- 업로드 결과 표시 -->
+          <div id="reconcile-erp-upload-status" style="display:none;background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <div style="flex:1;min-width:180px">
+                <span style="font-size:12px;font-weight:600">구매현황</span>
+                <div id="reconcile-erp-purchase-status" style="font-size:12px;color:var(--gray-600);margin-top:4px">대기 중</div>
+              </div>
+              <div style="flex:1;min-width:180px">
+                <span style="font-size:12px;font-weight:600">판매현황</span>
+                <div id="reconcile-erp-sales-status" style="font-size:12px;color:var(--gray-600);margin-top:4px">대기 중</div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" onclick="reconcileUploadERPAndGoStep2()" id="btn-reconcile-step2">
+            ERP 파일 업로드 후 다음 →
           </button>
         </div>
 

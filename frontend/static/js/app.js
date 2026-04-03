@@ -5194,15 +5194,6 @@ const _rc = {
 };
 
 function initReconcilePage() {
-  // 기본 날짜 세팅 (이번달 1일 ~ 오늘)
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const from = document.getElementById("reconcile-date-from");
-  const to = document.getElementById("reconcile-date-to");
-  if (from) from.value = `${y}-${m}-01`;
-  if (to) to.value = `${y}-${m}-${d}`;
   reconcileSetStep(1);
   // 거래처 autocomplete 초기화
   reconcileInitVendorAutocomplete();
@@ -5354,79 +5345,99 @@ function reconcileSetStep(n) {
 
 function reconcileGoBack(toStep) { reconcileSetStep(toStep); }
 
-// STEP 1 → STEP 2: ERP 데이터 자동 조회 후 이동
-async function reconcileFetchAndGoStep2() {
+// STEP 1 → STEP 2: ERP 파일 업로드 후 이동
+async function reconcileUploadERPAndGoStep2() {
   const custCode = document.getElementById("reconcile-cust-code").value;
   const custName = document.getElementById("reconcile-cust-name").value;
-  const fromEl = document.getElementById("reconcile-date-from");
-  const toEl = document.getElementById("reconcile-date-to");
 
   if (!custCode) {
     toast("거래처를 검색하여 선택하세요", "error");
     document.getElementById("reconcile-vendor-input").focus();
     return;
   }
-  if (!fromEl.value || !toEl.value) {
-    toast("정산 기간을 설정하세요", "error");
+
+  const purchaseFile = document.getElementById("reconcile-erp-purchase-file").files[0];
+  const salesFile = document.getElementById("reconcile-erp-sales-file").files[0];
+
+  if (!purchaseFile && !salesFile) {
+    toast("구매현황 또는 판매현황 파일을 하나 이상 업로드하세요", "error");
     return;
   }
-
-  const fromDate = fromEl.value.replace(/-/g, "");
-  const toDate = toEl.value.replace(/-/g, "");
 
   _rc.selectedCust = { cust_code: custCode, cust_name: custName };
 
   const btn = document.getElementById("btn-reconcile-step2");
   btn.disabled = true;
-  btn.textContent = "ERP 데이터 조회 중...";
+  btn.textContent = "파일 업로드 중...";
 
-  const statusArea = document.getElementById("reconcile-erp-fetch-status");
+  const statusArea = document.getElementById("reconcile-erp-upload-status");
   const purchaseStatus = document.getElementById("reconcile-erp-purchase-status");
   const salesStatus = document.getElementById("reconcile-erp-sales-status");
   statusArea.style.display = "";
 
   try {
-    // 구매+판매 병렬 조회 (브라우저 탭 2개로 동시 실행)
-    purchaseStatus.innerHTML = '<span style="color:#2563eb">⏳ 조회 중...</span>';
-    salesStatus.innerHTML = '<span style="color:#2563eb">⏳ 조회 중...</span>';
+    const formData = new FormData();
+    if (purchaseFile) {
+      formData.append("purchase_file", purchaseFile);
+      purchaseStatus.innerHTML = '<span style="color:#2563eb">⏳ 파싱 중...</span>';
+    } else {
+      purchaseStatus.innerHTML = '<span style="color:var(--gray-400)">파일 없음</span>';
+    }
+    if (salesFile) {
+      formData.append("sales_file", salesFile);
+      salesStatus.innerHTML = '<span style="color:#2563eb">⏳ 파싱 중...</span>';
+    } else {
+      salesStatus.innerHTML = '<span style="color:var(--gray-400)">파일 없음</span>';
+    }
 
-    const res = await api.post("/api/reconcile/fetch-erp-data", {
-      from_date: fromDate,
-      to_date: toDate,
-      purchase_cust_code: custCode,
-      sales_cust_code: "",  // 판매현황은 전체 조회
+    const resp = await fetch(API_BASE + "/api/reconcile/upload-erp-data", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${api.getToken()}` },
+      body: formData,
     });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || `${resp.status} 오류`);
+    }
+
+    const res = await resp.json();
 
     // 구매현황 결과
     const purchase = res.purchase || {};
     _rc.erpPurchaseData = purchase.items || [];
     if (purchase.success) {
-      purchaseStatus.innerHTML = `<span style="color:#16a34a">✅ ${_rc.erpPurchaseData.length}건 조회 완료</span>`;
-    } else {
-      purchaseStatus.innerHTML = `<span style="color:#dc2626">❌ 조회 실패: ${purchase.error || "?"}</span>`;
+      purchaseStatus.innerHTML = `<span style="color:#16a34a">✅ ${_rc.erpPurchaseData.length}건 파싱 완료</span>`;
+    } else if (purchaseFile) {
+      purchaseStatus.innerHTML = `<span style="color:#dc2626">❌ 파싱 실패: ${purchase.error || "?"}</span>`;
     }
 
     // 판매현황 결과
     const sales = res.sales || {};
     _rc.erpSalesData = sales.items || [];
     if (sales.success) {
-      salesStatus.innerHTML = `<span style="color:#16a34a">✅ ${_rc.erpSalesData.length}건 조회 완료</span>`;
-    } else {
-      salesStatus.innerHTML = `<span style="color:#dc2626">❌ 조회 실패: ${sales.error || "?"}</span>`;
+      salesStatus.innerHTML = `<span style="color:#16a34a">✅ ${_rc.erpSalesData.length}건 파싱 완료</span>`;
+    } else if (salesFile) {
+      salesStatus.innerHTML = `<span style="color:#dc2626">❌ 파싱 실패: ${sales.error || "?"}</span>`;
     }
 
-    toast(`ERP 데이터 조회 완료 (구매 ${_rc.erpPurchaseData.length}건, 판매 ${_rc.erpSalesData.length}건)`, "success");
+    toast(`ERP 데이터 파싱 완료 (구매 ${_rc.erpPurchaseData.length}건, 판매 ${_rc.erpSalesData.length}건)`, "success");
     reconcileSetStep(2);
 
   } catch (e) {
     const errMsg = e.message || e.detail || String(e);
-    purchaseStatus.innerHTML = `<span style="color:#dc2626">❌ 조회 실패</span>`;
-    salesStatus.innerHTML = `<span style="color:#dc2626">❌ 조회 실패</span>`;
-    toast("ERP 데이터 조회 실패: " + errMsg, "error");
+    purchaseStatus.innerHTML = `<span style="color:#dc2626">❌ 실패</span>`;
+    salesStatus.innerHTML = `<span style="color:#dc2626">❌ 실패</span>`;
+    toast("ERP 데이터 업로드 실패: " + errMsg, "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "ERP 데이터 조회 후 다음 →";
+    btn.textContent = "ERP 파일 업로드 후 다음 →";
   }
+}
+
+// Legacy function (backward compat)
+async function reconcileFetchAndGoStep2() {
+  return reconcileUploadERPAndGoStep2();
 }
 
 // STEP 2: 거래처 원장 업로드·파싱
@@ -5995,9 +6006,13 @@ function reconcileReset() {
   if (vendorFiles) vendorFiles.value = "";
   document.getElementById("reconcile-vendor-list").innerHTML = "";
   document.getElementById("btn-reconcile-compare").style.display = "none";
-  // ERP 조회 상태 초기화
-  const statusArea = document.getElementById("reconcile-erp-fetch-status");
+  // ERP 업로드 상태 초기화
+  const statusArea = document.getElementById("reconcile-erp-upload-status");
   if (statusArea) statusArea.style.display = "none";
+  const pFile = document.getElementById("reconcile-erp-purchase-file");
+  const sFile = document.getElementById("reconcile-erp-sales-file");
+  if (pFile) pFile.value = "";
+  if (sFile) sFile.value = "";
   const purchaseStatus = document.getElementById("reconcile-erp-purchase-status");
   const salesStatus = document.getElementById("reconcile-erp-sales-status");
   if (purchaseStatus) purchaseStatus.textContent = "대기 중";
