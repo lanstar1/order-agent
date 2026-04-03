@@ -418,7 +418,7 @@ async function handleEcountFile(file) {
     renderPreviewTable(data.items);
     document.getElementById("poPreviewCard").classList.remove("hidden");
     document.getElementById("ecountSendBtn").disabled = false;
-    document.getElementById("dlPoBtn").classList.remove("hidden");
+    document.getElementById("dlPoBtn").classList.add("hidden");  // 전송 전에는 숨김
     elog(`✅ ${data.total}개 항목 로드 완료`, "o");
   } catch(e) {
     elog(`❌ 미리보기 실패: ${e.message}`, "e");
@@ -534,9 +534,30 @@ async function sendToEcount() {
     resultDiv.classList.remove("hidden");
     renderInvTable(data.items_result || []);
 
+    // 재고부족 품목 → 납품부족사유 자동 설정
+    const LOW_STOCK_REASON = "제품 품절 - 협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)";
+    let autoSetCnt = 0;
+    (data.items_result || []).forEach(item => {
+      if (item.low_stock && item.orig_idx !== undefined) {
+        const sel = document.querySelector(`#poTableBody select[data-idx="${item.orig_idx}"]`);
+        if (sel && !sel.value) {  // 사유가 아직 비어있는 경우만
+          sel.value = LOW_STOCK_REASON;
+          sel.className = reasonClass(LOW_STOCK_REASON);
+          autoSetCnt++;
+        }
+      }
+    });
+    if (autoSetCnt > 0) {
+      updateSummary();
+      elog(`📋 재고 부족 ${autoSetCnt}건 → 납품부족사유 자동 설정 완료`, "o");
+    }
+
+    // 전송 완료 후 다운로드 버튼 활성화
+    document.getElementById("dlPoBtn").classList.remove("hidden");
+
     elog(`${isOk ? "✅" : "⚠️"} 결과 - 성공:${data.success} 실패:${data.fail}`, isOk ? "o" : "w");
     if (data.slip_nos?.length) elog(`전표번호: ${data.slip_nos.join(", ")}`, "o");
-    if (lowCnt > 0)            elog(`🔴 재고 부족 ${lowCnt}건 확인 필요`, "w");
+    if (lowCnt > 0)            elog(`🔴 재고 부족 ${lowCnt}건 → 납품부족사유 자동 반영됨`, "w");
     if (data.errors?.length)   data.errors.forEach(e => elog(`❌ ${e}`, "e"));
 
   } catch(err) {

@@ -263,7 +263,8 @@ async def send_to_ecount(
     if valid.empty:
         raise ValueError(f"전송할 유효한 데이터가 없습니다. (바코드 미매칭: {unmatched}건)")
 
-    # ④ 물류센터 ㄱ~ㅎ 정렬 → 발주번호 순
+    # ④ 물류센터 ㄱ~ㅎ 정렬 → 발주번호 순 (원본 인덱스 보존)
+    valid["_orig_idx"] = valid.index
     valid = valid.sort_values(["물류센터", "발주번호"]).reset_index(drop=True)
 
     # ⑤ 발주번호별 순번 할당
@@ -276,6 +277,7 @@ async def send_to_ecount(
 
     # ⑥ BulkDatas 구성
     bulk_list = []
+    orig_indices = []  # 원본 PO 행 인덱스 추적
     for _, row in valid.iterrows():
         doc_no = str(row["발주번호"]).strip()
         warehouse = str(row["물류센터"]).strip()
@@ -302,6 +304,7 @@ async def send_to_ecount(
             "REMARKS": f"{warehouse} - {doc_no}",
             "U_MEMO5": f"{warehouse} - {doc_no}",
         }})
+        orig_indices.append(int(row["_orig_idx"]))
 
     logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
 
@@ -350,7 +353,7 @@ async def send_to_ecount(
             errors.append(rd.get("TotalError", ""))
 
     items_result = []
-    for item in bulk_list:
+    for i, item in enumerate(bulk_list):
         bd = item["BulkDatas"]
         prod_cd = bd["PROD_CD"]
         bal_qty = inv_map.get(prod_cd, None)
@@ -362,6 +365,7 @@ async def send_to_ecount(
             "qty": bd["QTY"],
             "bal_qty": round(bal_qty) if bal_qty is not None else None,
             "low_stock": low,
+            "orig_idx": orig_indices[i],  # 원본 PO 행 인덱스
         })
 
     return {
