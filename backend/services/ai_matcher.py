@@ -16,6 +16,40 @@ client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else Non
 
 
 # ============================================================
+# Helper function for field access with fallback keys
+# ============================================================
+
+def _get_field(item: dict, *keys, default=""):
+    """Try multiple key names and return the first non-empty value.
+
+    Priority order: tries keys in the order provided, returns default if none found.
+    Usage: _get_field(item, "prod_cd", "품목코드", "product_code", default="")
+    """
+    if not item:
+        return default
+    for key in keys:
+        value = item.get(key, "")
+        if value and str(value).strip():
+            return value
+    return default
+
+
+# ============================================================
+# Shipping/delivery keyword detection
+# ============================================================
+
+SHIPPING_KEYWORDS = ["배송", "택배", "경동", "로젠", "물류", "운송", "화물", "선불", "착불", "배달", "우편", "등기", "퀵", "용달", "대한통운", "CJ", "한진", "우체국"]
+
+def _is_shipping_item(item: dict) -> bool:
+    """배송료/운송비 항목인지 판별"""
+    name = str(item.get("product_name", "") or "").upper()
+    model = str(item.get("model_name", "") or "").upper()
+    category = str(item.get("product_category", "") or "").upper()
+    combined = f"{name} {model} {category}"
+    return any(kw.upper() in combined for kw in SHIPPING_KEYWORDS)
+
+
+# ============================================================
 # 1. 구매현황 매칭 (거래처 원장 vs ERP 구매현황)
 # ============================================================
 
@@ -41,12 +75,12 @@ async def match_products_ai(vendor_items: list[dict],
     erp_summary = [
         {
             "idx": i,
-            "code": item.get("품목코드", item.get("product_code", "")),
-            "name": item.get("품명 및 모델", item.get("product_name", "")),
-            "qty": item.get("수량", item.get("qty", 0)),
-            "amount": item.get("합계", item.get("total", 0)),
-            "vendor": item.get("구매처명", item.get("vendor_name", "")),
-            "date": item.get("월/일", item.get("date", "")),
+            "code": _get_field(item, "prod_cd", "품목코드", "product_code", default=""),
+            "name": _get_field(item, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default=""),
+            "qty": _get_field(item, "qty", "수량", default=0),
+            "amount": _get_field(item, "total", "합계", default=0),
+            "vendor": _get_field(item, "cust_name", "구매처명", "판매처명", "vendor_name", default=""),
+            "date": _get_field(item, "date", "월/일", "연/월/일", default=""),
         }
         for i, item in enumerate(erp_items)
     ]
@@ -153,7 +187,7 @@ def _filter_by_date_range(items: list[dict], target_date: datetime,
     result = []
 
     for item in items:
-        item_date_str = item.get(date_field, "") or item.get("월/일", "")
+        item_date_str = _get_field(item, date_field, "date", "월/일", "연/월/일", default="")
         item_date = _parse_date(item_date_str)
         if item_date and start <= item_date <= end:
             result.append(item)
@@ -239,11 +273,11 @@ async def _ai_find_candidates(vendor_item: dict,
     for i, sale in enumerate(sales_data[:200]):
         sales_summary.append({
             "idx": i,
-            "code": sale.get("품목코드", sale.get("product_code", "")),
-            "name": sale.get("품명 및 모델", sale.get("product_name", "")),
-            "qty": sale.get("수량", sale.get("qty", "")),
-            "amount": sale.get("합계", sale.get("total", "")),
-            "date": sale.get("월/일", sale.get("date", "")),
+            "code": _get_field(sale, "prod_cd", "품목코드", "product_code", default=""),
+            "name": _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default=""),
+            "qty": _get_field(sale, "qty", "수량", default=""),
+            "amount": _get_field(sale, "total", "합계", default=""),
+            "date": _get_field(sale, "date", "월/일", "연/월/일", default=""),
         })
 
     prompt = f"""거래처 원장에서 우리에게 판매한 품목인데, 우리 ERP 구매현황에 매입전표가 없습니다.
@@ -299,11 +333,11 @@ JSON 배열만 출력하세요."""
                     "sales_item": sale,
                     "confidence": c.get("confidence", 0.5),
                     "reason": c.get("reason", ""),
-                    "product_code": sale.get("품목코드", sale.get("product_code", "")),
-                    "product_name": sale.get("품명 및 모델", sale.get("product_name", "")),
-                    "qty": sale.get("수량", sale.get("qty", "")),
-                    "amount": sale.get("합계", sale.get("total", "")),
-                    "date": sale.get("월/일", sale.get("date", "")),
+                    "product_code": _get_field(sale, "prod_cd", "품목코드", "product_code", default=""),
+                    "product_name": _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default=""),
+                    "qty": _get_field(sale, "qty", "수량", default=""),
+                    "amount": _get_field(sale, "total", "합계", default=""),
+                    "date": _get_field(sale, "date", "월/일", "연/월/일", default=""),
                 })
 
         return candidates
@@ -326,11 +360,11 @@ def _rule_find_candidates(vendor_item: dict,
     scored = []
     for i, sale in enumerate(sales_data):
         s_name = _normalize_product_name(
-            sale.get("품명 및 모델", sale.get("product_name", ""))
+            _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default="")
         )
-        s_code = sale.get("품목코드", sale.get("product_code", "")).upper()
-        s_qty = _safe_num(sale.get("수량", sale.get("qty", 0)))
-        s_amount = _safe_num(sale.get("합계", sale.get("total", 0)))
+        s_code = _get_field(sale, "prod_cd", "품목코드", "product_code", default="").upper()
+        s_qty = _safe_num(_get_field(sale, "qty", "수량", default=0))
+        s_amount = _safe_num(_get_field(sale, "total", "합계", default=0))
 
         score = 0
 
@@ -362,11 +396,11 @@ def _rule_find_candidates(vendor_item: dict,
             "sales_item": sale,
             "confidence": min(score / 100, 1.0),
             "reason": f"규칙 기반 매칭 (점수: {score}/100)",
-            "product_code": sale.get("품목코드", sale.get("product_code", "")),
-            "product_name": sale.get("품명 및 모델", sale.get("product_name", "")),
-            "qty": sale.get("수량", sale.get("qty", "")),
-            "amount": sale.get("합계", sale.get("total", "")),
-            "date": sale.get("월/일", sale.get("date", "")),
+            "product_code": _get_field(sale, "prod_cd", "품목코드", "product_code", default=""),
+            "product_name": _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default=""),
+            "qty": _get_field(sale, "qty", "수량", default=""),
+            "amount": _get_field(sale, "total", "합계", default=""),
+            "date": _get_field(sale, "date", "월/일", "연/월/일", default=""),
         })
 
     return candidates
@@ -432,11 +466,11 @@ def _rule_based_match(vendor_items: list[dict],
                 continue
 
             e_name = _normalize_product_name(
-                e_item.get("품명 및 모델", e_item.get("product_name", ""))
+                _get_field(e_item, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default="")
             )
-            e_code = e_item.get("품목코드", e_item.get("product_code", "")).upper()
-            e_qty = _safe_num(e_item.get("수량", e_item.get("qty", 0)))
-            e_amount = _safe_num(e_item.get("합계", e_item.get("total", 0)))
+            e_code = _get_field(e_item, "prod_cd", "품목코드", "product_code", default="").upper()
+            e_qty = _safe_num(_get_field(e_item, "qty", "수량", default=0))
+            e_amount = _safe_num(_get_field(e_item, "total", "합계", default=0))
 
             score = 0
 

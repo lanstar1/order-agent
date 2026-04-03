@@ -477,26 +477,48 @@ C규격품 200개
           </div>
 
           <div style="background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
-            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">ERP 데이터 입력 (엑셀 업로드)</h4>
-            <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">
-              이카운트 ERP에서 구매현황, 판매현황을 엑셀로 다운받아 업로드하세요.
+            <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--gray-800)">거래처 선택</h4>
+            <p style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
+              정산할 거래처를 선택하면 ERP 구매현황·판매현황을 자동으로 가져옵니다.
             </p>
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <div style="flex:1;min-width:200px">
-                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">구매현황 (엑셀)</label>
-                <input type="file" id="reconcile-erp-purchase-file" accept=".xlsx,.xls" class="form-input" style="font-size:12px">
-                <div id="reconcile-erp-purchase-status" style="font-size:11px;color:var(--gray-500);margin-top:4px"></div>
+            <div style="position:relative;max-width:420px">
+              <input type="text" id="reconcile-vendor-input" class="form-input"
+                     placeholder="거래처명 또는 코드를 입력하세요..."
+                     autocomplete="off"
+                     style="width:100%;font-size:13px;padding-right:36px">
+              <span id="reconcile-vendor-clear" onclick="reconcileVendorClear()"
+                    style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray-400);font-size:16px;display:none">&times;</span>
+              <div id="reconcile-vendor-dropdown"
+                   style="display:none;position:absolute;top:100%;left:0;right:0;max-height:260px;overflow-y:auto;
+                          background:#fff;border:1px solid var(--gray-300);border-radius:0 0 8px 8px;
+                          box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:100"></div>
+              <input type="hidden" id="reconcile-cust-code">
+              <input type="hidden" id="reconcile-cust-name">
+            </div>
+            <div id="reconcile-vendor-selected" style="margin-top:8px;font-size:12px;color:var(--gray-500)"></div>
+          </div>
+
+          <!-- ERP 데이터 자동 조회 상태 표시 -->
+          <div id="reconcile-erp-fetch-status" style="display:none;background:var(--gray-50);padding:16px;border-radius:8px;margin-bottom:16px">
+            <h4 style="margin:0 0 8px 0;font-size:14px;color:var(--gray-800)">ERP 데이터 조회</h4>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <div style="flex:1;min-width:180px">
+                <span style="font-size:12px;font-weight:600">구매현황</span>
+                <div id="reconcile-erp-purchase-status" style="font-size:12px;color:var(--gray-600);margin-top:4px">
+                  대기 중
+                </div>
               </div>
-              <div style="flex:1;min-width:200px">
-                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">판매현황 (엑셀, 선택)</label>
-                <input type="file" id="reconcile-erp-sales-file" accept=".xlsx,.xls" class="form-input" style="font-size:12px">
-                <div id="reconcile-erp-sales-status" style="font-size:11px;color:var(--gray-500);margin-top:4px"></div>
+              <div style="flex:1;min-width:180px">
+                <span style="font-size:12px;font-weight:600">판매현황</span>
+                <div id="reconcile-erp-sales-status" style="font-size:12px;color:var(--gray-600);margin-top:4px">
+                  대기 중
+                </div>
               </div>
             </div>
           </div>
 
-          <button class="btn btn-primary" onclick="reconcileGoStep2()" id="btn-reconcile-step2">
-            다음: 거래처 원장 업로드 →
+          <button class="btn btn-primary" onclick="reconcileFetchAndGoStep2()" id="btn-reconcile-step2">
+            ERP 데이터 조회 후 다음 →
           </button>
         </div>
 
@@ -526,18 +548,25 @@ C규격품 200개
           <div id="reconcile-summary" style="margin-bottom:16px"></div>
 
           <!-- 탭 -->
-          <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:16px">
+          <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:16px;flex-wrap:wrap">
             <button class="reconcile-tab active" onclick="reconcileSwitchTab('matched')" id="tab-matched">매칭됨</button>
             <button class="reconcile-tab" onclick="reconcileSwitchTab('unmatched')" id="tab-unmatched">매입전표 누락</button>
             <button class="reconcile-tab" onclick="reconcileSwitchTab('sales')" id="tab-sales">판매이력 확인</button>
+            <button class="reconcile-tab" onclick="reconcileSwitchTab('shipping')" id="tab-shipping">배송료/운송비</button>
+            <button class="reconcile-tab" onclick="reconcileSwitchTab('amt-diff')" id="tab-amt-diff">금액 불일치</button>
           </div>
 
           <div id="reconcile-tab-matched"></div>
           <div id="reconcile-tab-unmatched" style="display:none"></div>
           <div id="reconcile-tab-sales" style="display:none"></div>
+          <div id="reconcile-tab-shipping" style="display:none"></div>
+          <div id="reconcile-tab-amt-diff" style="display:none"></div>
 
-          <div style="display:flex;gap:8px;margin-top:16px">
+          <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
             <button class="btn btn-outline" onclick="reconcileGoBack(2)">← 이전</button>
+            <button class="btn btn-outline" onclick="reconcileDownloadExcel()" id="btn-reconcile-download">
+              엑셀 다운로드
+            </button>
             <button class="btn btn-primary" onclick="reconcilePrepareInput()" id="btn-reconcile-prepare">
               매입전표 입력 준비 →
             </button>
@@ -3280,7 +3309,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260403b"></script>
+<script src="/static/js/app.js?v=20260403e"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

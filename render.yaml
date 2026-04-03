@@ -29,6 +29,10 @@ services:
         sync: false
       - key: ERP_WH_CD
         sync: false
+      - key: ERP_WEB_USER_ID
+        sync: false
+      - key: ERP_WEB_USER_PW
+        sync: false
       - key: DEBUG
         value: "false"
       - key: LOGEN_YONGSAN_ID

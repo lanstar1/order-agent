@@ -15,6 +15,9 @@ WORKDIR /app
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt python-dotenv
 
+# Playwright Chromium 브라우저 설치 (ERP 웹 스크래핑용)
+RUN playwright install --with-deps chromium
+
 # 소스 코드 복사
 COPY backend/ /app/backend/
 COPY frontend/ /app/frontend/

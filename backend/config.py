@@ -45,6 +45,10 @@ ERP_API_KEY   = os.getenv("ERP_API_KEY",   "")
 ERP_WH_CD     = os.getenv("ERP_WH_CD",     "10")   # 기본 창고코드
 ERP_EMP_CD    = os.getenv("ERP_EMP_CD",   "")    # 담당자 코드 (ERP에서 필수 설정된 경우)
 
+# ECOUNT 웹 로그인 (구매/판매현황 조회용 - OAPI에 없는 기능)
+ERP_WEB_USER_ID = os.getenv("ERP_WEB_USER_ID", "")   # 웹 로그인 ID
+ERP_WEB_USER_PW = os.getenv("ERP_WEB_USER_PW", "")   # 웹 로그인 PW
+
 # ─────────────────────────────────────────
 #  데이터베이스
 # ─────────────────────────────────────────

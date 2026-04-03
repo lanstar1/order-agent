@@ -679,6 +679,19 @@ async def _auto_sync_customers():
         logger.error(f"[자동동기화] 거래처 임포트 오류: {e}", exc_info=True)
 
 
+@app.on_event("shutdown")
+async def shutdown():
+    """서버 종료 시 리소스 정리"""
+    logger.info("=== Order Agent 종료 ===")
+    # Playwright 브라우저 정리
+    try:
+        from services.erp_web_scraper import erp_web_scraper
+        await erp_web_scraper.close()
+        logger.info("ERP Web Scraper 브라우저 종료 완료")
+    except Exception as e:
+        logger.warning(f"ERP Web Scraper 종료 중 오류: {e}")
+
+
 async def _auto_sync_on_startup():
     """
     서버 시작 시 마지막 동기화가 6시간 이상 지났으면 자동 동기화.

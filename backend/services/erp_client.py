@@ -694,6 +694,217 @@ class ERPClient:
         return {"success": False, "error": "최대 재시도 횟수 초과"}
 
     # ─────────────────────────────────────────
+    #  구매현황 조회: GetListPurchasesBySearch
+    #  POST https://oapi{ZONE}.ecount.com/OAPI/V2/Purchases/GetListPurchasesBySearch
+    # ─────────────────────────────────────────
+    async def get_purchase_list(
+        self,
+        from_date: str = "",
+        to_date: str = "",
+        cust_code: str = "",
+        page: int = 1,
+        per_page: int = 500,
+    ) -> dict:
+        """
+        ECOUNT 구매현황 조회
+        Args:
+            from_date: 시작일 YYYYMMDD
+            to_date: 종료일 YYYYMMDD
+            cust_code: 거래처코드 (빈 값이면 전체)
+            page: 페이지 번호
+            per_page: 페이지당 건수
+        Returns: {"success": bool, "items": [...], "total": int}
+        """
+        if not self._session_id:
+            await self.ensure_session()
+
+        zone = (self._zone or ERP_ZONE).lower()
+        url = (
+            f"https://oapi{zone}.ecount.com/OAPI/V2/Purchases/GetListPurchasesBySearch"
+            f"?SESSION_ID={self._session_id}"
+        )
+
+        payload = {
+            "PAGE_NO": str(page),
+            "PER_PAGE_CNT": str(per_page),
+        }
+        if from_date:
+            payload["FROM_DATE"] = from_date
+        if to_date:
+            payload["TO_DATE"] = to_date
+        if cust_code:
+            payload["CUST"] = cust_code
+
+        async def _fetch(u, p):
+            async with httpx.AsyncClient() as c:
+                r = await c.post(u, json=p, timeout=30)
+                r.raise_for_status()
+                return r.json()
+
+        try:
+            data = await _fetch(url, payload)
+            logger.info(
+                f"[ERP PurchaseList] Status={data.get('Status')}, "
+                f"CUST={cust_code}, {from_date}~{to_date}"
+            )
+
+            # 세션 만료 시 재로그인 후 재시도
+            if str(data.get("Status", "")) in ("301", "302"):
+                logger.warning("[ERP] 세션 만료 - 재로그인 후 구매현황 재조회")
+                await self.ensure_session()
+                zone = (self._zone or ERP_ZONE).lower()
+                url = (
+                    f"https://oapi{zone}.ecount.com/OAPI/V2/Purchases/GetListPurchasesBySearch"
+                    f"?SESSION_ID={self._session_id}"
+                )
+                data = await _fetch(url, payload)
+
+            if str(data.get("Status", "")) != "200":
+                err_msg = "구매현황 조회 실패"
+                error_obj = data.get("Error") or {}
+                if isinstance(error_obj, dict) and error_obj.get("Message"):
+                    err_msg = error_obj["Message"]
+                logger.warning(f"[ERP PurchaseList] 실패: {data}")
+                return {"success": False, "items": [], "total": 0, "error": err_msg, "raw": data}
+
+            result_list = data.get("Data", {}).get("Result", [])
+            total_cnt = data.get("Data", {}).get("TotalCnt", 0)
+
+            items = []
+            for item in result_list:
+                items.append({
+                    "date": item.get("IO_DATE", ""),
+                    "cust_code": item.get("CUST", ""),
+                    "cust_name": item.get("CUST_DES", ""),
+                    "prod_cd": item.get("PROD_CD", ""),
+                    "prod_name": item.get("PROD_DES", ""),
+                    "prod_size": item.get("SIZE_DES", ""),
+                    "qty": item.get("QTY", 0),
+                    "price": item.get("PRICE", 0),
+                    "supply_amt": item.get("SUPPLY_AMT", 0),
+                    "vat_amt": item.get("VAT_AMT", 0),
+                    "total": item.get("TOTAL", item.get("SUPPLY_AMT", 0)),
+                    "wh_cd": item.get("WH_CD", ""),
+                    "slip_no": item.get("SLIP_NO", ""),
+                    "remarks": item.get("REMARKS1", ""),
+                    "emp_cd": item.get("EMP_CD", ""),
+                    # 원본 데이터도 보존
+                    "_raw": item,
+                })
+
+            logger.info(f"[ERP PurchaseList] {len(items)}건 반환 (총 {total_cnt})")
+            return {"success": True, "items": items, "total": total_cnt}
+
+        except Exception as e:
+            logger.error(f"[ERP PurchaseList] 오류: {e}", exc_info=True)
+            return {"success": False, "items": [], "total": 0, "error": str(e)}
+
+    # ─────────────────────────────────────────
+    #  판매현황 조회: GetListSaleBySearch
+    #  POST https://oapi{ZONE}.ecount.com/OAPI/V2/Sale/GetListSaleBySearch
+    # ─────────────────────────────────────────
+    async def get_sales_list(
+        self,
+        from_date: str = "",
+        to_date: str = "",
+        cust_code: str = "",
+        page: int = 1,
+        per_page: int = 500,
+    ) -> dict:
+        """
+        ECOUNT 판매현황 조회
+        Args:
+            from_date: 시작일 YYYYMMDD
+            to_date: 종료일 YYYYMMDD
+            cust_code: 거래처코드 (빈 값이면 전체)
+            page: 페이지 번호
+            per_page: 페이지당 건수
+        Returns: {"success": bool, "items": [...], "total": int}
+        """
+        if not self._session_id:
+            await self.ensure_session()
+
+        zone = (self._zone or ERP_ZONE).lower()
+        url = (
+            f"https://oapi{zone}.ecount.com/OAPI/V2/Sale/GetListSaleBySearch"
+            f"?SESSION_ID={self._session_id}"
+        )
+
+        payload = {
+            "PAGE_NO": str(page),
+            "PER_PAGE_CNT": str(per_page),
+        }
+        if from_date:
+            payload["FROM_DATE"] = from_date
+        if to_date:
+            payload["TO_DATE"] = to_date
+        if cust_code:
+            payload["CUST"] = cust_code
+
+        async def _fetch(u, p):
+            async with httpx.AsyncClient() as c:
+                r = await c.post(u, json=p, timeout=30)
+                r.raise_for_status()
+                return r.json()
+
+        try:
+            data = await _fetch(url, payload)
+            logger.info(
+                f"[ERP SaleList] Status={data.get('Status')}, "
+                f"CUST={cust_code}, {from_date}~{to_date}"
+            )
+
+            # 세션 만료 시 재로그인 후 재시도
+            if str(data.get("Status", "")) in ("301", "302"):
+                logger.warning("[ERP] 세션 만료 - 재로그인 후 판매현황 재조회")
+                await self.ensure_session()
+                zone = (self._zone or ERP_ZONE).lower()
+                url = (
+                    f"https://oapi{zone}.ecount.com/OAPI/V2/Sale/GetListSaleBySearch"
+                    f"?SESSION_ID={self._session_id}"
+                )
+                data = await _fetch(url, payload)
+
+            if str(data.get("Status", "")) != "200":
+                err_msg = "판매현황 조회 실패"
+                error_obj = data.get("Error") or {}
+                if isinstance(error_obj, dict) and error_obj.get("Message"):
+                    err_msg = error_obj["Message"]
+                logger.warning(f"[ERP SaleList] 실패: {data}")
+                return {"success": False, "items": [], "total": 0, "error": err_msg, "raw": data}
+
+            result_list = data.get("Data", {}).get("Result", [])
+            total_cnt = data.get("Data", {}).get("TotalCnt", 0)
+
+            items = []
+            for item in result_list:
+                items.append({
+                    "date": item.get("IO_DATE", ""),
+                    "cust_code": item.get("CUST", ""),
+                    "cust_name": item.get("CUST_DES", ""),
+                    "prod_cd": item.get("PROD_CD", ""),
+                    "prod_name": item.get("PROD_DES", ""),
+                    "prod_size": item.get("SIZE_DES", ""),
+                    "qty": item.get("QTY", 0),
+                    "price": item.get("PRICE", 0),
+                    "supply_amt": item.get("SUPPLY_AMT", 0),
+                    "vat_amt": item.get("VAT_AMT", 0),
+                    "total": item.get("TOTAL", item.get("SUPPLY_AMT", 0)),
+                    "wh_cd": item.get("WH_CD", ""),
+                    "slip_no": item.get("SLIP_NO", ""),
+                    "remarks": item.get("REMARKS1", ""),
+                    "emp_cd": item.get("EMP_CD", ""),
+                    "_raw": item,
+                })
+
+            logger.info(f"[ERP SaleList] {len(items)}건 반환 (총 {total_cnt})")
+            return {"success": True, "items": items, "total": total_cnt}
+
+        except Exception as e:
+            logger.error(f"[ERP SaleList] 오류: {e}", exc_info=True)
+            return {"success": False, "items": [], "total": 0, "error": str(e)}
+
+    # ─────────────────────────────────────────
     #  세션 초기화 (로그아웃/재연결 시)
     # ─────────────────────────────────────────
     def reset(self):
