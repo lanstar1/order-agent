@@ -98,13 +98,34 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
 # ─────────────────────────────────────────
 #  네이버 커머스 API (스마트스토어)
 # ─────────────────────────────────────────
-NAVER_COMMERCE_CLIENT_ID     = os.getenv("NAVER_COMMERCE_CLIENT_ID", "")
-NAVER_COMMERCE_CLIENT_SECRET = os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "")
+NAVER_CLIENT_ID     = os.getenv("NAVER_CLIENT_ID", "")
+NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "")
+NAVER_COMMERCE_URL  = os.getenv("NAVER_COMMERCE_URL", "https://api.commerce.naver.com")
 
 # 스마트스토어 ERP 연동 고정값
 SMARTSTORE_CUST_CODE = os.getenv("SMARTSTORE_CUST_CODE", "")   # 스마트스토어 거래처코드
 SMARTSTORE_EMP_CODE  = os.getenv("SMARTSTORE_EMP_CODE", "")    # 담당자 코드
 SMARTSTORE_WH_CODE   = os.getenv("SMARTSTORE_WH_CODE", "30")   # 출하창고 코드
+
+# iLogen 택배 계정 (창고별)
+LOGEN_GIMPO_ID       = os.getenv("LOGEN_GIMPO_ID", "")
+LOGEN_GIMPO_PW       = os.getenv("LOGEN_GIMPO_PW", "")
+LOGEN_GIMPO_PW_PREV  = os.getenv("LOGEN_GIMPO_PW_PREV", "")
+LOGEN_YONGSAN_ID     = os.getenv("LOGEN_YONGSAN_ID", "")
+LOGEN_YONGSAN_PW     = os.getenv("LOGEN_YONGSAN_PW", "")
+LOGEN_YONGSAN_PW_PREV = os.getenv("LOGEN_YONGSAN_PW_PREV", "")
+
+# iLogen 보내는분 정보 (창고별)
+SENDER_GIMPO_NAME    = os.getenv("SENDER_GIMPO_NAME", "랜스타")
+SENDER_GIMPO_TEL     = os.getenv("SENDER_GIMPO_TEL", "")
+SENDER_GIMPO_ADDR    = os.getenv("SENDER_GIMPO_ADDR", "")
+SENDER_YONGSAN_NAME  = os.getenv("SENDER_YONGSAN_NAME", "랜스타")
+SENDER_YONGSAN_TEL   = os.getenv("SENDER_YONGSAN_TEL", "")
+SENDER_YONGSAN_ADDR  = os.getenv("SENDER_YONGSAN_ADDR", "")
+
+# 스마트스토어 상품매핑 경로
+SMARTSTORE_PRODUCT_MAP_PATH = BASE_DIR / "data" / "smartstore" / "smartstore_product_map.json"
+SMARTSTORE_MODEL_MAP_PATH   = BASE_DIR / "data" / "smartstore" / "smartstore_model_map.json"
 
 # ─────────────────────────────────────────
 #  바코드 ERP Bridge (쿠팡 PO → 이카운트)

@@ -104,6 +104,11 @@ function navigateTo(pageId) {
     window.open("https://mail-dqxh.onrender.com", "_blank");
     return;
   }
+  // 스마트스토어는 별도 페이지로 열기
+  if (pageId === "smartstore_bridge") {
+    window.open("/smartstore", "_blank");
+    return;
+  }
   // 바코드 ERP Bridge는 별도 페이지로 열기
   if (pageId === "barcode_bridge") {
     window.open("/barcode", "_blank");

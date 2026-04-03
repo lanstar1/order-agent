@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트스토어 주문 자동화</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; color: #1e293b; }
+        .header { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; }
+        .header h1 { font-size: 22px; font-weight: 700; }
+        .header .sub { font-size: 13px; opacity: 0.8; margin-top: 2px; }
+        .container { max-width: 1400px; margin: 24px auto; padding: 0 20px; }
+        .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
+        .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+        .btn { padding: 10px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-red { background: #dc2626; color: #fff; } .btn-red:hover:not(:disabled) { background: #b91c1c; }
+        .btn-orange { background: #ea580c; color: #fff; } .btn-orange:hover:not(:disabled) { background: #c2410c; }
+        .btn-blue { background: #2563eb; color: #fff; } .btn-blue:hover:not(:disabled) { background: #1d4ed8; }
+        .btn-green { background: #16a34a; color: #fff; } .btn-green:hover:not(:disabled) { background: #15803d; }
+        .btn-gray { background: #64748b; color: #fff; } .btn-gray:hover:not(:disabled) { background: #475569; }
+        .btn-sm { padding: 6px 14px; font-size: 12px; }
+        .btn-group { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+        .sb { margin-top: 16px; padding: 12px 16px; border-radius: 8px; font-size: 13px; display: none; }
+        .sb.info { display: block; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        .sb.ok { display: block; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        .sb.err { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .sb.load { display: block; background: #fefce8; color: #854d0e; border: 1px solid #fde68a; }
+        .sb.warn { display: block; background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
+        .rg { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
+        .rc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+        .rc h3 { font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 8px; }
+        .rc .v { font-size: 24px; font-weight: 700; }
+        .rc .d { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        .rc.g { border-left: 4px solid #22c55e; } .rc.r { border-left: 4px solid #ef4444; } .rc.y { border-left: 4px solid #f59e0b; }
+
+        .filter-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+        .filter-row label { font-size: 12px; font-weight: 600; color: #64748b; display: block; margin-bottom: 4px; }
+        .filter-row input[type="date"], .filter-row select {
+            padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;
+            background: #fff; color: #1e293b; min-width: 140px;
+        }
+        .filter-row input[type="date"]:focus, .filter-row select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+
+        .tbl-scroll { overflow-x: auto; margin-top: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #f1f5f9; padding: 10px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+        td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
+        tr:hover td { background: #f8fafc; }
+        tr.row-unchecked td { opacity: 0.4; }
+        .mono { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; color: #64748b; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .badge-pay { background: #dbeafe; color: #1e40af; }
+        .badge-ready { background: #fef3c7; color: #92400e; }
+        .badge-ship { background: #d1fae5; color: #065f46; }
+        .badge-done { background: #e2e8f0; color: #475569; }
+
+        .sel-bar { display: flex; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; flex-wrap: wrap; }
+        .sel-bar .sel-info { font-size: 14px; font-weight: 600; color: #334155; }
+        .sel-bar .sel-info em { color: #2563eb; font-style: normal; }
+
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+        .dot-g { background: #22c55e; } .dot-r { background: #ef4444; } .dot-y { background: #f59e0b; }
+        .ec { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 4px 0; }
+        .sp { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .log { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; margin-top: 16px; display: none; white-space: pre-wrap; }
+        .log.vis { display: block; }
+        .raw-json { background: #1e293b; color: #a5f3fc; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 11px; max-height: 400px; overflow: auto; margin-top: 12px; display: none; white-space: pre; }
+        .raw-json.vis { display: block; }
+        .count-badge { background: #3b82f6; color: #fff; font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 16px; margin-left: 8px; }
+        input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #2563eb; }
+        .inp-sm { padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; width: 130px; }
+        .inp-sm:focus { outline: none; border-color: #3b82f6; }
+        .map-search { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+        .map-search input { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; flex: 1; max-width: 300px; }
+        .map-add-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+        .map-add-row input { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 180px; }
+        .btn-xs { padding: 3px 10px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        .btn-xs-blue { background: #2563eb; color: #fff; } .btn-xs-blue:hover { background: #1d4ed8; }
+        .btn-xs-red { background: #dc2626; color: #fff; } .btn-xs-red:hover { background: #b91c1c; }
+        .btn-xs-green { background: #16a34a; color: #fff; } .btn-xs-green:hover { background: #15803d; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>스마트스토어 주문 자동화</h1>
+            <div class="sub">네이버 주문수집 → ERP 판매입력 → 로젠택배 등록 → 발송처리</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;">
+            <a href="/" style="color:#fff;text-decoration:none;font-size:13px;opacity:0.8;padding:5px 12px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;">← 메인으로</a>
+            <span style="font-size:13px; opacity:0.8;" id="clock"></span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 연결 상태 -->
+        <div class="card">
+            <h2>연결 상태</h2>
+            <div style="display:flex; gap:24px; flex-wrap:wrap;">
+                <div class="ec"><div class="dot dot-y" id="d-nv"></div> 네이버 커머스 API</div>
+                <div class="ec"><div class="dot dot-y" id="d-erp"></div> ECOUNT ERP</div>
+                <div class="ec"><div class="dot dot-y" id="d-lg"></div> iLogen 택배</div>
+            </div>
+            <div style="margin-top:12px;"><button class="btn btn-gray" onclick="testConn()">연결 테스트</button></div>
+            <div class="sb" id="s-conn"></div>
+        </div>
+
+        <!-- 주문 수집 -->
+        <div class="card">
+            <h2>주문 수집 <span class="count-badge" id="order-cnt" style="display:none;">0</span></h2>
+
+            <div class="filter-row">
+                <div>
+                    <label>시작일</label>
+                    <input type="date" id="f-from">
+                </div>
+                <div>
+                    <label>종료일</label>
+                    <input type="date" id="f-to">
+                </div>
+                <div>
+                    <label>주문상태</label>
+                    <select id="f-status">
+                        <option value="NEW_BEFORE" selected>신규주문 (발주 전)</option>
+                        <option value="NEW_AFTER">신규주문 (발주 후)</option>
+                        <option value="DELIVERING">배송중 (발송처리 완료)</option>
+                    </select>
+                </div>
+                <div>
+                    <button class="btn btn-blue" onclick="fetchOrders()" id="b-fetch">주문수집</button>
+                </div>
+            </div>
+
+            <div class="sb" id="s-fetch"></div>
+            <div class="tbl-scroll" id="tbl-wrap"></div>
+
+            <!-- 선택 바 (주문 수집 후 표시) -->
+            <div id="sel-bar" style="display:none;" class="sel-bar">
+                <span class="sel-info">선택: <em id="sel-cnt">0</em> / <span id="sel-total">0</span>건</span>
+                <button class="btn btn-sm btn-gray" onclick="selectAll()">전체선택</button>
+                <button class="btn btn-sm btn-gray" onclick="deselectAll()">전체해제</button>
+                <span style="flex:1;"></span>
+                <button class="btn btn-red" onclick="autoReg('gimpo')" id="b-gp">김포 로젠등록</button>
+                <button class="btn btn-orange" onclick="autoReg('yongsan')" id="b-ys">용산 로젠등록</button>
+            </div>
+
+            <div style="margin-top:12px;">
+                <button class="btn btn-gray btn-sm" onclick="toggleRaw()" id="b-raw" style="display:none;">API 응답 원본 보기</button>
+            </div>
+            <div class="raw-json" id="raw-json"></div>
+        </div>
+
+        <!-- 처리 결과 -->
+        <div class="card" id="card-result" style="display:none;">
+            <h2>처리 결과</h2>
+            <div class="sb" id="s-auto"></div>
+            <div class="rg" id="res" style="display:none;"></div>
+
+            <!-- 미매칭건 (수기입력 필요) -->
+            <div id="unmatched-section" style="display:none; margin-top:20px;">
+                <h2 style="color:#dc2626;">ERP 미매칭 — 수기입력 필요 <span class="count-badge" style="background:#dc2626;" id="unmatched-cnt">0</span></h2>
+                <p style="font-size:13px; color:#64748b; margin:8px 0 12px;">품목코드가 매칭되지 않은 주문입니다. ERP에 직접 판매입력해주세요.</p>
+                <div class="tbl-scroll" id="unmatched-tbl"></div>
+            </div>
+        </div>
+
+        <!-- 매핑 관리 -->
+        <div class="card">
+            <h2>품목코드 매핑 관리 <span class="count-badge" id="map-total" style="display:none;">0</span></h2>
+            <div class="map-search">
+                <input type="text" id="map-q" placeholder="검색 (상품번호, 품목코드, 모델명)" onkeyup="if(event.key==='Enter') searchMap()">
+                <button class="btn btn-blue btn-sm" onclick="searchMap()">검색</button>
+                <button class="btn btn-gray btn-sm" onclick="searchMap('')">전체</button>
+            </div>
+            <div class="map-add-row">
+                <input type="text" id="map-new-pno" placeholder="상품번호 (필수)">
+                <input type="text" id="map-new-erp" placeholder="품목코드 (필수)">
+                <input type="text" id="map-new-model" placeholder="모델명">
+                <button class="btn btn-green btn-sm" onclick="addMapEntry()">추가</button>
+            </div>
+            <div class="tbl-scroll" id="map-tbl" style="margin-top:12px; max-height:400px; overflow-y:auto;"></div>
+            <div class="sb" id="s-map"></div>
+        </div>
+
+        <!-- 실행 로그 -->
+        <div class="card">
+            <h2>실행 로그</h2>
+            <button class="btn btn-gray btn-sm" onclick="document.getElementById('logbox').classList.toggle('vis')">로그 토글</button>
+            <div class="log" id="logbox"></div>
+        </div>
+    </div>
+
+<script>
+const B = '';
+let _rawOrders = null;   // API 응답 원본 배열
+let _checkedSet = new Set();  // 체크된 상품주문번호(productOrderId) Set
+
+// 날짜 기본값
+(function initDates(){
+    const now = new Date();
+    const to = now.toISOString().slice(0,10);
+    const from = new Date(now - 3*86400000).toISOString().slice(0,10);
+    document.getElementById('f-from').value = from;
+    document.getElementById('f-to').value = to;
+})();
+
+function log(m){
+    const a=document.getElementById('logbox');
+    a.textContent+=`[${new Date().toLocaleTimeString('ko-KR')}] ${m}\n`;
+    a.scrollTop=a.scrollHeight;
+    if(!a.classList.contains('vis')) a.classList.add('vis');
+}
+function ss(id,t,m){const e=document.getElementById(id);e.className='sb '+t;e.textContent=m;}
+function sd(id,c){document.getElementById(id).className='dot dot-'+c;}
+
+// ── 연결 테스트 ──
+async function testConn(){
+    ss('s-conn','load','연결 테스트 중...');log('연결 테스트');
+    try{
+        const r=await(await fetch(B+'/api/smartstore/token-test')).json();
+        if(r.success){sd('d-nv','g');log('네이버 API OK');}
+        else{sd('d-nv','r');log('네이버: '+r.error);}
+    }catch(e){sd('d-nv','r');log('네이버 연결실패: '+e.message);}
+    try{
+        const r=await(await fetch(B+'/health')).json();
+        if(r.status==='ok'){sd('d-erp','g');log('서버 OK');}else{sd('d-erp','y');}
+    }catch(e){sd('d-erp','r');log('서버 연결실패');}
+    sd('d-lg','g');log('iLogen은 실제 등록시 확인');
+    ss('s-conn','ok','연결 테스트 완료');
+}
+
+// ── 주문 수집 ──
+async function fetchOrders(){
+    const b=document.getElementById('b-fetch');
+    b.disabled=true;b.innerHTML='<span class="sp" style="border-color:#fff;border-top-color:transparent;"></span> 수집 중...';
+
+    const dateFrom = document.getElementById('f-from').value;
+    const dateTo = document.getElementById('f-to').value;
+    const orderType = document.getElementById('f-status').value;
+    const statusLabel = document.getElementById('f-status').selectedOptions[0].text;
+
+    const params = new URLSearchParams();
+    if(dateFrom) params.set('date_from', dateFrom);
+    if(dateTo) params.set('date_to', dateTo);
+    params.set('order_type', orderType);
+
+    ss('s-fetch','load',`${statusLabel} 수집 중... (${dateFrom} ~ ${dateTo})`);
+    log(`주문 수집: ${statusLabel}, ${dateFrom} ~ ${dateTo}`);
+
+    try{
+        const r = await(await fetch(B+'/api/smartstore/orders?'+params.toString())).json();
+        _rawOrders = r.orders || [];
+        _checkedSet.clear();
+
+        if(r.success && _rawOrders.length > 0){
+            // 기본: 전체 선택
+            for(const o of _rawOrders) {
+                _checkedSet.add(getProductOrderId(o));
+            }
+            ss('s-fetch','ok', r.count+'건 수집 완료 ('+statusLabel+')');
+            log('수집: '+r.count+'건');
+            document.getElementById('order-cnt').textContent = r.count;
+            document.getElementById('order-cnt').style.display = 'inline';
+            document.getElementById('b-raw').style.display = 'inline-flex';
+            renderTbl(_rawOrders);
+            showSelBar(true);
+        } else if(r.success){
+            ss('s-fetch','info','해당 조건의 주문이 없습니다.');
+            log('없음');
+            document.getElementById('order-cnt').style.display = 'none';
+            document.getElementById('tbl-wrap').innerHTML = '';
+            showSelBar(false);
+        } else {
+            ss('s-fetch','err', r.error||'실패');
+            log('실패: '+r.error);
+            showSelBar(false);
+        }
+    }catch(e){ss('s-fetch','err',e.message);log('오류: '+e.message);showSelBar(false);}
+    finally{b.disabled=false;b.innerHTML='주문수집';}
+}
+
+// ── 선택 바 ──
+function showSelBar(show) {
+    document.getElementById('sel-bar').style.display = show ? 'flex' : 'none';
+    if(show) updateSelCount();
+}
+
+function updateSelCount() {
+    document.getElementById('sel-cnt').textContent = _checkedSet.size;
+    document.getElementById('sel-total').textContent = _rawOrders ? _rawOrders.length : 0;
+    // 버튼 활성화
+    const hasSelection = _checkedSet.size > 0;
+    document.getElementById('b-gp').disabled = !hasSelection;
+    document.getElementById('b-ys').disabled = !hasSelection;
+    // 행 스타일
+    document.querySelectorAll('tr[data-poid]').forEach(tr => {
+        const poid = tr.getAttribute('data-poid');
+        tr.classList.toggle('row-unchecked', !_checkedSet.has(poid));
+    });
+}
+
+function toggleCheck(poid, cb) {
+    if(cb.checked) _checkedSet.add(poid);
+    else _checkedSet.delete(poid);
+    updateSelCount();
+}
+
+function toggleAllChecks(masterCb) {
+    if(!_rawOrders) return;
+    document.querySelectorAll('.row-cb').forEach(cb => {
+        cb.checked = masterCb.checked;
+    });
+    if(masterCb.checked) {
+        for(const o of _rawOrders) _checkedSet.add(getProductOrderId(o));
+    } else {
+        _checkedSet.clear();
+    }
+    updateSelCount();
+}
+
+function selectAll() {
+    if(!_rawOrders) return;
+    for(const o of _rawOrders) _checkedSet.add(getProductOrderId(o));
+    document.querySelectorAll('.row-cb').forEach(cb => cb.checked = true);
+    const master = document.getElementById('master-cb');
+    if(master) master.checked = true;
+    updateSelCount();
+}
+
+function deselectAll() {
+    _checkedSet.clear();
+    document.querySelectorAll('.row-cb').forEach(cb => cb.checked = false);
+    const master = document.getElementById('master-cb');
+    if(master) master.checked = false;
+    updateSelCount();
+}
+
+// ── Raw JSON ──
+function toggleRaw(){
+    const el = document.getElementById('raw-json');
+    if(el.classList.contains('vis')){
+        el.classList.remove('vis');
+    } else {
+        if(_rawOrders && _rawOrders.length > 0){
+            el.textContent = '// 첫 번째 주문 원본 데이터 (전체 ' + _rawOrders.length + '건 중 1건)\n' +
+                JSON.stringify(_rawOrders[0], null, 2);
+        }
+        el.classList.add('vis');
+    }
+}
+
+// ── 필드 추출 ──
+function getOrderId(order) {
+    return (order.order || {}).orderId || '';
+}
+function getProductOrderId(order) {
+    return (order.productOrder || {}).productOrderId || '';
+}
+function getProductName(order) {
+    return (order.productOrder || {}).productName || '';
+}
+function getOptionText(order) {
+    const po = order.productOrder || {};
+    if (po.productOption && po.productOption.trim()) return po.productOption;
+    if (po.sellerProductCode && po.sellerProductCode.trim()) return po.sellerProductCode;
+    return '-';
+}
+function getQuantity(order) {
+    return (order.productOrder || {}).quantity || 1;
+}
+function getPayment(order) {
+    return (order.productOrder || {}).totalPaymentAmount || 0;
+}
+function getReceiverName(order) {
+    return ((order.productOrder || {}).shippingAddress || {}).name || '';
+}
+function getDeliveryMethod(order) {
+    const po = order.productOrder || {};
+    const method = po.expectedDeliveryMethod || '';
+    const map = {
+        'DELIVERY': '택배',
+        'QUICK_SVC': '퀵서비스',
+        'VISIT': '방문수령',
+        'DIRECT_DELIVERY': '직접전달',
+        'NOTHING': '배송없음',
+    };
+    return map[method] || method || '-';
+}
+function getStatus(order) {
+    const po = order.productOrder || {};
+    const st = po.productOrderStatus || '';
+    const placeStatus = po.placeOrderStatus || '';
+    if (st === 'PAYED') {
+        if (placeStatus === 'OK') return '<span class="badge badge-ready">발주 후</span>';
+        return '<span class="badge badge-pay">발주 전</span>';
+    }
+    const map = {
+        'DELIVERING': ['배송중', 'badge-ship'],
+        'DISPATCHED': ['발송완료', 'badge-ship'],
+        'DELIVERED': ['배달완료', 'badge-done'],
+        'PURCHASE_DECIDED': ['구매확정', 'badge-done'],
+    };
+    const m = map[st];
+    return m ? `<span class="badge ${m[1]}">${m[0]}</span>` : (st || '-');
+}
+
+// ── 테이블 렌더링 ──
+function renderTbl(orders){
+    const w = document.getElementById('tbl-wrap');
+    if(!orders.length){ w.innerHTML=''; return; }
+
+    let h = `<table>
+        <thead><tr>
+            <th style="width:40px;text-align:center;"><input type="checkbox" id="master-cb" checked onchange="toggleAllChecks(this)"></th>
+            <th>주문번호</th>
+            <th>상품주문번호</th>
+            <th>상품명</th>
+            <th>옵션</th>
+            <th>수량</th>
+            <th>결제금액</th>
+            <th>배송방법</th>
+            <th>상태</th>
+            <th>수령인</th>
+        </tr></thead><tbody>`;
+
+    for(const o of orders){
+        const poid = getProductOrderId(o);
+        const checked = _checkedSet.has(poid);
+        h += `<tr data-poid="${poid}" class="${checked ? '' : 'row-unchecked'}">
+            <td style="text-align:center;"><input type="checkbox" class="row-cb" ${checked?'checked':''} onchange="toggleCheck('${poid}',this)"></td>
+            <td class="mono">${getOrderId(o)}</td>
+            <td class="mono">${poid}</td>
+            <td>${getProductName(o)}</td>
+            <td>${getOptionText(o)}</td>
+            <td style="text-align:center">${getQuantity(o)}</td>
+            <td style="text-align:right">${Number(getPayment(o)).toLocaleString()}원</td>
+            <td>${getDeliveryMethod(o)}</td>
+            <td>${getStatus(o)}</td>
+            <td>${getReceiverName(o)}</td>
+        </tr>`;
+    }
+    w.innerHTML = h + '</tbody></table>';
+}
+
+// ── 자동 등록 (선택된 주문만) ──
+async function autoReg(wh){
+    if(!_rawOrders || _checkedSet.size === 0){
+        ss('s-auto','warn','선택된 주문이 없습니다. 체크박스로 주문을 선택해주세요.');
+        document.getElementById('card-result').style.display = 'block';
+        return;
+    }
+
+    // 선택된 주문만 필터
+    const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
+    const nm = wh==='gimpo'?'김포':'용산';
+
+    // 주문번호 기준 그룹 수 계산
+    const groupSet = new Set(selectedOrders.map(o => getOrderId(o)));
+
+    if(!confirm(
+        `${nm} 창고로 자동등록 실행\n\n` +
+        `선택: ${selectedOrders.length}건 (${groupSet.size}그룹)\n\n` +
+        `① 발주확인\n② ERP 판매입력 + 로젠등록 (병렬)\n③ 발송처리`
+    )) return;
+
+    const bg=document.getElementById('b-gp'), by=document.getElementById('b-ys');
+    bg.disabled=by.disabled=true;
+    const ab=wh==='gimpo'?bg:by, ot=ab.innerHTML;
+    ab.innerHTML='<span class="sp"></span> 처리 중...';
+
+    document.getElementById('card-result').style.display = 'block';
+    ss('s-auto','load',`${nm} 자동등록 처리 중... (${selectedOrders.length}건, 1~2분 소요)`);
+    document.getElementById('res').style.display='none';
+    log(`=== ${nm} 자동등록 (${selectedOrders.length}건 선택) ===`);
+
+    try{
+        const r = await(await fetch(B+'/api/smartstore/auto-register-logen?warehouse='+wh, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(selectedOrders),
+        })).json();
+
+        if(r.success){
+            ss('s-auto','ok',`${nm} 자동등록 완료!`);
+            log('완료: '+JSON.stringify(r.summary));
+            renderRes(r);
+        } else {
+            ss('s-auto','err',r.message||r.detail||'실패');
+            log('실패: '+JSON.stringify(r));
+        }
+    }catch(e){ss('s-auto','err',e.message);log('오류: '+e.message);}
+    finally{bg.disabled=by.disabled=false;ab.innerHTML=ot;updateSelCount();}
+}
+
+function renderRes(d){
+    const g=document.getElementById('res');g.style.display='grid';
+    const s=d.summary||{},e=d.step1_erp||{},l=d.step1_logen||{},c=d.step2_confirm||{},p=d.step3_dispatch||{};
+
+    const erpMatchDesc = `매칭 ${s.erp_matched||0}건 + 택배 ${s.erp_delivery_count||0}건`;
+    const erpUnmatchDesc = s.erp_unmatched > 0 ? `<br><span style="color:#dc2626;">미매칭 ${s.erp_unmatched}건 (수기입력)</span>` : '';
+
+    g.innerHTML=`
+        <div class="rc ${e.success?'g':(e.lines>0?'r':'y')}"><h3>①-A ERP 판매입력</h3><div class="v">${e.lines||0}건</div><div class="d">${e.success?erpMatchDesc:(typeof e.error==='object'?JSON.stringify(e.error):e.error||'실패')}${erpUnmatchDesc}${e.detail&&e.detail.errors&&e.detail.errors.length?'<br>에러:'+JSON.stringify(e.detail.errors).substring(0,200):''}</div></div>
+        <div class="rc ${l.success&&(l.tracking_numbers||[]).length>0?'g':(l.success?'y':'r')}"><h3>①-B 로젠등록</h3><div class="v">${(l.tracking_numbers||[]).length}건</div><div class="d">${l.error||('등록 '+(l.total_registered||0)+' / 채번 '+(l.total_tracking||0))}</div></div>
+        <div class="rc ${c.confirmed>0?'g':'y'}"><h3>② 발주확인</h3><div class="v">${c.confirmed||0}건</div><div class="d">${c.message||('전체 '+(s.total_orders||0)+'건 / 그룹 '+(s.total_groups||0)+'건')}</div></div>
+        <div class="rc ${p.dispatched>0?'g':'y'}"><h3>③ 발송처리</h3><div class="v">${p.dispatched||0}건</div><div class="d">${p.message||(p.failed>0?'실패 '+p.failed+'건':'완료')}</div></div>`;
+
+    // 미매칭건 테이블 (매핑 추가 기능 포함)
+    const um = d.unmatched_items || [];
+    const umSec = document.getElementById('unmatched-section');
+    if(um.length > 0) {
+        umSec.style.display = 'block';
+        document.getElementById('unmatched-cnt').textContent = um.length;
+        let h = `<table>
+            <thead><tr>
+                <th>상품번호</th><th>상품명</th><th>옵션</th>
+                <th>수량</th><th>정산금액</th><th>배송비유형</th><th>수령인</th>
+                <th>품목코드</th><th>모델명</th><th></th>
+            </tr></thead><tbody>`;
+        for(let i=0; i<um.length; i++){
+            const u = um[i];
+            const pno = u.productNo || u.productId || '';
+            h += `<tr>
+                <td class="mono">${pno}</td>
+                <td>${u.productName||''}</td>
+                <td>${u.optionInfo||''}</td>
+                <td style="text-align:center">${u.quantity||0}</td>
+                <td style="text-align:right">${Number(u.settlementAmount||0).toLocaleString()}원</td>
+                <td>${u.deliveryMethod||''}</td>
+                <td>${u.rcvName||''}</td>
+                <td><input class="inp-sm" id="um-erp-${i}" placeholder="품목코드"></td>
+                <td><input class="inp-sm" id="um-model-${i}" placeholder="모델명" style="width:100px;"></td>
+                <td><button class="btn-xs btn-xs-green" onclick="addMapFromUnmatched('${pno}',${i})">매핑추가</button></td>
+            </tr>`;
+        }
+        document.getElementById('unmatched-tbl').innerHTML = h + '</tbody></table>';
+    } else {
+        umSec.style.display = 'none';
+    }
+}
+
+// ── 매핑 관리 ──
+async function searchMap(q) {
+    if(q === undefined) q = document.getElementById('map-q').value;
+    const params = q ? '?search='+encodeURIComponent(q) : '';
+    try {
+        const r = await(await fetch(B+'/api/smartstore/product-map'+params)).json();
+        if(!r.success) { mapMsg('err', r.error||'실패'); return; }
+        document.getElementById('map-total').textContent = r.total;
+        document.getElementById('map-total').style.display = 'inline';
+        const items = r.items || [];
+        if(!items.length) {
+            document.getElementById('map-tbl').innerHTML = '<p style="color:#94a3b8; font-size:13px; padding:8px;">검색 결과 없음</p>';
+            return;
+        }
+        let h = `<table><thead><tr><th>상품번호</th><th>품목코드</th><th>모델명</th><th></th></tr></thead><tbody>`;
+        for(const it of items) {
+            h += `<tr>
+                <td class="mono">${it.productNo}</td>
+                <td>${it.erpCode}</td>
+                <td>${it.model||'-'}</td>
+                <td><button class="btn-xs btn-xs-red" onclick="deleteMap('${it.productNo}')">삭제</button></td>
+            </tr>`;
+        }
+        document.getElementById('map-tbl').innerHTML = h + '</tbody></table>';
+        mapMsg('info', `${items.length}건 표시 (전체 ${r.total}건)`);
+    } catch(e) { mapMsg('err', e.message); }
+}
+
+async function addMapEntry() {
+    const pno = document.getElementById('map-new-pno').value.trim();
+    const erp = document.getElementById('map-new-erp').value.trim();
+    const model = document.getElementById('map-new-model').value.trim();
+    if(!pno || !erp) { mapMsg('warn', '상품번호와 품목코드는 필수입니다.'); return; }
+    try {
+        const r = await(await fetch(B+'/api/smartstore/product-map', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({productNo: pno, erpCode: erp, model: model}),
+        })).json();
+        if(r.success) {
+            mapMsg('ok', `${r.action} 완료: ${pno} → ${erp} (${model||'-'})`);
+            document.getElementById('map-new-pno').value = '';
+            document.getElementById('map-new-erp').value = '';
+            document.getElementById('map-new-model').value = '';
+            searchMap(document.getElementById('map-q').value);
+        } else { mapMsg('err', r.error); }
+    } catch(e) { mapMsg('err', e.message); }
+}
+
+async function addMapFromUnmatched(productNo, idx) {
+    const erp = document.getElementById('um-erp-'+idx).value.trim();
+    const model = document.getElementById('um-model-'+idx).value.trim();
+    if(!productNo) { alert('상품번호가 없습니다.'); return; }
+    if(!erp) { alert('품목코드를 입력해주세요.'); return; }
+    try {
+        const r = await(await fetch(B+'/api/smartstore/product-map', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({productNo: productNo, erpCode: erp, model: model}),
+        })).json();
+        if(r.success) {
+            const btn = event.target;
+            btn.textContent = '완료';
+            btn.disabled = true;
+            btn.style.background = '#94a3b8';
+            log(`매핑 ${r.action}: ${productNo} → ${erp} (${model||'-'})`);
+        } else { alert(r.error); }
+    } catch(e) { alert(e.message); }
+}
+
+async function deleteMap(productNo) {
+    if(!confirm(`매핑 삭제: ${productNo}`)) return;
+    try {
+        const r = await(await fetch(B+'/api/smartstore/product-map/'+productNo, {method:'DELETE'})).json();
+        if(r.success) {
+            mapMsg('ok', `삭제 완료: ${productNo}`);
+            searchMap(document.getElementById('map-q').value);
+        } else { mapMsg('err', r.error); }
+    } catch(e) { mapMsg('err', e.message); }
+}
+
+function mapMsg(t, m) {
+    const e = document.getElementById('s-map');
+    e.className = 'sb ' + t;
+    e.textContent = m;
+}
+
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});},1000);
+</script>
+</body>
+</html>
