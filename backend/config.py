@@ -105,3 +105,11 @@ NAVER_COMMERCE_CLIENT_SECRET = os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "")
 SMARTSTORE_CUST_CODE = os.getenv("SMARTSTORE_CUST_CODE", "")   # 스마트스토어 거래처코드
 SMARTSTORE_EMP_CODE  = os.getenv("SMARTSTORE_EMP_CODE", "")    # 담당자 코드
 SMARTSTORE_WH_CODE   = os.getenv("SMARTSTORE_WH_CODE", "30")   # 출하창고 코드
+
+# ─────────────────────────────────────────
+#  바코드 ERP Bridge (쿠팡 PO → 이카운트)
+# ─────────────────────────────────────────
+# 기본 ERP 인증은 위 ERP_* 변수를 공유하며, 아래는 바코드 전용 고정값
+BARCODE_CUST_CODE = os.getenv("BARCODE_CUST_CODE", "202308091")  # 바코드서버 거래처코드
+BARCODE_WH_CD     = os.getenv("BARCODE_WH_CD", "30")             # 바코드서버 출하창고
+BARCODE_MASTER_PATH = os.getenv("BARCODE_MASTER_PATH", "")       # master_data.xlsx 경로 (빈값이면 data/barcode/master_data.xlsx)

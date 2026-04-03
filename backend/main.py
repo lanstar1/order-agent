@@ -31,6 +31,7 @@ from api.routes.purchases import router as purchases_router
 from api.routes.aicc import router as aicc_router
 from api.routes.smartstore import router as smartstore_router
 from api.routes.inventory_alert import router as inventory_alert_router
+from api.routes.barcode import router as barcode_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -155,6 +156,9 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/inventory-monitor/run"): "재고 모니터링 수동 실행",
     ("PUT", "/api/inventory-monitor/settings"): "재고 모니터링 설정 변경",
     ("POST", "/api/inventory-monitor/telegram/test"): "텔레그램 연결 테스트",
+    ("POST", "/api/barcode/parse-po"): "바코드 PO 파싱",
+    ("POST", "/api/barcode/send-to-ecount"): "바코드 이카운트 전송",
+    ("POST", "/api/barcode/download-po"): "바코드 PO 다운로드",
 }
 
 @app.middleware("http")
@@ -252,6 +256,7 @@ app.include_router(purchases_router)
 app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
 app.include_router(smartstore_router)
 app.include_router(inventory_alert_router)
+app.include_router(barcode_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -312,6 +317,26 @@ async def serve_chat_page():
         return JSONResponse({"error": "chat.html not found"}, status_code=404)
     return FileResponse(
         chat_html,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+# ─────────────────────────────────────────
+#  바코드 ERP Bridge 페이지
+# ─────────────────────────────────────────
+@app.get("/barcode", include_in_schema=False)
+async def serve_barcode_page():
+    """쿠팡 PO → 이카운트 판매 전표 자동 전송 페이지"""
+    barcode_html = FRONTEND_DIR / "barcode.html"
+    if not barcode_html.exists():
+        return JSONResponse({"error": "barcode.html not found"}, status_code=404)
+    return FileResponse(
+        barcode_html,
         media_type="text/html",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",

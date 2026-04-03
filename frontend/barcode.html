@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LINEUP ERP Bridge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:         #080E1C;
+  --surface:    #0F1828;
+  --surface2:   #162034;
+  --surface3:   #1C2840;
+  --border:     #1E2E44;
+  --border2:    #243650;
+  --accent:     #00D4CC;
+  --accent-dim: #007A76;
+  --accent-glow:rgba(0,212,204,0.15);
+  --text:       #D8EAF5;
+  --text2:      #6A8FAD;
+  --text3:      #3E5F80;
+  --success:    #00C27A;
+  --danger:     #FF4757;
+  --warning:    #FFB020;
+  --info:       #3B9EEB;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 13px;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.35;
+}
+
+/* ── 헤더 ── */
+header {
+  position: relative; z-index: 10;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border2);
+  padding: 0 32px;
+  display: flex; align-items: center; gap: 0;
+}
+.header-accent {
+  width: 4px; height: 44px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
+  border-radius: 2px; margin-right: 18px; flex-shrink: 0;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.header-text { padding: 16px 0; }
+.header-text h1 { font-size: 16px; font-weight: 800; letter-spacing: 0.04em; color: var(--text); }
+.header-text h1 span { color: var(--accent); }
+.header-text p { font-size: 11px; color: var(--text2); margin-top: 2px; letter-spacing: 0.02em; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.header-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; color: var(--accent-dim);
+  border: 1px solid var(--border2);
+  padding: 3px 9px; border-radius: 4px; letter-spacing: 0.06em;
+}
+.master-status {
+  font-size: 11px; color: var(--text2);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 12px;
+}
+.back-link {
+  color: var(--accent); text-decoration: none; font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border: 1px solid var(--border2); border-radius: 6px;
+  transition: all 0.15s;
+}
+.back-link:hover { background: var(--surface2); border-color: var(--accent); }
+
+/* ── 컨테이너 / 카드 ── */
+.container {
+  position: relative; z-index: 1;
+  max-width: 860px; margin: 24px auto; padding: 0 16px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 20px 22px;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+}
+.card-title {
+  font-size: 11px; font-weight: 700;
+  color: var(--text2); letter-spacing: 0.08em; text-transform: uppercase;
+  margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 9px;
+}
+.badge {
+  background: var(--accent); color: var(--bg);
+  border-radius: 4px; width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; flex-shrink: 0;
+}
+.info-bar {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 10px 14px;
+  font-size: 12px; color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+}
+
+/* ── 업로드 존 ── */
+.upload-zone {
+  border: 1.5px dashed var(--border2);
+  border-radius: 10px; padding: 28px;
+  text-align: center; cursor: pointer;
+  background: var(--surface2); transition: all 0.2s;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(0,212,204,0.06);
+  box-shadow: inset 0 0 24px rgba(0,212,204,0.05);
+}
+.upload-zone .icon { font-size: 32px; margin-bottom: 8px; opacity: 0.7; }
+.upload-zone strong { color: var(--accent); font-size: 13px; display: block; margin-bottom: 4px; }
+.upload-zone p { color: var(--text2); font-size: 11px; }
+.file-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface3); border: 1px solid var(--border2);
+  border-radius: 20px; padding: 4px 11px;
+  font-size: 11px; color: var(--accent); margin: 4px 4px 0 0;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── 그리드 / 필드 ── */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.field label { font-size: 11px; color: var(--text2); font-weight: 600; margin-bottom: 5px; display: block; letter-spacing: 0.04em; }
+.field input, .field select {
+  width: 100%; padding: 8px 10px;
+  border: 1px solid var(--border2); border-radius: 7px;
+  font-size: 12px; background: var(--surface2); color: var(--text);
+  font-family: inherit; transition: border-color 0.18s, box-shadow 0.18s;
+}
+.field input:focus, .field select:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,212,204,0.1);
+}
+.field input:disabled { background: var(--surface); color: var(--text3); border-color: var(--border); }
+input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cursor: pointer; }
+
+/* ── 버튼 ── */
+.ecount-btn {
+  width: 100%; padding: 13px;
+  border: none; border-radius: 8px;
+  background: linear-gradient(135deg, #005A6E, #00D4CC);
+  color: #fff; font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; font-family: inherit;
+  margin-top: 10px; letter-spacing: 0.03em;
+}
+.ecount-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0,212,204,0.35);
+}
+.ecount-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+.dl-btn {
+  width: 100%; padding: 10px;
+  border: 1px solid var(--border2); border-radius: 8px;
+  background: transparent; color: var(--text2);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.18s; font-family: inherit; margin-top: 8px;
+}
+.dl-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--accent); }
+
+/* ── 결과 박스 ── */
+.ecount-result {
+  margin-top: 12px; border-radius: 8px; padding: 13px 16px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-left: 3px solid var(--info); font-size: 12px; line-height: 1.9;
+}
+.ecount-result.success { border-left-color: var(--success); }
+.ecount-result.fail    { border-left-color: var(--danger); }
+
+/* ── 재고 현황 테이블 ── */
+.inv-table-wrap { overflow-x: auto; margin-top: 12px; border-radius: 8px; border: 1px solid var(--border2); }
+.inv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.inv-table th {
+  background: var(--surface3); color: var(--text2);
+  padding: 8px 10px; text-align: center; white-space: nowrap;
+  font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border2);
+}
+.inv-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; }
+.inv-table tbody tr:last-child td { border-bottom: none; }
+.inv-table tr:hover td { background: var(--surface2); }
+.inv-table tr.low-stock td { background: rgba(255,71,87,0.08); color: var(--danger); font-weight: 600; }
+.inv-table tr.low-stock:hover td { background: rgba(255,71,87,0.13); }
+.inv-qty-bad { color: var(--danger); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.inv-qty-ok  { color: var(--success); font-family: 'JetBrains Mono', monospace; }
+
+/* ── 납품부족사유 테이블 ── */
+.po-table-wrap { overflow-x: auto; margin-top: 12px; border-radius: 8px; border: 1px solid var(--border2); }
+.po-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.po-table th {
+  background: var(--surface3); color: var(--text2);
+  padding: 8px 10px; text-align: center; white-space: nowrap;
+  font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border2);
+}
+.po-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.po-table tbody tr:last-child td { border-bottom: none; }
+.po-table tr:hover td { background: var(--surface2); }
+.po-table .name-col { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-table select {
+  padding: 3px 6px; border: 1px solid var(--border2); border-radius: 5px;
+  font-size: 11px; font-family: inherit; cursor: pointer;
+  background: var(--surface2); color: var(--text); transition: border-color 0.15s;
+}
+.po-table select.reason-단종 { background: rgba(255,71,87,0.12);  border-color: var(--danger);  color: #FF8A95; }
+.po-table select.reason-인상 { background: rgba(255,176,32,0.12); border-color: var(--warning); color: #FFD070; }
+.po-table select.reason-품절 { background: rgba(59,158,235,0.12); border-color: var(--info);    color: #7BC4F5; }
+.po-table .no-match { color: var(--danger); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+.po-summary { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.po-summary .chip { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; }
+.chip-total   { background: rgba(106,143,173,0.12); border-color: var(--border2); color: var(--text2); }
+.chip-exclude { background: rgba(255,71,87,0.1);    border-color: rgba(255,71,87,0.3);  color: #FF8A95; }
+.chip-nomatch { background: rgba(255,176,32,0.1);   border-color: rgba(255,176,32,0.3); color: #FFD070; }
+.chip-send    { background: rgba(0,194,122,0.1);    border-color: rgba(0,194,122,0.3);  color: #4DDDAA; }
+
+/* ── 로그 박스 ── */
+.log-box {
+  background: #04080F; border: 1px solid var(--border2);
+  border-radius: 8px; padding: 12px 14px;
+  min-height: 90px; max-height: 200px; overflow-y: auto;
+  font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11px;
+}
+.log-box::-webkit-scrollbar { width: 4px; }
+.log-box::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.ll { padding: 2px 0; line-height: 1.6; }
+.ll::before { content: '› '; color: var(--text3); }
+.li { color: var(--text2); } .lo { color: var(--success); }
+.lw { color: var(--warning); } .le { color: var(--danger); }
+
+.hidden { display: none !important; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-accent"></div>
+  <div class="header-text">
+    <h1><span>LINEUP</span> ERP BRIDGE</h1>
+    <p>쿠팡 PO → 이카운트 판매 전표 자동 전송 · 라인업시스템(주)</p>
+  </div>
+  <div class="header-right">
+    <a href="/" class="back-link">← 메인으로</a>
+    <div class="master-status" id="masterStatus">연결 확인 중...</div>
+    <div class="header-badge">v2.0</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <div class="card-title"><span class="badge">1</span> PO 파일 선택</div>
+    <div class="info-bar" style="margin-bottom:14px;">
+      📋 &nbsp;<strong>PO_로 시작하는 파일</strong>을 올리면 바코드→품목코드 변환, 물류센터 ㄱ~ㅎ 정렬 후 이카운트에 자동 전송됩니다.
+    </div>
+    <div class="upload-zone" id="ecountZone" onclick="document.getElementById('ecountFileInput').click()">
+      <div class="icon">📂</div>
+      <strong>PO_ 파일을 클릭하거나 드래그하세요</strong>
+      <p>PO_FOR_CONFIRM(발주번호).xlsx 형식</p>
+    </div>
+    <input type="file" id="ecountFileInput" accept=".xlsx,.xls" style="display:none">
+    <div id="ecountFileTag" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card hidden" id="poPreviewCard">
+    <div class="card-title">
+      <span class="badge">2</span> 납품부족사유 선택
+      <span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">(제품단종/제품인상은 이카운트 전송 제외)</span>
+    </div>
+    <div class="po-summary" id="poSummary"></div>
+    <div class="po-table-wrap">
+      <table class="po-table">
+        <thead>
+          <tr>
+            <th>#</th><th>물류센터</th><th>발주번호</th><th>상품이름</th>
+            <th>발주수량</th><th>확정수량</th><th>매핑</th><th>납품부족사유</th>
+          </tr>
+        </thead>
+        <tbody id="poTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="badge">3</span> 설정</div>
+    <div class="grid2">
+      <div class="field">
+        <label>담당자 코드</label>
+        <input type="text" id="staffCode" placeholder="담당자 코드 입력">
+      </div>
+      <div class="field">
+        <label>거래처코드 (고정)</label>
+        <input type="text" value="202308091" disabled>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:10px;">
+      <div class="field">
+        <label>출하창고 (고정)</label>
+        <input type="text" value="30" disabled>
+      </div>
+      <div class="field">
+        <label>판매일자</label>
+        <input type="date" id="ioDate" style="cursor:pointer;">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="badge">4</span> 전송 / 다운로드</div>
+    <button class="ecount-btn" id="ecountSendBtn" onclick="sendToEcount()" disabled>📤&nbsp; 이카운트 판매 전표 등록</button>
+    <button class="dl-btn hidden" id="dlPoBtn" onclick="downloadPO()">⬇&nbsp; 납품부족사유 채운 PO 파일 다운로드</button>
+    <div class="ecount-result hidden" id="ecountResult"></div>
+    <div class="inv-table-wrap hidden" id="invTableWrap">
+      <table class="inv-table">
+        <thead>
+          <tr><th>전표순번</th><th>물류센터 - 발주번호</th><th>품목코드</th><th>전송수량</th><th>현재재고</th></tr>
+        </thead>
+        <tbody id="invTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="badge">✦</span> 처리 로그</div>
+    <div class="log-box" id="ecountLog"></div>
+  </div>
+
+</div>
+
+
+<script>
+const API_BASE = "/api/barcode";
+
+window.onload = async () => {
+  setupDrop("ecountZone", "ecountFileInput", files => handleEcountFile(files[0]));
+  document.getElementById("ecountFileInput").addEventListener("change", e => {
+    if (e.target.files[0]) handleEcountFile(e.target.files[0]);
+  });
+
+  const today = new Date();
+  document.getElementById("ioDate").value =
+    `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
+  try {
+    const res  = await fetch(`${API_BASE}/master-info`);
+    const data = await res.json();
+    document.getElementById("masterStatus").textContent =
+      `매핑 ${data.po_count.toLocaleString()}개 · 단종 ${data.discontinued_count ?? 0}개 · 매입가인상 ${data.price_up_count ?? 0}개`;
+  } catch {
+    document.getElementById("masterStatus").textContent = "⚠ 서버 연결 실패";
+    document.getElementById("masterStatus").style.color = "var(--danger)";
+  }
+};
+
+function setupDrop(zoneId, inputId, handler) {
+  const zone = document.getElementById(zoneId);
+  zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+  zone.addEventListener("drop", e => {
+    e.preventDefault(); zone.classList.remove("drag-over");
+    handler(Array.from(e.dataTransfer.files));
+  });
+}
+
+let ecountFile = null;
+
+async function handleEcountFile(file) {
+  ecountFile = file;
+  document.getElementById("ecountFileTag").innerHTML = `<span class="file-tag">📄 ${file.name}</span>`;
+  elog(`파일 선택됨: ${file.name} — 항목 분석 중...`, "i");
+
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const res  = await fetch(`${API_BASE}/parse-po`, { method: "POST", body: fd });
+    const data = await res.json();
+    renderPreviewTable(data.items);
+    document.getElementById("poPreviewCard").classList.remove("hidden");
+    document.getElementById("ecountSendBtn").disabled = false;
+    document.getElementById("dlPoBtn").classList.remove("hidden");
+    elog(`✅ ${data.total}개 항목 로드 완료`, "o");
+  } catch(e) {
+    elog(`❌ 미리보기 실패: ${e.message}`, "e");
+    document.getElementById("ecountSendBtn").disabled = false;
+  }
+}
+
+function renderPreviewTable(items) {
+  const REASONS = [
+    { value: "", label: "(없음)" },
+    { value: "제품 단종 - 제조사 생산중단 혹은 공급사 취급중단 - 시장 단종", label: "제품 단종" },
+    { value: "제품 인상 - 가격 이슈 (Price) - 매입가 인상 협상 중",          label: "제품 인상" },
+    { value: "제품 품절 - 협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)", label: "제품 품절" },
+  ];
+  const tbody = document.getElementById("poTableBody");
+  tbody.innerHTML = "";
+  items.forEach(item => {
+    const tr = document.createElement("tr");
+    const opts = REASONS.map(r =>
+      `<option value="${r.value}" ${item.사유===r.value?"selected":""}>${r.label}</option>`
+    ).join("");
+    tr.innerHTML = `
+      <td style="text-align:center;color:var(--text3)">${item.idx+1}</td>
+      <td style="white-space:nowrap">${item.물류센터}</td>
+      <td style="white-space:nowrap;font-size:11px;font-family:'JetBrains Mono',monospace">${item.발주번호}</td>
+      <td class="name-col" title="${item.상품이름}">${item.상품이름}</td>
+      <td style="text-align:center">${item.발주수량}</td>
+      <td style="text-align:center">${item.확정수량}</td>
+      <td style="text-align:center" class="${item.매핑여부==='✅'?'':'no-match'}">${item.매핑여부}</td>
+      <td><select data-idx="${item.idx}" onchange="onReasonChange(this)" class="${reasonClass(item.사유)}">${opts}</select></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  updateSummary();
+}
+
+function reasonClass(val) {
+  if (!val) return "";
+  if (val.startsWith("제품 단종")) return "reason-단종";
+  if (val.startsWith("제품 인상")) return "reason-인상";
+  if (val.startsWith("제품 품절")) return "reason-품절";
+  return "";
+}
+
+function onReasonChange(sel) {
+  sel.className = reasonClass(sel.value);
+  updateSummary();
+}
+
+function updateSummary() {
+  const selects = document.querySelectorAll("#poTableBody select");
+  let total=0, exclude=0, nomatch=0;
+  selects.forEach(s => {
+    total++;
+    if (s.value.startsWith("제품 단종") || s.value.startsWith("제품 인상")) exclude++;
+  });
+  document.querySelectorAll("#poTableBody .no-match").forEach(() => nomatch++);
+  const send = total - exclude;
+  document.getElementById("poSummary").innerHTML = `
+    <span class="chip chip-total">전체 ${total}건</span>
+    <span class="chip chip-send">이카운트 전송 ${send}건</span>
+    <span class="chip chip-exclude">제외(단종/매입가인상) ${exclude}건</span>
+    <span class="chip chip-nomatch">바코드 미매칭 ${nomatch}건</span>
+  `;
+}
+
+function getShortageReasons() {
+  const reasons = {};
+  document.querySelectorAll("#poTableBody select").forEach(s => {
+    if (s.value) reasons[s.dataset.idx] = s.value;
+  });
+  return JSON.stringify(reasons);
+}
+
+async function sendToEcount() {
+  if (!ecountFile) return alert("파일을 선택하세요.");
+  const btn       = document.getElementById("ecountSendBtn");
+  const resultDiv = document.getElementById("ecountResult");
+
+  btn.disabled = true; btn.textContent = "⏳ 이카운트 전송 중...";
+  resultDiv.className = "ecount-result hidden";
+  elog(`📤 이카운트 전송 시작: ${ecountFile.name}`, "i");
+
+  const staffCode = document.getElementById("staffCode").value.trim();
+  const ioDateRaw = document.getElementById("ioDate").value;
+  const ioDate    = ioDateRaw ? ioDateRaw.replace(/-/g, "") : "";
+
+  const fd = new FormData();
+  fd.append("file",             ecountFile);
+  fd.append("staff_code",       staffCode);
+  fd.append("io_date",          ioDate);
+  fd.append("shortage_reasons", getShortageReasons());
+
+  try {
+    const res  = await fetch(`${API_BASE}/send-to-ecount`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "서버 오류");
+
+    const isOk   = String(data.status) === "200" && data.fail === 0;
+    const lowCnt = (data.items_result || []).filter(r => r.low_stock).length;
+
+    resultDiv.className = `ecount-result ${isOk ? "success" : "fail"}`;
+    resultDiv.innerHTML = `
+      <strong>${isOk ? "✅ 전표 등록 완료!" : "⚠️ 일부 실패"}</strong><br>
+      전송: ${data.total}건 &nbsp;|&nbsp; 성공: ${data.success}건 &nbsp;|&nbsp; 실패: ${data.fail}건
+      ${data.slip_nos?.length ? `<br>전표번호: <strong>${data.slip_nos.join(", ")}</strong>` : ""}
+      ${data.excluded  > 0 ? `<br>🚫 제외(제품단종/제품인상): ${data.excluded}건` : ""}
+      ${data.unmatched > 0 ? `<br>⚠ 바코드 미매칭 ${data.unmatched}건 (미전송)` : ""}
+      ${lowCnt         > 0 ? `<br>🔴 재고 부족 품목: <strong>${lowCnt}건</strong>` : ""}
+      ${!data.inv_checked  ? `<br><span style="color:var(--text3);font-size:11px">※ 재고 조회 실패 (전표는 정상 등록됨)</span>` : ""}
+      ${data.errors?.length ? `<br><span style="color:var(--danger)">${data.errors.join("<br>")}</span>` : ""}
+    `;
+    resultDiv.classList.remove("hidden");
+    renderInvTable(data.items_result || []);
+
+    elog(`${isOk ? "✅" : "⚠️"} 결과 - 성공:${data.success} 실패:${data.fail}`, isOk ? "o" : "w");
+    if (data.slip_nos?.length) elog(`전표번호: ${data.slip_nos.join(", ")}`, "o");
+    if (lowCnt > 0)            elog(`🔴 재고 부족 ${lowCnt}건 확인 필요`, "w");
+    if (data.errors?.length)   data.errors.forEach(e => elog(`❌ ${e}`, "e"));
+
+  } catch(err) {
+    resultDiv.className = "ecount-result fail";
+    resultDiv.innerHTML = `<strong>❌ 오류</strong><br>${err.message}`;
+    resultDiv.classList.remove("hidden");
+    elog(`❌ 오류: ${err.message}`, "e");
+  }
+
+  btn.disabled = false; btn.textContent = "📤 이카운트 판매 전표 등록";
+}
+
+function renderInvTable(items) {
+  const wrap  = document.getElementById("invTableWrap");
+  const tbody = document.getElementById("invTableBody");
+  tbody.innerHTML = "";
+  if (!items.length) { wrap.classList.add("hidden"); return; }
+
+  items.forEach(item => {
+    const tr = document.createElement("tr");
+    if (item.low_stock) tr.classList.add("low-stock");
+    const balHtml = item.bal_qty === null
+      ? `<span style="color:var(--text3)">-</span>`
+      : `<span class="${item.low_stock ? 'inv-qty-bad' : 'inv-qty-ok'}">${item.bal_qty}</span>`;
+    tr.innerHTML = `
+      <td>${item.upload_ser_no}</td>
+      <td style="text-align:left;white-space:nowrap">${item.remarks}</td>
+      <td style="font-weight:600;font-family:'JetBrains Mono',monospace">${item.prod_cd}</td>
+      <td>${item.qty}</td>
+      <td>${balHtml}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  wrap.classList.remove("hidden");
+}
+
+async function downloadPO() {
+  if (!ecountFile) return alert("파일을 선택하세요.");
+  const btn = document.getElementById("dlPoBtn");
+  btn.disabled = true; btn.textContent = "⏳ 다운로드 준비 중...";
+
+  const fd = new FormData();
+  fd.append("file",             ecountFile);
+  fd.append("shortage_reasons", getShortageReasons());
+
+  try {
+    const res = await fetch(`${API_BASE}/download-po`, { method: "POST", body: fd });
+    if (!res.ok) throw new Error("다운로드 실패");
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement("a"), {
+      href: url, download: ecountFile.name.replace(".xlsx", "_납품부족사유.xlsx")
+    });
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    elog("✅ PO 파일 다운로드 완료", "o");
+  } catch(e) {
+    elog(`❌ 다운로드 오류: ${e.message}`, "e");
+  }
+  btn.disabled = false; btn.textContent = "⬇ 납품부족사유 채운 PO 파일 다운로드";
+}
+
+function elog(msg, t = "i") {
+  const box = document.getElementById("ecountLog");
+  const d   = document.createElement("div");
+  d.className = `ll l${t}`; d.textContent = msg;
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+</script>
+</body>
+</html>
