@@ -350,6 +350,19 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cur
     <div class="log-box" id="ecountLog"></div>
   </div>
 
+  <div class="card">
+    <div class="card-title"><span class="badge">⚙</span> 마스터 데이터 관리</div>
+    <div class="info-bar" style="margin-bottom:14px;">
+      📎 &nbsp;바코드↔품목코드 매핑 파일(<strong>master_data.xlsx</strong>)을 업로드하면 즉시 반영됩니다. 기존 파일은 자동 백업됩니다.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <button class="dl-btn" style="width:auto;margin:0;padding:8px 18px;" onclick="document.getElementById('masterFileInput').click()">📤&nbsp; master_data.xlsx 업로드</button>
+      <input type="file" id="masterFileInput" accept=".xlsx,.xls" style="display:none">
+      <span id="masterUploadStatus" style="font-size:11px;color:var(--text2);"></span>
+    </div>
+    <div class="ecount-result hidden" id="masterUploadResult" style="margin-top:10px;"></div>
+  </div>
+
 </div>
 
 
@@ -360,6 +373,9 @@ window.onload = async () => {
   setupDrop("ecountZone", "ecountFileInput", files => handleEcountFile(files[0]));
   document.getElementById("ecountFileInput").addEventListener("change", e => {
     if (e.target.files[0]) handleEcountFile(e.target.files[0]);
+  });
+  document.getElementById("masterFileInput").addEventListener("change", e => {
+    if (e.target.files[0]) uploadMaster(e.target.files[0]);
   });
 
   const today = new Date();
@@ -580,6 +596,57 @@ async function downloadPO() {
     elog(`❌ 다운로드 오류: ${e.message}`, "e");
   }
   btn.disabled = false; btn.textContent = "⬇ 납품부족사유 채운 PO 파일 다운로드";
+}
+
+async function uploadMaster(file) {
+  const statusEl = document.getElementById("masterUploadStatus");
+  const resultEl = document.getElementById("masterUploadResult");
+  statusEl.textContent = `⏳ ${file.name} 업로드 중...`;
+  statusEl.style.color = "var(--warning)";
+  resultEl.className = "ecount-result hidden";
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  try {
+    const res = await fetch(`${API_BASE}/upload-master`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "업로드 실패");
+
+    statusEl.textContent = `✅ ${file.name} 업로드 완료`;
+    statusEl.style.color = "var(--success)";
+    resultEl.className = "ecount-result success";
+    resultEl.innerHTML = `
+      <strong>✅ 마스터 데이터 갱신 완료</strong><br>
+      PO 매핑: <strong>${data.po_count}</strong>개 &nbsp;|&nbsp;
+      주문서 매핑: <strong>${data.order_count}</strong>개 &nbsp;|&nbsp;
+      단종: <strong>${data.discontinued_count}</strong>개 &nbsp;|&nbsp;
+      매입가인상: <strong>${data.price_up_count}</strong>개
+    `;
+    resultEl.classList.remove("hidden");
+    elog(`✅ 마스터 업로드 완료: PO ${data.po_count}개, 주문서 ${data.order_count}개`, "o");
+
+    // 헤더 상태도 갱신
+    refreshMasterStatus();
+  } catch(e) {
+    statusEl.textContent = `❌ 업로드 실패`;
+    statusEl.style.color = "var(--danger)";
+    resultEl.className = "ecount-result fail";
+    resultEl.innerHTML = `<strong>❌ 오류</strong><br>${e.message}`;
+    resultEl.classList.remove("hidden");
+    elog(`❌ 마스터 업로드 실패: ${e.message}`, "e");
+  }
+  // input 초기화 (같은 파일 재업로드 가능)
+  document.getElementById("masterFileInput").value = "";
+}
+
+async function refreshMasterStatus() {
+  try {
+    const res  = await fetch(`${API_BASE}/master-info`);
+    const data = await res.json();
+    document.getElementById("masterStatus").textContent =
+      `매핑 ${data.po_count.toLocaleString()}개 · 단종 ${data.discontinued_count ?? 0}개 · 매입가인상 ${data.price_up_count ?? 0}개`;
+  } catch {}
 }
 
 function elog(msg, t = "i") {

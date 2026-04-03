@@ -1,15 +1,19 @@
 """
 바코드 ERP Bridge API 라우트
 - 쿠팡 PO 파일 처리: 바코드→품목코드 변환, 납품부족사유 관리, 이카운트 전표 등록
+- 마스터 데이터 업로드/갱신
 """
 import json
 import logging
+import shutil
+from datetime import datetime
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from services.barcode_service import (
+    MASTER_PATH,
     fill_shortage_reasons,
     load_master,
     parse_po_items,
@@ -18,6 +22,46 @@ from services.barcode_service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/barcode", tags=["바코드 ERP Bridge"])
+
+
+@router.post("/upload-master")
+async def upload_master(file: UploadFile = File(...)):
+    """마스터 데이터(master_data.xlsx) 업로드/갱신"""
+    if not file.filename.endswith((".xlsx", ".xls")):
+        return JSONResponse(status_code=400, content={"detail": "xlsx 파일만 업로드 가능합니다."})
+
+    try:
+        from pathlib import Path
+        master = Path(MASTER_PATH)
+        master.parent.mkdir(parents=True, exist_ok=True)
+
+        # 기존 파일 백업
+        if master.exists():
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup = master.parent / f"master_data_backup_{ts}.xlsx"
+            shutil.copy2(str(master), str(backup))
+            logger.info(f"[바코드] 기존 마스터 백업: {backup}")
+
+        # 새 파일 저장
+        contents = await file.read()
+        with open(str(master), "wb") as f:
+            f.write(contents)
+
+        # 검증: 로드해서 매핑 수 확인
+        barcode_to_code, code_to_barcode, discontinued, price_up = load_master()
+        logger.info(f"[바코드] 마스터 업로드 완료: PO {len(barcode_to_code)}개, 주문서 {len(code_to_barcode)}개")
+
+        return {
+            "success": True,
+            "filename": file.filename,
+            "po_count": len(barcode_to_code),
+            "order_count": len(code_to_barcode),
+            "discontinued_count": len(discontinued),
+            "price_up_count": len(price_up),
+        }
+    except Exception as e:
+        logger.error(f"[바코드] 마스터 업로드 실패: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": f"업로드 실패: {str(e)}"})
 
 
 @router.get("/master-info")

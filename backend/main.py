@@ -159,6 +159,7 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/barcode/parse-po"): "바코드 PO 파싱",
     ("POST", "/api/barcode/send-to-ecount"): "바코드 이카운트 전송",
     ("POST", "/api/barcode/download-po"): "바코드 PO 다운로드",
+    ("POST", "/api/barcode/upload-master"): "바코드 마스터 업로드",
 }
 
 @app.middleware("http")
