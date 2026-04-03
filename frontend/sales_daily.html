@@ -406,12 +406,12 @@ function toggleCard(header) {
 // ── 이카운트 자동 수집 ──
 async function fetchEcount() {
   const btn = document.getElementById("collectBtn");
-  const status = document.getElementById("collectStatus");
+  const statusEl = document.getElementById("collectStatus");
   const icon = document.getElementById("collectIcon");
 
   btn.disabled = true;
   icon.textContent = "⏳";
-  status.classList.add("show");
+  setCollectStatus("show", "수집 요청 중...");
 
   try {
     const res = await fetch(`${API_BASE}/fetch-ecount`, {
@@ -425,11 +425,10 @@ async function fetchEcount() {
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    // 수집은 백그라운드에서 실행 → 약 5초 후 자동 재조회
-    status.innerHTML = '<span class="mini-spinner"></span> 수집 중... (완료 후 자동 새로고침)';
-    await waitAndRefresh(5000);
+    // 폴링으로 완료 여부 확인
+    await pollFetchStatus();
   } catch(e) {
-    status.classList.remove("show");
+    statusEl.classList.remove("show");
     alert("수집 요청 실패: " + e.message);
   } finally {
     btn.disabled = false;
@@ -437,15 +436,74 @@ async function fetchEcount() {
   }
 }
 
-function waitAndRefresh(ms) {
-  return new Promise(resolve => {
-    setTimeout(async () => {
-      await loadData();
-      document.getElementById("collectStatus").classList.remove("show");
-      resolve();
-    }, ms);
-  });
+function setCollectStatus(action, text) {
+  const el = document.getElementById("collectStatus");
+  if (action === "show") {
+    el.innerHTML = `<span class="mini-spinner"></span> ${text}`;
+    el.classList.add("show");
+  } else if (action === "ok") {
+    el.innerHTML = `✅ ${text}`;
+    el.style.color = "var(--success)";
+    el.style.borderColor = "rgba(0,194,122,.3)";
+    el.classList.add("show");
+    setTimeout(() => { el.classList.remove("show"); el.style.color=""; el.style.borderColor=""; }, 4000);
+  } else if (action === "err") {
+    el.innerHTML = `❌ ${text}`;
+    el.style.color = "var(--danger)";
+    el.style.borderColor = "rgba(255,71,87,.3)";
+    el.classList.add("show");
+    setTimeout(() => { el.classList.remove("show"); el.style.color=""; el.style.borderColor=""; }, 6000);
+  } else {
+    el.classList.remove("show");
+  }
 }
+
+async function pollFetchStatus() {
+  const maxTries = 30;  // 최대 60초 대기
+  let lastId = null;
+
+  // 수집 시작 전 현재 최신 ID 저장
+  try {
+    const init = await fetch(`${API_BASE}/fetch-status`, { headers: authHeaders() });
+    if (init.ok) {
+      const d = await init.json();
+      lastId = d.id || null;
+    }
+  } catch(e) {}
+
+  for (let i = 0; i < maxTries; i++) {
+    await sleep(2000);
+    try {
+      const res = await fetch(`${API_BASE}/fetch-status`, { headers: authHeaders() });
+      if (!res.ok) continue;
+      const d = await res.json();
+
+      // 새 로그 항목이 생겼는지 확인
+      if (d.id && d.id === lastId) {
+        setCollectStatus("show", `ERP 연결 중... (${i*2}s)`);
+        continue;
+      }
+
+      const st = d.status;
+      if (st === "running") {
+        setCollectStatus("show", `수집 중... (${d.message || ""})`);
+        if (lastId === null) lastId = d.id; // 첫 확인
+      } else if (st === "success") {
+        setCollectStatus("ok", `수집 완료 (${d.rows_imported || 0}행)`);
+        await loadData();
+        return;
+      } else if (st === "error") {
+        setCollectStatus("err", `수집 실패: ${d.message || "원인 불명"}`);
+        return;
+      } else if (st === "none") {
+        setCollectStatus("show", `대기 중...`);
+      }
+    } catch(e) {}
+  }
+  setCollectStatus("err", "시간 초과 (서버 로그 확인 필요)");
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 </script>
 </body>
 </html>
