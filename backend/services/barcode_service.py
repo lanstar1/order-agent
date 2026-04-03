@@ -313,6 +313,11 @@ async def send_to_ecount(
         except Exception:
             price_val = 0
 
+        bc_val = str(row.get("상품바코드", "")).strip()
+        cd_val = str(row.get("_품목코드", "")).strip()
+        is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
+        label_flags.append(is_label)
+
         bulk_list.append({"BulkDatas": {
             "UPLOAD_SER_NO": doc_to_ser[doc_no],
             "IO_DATE": today,
@@ -320,7 +325,7 @@ async def send_to_ecount(
             "WH_CD": BARCODE_WH_CD,
             "EMP_CD": staff_code,
             "PROD_CD": str(row["_품목코드"]).strip(),
-            "PROD_DES": "",
+            "PROD_DES": "★ 바코드 부착 필요" if is_label else "",
             "QTY": qty_str,
             "PRICE": str(price_val),
             "SUPPLY_AMT": supply_str,
@@ -329,9 +334,6 @@ async def send_to_ecount(
             "U_MEMO5": f"{warehouse} - {doc_no}",
         }})
         orig_indices.append(int(row["_orig_idx"]))
-        bc_val = str(row.get("상품바코드", "")).strip()
-        cd_val = str(row.get("_품목코드", "")).strip()
-        label_flags.append(bc_val in needs_label or (cd_val and cd_val in needs_label))
 
     logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
 
