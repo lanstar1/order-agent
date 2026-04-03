@@ -80,12 +80,22 @@ def _build_goods_nm(orders_in_group: list[dict]) -> str:
 
 @router.get("/token-test")
 async def token_test():
+    import httpx
+    # 서버 outbound IP 확인 (네이버 IP 화이트리스트 등록용)
+    server_ip = None
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            r = await c.get("https://api.ipify.org?format=json")
+            server_ip = r.json().get("ip")
+    except Exception:
+        pass
+
     try:
         from services.naver_client import naver_client
         token = await naver_client.get_token()
-        return {"success": True, "token_prefix": token[:20] + "..." if token else None}
+        return {"success": True, "token_prefix": token[:20] + "..." if token else None, "server_ip": server_ip}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": str(e), "server_ip": server_ip}
 
 
 @router.get("/orders")

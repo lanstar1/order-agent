@@ -221,6 +221,7 @@ async function testConn(){
     ss('s-conn','load','연결 테스트 중...');log('연결 테스트');
     try{
         const r=await(await fetch(B+'/api/smartstore/token-test')).json();
+        if(r.server_ip) log('서버 IP: '+r.server_ip+' (네이버 허용IP에 등록 필요)');
         if(r.success){sd('d-nv','g');log('네이버 API OK');}
         else{sd('d-nv','r');log('네이버: '+r.error);}
     }catch(e){sd('d-nv','r');log('네이버 연결실패: '+e.message);}
