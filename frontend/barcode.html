@@ -291,21 +291,24 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cur
   </div>
 
   <div class="card hidden" id="poPreviewCard">
-    <div class="card-title">
+    <div class="card-title" style="cursor:pointer;display:flex;align-items:center;gap:8px;" onclick="togglePoPreview()">
       <span class="badge">2</span> 납품부족사유 선택
       <span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">(제품단종/제품인상은 이카운트 전송 제외)</span>
+      <span id="poToggleArrow" style="margin-left:auto;font-size:14px;transition:transform 0.2s;">▶</span>
     </div>
     <div class="po-summary" id="poSummary"></div>
-    <div class="po-table-wrap">
-      <table class="po-table">
-        <thead>
-          <tr>
-            <th>#</th><th>물류센터</th><th>발주번호</th><th>상품이름</th>
-            <th>발주수량</th><th>확정수량</th><th>매핑</th><th>납품부족사유</th>
-          </tr>
-        </thead>
-        <tbody id="poTableBody"></tbody>
-      </table>
+    <div id="poPreviewBody" style="display:none;">
+      <div class="po-table-wrap">
+        <table class="po-table">
+          <thead>
+            <tr>
+              <th>#</th><th>물류센터</th><th>발주번호</th><th>상품이름</th>
+              <th>발주수량</th><th>확정수량</th><th>매핑</th><th>납품부족사유</th>
+            </tr>
+          </thead>
+          <tbody id="poTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -404,6 +407,18 @@ function setupDrop(zoneId, inputId, handler) {
     e.preventDefault(); zone.classList.remove("drag-over");
     handler(Array.from(e.dataTransfer.files));
   });
+}
+
+function togglePoPreview() {
+  const body = document.getElementById("poPreviewBody");
+  const arrow = document.getElementById("poToggleArrow");
+  if (body.style.display === "none") {
+    body.style.display = "";
+    arrow.textContent = "▼";
+  } else {
+    body.style.display = "none";
+    arrow.textContent = "▶";
+  }
 }
 
 let ecountFile = null;
