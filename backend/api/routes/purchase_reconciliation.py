@@ -38,6 +38,14 @@ reconcile_sessions: dict = {}
 # 거래처 데이터 캐시 (메모리)
 _vendor_cache: Optional[list[dict]] = None
 
+# 판매현황 캐시 (메모리) — 한 번 업로드하면 유지
+_sales_cache: dict = {
+    "items": [],
+    "total": 0,
+    "filename": "",
+    "cached": False,
+}
+
 
 # ──── 모델 ────
 class ERPFetchRequest(BaseModel):
@@ -229,7 +237,11 @@ async def upload_erp_data(
     - purchase_file: 구매현황 엑셀(.xlsx) or CSV
     - sales_file: 판매현황 CSV or 엑셀(.xlsx)
     - 둘 중 하나만 업로드해도 됨
+    - 판매현황은 한 번 업로드하면 서버 메모리에 캐시되어, 새 파일을 업로드하거나
+      DELETE /clear-sales-cache를 호출하기 전까지 유지됨
     """
+    global _sales_cache
+
     result = {
         "purchase": {"success": False, "items": [], "total": 0, "error": ""},
         "sales": {"success": False, "items": [], "total": 0, "error": ""},
@@ -257,7 +269,7 @@ async def upload_erp_data(
             logger.error(f"구매현황 파싱 실패: {e}", exc_info=True)
             result["purchase"]["error"] = str(e)
 
-    # 판매현황 파싱
+    # 판매현황 파싱 (새 파일이 있으면 파싱 후 캐시 갱신)
     if sales_file and sales_file.filename:
         try:
             ext = os.path.splitext(sales_file.filename)[1]
@@ -265,18 +277,67 @@ async def upload_erp_data(
             with open(saved, "wb") as f:
                 f.write(await sales_file.read())
             data = parse_erp_sales(saved)
+            # 캐시 갱신
+            _sales_cache = {
+                "items": data["items"],
+                "total": data["total"],
+                "filename": sales_file.filename,
+                "cached": True,
+            }
             result["sales"] = {
                 "success": True,
                 "items": data["items"],
                 "total": data["total"],
+                "filename": sales_file.filename,
                 "error": "",
             }
-            logger.info(f"판매현황 파싱 완료: {data['total']}건")
+            logger.info(f"판매현황 파싱 완료 (캐시 갱신): {data['total']}건")
         except Exception as e:
             logger.error(f"판매현황 파싱 실패: {e}", exc_info=True)
             result["sales"]["error"] = str(e)
+    elif _sales_cache["cached"]:
+        # 새 파일 없지만 캐시가 있으면 캐시 데이터 반환
+        result["sales"] = {
+            "success": True,
+            "items": _sales_cache["items"],
+            "total": _sales_cache["total"],
+            "filename": _sales_cache["filename"],
+            "from_cache": True,
+            "error": "",
+        }
+        logger.info(f"판매현황 캐시 사용: {_sales_cache['total']}건 ({_sales_cache['filename']})")
 
     return result
+
+
+@router.get("/sales-cache-status")
+async def get_sales_cache_status(
+    user: dict = Depends(get_current_user),
+):
+    """판매현황 캐시 상태 조회"""
+    return {
+        "cached": _sales_cache["cached"],
+        "total": _sales_cache["total"],
+        "filename": _sales_cache["filename"],
+    }
+
+
+@router.delete("/clear-sales-cache")
+async def clear_sales_cache(
+    user: dict = Depends(get_current_user),
+):
+    """판매현황 캐시 삭제"""
+    global _sales_cache
+    old_filename = _sales_cache["filename"]
+    old_total = _sales_cache["total"]
+    _sales_cache = {
+        "items": [],
+        "total": 0,
+        "filename": "",
+        "cached": False,
+    }
+    logger.info(f"판매현황 캐시 삭제됨 (이전: {old_filename}, {old_total}건)")
+    return {"success": True, "message": f"판매현황 캐시 삭제됨 ({old_filename})"}
 
 
 @router.post("/compare")

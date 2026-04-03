@@ -500,7 +500,14 @@ C규격품 200개
               </div>
               <div style="flex:1;min-width:200px">
                 <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">판매현황 (.csv/.xlsx)</label>
-                <input type="file" id="reconcile-erp-sales-file" accept=".csv,.xlsx,.xls" class="form-input" style="font-size:12px">
+                <div id="reconcile-sales-file-wrap">
+                  <input type="file" id="reconcile-erp-sales-file" accept=".csv,.xlsx,.xls" class="form-input" style="font-size:12px">
+                </div>
+                <!-- 캐시된 판매현황 표시 (JS에서 토글) -->
+                <div id="reconcile-sales-cached" style="display:none;margin-top:6px;padding:8px 12px;background:#e0f2fe;border-radius:6px;font-size:12px;color:#0369a1;align-items:center;gap:8px">
+                  <span id="reconcile-sales-cached-info" style="flex:1"></span>
+                  <button onclick="reconcileClearSalesCache()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:bold;padding:0 4px" title="판매현황 캐시 삭제">&times;</button>
+                </div>
               </div>
             </div>
           </div>

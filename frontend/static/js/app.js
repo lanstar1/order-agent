@@ -5197,6 +5197,8 @@ function initReconcilePage() {
   reconcileSetStep(1);
   // 거래처 autocomplete 초기화
   reconcileInitVendorAutocomplete();
+  // 판매현황 캐시 상태 확인
+  reconcileCheckSalesCache();
 }
 
 // ── 거래처 autocomplete ──
@@ -5357,9 +5359,11 @@ async function reconcileUploadERPAndGoStep2() {
   }
 
   const purchaseFile = document.getElementById("reconcile-erp-purchase-file").files[0];
-  const salesFile = document.getElementById("reconcile-erp-sales-file").files[0];
+  const salesFileEl = document.getElementById("reconcile-erp-sales-file");
+  const salesFile = salesFileEl ? salesFileEl.files[0] : null;
+  const hasSalesCache = document.getElementById("reconcile-sales-cached")?.style.display === "flex";
 
-  if (!purchaseFile && !salesFile) {
+  if (!purchaseFile && !salesFile && !hasSalesCache) {
     toast("구매현황 또는 판매현황 파일을 하나 이상 업로드하세요", "error");
     return;
   }
@@ -5416,7 +5420,10 @@ async function reconcileUploadERPAndGoStep2() {
     const sales = res.sales || {};
     _rc.erpSalesData = sales.items || [];
     if (sales.success) {
-      salesStatus.innerHTML = `<span style="color:#16a34a">✅ ${_rc.erpSalesData.length}건 파싱 완료</span>`;
+      const cacheLabel = sales.from_cache ? " (캐시)" : "";
+      salesStatus.innerHTML = `<span style="color:#16a34a">✅ ${_rc.erpSalesData.length}건${cacheLabel} 파싱 완료</span>`;
+      // 캐시 UI 업데이트
+      _updateSalesCacheUI(true, _rc.erpSalesData.length, sales.filename || "");
     } else if (salesFile) {
       salesStatus.innerHTML = `<span style="color:#dc2626">❌ 파싱 실패: ${sales.error || "?"}</span>`;
     }
@@ -5992,11 +5999,53 @@ async function reconcileSubmitERP() {
   }
 }
 
+// ── 판매현황 캐시 관리 ──
+
+async function reconcileCheckSalesCache() {
+  try {
+    const res = await api.get("/api/reconcile/sales-cache-status");
+    _updateSalesCacheUI(res.cached, res.total, res.filename);
+  } catch (e) {
+    // 캐시 확인 실패해도 무시 (정상 동작에 영향 없음)
+  }
+}
+
+function _updateSalesCacheUI(cached, total, filename) {
+  const fileWrap = document.getElementById("reconcile-sales-file-wrap");
+  const cachedDiv = document.getElementById("reconcile-sales-cached");
+  const cachedInfo = document.getElementById("reconcile-sales-cached-info");
+
+  if (!fileWrap || !cachedDiv) return;
+
+  if (cached && total > 0) {
+    // 캐시 있음: 파일 입력 숨기고 캐시 정보 표시
+    fileWrap.style.display = "none";
+    cachedDiv.style.display = "flex";
+    cachedInfo.textContent = `${filename || "판매현황"} (${total.toLocaleString()}건 캐시됨)`;
+  } else {
+    // 캐시 없음: 파일 입력 표시
+    fileWrap.style.display = "";
+    cachedDiv.style.display = "none";
+  }
+}
+
+async function reconcileClearSalesCache() {
+  if (!confirm("캐시된 판매현황 데이터를 삭제하시겠습니까?\n다음 작업 시 다시 업로드해야 합니다.")) return;
+  try {
+    await api.delete("/api/reconcile/clear-sales-cache");
+    _updateSalesCacheUI(false, 0, "");
+    _rc.erpSalesData = [];
+    toast("판매현황 캐시가 삭제되었습니다", "info");
+  } catch (e) {
+    toast("판매현황 캐시 삭제 실패: " + (e.message || e), "error");
+  }
+}
+
 function reconcileReset() {
   _rc.step = 1;
   _rc.vendorData = [];
   _rc.erpPurchaseData = [];
-  _rc.erpSalesData = [];
+  // 판매현황은 캐시가 있으면 유지
   _rc.selectedCust = null;
   _rc.compareResult = null;
   _rc.purchaseQueue = [];
@@ -6017,6 +6066,8 @@ function reconcileReset() {
   const salesStatus = document.getElementById("reconcile-erp-sales-status");
   if (purchaseStatus) purchaseStatus.textContent = "대기 중";
   if (salesStatus) salesStatus.textContent = "대기 중";
+  // 판매현황 캐시 상태 다시 확인 (캐시 있으면 유지 표시)
+  reconcileCheckSalesCache();
 }
 
 
