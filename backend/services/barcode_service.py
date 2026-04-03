@@ -331,14 +331,7 @@ async def send_to_ecount(
         orig_indices.append(int(row["_orig_idx"]))
         bc_val = str(row.get("상품바코드", "")).strip()
         cd_val = str(row.get("_품목코드", "")).strip()
-        is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
-        label_flags.append(is_label)
-
-        # 바코드 부착 필요 품목이면 비고에 표시
-        if is_label:
-            remarks = f"{warehouse} - {doc_no} [바코드부착필요]"
-            bulk_list[-1]["BulkDatas"]["REMARKS"] = remarks
-            bulk_list[-1]["BulkDatas"]["U_MEMO5"] = remarks
+        label_flags.append(bc_val in needs_label or (cd_val and cd_val in needs_label))
 
     logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
 
