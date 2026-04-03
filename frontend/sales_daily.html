@@ -459,18 +459,17 @@ function setCollectStatus(action, text) {
 }
 
 async function pollFetchStatus() {
-  const maxTries = 30;  // 최대 60초 대기
-  let lastId = null;
-
-  // 수집 시작 전 현재 최신 ID 저장
+  // 수집 시작 전 현재 최신 log ID 저장
+  let startId = -1;
   try {
     const init = await fetch(`${API_BASE}/fetch-status`, { headers: authHeaders() });
     if (init.ok) {
       const d = await init.json();
-      lastId = d.id || null;
+      startId = d.id || -1;
     }
   } catch(e) {}
 
+  const maxTries = 40;  // 최대 80초
   for (let i = 0; i < maxTries; i++) {
     await sleep(2000);
     try {
@@ -478,29 +477,26 @@ async function pollFetchStatus() {
       if (!res.ok) continue;
       const d = await res.json();
 
-      // 새 로그 항목이 생겼는지 확인
-      if (d.id && d.id === lastId) {
-        setCollectStatus("show", `ERP 연결 중... (${i*2}s)`);
+      // 아직 이전 id거나 새 항목이 없으면 대기
+      if (!d.id || d.id <= startId) {
+        setCollectStatus("show", `ERP 연결 중... (${(i+1)*2}초)`);
         continue;
       }
 
-      const st = d.status;
-      if (st === "running") {
-        setCollectStatus("show", `수집 중... (${d.message || ""})`);
-        if (lastId === null) lastId = d.id; // 첫 확인
-      } else if (st === "success") {
+      // 새 log 항목 생성됨 → 상태 확인
+      if (d.status === "running") {
+        setCollectStatus("show", `수집 중... ${d.message || ""}`);
+      } else if (d.status === "success") {
         setCollectStatus("ok", `수집 완료 (${d.rows_imported || 0}행)`);
         await loadData();
         return;
-      } else if (st === "error") {
+      } else if (d.status === "error") {
         setCollectStatus("err", `수집 실패: ${d.message || "원인 불명"}`);
         return;
-      } else if (st === "none") {
-        setCollectStatus("show", `대기 중...`);
       }
     } catch(e) {}
   }
-  setCollectStatus("err", "시간 초과 (서버 로그 확인 필요)");
+  setCollectStatus("err", "시간 초과 — 서버 로그를 확인해주세요");
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
