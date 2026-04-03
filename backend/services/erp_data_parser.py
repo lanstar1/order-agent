@@ -18,7 +18,13 @@ def parse_erp_purchase(filepath: str) -> dict:
     ext = Path(filepath).suffix.lower()
 
     if ext == '.csv':
-        df = pd.read_csv(filepath, encoding='utf-8-sig')
+        try:
+            df = pd.read_csv(filepath, encoding='utf-8-sig')
+        except UnicodeDecodeError:
+            try:
+                df = pd.read_csv(filepath, encoding='euc-kr')
+            except UnicodeDecodeError:
+                df = pd.read_csv(filepath, encoding='cp949')
         # CSV has headers in row 0 directly
         header_row = 0
         meta_info = ""
@@ -95,7 +101,13 @@ def parse_erp_sales(filepath: str) -> dict:
     ext = Path(filepath).suffix.lower()
 
     if ext == '.csv':
-        df = pd.read_csv(filepath, encoding='utf-8-sig')
+        try:
+            df = pd.read_csv(filepath, encoding='utf-8-sig')
+        except UnicodeDecodeError:
+            try:
+                df = pd.read_csv(filepath, encoding='euc-kr')
+            except UnicodeDecodeError:
+                df = pd.read_csv(filepath, encoding='cp949')
     else:
         try:
             df = pd.read_excel(filepath, engine='calamine', header=None)

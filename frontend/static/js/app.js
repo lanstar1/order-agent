@@ -5185,22 +5185,38 @@ async function removeKeyword(keyword) {
 
 const _rc = {
   step: 1,
-  batchResult: null,      // 일괄 비교 결과
-  purchaseQueue: [],      // 매입전표 입력 대기열
+  batchResult: null,
+  purchaseQueue: [],
 };
 
 function initReconcilePage() {
   reconcileSetStep(1);
   reconcileCheckErpCache();
-  // 거래처 원장 파일 선택 시 파일명 표시
+
+  // 드래그&드롭 + 파일 선택
+  const dropzone = document.getElementById("rc-vendor-dropzone");
   const vf = document.getElementById("reconcile-vendor-files");
-  if (vf) vf.addEventListener("change", () => {
-    const el = document.getElementById("reconcile-vendor-file-list");
-    if (!el) return;
-    const files = vf.files;
-    if (!files.length) { el.innerHTML = ""; return; }
-    el.innerHTML = Array.from(files).map(f => `<span style="display:inline-block;background:var(--gray-200);padding:2px 8px;border-radius:4px;margin:2px">${f.name}</span>`).join(" ");
-  });
+  if (dropzone && vf) {
+    dropzone.addEventListener("click", () => vf.click());
+    dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+    dropzone.addEventListener("drop", e => {
+      e.preventDefault(); dropzone.classList.remove("dragover");
+      if (e.dataTransfer.files.length) { vf.files = e.dataTransfer.files; _renderVendorFileList(); }
+    });
+    vf.addEventListener("change", _renderVendorFileList);
+  }
+}
+
+function _renderVendorFileList() {
+  const vf = document.getElementById("reconcile-vendor-files");
+  const el = document.getElementById("reconcile-vendor-file-list");
+  if (!el || !vf) return;
+  const files = vf.files;
+  if (!files.length) { el.innerHTML = ""; return; }
+  el.innerHTML = Array.from(files).map(f =>
+    `<span class="rc-file-tag">📄 ${f.name}</span>`
+  ).join("");
 }
 
 function reconcileSetStep(n) {
@@ -5209,7 +5225,7 @@ function reconcileSetStep(n) {
     const el = document.getElementById(`reconcile-step${i}`);
     if (el) el.style.display = i === n ? "" : "none";
   }
-  document.querySelectorAll("#reconcile-steps .step-badge").forEach(b => {
+  document.querySelectorAll("#reconcile-steps .rc-step").forEach(b => {
     const s = parseInt(b.dataset.step);
     b.classList.remove("active", "done");
     if (s === n) b.classList.add("active");
@@ -5219,7 +5235,7 @@ function reconcileSetStep(n) {
 
 function reconcileGoBack(toStep) { reconcileSetStep(toStep); }
 
-// ── ERP 캐시 관리 (구매현황 + 판매현황) ──
+// ── ERP 캐시 관리 ──
 
 async function reconcileCheckErpCache() {
   try {
@@ -5230,42 +5246,32 @@ async function reconcileCheckErpCache() {
 }
 
 function _updateErpCacheUI(type, info) {
-  // type = "purchase" or "sales"
-  const fileId = type === "purchase" ? "reconcile-erp-purchase-file" : "reconcile-erp-sales-file";
-  const fileWrap = type === "sales" ? document.getElementById("reconcile-sales-file-wrap") : null;
-  const cachedDiv = document.getElementById("reconcile-sales-cached");
-  const cachedInfo = document.getElementById("reconcile-sales-cached-info");
-
-  if (type === "sales" && fileWrap && cachedDiv && cachedInfo) {
+  if (type === "sales") {
+    const fileWrap = document.getElementById("reconcile-sales-file-wrap");
+    const cachedDiv = document.getElementById("reconcile-sales-cached");
+    const cachedInfo = document.getElementById("reconcile-sales-cached-info");
+    if (!fileWrap || !cachedDiv || !cachedInfo) return;
     if (info.cached && info.total > 0) {
       fileWrap.style.display = "none";
       cachedDiv.style.display = "flex";
-      cachedInfo.textContent = `${info.filename || "판매현황"} (${info.total.toLocaleString()}건 캐시됨)`;
+      cachedInfo.textContent = `${info.filename || "판매현황"} — ${info.total.toLocaleString()}건 캐시됨`;
     } else {
       fileWrap.style.display = "";
       cachedDiv.style.display = "none";
     }
   }
-
   if (type === "purchase") {
-    const pFileEl = document.getElementById(fileId);
-    const pWrap = pFileEl?.parentElement;
-    if (!pWrap) return;
-    let cachedP = document.getElementById("reconcile-purchase-cached");
+    const pFileEl = document.getElementById("reconcile-erp-purchase-file");
+    const cachedP = document.getElementById("reconcile-purchase-cached");
+    if (!pFileEl || !cachedP) return;
+    const cachedInfo = document.getElementById("reconcile-purchase-cached-info");
     if (info.cached && info.total > 0) {
-      if (!cachedP) {
-        cachedP = document.createElement("div");
-        cachedP.id = "reconcile-purchase-cached";
-        cachedP.style.cssText = "margin-top:6px;padding:8px 12px;background:#e0f2fe;border-radius:6px;font-size:12px;color:#0369a1;display:flex;align-items:center;gap:8px";
-        cachedP.innerHTML = `<span id="reconcile-purchase-cached-info" style="flex:1"></span><button onclick="reconcileClearPurchaseCache()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:bold;padding:0 4px" title="구매현황 캐시 삭제">&times;</button>`;
-        pWrap.appendChild(cachedP);
-      }
       pFileEl.style.display = "none";
       cachedP.style.display = "flex";
-      document.getElementById("reconcile-purchase-cached-info").textContent = `${info.filename || "구매현황"} (${info.total.toLocaleString()}건 캐시됨)`;
+      if (cachedInfo) cachedInfo.textContent = `${info.filename || "구매현황"} — ${info.total.toLocaleString()}건 캐시됨`;
     } else {
       pFileEl.style.display = "";
-      if (cachedP) cachedP.style.display = "none";
+      cachedP.style.display = "none";
     }
   }
 }
@@ -5297,38 +5303,32 @@ async function reconcileBatchStart() {
 
   const vendorFiles = vendorInput?.files;
   if (!vendorFiles || !vendorFiles.length) {
-    toast("거래처 원장 파일을 하나 이상 선택하세요", "error");
-    return;
+    toast("거래처 원장 파일을 하나 이상 선택하세요", "error"); return;
   }
 
-  // 구매현황: 파일 또는 캐시 필요
   const pFile = purchaseFile?.files?.[0];
   const hasPurchaseCache = document.getElementById("reconcile-purchase-cached")?.style?.display === "flex";
-  // 판매현황: 파일 또는 캐시
   const sFile = salesFileEl?.files?.[0];
-  const hasSalesCache = document.getElementById("reconcile-sales-cached")?.style?.display === "flex";
 
   if (!pFile && !hasPurchaseCache) {
-    toast("구매현황 파일을 업로드하거나 캐시가 필요합니다", "error");
-    return;
+    toast("구매현황 파일을 업로드하거나 캐시가 필요합니다", "error"); return;
   }
 
   const btn = document.getElementById("btn-reconcile-batch");
   btn.disabled = true;
-  btn.textContent = "처리 중...";
+  btn.innerHTML = "<span class='rc-progress-spinner' style='width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:6px'></span> 처리 중...";
 
   const progressArea = document.getElementById("reconcile-batch-progress");
   const progressText = document.getElementById("reconcile-batch-progress-text");
   const progressBar = document.getElementById("reconcile-batch-progress-bar");
   progressArea.style.display = "";
-  progressText.textContent = `${vendorFiles.length}개 거래처 원장 + ERP 데이터 일괄 처리 중...`;
+  progressText.textContent = `${vendorFiles.length}개 거래처 원장 일괄 처리 중...`;
   progressBar.style.width = "30%";
+  progressBar.style.background = "";
 
   try {
     const formData = new FormData();
-    for (const f of vendorFiles) {
-      formData.append("vendor_files", f);
-    }
+    for (const f of vendorFiles) formData.append("vendor_files", f);
     if (pFile) formData.append("purchase_file", pFile);
     if (sFile) formData.append("sales_file", sFile);
 
@@ -5343,7 +5343,7 @@ async function reconcileBatchStart() {
 
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      throw new Error(err.detail || `${resp.status} 오류`);
+      throw new Error(err.detail || `서버 오류 (${resp.status})`);
     }
 
     progressBar.style.width = "90%";
@@ -5353,58 +5353,61 @@ async function reconcileBatchStart() {
     progressBar.style.width = "100%";
     progressText.textContent = "완료!";
 
-    // 캐시 UI 갱신
     reconcileCheckErpCache();
-
-    // 결과 렌더링
     _renderBatchResults(result);
     reconcileSetStep(2);
     toast(`${result.summary.vendor_count}개 거래처 일괄 정산 완료`, "success");
 
   } catch (e) {
-    progressText.textContent = "실패: " + (e.message || e);
+    progressText.textContent = "오류: " + (e.message || e);
     progressBar.style.width = "100%";
-    progressBar.style.background = "#ef4444";
+    progressBar.style.background = "var(--danger)";
     toast("일괄 정산 실패: " + (e.message || e), "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "일괄 정산 시작";
+    btn.innerHTML = "<span>▶</span> 일괄 정산 시작";
   }
 }
 
-// ── STEP 2: 거래처별 결과 렌더링 ──
+// ── STEP 2: 결과 렌더링 ──
 
 function _renderBatchResults(result) {
   const s = result.summary;
+  const totalMemo = (result.vendor_results || []).reduce((sum, vr) =>
+    sum + (vr.summary?.memo_filtered || 0), 0);
 
-  // 전체 요약
+  // 요약 카드
   document.getElementById("reconcile-batch-summary").innerHTML = `
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-      <div style="flex:1;min-width:80px;background:#dcfce7;padding:10px;border-radius:8px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:#166534">${s.total_matched}</div>
-        <div style="font-size:11px;color:#166534">매칭</div>
+    <div class="rc-summary-grid">
+      <div class="rc-summary-card matched">
+        <div class="rc-summary-num">${s.total_matched}</div>
+        <div class="rc-summary-label">매칭</div>
       </div>
-      <div style="flex:1;min-width:80px;background:#fecaca;padding:10px;border-radius:8px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:#991b1b">${s.total_unmatched}</div>
-        <div style="font-size:11px;color:#991b1b">누락</div>
+      <div class="rc-summary-card unmatched">
+        <div class="rc-summary-num">${s.total_unmatched}</div>
+        <div class="rc-summary-label">누락</div>
       </div>
-      <div style="flex:1;min-width:80px;background:#fef3c7;padding:10px;border-radius:8px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:#92400e">${s.total_shipping}</div>
-        <div style="font-size:11px;color:#92400e">배송료</div>
+      <div class="rc-summary-card shipping">
+        <div class="rc-summary-num">${s.total_shipping}</div>
+        <div class="rc-summary-label">배송료</div>
       </div>
-      <div style="flex:1;min-width:80px;background:#fce4ec;padding:10px;border-radius:8px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:#c62828">${s.total_amount_mismatch}</div>
-        <div style="font-size:11px;color:#c62828">금액차이</div>
+      <div class="rc-summary-card mismatch">
+        <div class="rc-summary-num">${s.total_amount_mismatch}</div>
+        <div class="rc-summary-label">금액차이</div>
       </div>
-      <div style="flex:1;min-width:80px;background:var(--gray-100);padding:10px;border-radius:8px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:var(--gray-700)">${s.vendor_count}</div>
-        <div style="font-size:11px;color:var(--gray-600)">거래처</div>
+      <div class="rc-summary-card vendor">
+        <div class="rc-summary-num">${s.vendor_count}</div>
+        <div class="rc-summary-label">거래처</div>
       </div>
+      ${totalMemo > 0 ? `<div class="rc-summary-card memo">
+        <div class="rc-summary-num">${totalMemo}</div>
+        <div class="rc-summary-label">메모제외</div>
+      </div>` : ""}
     </div>
-    <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
-      구매현황 ${s.purchase_total.toLocaleString()}건${s.purchase_from_cache ? " (캐시)" : ""} /
-      판매현황 ${s.sales_total.toLocaleString()}건${s.sales_from_cache ? " (캐시)" : ""}
-      ${s.errors.length ? ` / <span style="color:#dc2626">오류 ${s.errors.length}건</span>` : ""}
+    <div class="rc-data-info">
+      <span>💾 구매현황 ${s.purchase_total.toLocaleString()}건${s.purchase_from_cache ? " (캐시)" : ""}</span>
+      <span>📊 판매현황 ${s.sales_total.toLocaleString()}건${s.sales_from_cache ? " (캐시)" : ""}</span>
+      ${s.errors.length ? `<span style="color:var(--danger)">⚠ 오류 ${s.errors.length}건</span>` : ""}
     </div>`;
 
   // 거래처별 아코디언
@@ -5413,81 +5416,111 @@ function _renderBatchResults(result) {
     const vs = vr.summary || {};
     const hasError = !!vr.error;
     const isOk = !hasError && vs.unmatched_count === 0 && vs.amount_mismatch_count === 0;
-    const statusColor = hasError ? "#dc2626" : isOk ? "#16a34a" : "#d97706";
+    const statusCls = hasError ? "status-error" : isOk ? "status-ok" : "status-warn";
     const statusIcon = hasError ? "❌" : isOk ? "✅" : "⚠️";
 
-    // 매칭 상세
     let detailHTML = "";
     if (!hasError) {
       // 매칭됨
-      detailHTML += `<div style="margin-bottom:8px"><strong style="font-size:12px;color:#166534">매칭됨 (${vs.matched_count}건)</strong></div>`;
-      detailHTML += (vr.matched || []).map(r => {
-        const v = r.vendor_item || {};
-        const e = r.erp_match || {};
-        return `<div style="padding:4px 0;font-size:12px;border-bottom:1px solid var(--gray-100)">
-          <span style="color:#16a34a">✓</span> ${v.product_name||""} | ${v.date||""} | ${(v.amount||0).toLocaleString()}원
-          → ${e.prod_cd||""} ${e.prod_name||""} <span style="color:var(--gray-400)">(${r.reason||""})</span>
-        </div>`;
-      }).join("");
+      if (vs.matched_count > 0) {
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title matched">✅ 매칭됨 (${vs.matched_count}건)</div>`;
+        detailHTML += (vr.matched || []).map(r => {
+          const v = r.vendor_item || {};
+          const e = r.erp_match || {};
+          return `<div class="rc-detail-row">
+            <span class="rc-icon" style="color:#16a34a">✓</span>
+            <span class="rc-item-name">${v.product_name||""}</span>
+            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
+            <span class="rc-arrow">→</span>
+            <span class="rc-erp-name">${e.prod_cd||""} ${e.prod_name||""}</span>
+          </div>`;
+        }).join("");
+        detailHTML += "</div>";
+      }
 
       // 누락
       if (vs.unmatched_count > 0) {
-        detailHTML += `<div style="margin:12px 0 8px"><strong style="font-size:12px;color:#991b1b">매입전표 누락 (${vs.unmatched_count}건)</strong></div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title unmatched">❌ 매입전표 누락 (${vs.unmatched_count}건)</div>`;
         detailHTML += (vr.unmatched || []).map(r => {
           const v = r.vendor_item || {};
-          return `<div style="padding:4px 0;font-size:12px;border-bottom:1px solid var(--gray-100)">
-            <span style="color:#dc2626">✗</span> ${v.product_name||""} | ${v.date||""} | 수량 ${v.qty||0} | ${(v.amount||0).toLocaleString()}원
+          return `<div class="rc-detail-row">
+            <span class="rc-icon" style="color:#dc2626">✗</span>
+            <span class="rc-item-name">${v.product_name||""}</span>
+            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">수량 ${v.qty||0}</span>
+            <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
           </div>`;
         }).join("");
+        detailHTML += "</div>";
       }
 
-      // 판매이력 확인
+      // 판매이력
       if ((vr.sales_check||[]).length > 0) {
-        const withSales = vr.sales_check.filter(s => s.has_sales_history);
-        detailHTML += `<div style="margin:12px 0 8px"><strong style="font-size:12px;color:#1e40af">판매이력 확인 (${withSales.length}/${vr.sales_check.length}건)</strong></div>`;
+        const withSales = vr.sales_check.filter(sc => sc.has_sales_history);
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title sales">🔍 판매이력 확인 (${withSales.length}/${vr.sales_check.length}건)</div>`;
         detailHTML += vr.sales_check.map((sc, sci) => {
           const v = sc.vendor_item || {};
           const best = sc.best_candidate;
-          return `<div style="padding:4px 0;font-size:12px;border-bottom:1px solid var(--gray-100)">
-            ${sc.has_sales_history ? "📦" : "❓"} ${v.product_name||""} | ${v.date||""} | ${(v.amount||0).toLocaleString()}원
-            ${best ? `→ <strong>${best.product_code||""} ${best.product_name||""}</strong> (${Math.round((best.confidence||0)*100)}%)` : ""}
-            ${sc.has_sales_history ? `<label style="margin-left:8px;font-size:11px;cursor:pointer"><input type="checkbox" class="batch-include-check" data-vi="${vi}" data-sci="${sci}" checked> 입력대상</label>` : ""}
+          return `<div class="rc-detail-row">
+            <span class="rc-icon">${sc.has_sales_history ? "📦" : "❓"}</span>
+            <span class="rc-item-name">${v.product_name||""}</span>
+            <span class="rc-item-meta">${v.date||""} | ${(v.amount||0).toLocaleString()}원</span>
+            ${best ? `<span class="rc-arrow">→</span><span class="rc-erp-name">${best.product_code||""} ${best.product_name||""} (${Math.round((best.confidence||0)*100)}%)</span>` : ""}
+            ${sc.has_sales_history ? `<label style="margin-left:auto;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="batch-include-check" data-vi="${vi}" data-sci="${sci}" checked> 입력</label>` : ""}
           </div>`;
         }).join("");
+        detailHTML += "</div>";
       }
 
       // 배송료
       if (vs.shipping_count > 0) {
-        detailHTML += `<div style="margin:12px 0 8px"><strong style="font-size:12px;color:#92400e">배송료 (${vs.shipping_count}건)</strong></div>`;
-        detailHTML += (vr.shipping_items||[]).map(s => {
-          const v = s.vendor_item||{};
-          return `<div style="padding:4px 0;font-size:12px">🚚 ${v.product_name||""} | ${(v.amount||0).toLocaleString()}원 | ${s.erp_match ? "ERP 매칭됨" : "미매칭"}</div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title shipping">🚚 배송료 (${vs.shipping_count}건)</div>`;
+        detailHTML += (vr.shipping_items||[]).map(si => {
+          const v = si.vendor_item||{};
+          return `<div class="rc-detail-row">
+            <span class="rc-icon">🚚</span>
+            <span class="rc-item-name">${v.product_name||""}</span>
+            <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
+            <span class="rc-item-meta">${si.erp_match ? "✓ ERP매칭" : "미매칭"}</span>
+          </div>`;
         }).join("");
+        detailHTML += "</div>";
       }
 
       // 금액차이
       if (vs.amount_mismatch_count > 0) {
-        detailHTML += `<div style="margin:12px 0 8px"><strong style="font-size:12px;color:#c62828">금액 불일치 (${vs.amount_mismatch_count}건)</strong></div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title mismatch">⚠️ 금액 불일치 (${vs.amount_mismatch_count}건)</div>`;
         detailHTML += (vr.amount_mismatches||[]).map(r => {
           const v = r.vendor_item||{};
-          return `<div style="padding:4px 0;font-size:12px">⚠️ ${v.product_name||""} | 차이: ${(r.amount_diff||0).toLocaleString()}원 (${r.amount_diff_pct||0}%)</div>`;
+          return `<div class="rc-detail-row">
+            <span class="rc-icon">⚠️</span>
+            <span class="rc-item-name">${v.product_name||""}</span>
+            <span class="rc-item-meta">차이 ${(r.amount_diff||0).toLocaleString()}원 (${r.amount_diff_pct||0}%)</span>
+          </div>`;
         }).join("");
+        detailHTML += "</div>";
       }
     }
 
     return `
-    <div class="reconcile-match-card" style="margin-bottom:8px;border-left:3px solid ${statusColor}">
-      <div class="match-header" style="cursor:pointer" onclick="this.parentElement.querySelector('.vendor-detail').style.display=this.parentElement.querySelector('.vendor-detail').style.display==='none'?'':'none'">
-        <strong>${statusIcon} ${vr.vendor_name || vr.filename}</strong>
-        <div style="font-size:12px;color:var(--gray-500)">
-          ${hasError ? `<span style="color:#dc2626">${vr.error}</span>` :
-            `매칭 ${vs.matched_count} | 누락 ${vs.unmatched_count} | 배송 ${vs.shipping_count} | 구매필터 ${vs.purchase_filtered}건`}
-          ${vr.vendor_code ? ` | 코드: ${vr.vendor_code}` : ""}
+    <div class="rc-vendor-card ${statusCls}" id="rc-vendor-${vi}">
+      <div class="rc-vendor-header" onclick="document.getElementById('rc-vendor-${vi}').classList.toggle('open')">
+        <div>
+          <div class="rc-vendor-title">${statusIcon} ${vr.vendor_name || vr.filename}</div>
+          <div class="rc-vendor-stats">
+            ${hasError ? `<span style="color:var(--danger)">${vr.error}</span>` : `
+              <span class="rc-vendor-stat good">매칭 ${vs.matched_count}</span>
+              <span class="rc-vendor-stat ${vs.unmatched_count > 0 ? 'bad' : ''}">누락 ${vs.unmatched_count}</span>
+              <span class="rc-vendor-stat">배송 ${vs.shipping_count}</span>
+              <span class="rc-vendor-stat">ERP ${vs.purchase_filtered}건</span>
+              ${vr.vendor_code ? `<span class="rc-vendor-stat">코드 ${vr.vendor_code}</span>` : ""}
+            `}
+          </div>
         </div>
+        <span class="rc-vendor-toggle">▼</span>
       </div>
-      <div class="vendor-detail" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-200)">
-        ${hasError ? "" : detailHTML}
-      </div>
+      <div class="rc-vendor-detail">${hasError ? "" : detailHTML}</div>
     </div>`;
   }).join("");
 }
@@ -5495,14 +5528,13 @@ function _renderBatchResults(result) {
 // ── 엑셀 다운로드 ──
 async function reconcileBatchDownloadExcel() {
   if (!_rc.batchResult?.session_id) {
-    toast("비교 결과가 없습니다", "error");
-    return;
+    toast("비교 결과가 없습니다", "error"); return;
   }
   try {
     const resp = await fetch(API_BASE + `/api/reconcile/download-result/${_rc.batchResult.session_id}`, {
       headers: { "Authorization": `Bearer ${api.getToken()}` }
     });
-    if (!resp.ok) throw new Error(`${resp.status} 오류`);
+    if (!resp.ok) throw new Error(`다운로드 실패 (${resp.status})`);
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -5530,7 +5562,6 @@ function reconcileBatchPrepareInput() {
 
     (vr.sales_check || []).forEach((sc, sci) => {
       if (!sc.has_sales_history || !sc.best_candidate) return;
-      // 체크박스 확인
       const vi = _rc.batchResult.vendor_results.indexOf(vr);
       const cb = document.querySelector(`.batch-include-check[data-vi="${vi}"][data-sci="${sci}"]`);
       if (cb && !cb.checked) return;
@@ -5547,25 +5578,18 @@ function reconcileBatchPrepareInput() {
       }
 
       _rc.purchaseQueue.push({
-        io_date: ioDate,
-        cust_code: vendorCode,
-        cust_name: vendorName,
-        wh_cd: "",
-        prod_cd: c.product_code || "",
-        prod_name: c.product_name || v.product_name || "",
-        size_des: "",
-        qty: v.qty || 1,
-        price: v.unit_price || 0,
-        supply_amt: v.amount || 0,
-        vat_amt: Math.round((v.amount || 0) * 0.1),
+        io_date: ioDate, cust_code: vendorCode, cust_name: vendorName,
+        wh_cd: "", prod_cd: c.product_code || "",
+        prod_name: c.product_name || v.product_name || "", size_des: "",
+        qty: v.qty || 1, price: v.unit_price || 0,
+        supply_amt: v.amount || 0, vat_amt: Math.round((v.amount || 0) * 0.1),
         remarks: "매입정산 자동입력",
       });
     });
   }
 
   if (!_rc.purchaseQueue.length) {
-    toast("입력할 항목이 없습니다. 판매이력이 있는 항목을 체크하세요.", "info");
-    return;
+    toast("입력할 항목이 없습니다. 판매이력이 있는 항목을 체크하세요.", "info"); return;
   }
 
   _renderPurchaseEditCards();
@@ -5576,40 +5600,26 @@ function reconcileBatchPrepareInput() {
 function _renderPurchaseEditCards() {
   const listEl = document.getElementById("reconcile-purchase-list");
   if (!_rc.purchaseQueue.length) {
-    listEl.innerHTML = '<p style="color:var(--gray-500);font-size:13px">입력할 항목이 없습니다.</p>';
+    listEl.innerHTML = '<p style="color:var(--gray-400);font-size:13px">입력할 항목이 없습니다.</p>';
     return;
   }
   listEl.innerHTML = _rc.purchaseQueue.map((item, i) => `
-    <div class="purchase-edit-card" id="purchase-edit-${i}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <strong style="font-size:13px">#${i+1} [${item.cust_name}] ${item.prod_name}</strong>
-        <button onclick="reconcileRemoveItem(${i})" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:18px">&times;</button>
+    <div class="rc-purchase-card" id="purchase-edit-${i}">
+      <div class="rc-purchase-card-header">
+        <span class="rc-purchase-card-title">#${i+1} [${item.cust_name}] ${item.prod_name}</span>
+        <button onclick="reconcileRemoveItem(${i})" class="rc-purchase-card-delete">&times;</button>
       </div>
-      <div class="edit-row">
-        <label>전표일자</label>
-        <input value="${item.io_date}" onchange="_rc.purchaseQueue[${i}].io_date=this.value" placeholder="YYYYMMDD">
-        <label>거래처코드</label>
-        <input value="${item.cust_code}" onchange="_rc.purchaseQueue[${i}].cust_code=this.value">
-        <label>거래처명</label>
-        <input value="${item.cust_name}" onchange="_rc.purchaseQueue[${i}].cust_name=this.value">
-      </div>
-      <div class="edit-row">
-        <label>품목코드</label>
-        <input value="${item.prod_cd}" onchange="_rc.purchaseQueue[${i}].prod_cd=this.value">
-        <label>품목명</label>
-        <input value="${item.prod_name}" onchange="_rc.purchaseQueue[${i}].prod_name=this.value">
-        <label>규격</label>
-        <input value="${item.size_des}" onchange="_rc.purchaseQueue[${i}].size_des=this.value">
-      </div>
-      <div class="edit-row">
-        <label>수량</label>
-        <input type="number" value="${item.qty}" onchange="_rc.purchaseQueue[${i}].qty=+this.value" style="max-width:80px">
-        <label>단가</label>
-        <input type="number" value="${item.price}" onchange="_rc.purchaseQueue[${i}].price=+this.value" style="max-width:100px">
-        <label>공급가</label>
-        <input type="number" value="${item.supply_amt}" onchange="_rc.purchaseQueue[${i}].supply_amt=+this.value" style="max-width:100px">
-        <label>부가세</label>
-        <input type="number" value="${item.vat_amt}" onchange="_rc.purchaseQueue[${i}].vat_amt=+this.value" style="max-width:100px">
+      <div class="rc-edit-grid">
+        <div class="rc-edit-field"><label>전표일자</label><input value="${item.io_date}" onchange="_rc.purchaseQueue[${i}].io_date=this.value" placeholder="YYYYMMDD"></div>
+        <div class="rc-edit-field"><label>거래처코드</label><input value="${item.cust_code}" onchange="_rc.purchaseQueue[${i}].cust_code=this.value"></div>
+        <div class="rc-edit-field"><label>거래처명</label><input value="${item.cust_name}" onchange="_rc.purchaseQueue[${i}].cust_name=this.value"></div>
+        <div class="rc-edit-field"><label>품목코드</label><input value="${item.prod_cd}" onchange="_rc.purchaseQueue[${i}].prod_cd=this.value"></div>
+        <div class="rc-edit-field"><label>품목명</label><input value="${item.prod_name}" onchange="_rc.purchaseQueue[${i}].prod_name=this.value"></div>
+        <div class="rc-edit-field"><label>규격</label><input value="${item.size_des}" onchange="_rc.purchaseQueue[${i}].size_des=this.value"></div>
+        <div class="rc-edit-field"><label>수량</label><input type="number" value="${item.qty}" onchange="_rc.purchaseQueue[${i}].qty=+this.value"></div>
+        <div class="rc-edit-field"><label>단가</label><input type="number" value="${item.price}" onchange="_rc.purchaseQueue[${i}].price=+this.value"></div>
+        <div class="rc-edit-field"><label>공급가</label><input type="number" value="${item.supply_amt}" onchange="_rc.purchaseQueue[${i}].supply_amt=+this.value"></div>
+        <div class="rc-edit-field"><label>부가세</label><input type="number" value="${item.vat_amt}" onchange="_rc.purchaseQueue[${i}].vat_amt=+this.value"></div>
       </div>
     </div>
   `).join("");
@@ -5623,14 +5633,12 @@ function reconcileRemoveItem(idx) {
 // ── STEP 3 → STEP 4: ERP 전송 ──
 async function reconcileSubmitERP() {
   if (!_rc.purchaseQueue.length) {
-    toast("입력할 항목이 없습니다", "error");
-    return;
+    toast("입력할 항목이 없습니다", "error"); return;
   }
 
   const invalid = _rc.purchaseQueue.filter(p => !p.io_date || !p.cust_code || !p.prod_cd);
   if (invalid.length) {
-    toast(`${invalid.length}건의 필수 항목(전표일자, 거래처코드, 품목코드)이 누락되었습니다`, "error");
-    return;
+    toast(`${invalid.length}건의 필수 항목(전표일자, 거래처코드, 품목코드)이 누락되었습니다`, "error"); return;
   }
 
   if (!confirm(`${_rc.purchaseQueue.length}건의 매입전표를 ERP에 입력하시겠습니까?`)) return;
@@ -5641,8 +5649,7 @@ async function reconcileSubmitERP() {
 
   try {
     const result = await api.post("/api/reconcile/save-purchase", {
-      items: _rc.purchaseQueue,
-      upload_ser_no: "1",
+      items: _rc.purchaseQueue, upload_ser_no: "1",
     });
 
     const resultEl = document.getElementById("reconcile-result");
@@ -5655,7 +5662,7 @@ async function reconcileSubmitERP() {
         <div style="font-size:14px">전체 ${result.total}건 | 성공 ${result.success}건 | 실패 ${result.failed}건</div>
       </div>
       ${(result.results||[]).map(r => `
-        <div style="margin-top:8px;padding:8px;background:var(--gray-50);border-radius:6px;font-size:12px">
+        <div style="margin-top:8px;padding:10px 14px;background:var(--gray-50);border-radius:8px;font-size:12px">
           거래처: ${r.cust_code} — ${r.status === "success"
             ? `<span style="color:#166534">성공 (${r.success}건) ${r.slip_nos ? '전표: ' + r.slip_nos : ''}</span>`
             : `<span style="color:#dc2626">실패: ${r.error_message || ""}</span>`}
@@ -5677,20 +5684,16 @@ function reconcileReset() {
   _rc.batchResult = null;
   _rc.purchaseQueue = [];
   reconcileSetStep(1);
-  // 거래처 원장만 초기화 (구매현황/판매현황은 캐시 유지)
   const vendorFiles = document.getElementById("reconcile-vendor-files");
   if (vendorFiles) vendorFiles.value = "";
   const vfList = document.getElementById("reconcile-vendor-file-list");
   if (vfList) vfList.innerHTML = "";
-  // 구매/판매 파일 입력은 캐시 상태에 따라 관리
   const pFile = document.getElementById("reconcile-erp-purchase-file");
   if (pFile) pFile.value = "";
   const sFile = document.getElementById("reconcile-erp-sales-file");
   if (sFile) sFile.value = "";
-  // 진행 바 숨김
   const progress = document.getElementById("reconcile-batch-progress");
   if (progress) progress.style.display = "none";
-  // 캐시 상태 확인
   reconcileCheckErpCache();
 }
 

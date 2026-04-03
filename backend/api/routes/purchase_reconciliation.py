@@ -569,13 +569,15 @@ async def batch_reconcile(
                 v = r.get("vendor_item", {})
                 e = r.get("erp_match", {})
                 v_amt = float(v.get("amount", 0) or 0)
-                e_amt = float(_get_field(e, "total", "합계", default=0) or 0)
                 try:
-                    e_amt = float(str(e_amt).replace(",", ""))
-                except:
+                    e_amt = float(str(_get_field(e, "total", "합계", default=0) or 0).replace(",", ""))
+                except (ValueError, TypeError):
                     e_amt = 0
                 v_qty = int(v.get("qty", 0) or 0)
-                e_qty = int(str(_get_field(e, "qty", "수량", default=0) or 0).replace(",", ""))
+                try:
+                    e_qty = int(float(str(_get_field(e, "qty", "수량", default=0) or 0).replace(",", "")))
+                except (ValueError, TypeError):
+                    e_qty = 0
 
                 if v_amt and e_amt and abs(v_amt - e_amt) > 1:
                     r["amount_diff"] = v_amt - e_amt
@@ -693,13 +695,15 @@ async def compare_ledgers(
         v = r.get("vendor_item", {})
         e = r.get("erp_match", {})
         v_amt = float(v.get("amount", 0) or 0)
-        e_amt = float(_get_field(e, "total", "합계", default=0) or 0)
         try:
-            e_amt = float(str(e_amt).replace(",", ""))
-        except:
+            e_amt = float(str(_get_field(e, "total", "합계", default=0) or 0).replace(",", ""))
+        except (ValueError, TypeError):
             e_amt = 0
         v_qty = int(v.get("qty", 0) or 0)
-        e_qty = int(str(_get_field(e, "qty", "수량", default=0) or 0).replace(",", ""))
+        try:
+            e_qty = int(float(str(_get_field(e, "qty", "수량", default=0) or 0).replace(",", "")))
+        except (ValueError, TypeError):
+            e_qty = 0
 
         if v_amt and e_amt and abs(v_amt - e_amt) > 1:
             r["amount_diff"] = v_amt - e_amt

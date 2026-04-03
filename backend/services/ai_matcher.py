@@ -67,17 +67,19 @@ async def match_products_ai(vendor_items: list[dict],
 # 2. 판매이력 확인 — 날짜 확장 검색 + AI 후보군 5개
 # ============================================================
 
-def _parse_date(date_str: str, year: int = 2026) -> datetime | None:
+def _parse_date(date_str: str, year: int = None) -> datetime | None:
+    if year is None:
+        year = datetime.now().year
     if not date_str:
         return None
     date_str = date_str.strip()
     date_str = re.sub(r'-\d+$', '', date_str)
 
     patterns = [
-        (r'^(\d{2})\.(\d{2})$', lambda m: datetime(year, int(m[1]), int(m[2]))),
-        (r'^(\d{2})/(\d{2})$', lambda m: datetime(year, int(m[1]), int(m[2]))),
-        (r'^(\d{4})/(\d{2})/(\d{2})$', lambda m: datetime(int(m[1]), int(m[2]), int(m[3]))),
-        (r'^(\d{4})(\d{2})(\d{2})$', lambda m: datetime(int(m[1]), int(m[2]), int(m[3]))),
+        (r'^(\d{2})\.(\d{2})$', lambda m, y=year: datetime(y, int(m[1]), int(m[2]))),
+        (r'^(\d{2})/(\d{2})$', lambda m, y=year: datetime(y, int(m[1]), int(m[2]))),
+        (r'^(\d{4})/(\d{2})/(\d{2})$', lambda m, y=year: datetime(int(m[1]), int(m[2]), int(m[3]))),
+        (r'^(\d{4})(\d{2})(\d{2})$', lambda m, y=year: datetime(int(m[1]), int(m[2]), int(m[3]))),
     ]
 
     for pattern, factory in patterns:
@@ -85,7 +87,7 @@ def _parse_date(date_str: str, year: int = 2026) -> datetime | None:
         if m:
             try:
                 return factory(m)
-            except ValueError:
+            except (ValueError, TypeError):
                 continue
     return None
 
