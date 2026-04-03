@@ -5221,15 +5221,11 @@ function _extractVendorName(filename) {
   return nameParts.length ? nameParts[nameParts.length - 1] : base;
 }
 
-function _renderVendorFileList() {
+async function _renderVendorFileList() {
   const vf = document.getElementById("reconcile-vendor-files");
   const el = document.getElementById("reconcile-vendor-file-list");
   const confirmArea = document.getElementById("reconcile-vendor-confirm");
   const nameList = document.getElementById("reconcile-vendor-name-list");
-  console.log("[매입정산] _renderVendorFileList 호출", {
-    vf: !!vf, el: !!el, confirmArea: !!confirmArea, nameList: !!nameList,
-    fileCount: vf?.files?.length || 0,
-  });
   if (!el || !vf) return;
   const files = vf.files;
   if (!files.length) {
@@ -5241,20 +5237,46 @@ function _renderVendorFileList() {
   el.innerHTML = Array.from(files).map(f =>
     `<span class="rc-file-tag">📄 ${f.name}</span>`
   ).join("");
-  // 거래처 확인 영역 표시
+
+  // 거래처 확인 영역: 파일명 추출 → vendor-list API로 공식 거래처명 매칭
   if (confirmArea && nameList) {
     confirmArea.style.display = "block";
-    const html = Array.from(files).map((f, i) => {
-      const extracted = _extractVendorName(f.name);
-      return `<div class="rc-vendor-name-row">
+    // 먼저 파일명에서 추출한 이름으로 임시 표시
+    const fileArr = Array.from(files);
+    const extracted = fileArr.map(f => _extractVendorName(f.name));
+    nameList.innerHTML = fileArr.map((f, i) =>
+      `<div class="rc-vendor-name-row">
         <span class="rc-vnr-file" title="${f.name}">📄 ${f.name}</span>
-        <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${extracted}">
-      </div>`;
-    }).join("");
-    nameList.innerHTML = html;
-    console.log("[매입정산] 거래처 확인 영역 표시:", html.substring(0, 200));
-  } else {
-    console.warn("[매입정산] confirmArea 또는 nameList를 찾을 수 없음");
+        <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${extracted[i]}" placeholder="거래처명 검색 중...">
+        <span class="rc-vnr-status" id="rc-vnr-status-${i}">🔍</span>
+      </div>`
+    ).join("");
+
+    // vendor-list API로 공식 거래처명 매칭
+    for (let i = 0; i < extracted.length; i++) {
+      const statusEl = document.getElementById(`rc-vnr-status-${i}`);
+      const inputEl = nameList.querySelector(`input[data-idx="${i}"]`);
+      try {
+        const res = await api.get(`/api/reconcile/vendor-list?q=${encodeURIComponent(extracted[i])}`);
+        const vendors = res.vendors || [];
+        if (vendors.length > 0) {
+          // 가장 유사한 거래처를 찾기: 정확 매칭 > 부분 매칭
+          const exact = vendors.find(v => v.name === extracted[i]);
+          const partial = vendors.find(v => {
+            const vc = v.name.replace(/\(주\)|주식회사/g,"").trim();
+            const ec = extracted[i].replace(/\(주\)|주식회사/g,"").trim();
+            return vc.includes(ec) || ec.includes(vc);
+          });
+          const best = exact || partial || vendors[0];
+          if (inputEl) inputEl.value = best.name;
+          if (statusEl) statusEl.textContent = "✅";
+        } else {
+          if (statusEl) statusEl.textContent = "⚠️";
+        }
+      } catch (e) {
+        if (statusEl) statusEl.textContent = "❌";
+      }
+    }
   }
 }
 
