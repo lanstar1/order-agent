@@ -8,12 +8,15 @@
 - GET  /api/reconcile/download-result/{session_id} — 비교 결과를 엑셀로 다운로드
 """
 import os
+import re
 import uuid
+import asyncio
 import logging
 import json
 import io
+import time
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Form, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -591,9 +594,16 @@ async def batch_reconcile(
             # 파일명에서 거래처명 추출 시도 (시트명보다 파일명이 더 정확할 수 있음)
             if not vendor_name or vendor_name == "Sheet1" or vendor_name == "Sheet":
                 fn_base = os.path.splitext(vf.filename)[0]
-                # 흔한 패턴: "거래장부내역_유니정보통신", "202603_파워네트" 등
+                # UUID suffix 제거 (드래그앤드롭 업로드 시 "-79021bc2" 같은 suffix 붙음)
+                fn_base = re.sub(r'-[0-9a-f]{6,12}$', '', fn_base)
+                # 흔한 패턴: "거래장부내역_유니정보통신", "202603_파워네트", "거래내역_파워네트정보통신" 등
                 parts = fn_base.replace("-", "_").split("_")
-                vendor_name = parts[-1] if parts else fn_base
+                # 숫자만인 파트(날짜 등)를 제외하고 마지막 한글/영문 파트를 거래처명으로
+                name_parts = [p for p in parts if p and not re.match(r'^\d+$', p)]
+                # "거래장부내역", "거래내역", "거래확인서" 같은 공통 접두어 제외
+                skip_prefixes = {"거래장부내역", "거래내역", "거래확인서", "거래원장", "원장"}
+                name_parts = [p for p in name_parts if p not in skip_prefixes]
+                vendor_name = name_parts[-1] if name_parts else fn_base
 
             vf_result["vendor_name"] = vendor_name
             vf_result["vendor_code"] = _find_vendor_code(vendor_name)
@@ -736,6 +746,398 @@ async def batch_reconcile(
         "summary": total_summary,
         "vendor_results": vendor_results,
     }
+
+
+@router.post("/preview-vendors")
+async def preview_vendors(
+    vendor_files: list[UploadFile] = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """거래처 원장 파일들을 업로드하여 거래처명만 미리 추출 (확인용)
+
+    파일을 서버에 저장하고 거래처명을 추출하여 반환.
+    사용자가 확인/수정 후 batch-reconcile-stream에서 사용.
+    """
+    os.makedirs(str(UPLOAD_DIR), exist_ok=True)
+    previews = []
+
+    for vf in vendor_files:
+        if not vf.filename:
+            continue
+        try:
+            ext = os.path.splitext(vf.filename)[1]
+            file_id = uuid.uuid4().hex[:8]
+            saved = os.path.join(str(UPLOAD_DIR), f"vendor_{file_id}{ext}")
+            with open(saved, "wb") as f:
+                f.write(await vf.read())
+
+            # 거래처명 추출
+            ledger = parse_vendor_ledger(saved)
+            vendor_name = ledger.get("vendor_name", "")
+
+            # 시트명이 generic이면 파일명에서 추출
+            if not vendor_name or vendor_name in ("Sheet1", "Sheet", ""):
+                fn_base = os.path.splitext(vf.filename)[0]
+                fn_base = re.sub(r'-[0-9a-f]{6,12}$', '', fn_base)
+                parts = fn_base.replace("-", "_").split("_")
+                name_parts = [p for p in parts if p and not re.match(r'^\d+$', p)]
+                skip_prefixes = {"거래장부내역", "거래내역", "거래확인서", "거래원장", "원장"}
+                name_parts = [p for p in name_parts if p not in skip_prefixes]
+                vendor_name = name_parts[-1] if name_parts else fn_base
+
+            item_count = len(ledger.get("sales_items", []) or ledger.get("transactions", []))
+            previews.append({
+                "file_id": file_id,
+                "original_filename": vf.filename,
+                "saved_path": saved,
+                "vendor_name": vendor_name,
+                "item_count": item_count,
+            })
+        except Exception as e:
+            previews.append({
+                "file_id": "",
+                "original_filename": vf.filename,
+                "saved_path": "",
+                "vendor_name": "",
+                "item_count": 0,
+                "error": str(e),
+            })
+
+    return {"previews": previews}
+
+
+@router.post("/batch-reconcile-stream")
+async def batch_reconcile_stream(
+    request: Request,
+    vendor_files: list[UploadFile] = File(None),
+    purchase_file: Optional[UploadFile] = File(None),
+    sales_file: Optional[UploadFile] = File(None),
+    vendor_names_json: str = Form("[]"),
+    saved_paths_json: str = Form("[]"),
+    user: dict = Depends(get_current_user),
+):
+    """SSE 스트리밍 일괄 정산 — 실시간 진행 로그를 전송
+
+    vendor_names_json: 사용자가 확인한 거래처명 배열 '["파워네트정보통신","유니정보"]'
+    saved_paths_json: preview-vendors에서 반환된 파일경로 배열 (새 파일 업로드 대신 사용)
+    """
+    global _purchase_cache, _sales_cache
+
+    confirmed_names = json.loads(vendor_names_json)
+    saved_paths = json.loads(saved_paths_json)
+
+    os.makedirs(str(UPLOAD_DIR), exist_ok=True)
+
+    async def event_stream():
+        def sse(event: str, data: dict):
+            return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+        t0 = time.time()
+
+        # ── 1. 구매현황 ──
+        all_purchase_items = []
+        purchase_info = {"filename": "", "from_cache": False}
+        if purchase_file and purchase_file.filename:
+            yield sse("log", {"msg": f"📂 구매현황 파싱 중: {purchase_file.filename}"})
+            try:
+                ext = os.path.splitext(purchase_file.filename)[1]
+                saved = os.path.join(str(UPLOAD_DIR), f"erp_purchase_{uuid.uuid4().hex[:8]}{ext}")
+                content = await purchase_file.read()
+                with open(saved, "wb") as f:
+                    f.write(content)
+                data = parse_erp_purchase(saved)
+                all_purchase_items = data["items"]
+                _purchase_cache = {
+                    "items": data["items"], "total": data["total"],
+                    "filename": purchase_file.filename, "cached": True,
+                }
+                _save_cache_to_db("purchase", purchase_file.filename, data["total"], data["items"])
+                purchase_info = {"filename": purchase_file.filename, "from_cache": False}
+                yield sse("log", {"msg": f"✅ 구매현황 {data['total']}건 로드"})
+            except Exception as e:
+                yield sse("log", {"msg": f"❌ 구매현황 파싱 실패: {e}", "level": "error"})
+        elif _purchase_cache["cached"]:
+            all_purchase_items = _purchase_cache["items"]
+            purchase_info = {"filename": _purchase_cache["filename"], "from_cache": True}
+            yield sse("log", {"msg": f"📦 구매현황 캐시 사용: {_purchase_cache['total']}건 ({_purchase_cache['filename']})"})
+
+        # ── 2. 판매현황 ──
+        all_sales_items = []
+        sales_info = {"filename": "", "from_cache": False}
+        if sales_file and sales_file.filename:
+            yield sse("log", {"msg": f"📂 판매현황 파싱 중: {sales_file.filename}"})
+            try:
+                ext = os.path.splitext(sales_file.filename)[1]
+                saved = os.path.join(str(UPLOAD_DIR), f"erp_sales_{uuid.uuid4().hex[:8]}{ext}")
+                content = await sales_file.read()
+                with open(saved, "wb") as f:
+                    f.write(content)
+                data = parse_erp_sales(saved)
+                all_sales_items = data["items"]
+                _sales_cache = {
+                    "items": data["items"], "total": data["total"],
+                    "filename": sales_file.filename, "cached": True,
+                }
+                _save_cache_to_db("sales", sales_file.filename, data["total"], data["items"])
+                sales_info = {"filename": sales_file.filename, "from_cache": False}
+                yield sse("log", {"msg": f"✅ 판매현황 {data['total']}건 로드"})
+            except Exception as e:
+                yield sse("log", {"msg": f"❌ 판매현황 파싱 실패: {e}", "level": "error"})
+        elif _sales_cache["cached"]:
+            all_sales_items = _sales_cache["items"]
+            sales_info = {"filename": _sales_cache["filename"], "from_cache": True}
+            yield sse("log", {"msg": f"📦 판매현황 캐시 사용: {_sales_cache['total']}건 ({_sales_cache['filename']})"})
+
+        # vendors.json 로드
+        global _vendor_cache
+        if _vendor_cache is None:
+            try:
+                vendor_path = Path(__file__).parent.parent.parent.parent / "data" / "vendors.json"
+                if vendor_path.exists():
+                    with open(vendor_path, "r", encoding="utf-8") as f:
+                        _vendor_cache = json.load(f)
+            except Exception:
+                pass
+
+        # ── 3. 거래처 원장 처리 ──
+        vendor_results = []
+
+        # 파일 목록 결정: saved_paths가 있으면 서버에 이미 저장된 파일 사용, 없으면 vendor_files 사용
+        file_entries = []
+        if saved_paths:
+            for i, spath in enumerate(saved_paths):
+                name = confirmed_names[i] if i < len(confirmed_names) else ""
+                file_entries.append({"path": spath, "vendor_name": name, "filename": os.path.basename(spath)})
+        elif vendor_files:
+            for i, vf in enumerate(vendor_files):
+                if not vf.filename:
+                    continue
+                ext = os.path.splitext(vf.filename)[1]
+                fid = uuid.uuid4().hex[:8]
+                spath = os.path.join(str(UPLOAD_DIR), f"vendor_{fid}{ext}")
+                content = await vf.read()
+                with open(spath, "wb") as f:
+                    f.write(content)
+                name = confirmed_names[i] if i < len(confirmed_names) else ""
+                file_entries.append({"path": spath, "vendor_name": name, "filename": vf.filename})
+
+        total_vendors = len(file_entries)
+        yield sse("log", {"msg": f"🔍 거래처 {total_vendors}건 정산 시작"})
+        yield sse("progress", {"current": 0, "total": total_vendors})
+
+        for vi, entry in enumerate(file_entries):
+            saved_path = entry["path"]
+            vendor_name = entry["vendor_name"]
+            orig_filename = entry["filename"]
+
+            vf_result = {
+                "filename": orig_filename,
+                "vendor_name": vendor_name,
+                "vendor_code": "",
+                "error": "",
+                "summary": {},
+                "matched": [], "unmatched": [], "sales_check": [],
+                "shipping_items": [], "amount_mismatches": [],
+            }
+
+            try:
+                yield sse("log", {"msg": f"📋 [{vi+1}/{total_vendors}] {vendor_name} 원장 파싱 중..."})
+
+                ledger = parse_vendor_ledger(saved_path)
+
+                # 확인된 거래처명이 없으면 파싱 결과 사용
+                if not vendor_name:
+                    vendor_name = ledger.get("vendor_name", "")
+                    if not vendor_name or vendor_name in ("Sheet1", "Sheet"):
+                        fn_base = os.path.splitext(orig_filename)[0]
+                        fn_base = re.sub(r'-[0-9a-f]{6,12}$', '', fn_base)
+                        parts = fn_base.replace("-", "_").split("_")
+                        name_parts = [p for p in parts if p and not re.match(r'^\d+$', p)]
+                        skip_prefixes = {"거래장부내역", "거래내역", "거래확인서", "거래원장", "원장"}
+                        name_parts = [p for p in name_parts if p not in skip_prefixes]
+                        vendor_name = name_parts[-1] if name_parts else fn_base
+
+                vf_result["vendor_name"] = vendor_name
+                vf_result["vendor_code"] = _find_vendor_code(vendor_name)
+
+                # 거래처 원장 항목 추출
+                all_vendor_items = ledger.get("sales_items", [])
+                if not all_vendor_items:
+                    all_vendor_items = ledger.get("transactions", [])
+                    all_vendor_items = [
+                        item for item in all_vendor_items
+                        if item.get("tx_type") == "매출" or not item.get("tx_type")
+                    ]
+
+                if not all_vendor_items:
+                    vf_result["error"] = "거래처 원장에 매출 항목이 없습니다"
+                    vendor_results.append(vf_result)
+                    yield sse("log", {"msg": f"⚠️ {vendor_name}: 매출 항목 없음", "level": "warn"})
+                    continue
+
+                # 메모성 항목 제외
+                memo_keywords = {"출고됨", "직수", "이전잔액", "소계", "합계"}
+                memo_items = [
+                    item for item in all_vendor_items
+                    if (not item.get("qty") and not item.get("amount"))
+                    or str(item.get("product_name", "")).strip() in memo_keywords
+                ]
+                real_items = [item for item in all_vendor_items if item not in memo_items]
+                shipping_items = [item for item in real_items if _is_shipping_item(item)]
+                regular_items = [item for item in real_items if not _is_shipping_item(item)]
+
+                yield sse("log", {"msg": f"  → 전체 {len(all_vendor_items)}건 (실거래 {len(regular_items)}, 배송 {len(shipping_items)}, 메모 {len(memo_items)})"})
+
+                # 구매현황에서 해당 거래처 필터
+                filtered_purchase = _match_vendor_to_purchase(vendor_name, all_purchase_items)
+                yield sse("log", {"msg": f"  → 구매현황 매칭: {len(filtered_purchase)}건 (거래처: {vendor_name})"})
+
+                if not filtered_purchase and all_purchase_items:
+                    # 디버깅: 구매현황의 거래처 목록 표시
+                    cust_names = list(set(p.get("cust_name", "") for p in all_purchase_items if p.get("cust_name")))
+                    yield sse("log", {"msg": f"  ⚠️ 구매현황에서 '{vendor_name}' 못 찾음. 등록된 거래처: {', '.join(cust_names[:10])}{'...' if len(cust_names) > 10 else ''}", "level": "warn"})
+
+                # ── 1단계: 규칙 기반 매칭 ──
+                yield sse("log", {"msg": f"  → 1단계: 규칙 기반 매칭 (날짜/금액/수량)..."})
+                match_results = await match_products_ai(regular_items, filtered_purchase)
+
+                matched = [r for r in match_results if r["match_type"] != "unmatched"]
+                unmatched = [r for r in match_results if r["match_type"] == "unmatched"]
+
+                yield sse("log", {"msg": f"  → 1단계 결과: 매칭 {len(matched)}건, 미매칭 {len(unmatched)}건"})
+
+                # 금액 차이 감지
+                amount_mismatches = []
+                for r in matched:
+                    v = r.get("vendor_item", {})
+                    e = r.get("erp_match", {})
+                    v_amt = float(v.get("amount", 0) or 0)
+                    try:
+                        e_amt = float(str(_get_field(e, "total", "합계", default=0) or 0).replace(",", ""))
+                    except (ValueError, TypeError):
+                        e_amt = 0
+                    v_qty = int(v.get("qty", 0) or 0)
+                    try:
+                        e_qty = int(float(str(_get_field(e, "qty", "수량", default=0) or 0).replace(",", "")))
+                    except (ValueError, TypeError):
+                        e_qty = 0
+                    if v_amt and e_amt and abs(v_amt - e_amt) > 1:
+                        r["amount_diff"] = v_amt - e_amt
+                        r["amount_diff_pct"] = round((v_amt - e_amt) / max(v_amt, 1) * 100, 1)
+                        amount_mismatches.append(r)
+                    if v_qty and e_qty and v_qty != e_qty:
+                        r["qty_diff"] = v_qty - e_qty
+
+                # ── 2단계: 미매칭 건 판매이력 확인 (AI) — 최대 10건만 ──
+                sales_check = []
+                if unmatched and all_sales_items:
+                    ai_limit = min(len(unmatched), 10)  # AI 호출 제한
+                    yield sse("log", {"msg": f"  → 2단계: 판매이력 AI 검색 ({ai_limit}건)..."})
+                    unmatched_vendor_items = [r["vendor_item"] for r in unmatched[:ai_limit]]
+                    for si, uitem in enumerate(unmatched_vendor_items):
+                        pname = uitem.get("product_name", "?")
+                        yield sse("log", {"msg": f"    AI 검색 [{si+1}/{ai_limit}]: {pname}"})
+                        single_result = await check_sales_history([uitem], all_sales_items)
+                        sales_check.extend(single_result)
+                        await asyncio.sleep(0)  # yield control
+
+                    # AI 제한으로 처리 못한 나머지
+                    if len(unmatched) > ai_limit:
+                        for r in unmatched[ai_limit:]:
+                            sales_check.append({
+                                "vendor_item": r["vendor_item"],
+                                "has_sales_history": False,
+                                "search_range": "미검색",
+                                "candidates": [],
+                                "best_candidate": None,
+                                "recommendation": "AI 검색 제한 초과 — 수동 확인 필요",
+                            })
+                elif unmatched:
+                    yield sse("log", {"msg": f"  → 판매현황 없어 AI 검색 생략"})
+
+                # 배송료 매칭
+                shipping_match_results = []
+                if shipping_items and filtered_purchase:
+                    shipping_match_results = await match_products_ai(shipping_items, filtered_purchase)
+
+                vf_result["matched"] = matched
+                vf_result["unmatched"] = unmatched
+                vf_result["sales_check"] = sales_check
+                vf_result["shipping_items"] = [
+                    {
+                        "vendor_item": item,
+                        "erp_match": next((r.get("erp_match") for r in shipping_match_results
+                                           if r.get("vendor_item") == item and r.get("match_type") != "unmatched"), None),
+                        "match_type": next((r.get("match_type") for r in shipping_match_results
+                                            if r.get("vendor_item") == item and r.get("match_type") != "unmatched"), "unmatched"),
+                    }
+                    for item in shipping_items
+                ]
+                vf_result["amount_mismatches"] = amount_mismatches
+                vf_result["memo_items"] = [item for item in memo_items]
+                vf_result["summary"] = {
+                    "total_vendor_items": len(all_vendor_items),
+                    "memo_filtered": len(memo_items),
+                    "matched_count": len(matched),
+                    "unmatched_count": len(unmatched),
+                    "with_sales_history": sum(1 for s in sales_check if s.get("has_sales_history")),
+                    "shipping_count": len(shipping_items),
+                    "amount_mismatch_count": len(amount_mismatches),
+                    "purchase_filtered": len(filtered_purchase),
+                }
+
+                match_rate = round(len(matched) / max(len(regular_items), 1) * 100, 1)
+                yield sse("log", {"msg": f"✅ {vendor_name} 완료: 매칭률 {match_rate}% ({len(matched)}/{len(regular_items)})"})
+
+            except Exception as e:
+                logger.error(f"[일괄] '{orig_filename}' 처리 실패: {e}", exc_info=True)
+                vf_result["error"] = str(e)
+                yield sse("log", {"msg": f"❌ {vendor_name} 처리 실패: {e}", "level": "error"})
+
+            vendor_results.append(vf_result)
+            yield sse("progress", {"current": vi + 1, "total": total_vendors})
+
+        # ── 세션 저장 & 최종 결과 ──
+        session_id = uuid.uuid4().hex[:12]
+        reconcile_sessions[session_id] = {
+            "batch": True,
+            "vendor_results": vendor_results,
+            "purchase_total": len(all_purchase_items),
+            "sales_total": len(all_sales_items),
+            "purchase_info": purchase_info,
+            "sales_info": sales_info,
+        }
+
+        total_summary = {
+            "vendor_count": len(vendor_results),
+            "total_matched": sum(r["summary"].get("matched_count", 0) for r in vendor_results),
+            "total_unmatched": sum(r["summary"].get("unmatched_count", 0) for r in vendor_results),
+            "total_shipping": sum(r["summary"].get("shipping_count", 0) for r in vendor_results),
+            "total_amount_mismatch": sum(r["summary"].get("amount_mismatch_count", 0) for r in vendor_results),
+            "purchase_total": len(all_purchase_items),
+            "purchase_from_cache": purchase_info["from_cache"],
+            "sales_total": len(all_sales_items),
+            "sales_from_cache": sales_info["from_cache"],
+            "errors": [r["filename"] for r in vendor_results if r.get("error")],
+        }
+
+        elapsed = round(time.time() - t0, 1)
+        yield sse("log", {"msg": f"🎉 전체 정산 완료 ({elapsed}초)"})
+        yield sse("result", {
+            "session_id": session_id,
+            "summary": total_summary,
+            "vendor_results": vendor_results,
+        })
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/compare")

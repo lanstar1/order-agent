@@ -5208,15 +5208,43 @@ function initReconcilePage() {
   }
 }
 
+function _extractVendorName(filename) {
+  let base = filename.replace(/\.(xlsx|xls)$/i, "");
+  // UUID suffix 제거 (드래그앤드롭 시 -79021bc2 같은 suffix)
+  base = base.replace(/-[0-9a-f]{6,12}$/, "");
+  const parts = base.replace(/-/g, "_").split("_");
+  const skipPrefixes = new Set(["거래장부내역","거래내역","거래확인서","거래원장","원장"]);
+  const nameParts = parts.filter(p => p && !/^\d+$/.test(p) && !skipPrefixes.has(p));
+  return nameParts.length ? nameParts[nameParts.length - 1] : base;
+}
+
 function _renderVendorFileList() {
   const vf = document.getElementById("reconcile-vendor-files");
   const el = document.getElementById("reconcile-vendor-file-list");
+  const confirmArea = document.getElementById("reconcile-vendor-confirm");
+  const nameList = document.getElementById("reconcile-vendor-name-list");
   if (!el || !vf) return;
   const files = vf.files;
-  if (!files.length) { el.innerHTML = ""; return; }
+  if (!files.length) {
+    el.innerHTML = "";
+    if (confirmArea) confirmArea.style.display = "none";
+    return;
+  }
+  // 파일 태그 표시
   el.innerHTML = Array.from(files).map(f =>
     `<span class="rc-file-tag">📄 ${f.name}</span>`
   ).join("");
+  // 거래처 확인 영역 표시
+  if (confirmArea && nameList) {
+    confirmArea.style.display = "";
+    nameList.innerHTML = Array.from(files).map((f, i) => {
+      const extracted = _extractVendorName(f.name);
+      return `<div class="rc-vendor-name-row">
+        <span class="rc-vnr-file" title="${f.name}">📄 ${f.name}</span>
+        <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${extracted}">
+      </div>`;
+    }).join("");
+  }
 }
 
 function reconcileSetStep(n) {
@@ -5314,6 +5342,10 @@ async function reconcileBatchStart() {
     toast("구매현황 파일을 업로드하거나 캐시가 필요합니다", "error"); return;
   }
 
+  // 확인된 거래처명 수집
+  const nameInputs = document.querySelectorAll(".rc-vendor-name-input");
+  const confirmedNames = Array.from(nameInputs).map(inp => inp.value.trim());
+
   const btn = document.getElementById("btn-reconcile-batch");
   btn.disabled = true;
   btn.innerHTML = "<span class='rc-progress-spinner' style='width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:6px'></span> 처리 중...";
@@ -5321,21 +5353,33 @@ async function reconcileBatchStart() {
   const progressArea = document.getElementById("reconcile-batch-progress");
   const progressText = document.getElementById("reconcile-batch-progress-text");
   const progressBar = document.getElementById("reconcile-batch-progress-bar");
+  const logContent = document.getElementById("reconcile-log-content");
   progressArea.style.display = "";
-  progressText.textContent = `${vendorFiles.length}개 거래처 원장 일괄 처리 중...`;
-  progressBar.style.width = "30%";
+  progressText.textContent = "서버 연결 중...";
+  progressBar.style.width = "5%";
   progressBar.style.background = "";
+  if (logContent) logContent.innerHTML = "";
+
+  function appendLog(msg, level) {
+    if (!logContent) return;
+    const line = document.createElement("div");
+    line.className = "log-line" + (level ? ` ${level}` : "");
+    line.textContent = msg;
+    logContent.appendChild(line);
+    logContent.scrollTop = logContent.scrollHeight;
+  }
 
   try {
     const formData = new FormData();
     for (const f of vendorFiles) formData.append("vendor_files", f);
     if (pFile) formData.append("purchase_file", pFile);
     if (sFile) formData.append("sales_file", sFile);
+    formData.append("vendor_names_json", JSON.stringify(confirmedNames));
+    formData.append("saved_paths_json", "[]");
 
-    progressBar.style.width = "50%";
-    progressText.textContent = "서버에서 매칭 처리 중...";
+    appendLog("📡 서버에 요청 전송 중...");
 
-    const resp = await fetch(API_BASE + "/api/reconcile/batch-reconcile", {
+    const resp = await fetch(API_BASE + "/api/reconcile/batch-reconcile-stream", {
       method: "POST",
       headers: { "Authorization": `Bearer ${api.getToken()}` },
       body: formData,
@@ -5346,22 +5390,63 @@ async function reconcileBatchStart() {
       throw new Error(err.detail || `서버 오류 (${resp.status})`);
     }
 
-    progressBar.style.width = "90%";
-    const result = await resp.json();
-    _rc.batchResult = result;
+    // SSE 스트림 파싱
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalResult = null;
 
-    progressBar.style.width = "100%";
-    progressText.textContent = "완료!";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    reconcileCheckErpCache();
-    _renderBatchResults(result);
-    reconcileSetStep(2);
-    toast(`${result.summary.vendor_count}개 거래처 일괄 정산 완료`, "success");
+      const lines = buffer.split("\n");
+      buffer = lines.pop(); // 마지막 불완전한 줄 유지
+
+      let currentEvent = "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith("data: ")) {
+          const dataStr = line.slice(6);
+          try {
+            const data = JSON.parse(dataStr);
+            if (currentEvent === "log") {
+              appendLog(data.msg, data.level || "");
+              progressText.textContent = data.msg.replace(/^[^\s]+\s/, "");
+            } else if (currentEvent === "progress") {
+              const pct = data.total > 0 ? Math.round((data.current / data.total) * 80) + 15 : 15;
+              progressBar.style.width = pct + "%";
+              progressText.textContent = `${data.current}/${data.total} 거래처 처리 중...`;
+            } else if (currentEvent === "result") {
+              finalResult = data;
+            }
+          } catch (parseErr) { /* skip malformed JSON */ }
+          currentEvent = "";
+        }
+      }
+    }
+
+    if (finalResult) {
+      _rc.batchResult = finalResult;
+      progressBar.style.width = "100%";
+      progressText.textContent = "완료!";
+      appendLog("✅ 결과 렌더링 중...");
+
+      reconcileCheckErpCache();
+      _renderBatchResults(finalResult);
+      reconcileSetStep(2);
+      toast(`${finalResult.summary.vendor_count}개 거래처 일괄 정산 완료`, "success");
+    } else {
+      throw new Error("서버에서 결과를 받지 못했습니다");
+    }
 
   } catch (e) {
     progressText.textContent = "오류: " + (e.message || e);
     progressBar.style.width = "100%";
     progressBar.style.background = "var(--danger)";
+    appendLog("❌ " + (e.message || e), "error");
     toast("일괄 정산 실패: " + (e.message || e), "error");
   } finally {
     btn.disabled = false;
