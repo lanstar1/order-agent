@@ -48,7 +48,7 @@ async def upload_master(file: UploadFile = File(...)):
             f.write(contents)
 
         # 검증: 로드해서 매핑 수 확인
-        barcode_to_code, code_to_barcode, discontinued, price_up = load_master()
+        barcode_to_code, code_to_barcode, discontinued, price_up, needs_label = load_master()
         logger.info(f"[바코드] 마스터 업로드 완료: PO {len(barcode_to_code)}개, 주문서 {len(code_to_barcode)}개")
 
         return {
@@ -58,6 +58,7 @@ async def upload_master(file: UploadFile = File(...)):
             "order_count": len(code_to_barcode),
             "discontinued_count": len(discontinued),
             "price_up_count": len(price_up),
+            "needs_label_count": len(needs_label),
         }
     except Exception as e:
         logger.error(f"[바코드] 마스터 업로드 실패: {e}", exc_info=True)
@@ -67,13 +68,14 @@ async def upload_master(file: UploadFile = File(...)):
 @router.get("/master-info")
 async def master_info():
     """마스터 데이터 현황 반환"""
-    barcode_to_code, code_to_barcode, discontinued, price_up = load_master()
+    barcode_to_code, code_to_barcode, discontinued, price_up, needs_label = load_master()
     return {
         "po_count": len(barcode_to_code),
         "order_count": len(code_to_barcode),
         "order_with_barcode": sum(1 for v in code_to_barcode.values() if v),
         "discontinued_count": len(discontinued),
         "price_up_count": len(price_up),
+        "needs_label_count": len(needs_label),
     }
 
 
