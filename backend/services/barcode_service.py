@@ -165,9 +165,9 @@ def parse_po_items(contents: bytes) -> list[dict]:
         if existing_reason:
             auto_reason = existing_reason
         elif bc in discontinued or (prod_cd and prod_cd in discontinued):
-            auto_reason = "제품 단종 - 제조사 생산중단 혹은 공급사 취급중단 - 시장 단종"
+            auto_reason = "제조사 생산중단 혹은 공급사 취급중단 - 시장 단종"
         elif bc in price_up or (prod_cd and prod_cd in price_up):
-            auto_reason = "제품 인상 - 가격 이슈 (Price) - 매입가 인상 협상 중"
+            auto_reason = "가격 이슈 (Price) - 매입가 인상 협상 중"
         else:
             auto_reason = ""
 
@@ -230,10 +230,10 @@ async def send_to_ecount(
     df["상품바코드"] = df["상품바코드"].str.strip().str.replace(r"\.0$", "", regex=True)
     df["_품목코드"] = df["상품바코드"].map(lambda bc: barcode_to_code.get(bc, ""))
 
-    # ② 납품부족사유 필터 — 제품 단종/제품 인상은 이카운트 제외
+    # ② 납품부족사유 필터 — 단종/인상은 이카운트 제외
     reasons: dict = json.loads(shortage_reasons_json)
     excluded = {int(k) for k, v in reasons.items()
-                if v.startswith("제품 단종") or v.startswith("제품 인상")}
+                if "시장 단종" in v or "생산중단" in v or "매입가 인상" in v or "가격 이슈" in v}
 
     # 마스터 자동 감지로도 제외
     for i, row in df.iterrows():
@@ -316,28 +316,36 @@ async def send_to_ecount(
         resp = await client.post(sale_url, json={"SaleList": bulk_list})
         result = resp.json()
 
-        # ⑧ 재고 조회
-        inv_map: dict = {}
+        # ⑧ 재고 조회 — 10번(용산) + 30번(통진) 두 창고
+        inv_10: dict = {}  # 용산창고
+        inv_30: dict = {}  # 통진창고
+        inv_checked = False
         try:
             inv_url = (
                 f"https://oapi{zone.lower()}.ecount.com/OAPI/V2/"
                 f"InventoryBalance/GetListInventoryBalanceStatusByLocation"
                 f"?SESSION_ID={session_id}"
             )
+            # WH_CD 빈값이면 전체 창고 조회
             inv_resp = await client.post(inv_url, json={
                 "BASE_DATE": today,
-                "WH_CD": BARCODE_WH_CD,
+                "WH_CD": "",
                 "PROD_CD": "",
             })
             inv_data = inv_resp.json()
             for r in ((inv_data.get("Data") or {}).get("Result") or []):
                 pc = str(r.get("PROD_CD", "")).strip()
+                wh = str(r.get("WH_CD", "")).strip()
                 try:
                     bq = float(str(r.get("BAL_QTY", "0") or "0"))
                 except Exception:
                     bq = 0.0
-                if pc:
-                    inv_map[pc] = bq
+                if pc and wh == "10":
+                    inv_10[pc] = bq
+                elif pc and wh == "30":
+                    inv_30[pc] = bq
+            inv_checked = True
+            logger.info(f"[바코드] 재고 조회 완료: 용산 {len(inv_10)}건, 통진 {len(inv_30)}건")
         except Exception as e:
             logger.warning(f"[바코드] 재고 조회 실패: {e}")
 
@@ -356,16 +364,33 @@ async def send_to_ecount(
     for i, item in enumerate(bulk_list):
         bd = item["BulkDatas"]
         prod_cd = bd["PROD_CD"]
-        bal_qty = inv_map.get(prod_cd, None)
-        low = (bal_qty is not None) and (bal_qty <= 0)
+        bal_10 = inv_10.get(prod_cd, None)  # 용산
+        bal_30 = inv_30.get(prod_cd, None)  # 통진
+
+        # 재고 상태 판별:
+        # - 통진(30) 재고 > 0 → 정상 (ok)
+        # - 통진(30) 재고 ≤ 0 이지만 용산(10) 재고 > 0 → 주황 (wh10_has)
+        # - 둘 다 없음 → 빨강 (low_stock)
+        has_30 = bal_30 is not None and bal_30 > 0
+        has_10 = bal_10 is not None and bal_10 > 0
+
+        if has_30:
+            stock_status = "ok"
+        elif has_10:
+            stock_status = "wh10_has"  # 용산에만 재고 있음
+        else:
+            stock_status = "low_stock"  # 둘 다 재고 없음
+
         items_result.append({
             "upload_ser_no": bd["UPLOAD_SER_NO"],
             "remarks": bd["U_MEMO5"],
             "prod_cd": prod_cd,
             "qty": bd["QTY"],
-            "bal_qty": round(bal_qty) if bal_qty is not None else None,
-            "low_stock": low,
-            "orig_idx": orig_indices[i],  # 원본 PO 행 인덱스
+            "bal_10": round(bal_10) if bal_10 is not None else None,
+            "bal_30": round(bal_30) if bal_30 is not None else None,
+            "stock_status": stock_status,
+            "low_stock": stock_status == "low_stock",  # 하위호환
+            "orig_idx": orig_indices[i],
         })
 
     return {
@@ -378,5 +403,5 @@ async def send_to_ecount(
         "unmatched": unmatched,
         "excluded": excluded_cnt,
         "items_result": items_result,
-        "inv_checked": len(inv_map) > 0,
+        "inv_checked": inv_checked,
     }

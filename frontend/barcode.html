@@ -205,6 +205,9 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cur
 .inv-table tr.low-stock:hover td { background: rgba(255,71,87,0.13); }
 .inv-qty-bad { color: var(--danger); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 .inv-qty-ok  { color: var(--success); font-family: 'JetBrains Mono', monospace; }
+.inv-qty-warn { color: var(--warning); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.inv-table tr.wh10-has td { background: rgba(255,176,32,0.08); }
+.inv-table tr.wh10-has:hover td { background: rgba(255,176,32,0.13); }
 
 /* ── 납품부족사유 테이블 ── */
 .po-table-wrap { overflow-x: auto; margin-top: 12px; border-radius: 8px; border: 1px solid var(--border2); }
@@ -338,7 +341,7 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cur
     <div class="inv-table-wrap hidden" id="invTableWrap">
       <table class="inv-table">
         <thead>
-          <tr><th>전표순번</th><th>물류센터 - 발주번호</th><th>품목코드</th><th>전송수량</th><th>현재재고</th></tr>
+          <tr><th>전표순번</th><th>물류센터 - 발주번호</th><th>품목코드</th><th>전송수량</th><th>용산창고</th><th>통진창고</th></tr>
         </thead>
         <tbody id="invTableBody"></tbody>
       </table>
@@ -429,9 +432,9 @@ async function handleEcountFile(file) {
 function renderPreviewTable(items) {
   const REASONS = [
     { value: "", label: "(없음)" },
-    { value: "제품 단종 - 제조사 생산중단 혹은 공급사 취급중단 - 시장 단종", label: "제품 단종" },
-    { value: "제품 인상 - 가격 이슈 (Price) - 매입가 인상 협상 중",          label: "제품 인상" },
-    { value: "제품 품절 - 협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)", label: "제품 품절" },
+    { value: "제조사 생산중단 혹은 공급사 취급중단 - 시장 단종", label: "제품 단종" },
+    { value: "가격 이슈 (Price) - 매입가 인상 협상 중",          label: "제품 인상" },
+    { value: "협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)", label: "제품 품절" },
   ];
   const tbody = document.getElementById("poTableBody");
   tbody.innerHTML = "";
@@ -457,9 +460,9 @@ function renderPreviewTable(items) {
 
 function reasonClass(val) {
   if (!val) return "";
-  if (val.startsWith("제품 단종")) return "reason-단종";
-  if (val.startsWith("제품 인상")) return "reason-인상";
-  if (val.startsWith("제품 품절")) return "reason-품절";
+  if (val.includes("생산중단") || val.includes("시장 단종")) return "reason-단종";
+  if (val.includes("매입가 인상") || val.includes("가격 이슈")) return "reason-인상";
+  if (val.includes("재고부족") || val.includes("입고지연")) return "reason-품절";
   return "";
 }
 
@@ -473,7 +476,7 @@ function updateSummary() {
   let total=0, exclude=0, nomatch=0;
   selects.forEach(s => {
     total++;
-    if (s.value.startsWith("제품 단종") || s.value.startsWith("제품 인상")) exclude++;
+    if (s.value.includes("시장 단종") || s.value.includes("생산중단") || s.value.includes("매입가 인상") || s.value.includes("가격 이슈")) exclude++;
   });
   document.querySelectorAll("#poTableBody .no-match").forEach(() => nomatch++);
   const send = total - exclude;
@@ -535,21 +538,28 @@ async function sendToEcount() {
     renderInvTable(data.items_result || []);
 
     // 재고부족 품목 → 납품부족사유 자동 설정
-    const LOW_STOCK_REASON = "제품 품절 - 협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)";
+    // low_stock(둘 다 없음)만 품절사유 입력, wh10_has(용산에 있음)는 제외
+    const LOW_STOCK_REASON = "협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)";
     let autoSetCnt = 0;
+    let wh10HasCnt = 0;
     (data.items_result || []).forEach(item => {
-      if (item.low_stock && item.orig_idx !== undefined) {
+      const ss = item.stock_status || (item.low_stock ? "low_stock" : "ok");
+      if (ss === "low_stock" && item.orig_idx !== undefined) {
         const sel = document.querySelector(`#poTableBody select[data-idx="${item.orig_idx}"]`);
-        if (sel && !sel.value) {  // 사유가 아직 비어있는 경우만
+        if (sel && !sel.value) {
           sel.value = LOW_STOCK_REASON;
           sel.className = reasonClass(LOW_STOCK_REASON);
           autoSetCnt++;
         }
       }
+      if (ss === "wh10_has") wh10HasCnt++;
     });
     if (autoSetCnt > 0) {
       updateSummary();
       elog(`📋 재고 부족 ${autoSetCnt}건 → 납품부족사유 자동 설정 완료`, "o");
+    }
+    if (wh10HasCnt > 0) {
+      elog(`🟠 용산창고에만 재고 있음 ${wh10HasCnt}건 (품절사유 미입력)`, "w");
     }
 
     // 전송 완료 후 다운로드 버튼 활성화
@@ -578,16 +588,24 @@ function renderInvTable(items) {
 
   items.forEach(item => {
     const tr = document.createElement("tr");
-    if (item.low_stock) tr.classList.add("low-stock");
-    const balHtml = item.bal_qty === null
+    const ss = item.stock_status || (item.low_stock ? "low_stock" : "ok");
+    if (ss === "low_stock") tr.classList.add("low-stock");
+    if (ss === "wh10_has") tr.classList.add("wh10-has");
+
+    const bal10Html = item.bal_10 === null || item.bal_10 === undefined
       ? `<span style="color:var(--text3)">-</span>`
-      : `<span class="${item.low_stock ? 'inv-qty-bad' : 'inv-qty-ok'}">${item.bal_qty}</span>`;
+      : `<span class="${item.bal_10 > 0 ? (ss === 'wh10_has' ? 'inv-qty-warn' : 'inv-qty-ok') : 'inv-qty-bad'}">${item.bal_10}</span>`;
+    const bal30Html = item.bal_30 === null || item.bal_30 === undefined
+      ? `<span style="color:var(--text3)">-</span>`
+      : `<span class="${item.bal_30 > 0 ? 'inv-qty-ok' : 'inv-qty-bad'}">${item.bal_30}</span>`;
+
     tr.innerHTML = `
       <td>${item.upload_ser_no}</td>
       <td style="text-align:left;white-space:nowrap">${item.remarks}</td>
       <td style="font-weight:600;font-family:'JetBrains Mono',monospace">${item.prod_cd}</td>
       <td>${item.qty}</td>
-      <td>${balHtml}</td>
+      <td>${bal10Html}</td>
+      <td>${bal30Html}</td>
     `;
     tbody.appendChild(tr);
   });
