@@ -5187,7 +5187,7 @@ const _rc = {
   step: 1,
   batchResult: null,
   purchaseQueue: [],
-  vendorFiles: [],  // {file, name, status} 누적 관리
+  vendorFiles: [],  // {file, name, code, status} 누적 관리
 };
 
 function initReconcilePage() {
@@ -5305,16 +5305,21 @@ async function _renderVendorFileList() {
       const best = _fuzzyMatchVendor(extracted, vendors);
       if (best) {
         v.name = best.name;
+        v.code = best.code || "";
         v.status = "matched";
         if (inputEl) inputEl.value = best.name;
         if (statusEl) statusEl.textContent = "✅";
+        const codeEl = document.getElementById(`rc-vnr-code-${i}`);
+        if (codeEl) codeEl.textContent = best.code || "";
       } else {
         v.name = extracted;
+        v.code = "";
         v.status = "unmatched";
         if (statusEl) statusEl.textContent = "⚠️";
       }
     } catch (e) {
       v.name = extracted;
+      v.code = "";
       v.status = "error";
       if (statusEl) statusEl.textContent = "❌";
     }
@@ -5327,14 +5332,50 @@ function _renderVendorNameRows() {
   nameList.innerHTML = _rc.vendorFiles.map((v, i) => {
     const extracted = _extractVendorName(v.file.name);
     const displayName = v.name || extracted;
+    const displayCode = v.code || "";
     const icon = v.status === "matched" ? "✅" : v.status === "unmatched" ? "⚠️" : v.status === "error" ? "❌" : "🔍";
     return `<div class="rc-vendor-name-row">
       <span class="rc-vnr-file" title="${v.file.name}">📄 ${v.file.name}</span>
-      <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${displayName}">
+      <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${displayName}"
+        onchange="_onVendorNameChange(${i}, this.value)">
+      <span class="rc-vnr-code" id="rc-vnr-code-${i}" title="거래처코드">${displayCode}</span>
       <span class="rc-vnr-status" id="rc-vnr-status-${i}">${icon}</span>
       <button onclick="_removeVendorFile(${i})" class="rc-vnr-delete" title="삭제">&times;</button>
     </div>`;
   }).join("");
+}
+
+async function _onVendorNameChange(idx, newName) {
+  // 사용자가 거래처명을 수정하면 다시 API로 매칭 시도
+  const v = _rc.vendorFiles[idx];
+  if (!v || !newName.trim()) return;
+  const statusEl = document.getElementById(`rc-vnr-status-${idx}`);
+  const codeEl = document.getElementById(`rc-vnr-code-${idx}`);
+  if (statusEl) statusEl.textContent = "🔍";
+  try {
+    const res = await api.get(`/api/reconcile/vendor-list?q=${encodeURIComponent(newName.trim())}`);
+    const vendors = res.vendors || [];
+    const best = _fuzzyMatchVendor(newName.trim(), vendors);
+    if (best) {
+      v.name = best.name;
+      v.code = best.code || "";
+      v.status = "matched";
+      if (statusEl) statusEl.textContent = "✅";
+      if (codeEl) codeEl.textContent = best.code || "";
+      // 입력란 값도 공식명으로 갱신
+      const inputEl = document.querySelector(`.rc-vendor-name-input[data-idx="${idx}"]`);
+      if (inputEl && inputEl.value !== best.name) inputEl.value = best.name;
+    } else {
+      v.name = newName.trim();
+      v.code = "";
+      v.status = "unmatched";
+      if (statusEl) statusEl.textContent = "⚠️";
+      if (codeEl) codeEl.textContent = "";
+    }
+  } catch (e) {
+    v.status = "error";
+    if (statusEl) statusEl.textContent = "❌";
+  }
 }
 
 function reconcileSetStep(n) {
@@ -5430,9 +5471,10 @@ async function reconcileBatchStart() {
     toast("구매현황 파일을 업로드하거나 캐시가 필요합니다", "error"); return;
   }
 
-  // 확인된 거래처명 수집 (input에서 최신값 읽기)
+  // 확인된 거래처명 + 거래처코드 수집
   const nameInputs = document.querySelectorAll(".rc-vendor-name-input");
   const confirmedNames = Array.from(nameInputs).map(inp => inp.value.trim());
+  const confirmedCodes = _rc.vendorFiles.map(v => v.code || "");
 
   const btn = document.getElementById("btn-reconcile-batch");
   btn.disabled = true;
@@ -5463,6 +5505,7 @@ async function reconcileBatchStart() {
     if (pFile) formData.append("purchase_file", pFile);
     if (sFile) formData.append("sales_file", sFile);
     formData.append("vendor_names_json", JSON.stringify(confirmedNames));
+    formData.append("vendor_codes_json", JSON.stringify(confirmedCodes));
     formData.append("saved_paths_json", "[]");
 
     appendLog("📡 서버에 요청 전송 중...");

@@ -813,17 +813,20 @@ async def batch_reconcile_stream(
     purchase_file: Optional[UploadFile] = File(None),
     sales_file: Optional[UploadFile] = File(None),
     vendor_names_json: str = Form("[]"),
+    vendor_codes_json: str = Form("[]"),
     saved_paths_json: str = Form("[]"),
     user: dict = Depends(get_current_user),
 ):
     """SSE 스트리밍 일괄 정산 — 실시간 진행 로그를 전송
 
-    vendor_names_json: 사용자가 확인한 거래처명 배열 '["파워네트정보통신","유니정보"]'
-    saved_paths_json: preview-vendors에서 반환된 파일경로 배열 (새 파일 업로드 대신 사용)
+    vendor_names_json: 사용자가 확인한 거래처명 배열 '["파워네트정보통신(주)","(주)현대모아컴"]'
+    vendor_codes_json: 거래처코드 배열 '["1068637925","1068187401"]'
+    saved_paths_json: preview-vendors에서 반환된 파일경로 배열
     """
     global _purchase_cache, _sales_cache
 
     confirmed_names = json.loads(vendor_names_json)
+    confirmed_codes = json.loads(vendor_codes_json)
     saved_paths = json.loads(saved_paths_json)
 
     os.makedirs(str(UPLOAD_DIR), exist_ok=True)
@@ -907,8 +910,10 @@ async def batch_reconcile_stream(
         if saved_paths:
             for i, spath in enumerate(saved_paths):
                 name = confirmed_names[i] if i < len(confirmed_names) else ""
-                file_entries.append({"path": spath, "vendor_name": name, "filename": os.path.basename(spath)})
+                code = confirmed_codes[i] if i < len(confirmed_codes) else ""
+                file_entries.append({"path": spath, "vendor_name": name, "vendor_code": code, "filename": os.path.basename(spath)})
         elif vendor_files:
+            vi_idx = 0
             for i, vf in enumerate(vendor_files):
                 if not vf.filename:
                     continue
@@ -918,8 +923,10 @@ async def batch_reconcile_stream(
                 content = await vf.read()
                 with open(spath, "wb") as f:
                     f.write(content)
-                name = confirmed_names[i] if i < len(confirmed_names) else ""
-                file_entries.append({"path": spath, "vendor_name": name, "filename": vf.filename})
+                name = confirmed_names[vi_idx] if vi_idx < len(confirmed_names) else ""
+                code = confirmed_codes[vi_idx] if vi_idx < len(confirmed_codes) else ""
+                file_entries.append({"path": spath, "vendor_name": name, "vendor_code": code, "filename": vf.filename})
+                vi_idx += 1
 
         total_vendors = len(file_entries)
         yield sse("log", {"msg": f"🔍 거래처 {total_vendors}건 정산 시작"})
@@ -928,12 +935,13 @@ async def batch_reconcile_stream(
         for vi, entry in enumerate(file_entries):
             saved_path = entry["path"]
             vendor_name = entry["vendor_name"]
+            vendor_code = entry.get("vendor_code", "")
             orig_filename = entry["filename"]
 
             vf_result = {
                 "filename": orig_filename,
                 "vendor_name": vendor_name,
-                "vendor_code": "",
+                "vendor_code": vendor_code,
                 "error": "",
                 "summary": {},
                 "matched": [], "unmatched": [], "sales_check": [],
@@ -958,7 +966,7 @@ async def batch_reconcile_stream(
                         vendor_name = name_parts[-1] if name_parts else fn_base
 
                 vf_result["vendor_name"] = vendor_name
-                vf_result["vendor_code"] = _find_vendor_code(vendor_name)
+                vf_result["vendor_code"] = vendor_code or _find_vendor_code(vendor_name)
 
                 # 거래처 원장 항목 추출
                 all_vendor_items = ledger.get("sales_items", [])

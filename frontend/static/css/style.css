@@ -893,6 +893,13 @@ textarea.form-control { resize: vertical; min-height: 120px; }
   flex: 0 0 auto; font-size: 12px; color: var(--gray-400);
   white-space: nowrap;
 }
+.rc-vendor-name-row .rc-vnr-code {
+  flex: 0 0 auto; font-size: 11px; color: var(--gray-400);
+  font-family: 'Menlo', 'Consolas', monospace;
+  background: var(--gray-100); padding: 2px 6px; border-radius: 4px;
+  min-width: 80px; text-align: center;
+}
+.rc-vendor-name-row .rc-vnr-code:empty { display: none; }
 .rc-vendor-name-row .rc-vnr-status {
   flex: 0 0 auto; font-size: 16px; line-height: 1;
 }
