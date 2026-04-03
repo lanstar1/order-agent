@@ -104,6 +104,11 @@ function navigateTo(pageId) {
     window.open("https://mail-dqxh.onrender.com", "_blank");
     return;
   }
+  // 바코드 ERP Bridge는 별도 페이지로 열기
+  if (pageId === "barcode_bridge") {
+    window.open("/barcode", "_blank");
+    return;
+  }
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   const page = document.getElementById("page-" + pageId);
