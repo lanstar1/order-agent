@@ -29,7 +29,6 @@ from api.routes.cs import router as cs_router
 from api.routes.sales_analytics import router as sales_analytics_router
 from api.routes.purchases import router as purchases_router
 from api.routes.aicc import router as aicc_router
-from api.routes.smartstore import router as smartstore_router
 from api.routes.inventory_alert import router as inventory_alert_router
 from api.routes.barcode import router as barcode_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
@@ -148,11 +147,6 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/purchases/submit-erp"): "구매입력 ERP 전송",
     ("POST", "/api/super-agent/jobs"): "Super Agent 작업 생성",
     ("GET", "/api/super-agent/jobs"): "Super Agent 이력 조회",
-    ("POST", "/api/smartstore/fetch-orders"): "스마트스토어 주문수집",
-    ("GET", "/api/smartstore/download-erp"): "스마트스토어 ERP 다운로드",
-    ("GET", "/api/smartstore/download-delivery"): "스마트스토어 택배 다운로드",
-    ("POST", "/api/smartstore/dispatch"): "스마트스토어 발송처리",
-    ("POST", "/api/smartstore/upload-tracking"): "스마트스토어 송장 업로드",
     ("POST", "/api/inventory-monitor/run"): "재고 모니터링 수동 실행",
     ("PUT", "/api/inventory-monitor/settings"): "재고 모니터링 설정 변경",
     ("POST", "/api/inventory-monitor/telegram/test"): "텔레그램 연결 테스트",
@@ -255,7 +249,6 @@ app.include_router(cs_router)
 app.include_router(sales_analytics_router)
 app.include_router(purchases_router)
 app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
-app.include_router(smartstore_router)
 app.include_router(inventory_alert_router)
 app.include_router(barcode_router)
 
@@ -437,36 +430,6 @@ async def startup():
             logger.info(f"AICC 제품 지식 DB 동기화 완료: {count}개 제품 (upsert)")
     except Exception as e:
         logger.warning(f"AICC 제품 지식 DB 로드 실패 (서비스는 계속): {e}")
-
-    # 스마트스토어 품목매칭 JSON → DB 자동 로드 (매 배포시 최신 반영)
-    try:
-        import json as _json
-        ss_map_path = Path(__file__).parent.parent / "data" / "smartstore_product_map.json"
-        if ss_map_path.exists():
-            with open(ss_map_path, encoding="utf-8") as f:
-                ss_items = _json.load(f)
-            from db.database import get_connection as _gc_ss
-            _conn_ss = _gc_ss()
-            _loaded = 0
-            for item in ss_items:
-                pno = str(item.get("naver_product_no", "")).strip()
-                code = str(item.get("item_code", "")).strip()
-                model = str(item.get("model_name", "")).strip()
-                if pno and code:
-                    _conn_ss.execute(
-                        "INSERT OR IGNORE INTO smartstore_product_map (naver_product_no, item_code, model_name) VALUES (?, ?, ?)",
-                        (pno, code, model),
-                    )
-                    _conn_ss.execute(
-                        "UPDATE smartstore_product_map SET item_code=?, model_name=? WHERE naver_product_no=?",
-                        (code, model, pno),
-                    )
-                    _loaded += 1
-            _conn_ss.commit()
-            _conn_ss.close()
-            logger.info(f"스마트스토어 품목매칭 로드 완료: {_loaded}건 (JSON → DB)")
-    except Exception as e:
-        logger.warning(f"스마트스토어 품목매칭 로드 실패 (서비스는 계속): {e}")
 
     # products.csv 확인
     from config import PRODUCTS_CSV
