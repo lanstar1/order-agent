@@ -540,9 +540,18 @@ async def batch_reconcile(
                 vendor_results.append(vf_result)
                 continue
 
+            # 메모성 항목 제외 (수량=0 & 금액=0인 "출고됨", "직수" 등)
+            memo_keywords = {"출고됨", "직수", "이전잔액", "소계", "합계"}
+            memo_items = [
+                item for item in all_vendor_items
+                if (not item.get("qty") and not item.get("amount"))
+                or str(item.get("product_name", "")).strip() in memo_keywords
+            ]
+            real_items = [item for item in all_vendor_items if item not in memo_items]
+
             # 배송료 분리
-            shipping_items = [item for item in all_vendor_items if _is_shipping_item(item)]
-            regular_items = [item for item in all_vendor_items if not _is_shipping_item(item)]
+            shipping_items = [item for item in real_items if _is_shipping_item(item)]
+            regular_items = [item for item in real_items if not _is_shipping_item(item)]
 
             # 구매현황에서 해당 거래처만 필터
             filtered_purchase = _match_vendor_to_purchase(vendor_name, all_purchase_items)
@@ -604,8 +613,10 @@ async def batch_reconcile(
                 for item in shipping_items
             ]
             vf_result["amount_mismatches"] = amount_mismatches
+            vf_result["memo_items"] = [item for item in memo_items]
             vf_result["summary"] = {
                 "total_vendor_items": len(all_vendor_items),
+                "memo_filtered": len(memo_items),
                 "matched_count": len(matched),
                 "unmatched_count": len(unmatched),
                 "with_sales_history": sum(1 for s in sales_check if s.get("has_sales_history")),
