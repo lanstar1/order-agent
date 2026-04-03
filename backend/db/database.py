@@ -58,6 +58,7 @@ def _sql_to_pg(sql):
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
                 'super_agent_jobs', 'super_agent_tasks', 'super_agent_artifacts',
                 'super_agent_uploads', 'super_agent_events',
+                'erp_cache',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -747,6 +748,16 @@ def init_db():
         cur_or_conn.execute(
             "INSERT OR IGNORE INTO inventory_alert_settings (key, value) VALUES (?, ?)", (_k, _v)
         )
+
+    # ── ERP 캐시 (매입정산용 구매/판매현황 영속 캐시) ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS erp_cache (
+        cache_key   TEXT PRIMARY KEY,
+        filename    TEXT NOT NULL DEFAULT '',
+        total       INTEGER NOT NULL DEFAULT 0,
+        data_json   TEXT NOT NULL DEFAULT '[]',
+        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
 
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""

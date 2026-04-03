@@ -391,6 +391,14 @@ async def startup():
     init_db()
     logger.info("데이터베이스 초기화 완료")
 
+    # 매입정산 ERP 캐시 복원 (DB → 메모리)
+    try:
+        from api.routes.purchase_reconciliation import restore_cache_from_db
+        restore_cache_from_db()
+        logger.info("매입정산 ERP 캐시 복원 완료")
+    except Exception as e:
+        logger.warning(f"매입정산 ERP 캐시 복원 실패 (서비스는 계속): {e}")
+
     # Super Agent DB 테이블 초기화
     try:
         from super_agent.db.sa_tables import init_super_agent_tables

@@ -28,6 +28,7 @@ from services.ai_matcher import match_products_ai, check_sales_history, _is_ship
 from services.erp_client import erp_client
 from services.erp_web_scraper import erp_web_scraper
 from services.erp_data_parser import parse_erp_purchase, parse_erp_sales
+from db.database import get_connection
 
 router = APIRouter(prefix="/api/reconcile", tags=["purchase-reconciliation"])
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ reconcile_sessions: dict = {}
 # 거래처 데이터 캐시 (메모리)
 _vendor_cache: Optional[list[dict]] = None
 
-# 구매현황 캐시 (메모리) — 한 번 업로드하면 삭제 전까지 유지
+# ── 메모리 캐시 (DB 영속 캐시의 인메모리 미러) ──
 _purchase_cache: dict = {
     "items": [],
     "total": 0,
@@ -46,13 +47,80 @@ _purchase_cache: dict = {
     "cached": False,
 }
 
-# 판매현황 캐시 (메모리) — 한 번 업로드하면 삭제 전까지 유지
 _sales_cache: dict = {
     "items": [],
     "total": 0,
     "filename": "",
     "cached": False,
 }
+
+
+# ── DB 영속 캐시 헬퍼 ──
+def _save_cache_to_db(cache_key: str, filename: str, total: int, items: list[dict]):
+    """메모리 캐시를 DB에 영속 저장"""
+    try:
+        conn = get_connection()
+        data_json = json.dumps(items, ensure_ascii=False)
+        # 기존 행 삭제 후 삽입 (SQLite/PG 모두 호환)
+        conn.execute("DELETE FROM erp_cache WHERE cache_key = ?", (cache_key,))
+        conn.execute(
+            """INSERT INTO erp_cache (cache_key, filename, total, data_json, updated_at)
+               VALUES (?, ?, ?, ?, datetime('now','localtime'))""",
+            (cache_key, filename, total, data_json),
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"[캐시DB] '{cache_key}' 저장 완료: {total}건 ({filename})")
+    except Exception as e:
+        logger.error(f"[캐시DB] '{cache_key}' 저장 실패: {e}")
+
+
+def _load_cache_from_db(cache_key: str) -> dict | None:
+    """DB에서 캐시 데이터 로드"""
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT filename, total, data_json FROM erp_cache WHERE cache_key = ?",
+            (cache_key,),
+        ).fetchone()
+        conn.close()
+        if row:
+            return {
+                "filename": row[0] if isinstance(row, (list, tuple)) else row["filename"],
+                "total": row[1] if isinstance(row, (list, tuple)) else row["total"],
+                "items": json.loads(row[2] if isinstance(row, (list, tuple)) else row["data_json"]),
+                "cached": True,
+            }
+    except Exception as e:
+        logger.error(f"[캐시DB] '{cache_key}' 로드 실패: {e}")
+    return None
+
+
+def _delete_cache_from_db(cache_key: str):
+    """DB에서 캐시 삭제"""
+    try:
+        conn = get_connection()
+        conn.execute("DELETE FROM erp_cache WHERE cache_key = ?", (cache_key,))
+        conn.commit()
+        conn.close()
+        logger.info(f"[캐시DB] '{cache_key}' 삭제 완료")
+    except Exception as e:
+        logger.error(f"[캐시DB] '{cache_key}' 삭제 실패: {e}")
+
+
+def restore_cache_from_db():
+    """서버 시작 시 DB에서 캐시 복원 (main.py에서 호출)"""
+    global _purchase_cache, _sales_cache
+
+    pc = _load_cache_from_db("purchase")
+    if pc:
+        _purchase_cache = pc
+        logger.info(f"[캐시복원] 구매현황: {pc['total']}건 ({pc['filename']})")
+
+    sc = _load_cache_from_db("sales")
+    if sc:
+        _sales_cache = sc
+        logger.info(f"[캐시복원] 판매현황: {sc['total']}건 ({sc['filename']})")
 
 
 # ──── 모델 ────
@@ -285,13 +353,14 @@ async def upload_erp_data(
             with open(saved, "wb") as f:
                 f.write(await sales_file.read())
             data = parse_erp_sales(saved)
-            # 캐시 갱신
+            # 캐시 갱신 (메모리 + DB)
             _sales_cache = {
                 "items": data["items"],
                 "total": data["total"],
                 "filename": sales_file.filename,
                 "cached": True,
             }
+            _save_cache_to_db("sales", sales_file.filename, data["total"], data["items"])
             result["sales"] = {
                 "success": True,
                 "items": data["items"],
@@ -341,10 +410,11 @@ async def get_erp_cache_status(
 async def clear_purchase_cache(
     user: dict = Depends(get_current_user),
 ):
-    """구매현황 캐시 삭제"""
+    """구매현황 캐시 삭제 (메모리 + DB)"""
     global _purchase_cache
     old = _purchase_cache["filename"]
     _purchase_cache = {"items": [], "total": 0, "filename": "", "cached": False}
+    _delete_cache_from_db("purchase")
     logger.info(f"구매현황 캐시 삭제됨 (이전: {old})")
     return {"success": True, "message": f"구매현황 캐시 삭제됨 ({old})"}
 
@@ -353,10 +423,11 @@ async def clear_purchase_cache(
 async def clear_sales_cache(
     user: dict = Depends(get_current_user),
 ):
-    """판매현황 캐시 삭제"""
+    """판매현황 캐시 삭제 (메모리 + DB)"""
     global _sales_cache
     old = _sales_cache["filename"]
     _sales_cache = {"items": [], "total": 0, "filename": "", "cached": False}
+    _delete_cache_from_db("sales")
     logger.info(f"판매현황 캐시 삭제됨 (이전: {old})")
     return {"success": True, "message": f"판매현황 캐시 삭제됨 ({old})"}
 
@@ -438,6 +509,7 @@ async def batch_reconcile(
                 "filename": purchase_file.filename,
                 "cached": True,
             }
+            _save_cache_to_db("purchase", purchase_file.filename, data["total"], data["items"])
             purchase_info = {"filename": purchase_file.filename, "from_cache": False}
             logger.info(f"[일괄] 구매현황 파싱 (캐시 갱신): {len(all_purchase_items)}건")
         except Exception as e:
@@ -465,6 +537,7 @@ async def batch_reconcile(
                 "filename": sales_file.filename,
                 "cached": True,
             }
+            _save_cache_to_db("sales", sales_file.filename, data["total"], data["items"])
             sales_info = {"filename": sales_file.filename, "from_cache": False}
             logger.info(f"[일괄] 판매현황 파싱 (캐시 갱신): {len(all_sales_items)}건")
         except Exception as e:
