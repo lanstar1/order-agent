@@ -281,7 +281,6 @@ async def send_to_ecount(
         warehouse = str(row["물류센터"]).strip()
         qty_str = str(row[qty_col]).replace(",", "").strip()
         supply_str = str(row.get("총발주 매입금", "")).replace(",", "").strip()
-        vat_str = str(row.get("부가세", "")).replace(",", "").strip()
 
         try:
             price_val = round(float(supply_str) / float(qty_str)) if supply_str and qty_str and float(qty_str) != 0 else 0
@@ -299,7 +298,7 @@ async def send_to_ecount(
             "QTY": qty_str,
             "PRICE": str(price_val),
             "SUPPLY_AMT": supply_str,
-            "VAT_AMT": vat_str,
+            "VAT_AMT": "",
             "REMARKS": f"{warehouse} - {doc_no}",
             "U_MEMO5": f"{warehouse} - {doc_no}",
         }})
