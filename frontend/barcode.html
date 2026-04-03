@@ -238,6 +238,25 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cur
 .chip-exclude { background: rgba(255,71,87,0.1);    border-color: rgba(255,71,87,0.3);  color: #FF8A95; }
 .chip-nomatch { background: rgba(255,176,32,0.1);   border-color: rgba(255,176,32,0.3); color: #FFD070; }
 .chip-send    { background: rgba(0,194,122,0.1);    border-color: rgba(0,194,122,0.3);  color: #4DDDAA; }
+.chip-label   { background: rgba(162,94,255,0.12);  border-color: rgba(162,94,255,0.35); color: #C39BFF; }
+
+/* ── 바코드 부착 뱃지 ── */
+.badge-label {
+  display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700;
+  background: rgba(162,94,255,0.18); border: 1px solid rgba(162,94,255,0.4); color: #C39BFF;
+  white-space: nowrap;
+}
+
+/* ── 바코드 부착 목록 섹션 ── */
+#labelSection {
+  margin-top: 14px; padding: 14px 16px;
+  background: rgba(162,94,255,0.07); border: 1px solid rgba(162,94,255,0.3);
+  border-radius: 10px;
+}
+#labelSection h4 { margin: 0 0 10px; font-size: 13px; color: #C39BFF; }
+#labelSection table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#labelSection th { color: var(--text3); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid rgba(162,94,255,0.2); text-align: left; }
+#labelSection td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text1); }
 
 /* ── 로그 박스 ── */
 .log-box {
@@ -303,7 +322,7 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cur
           <thead>
             <tr>
               <th>#</th><th>물류센터</th><th>발주번호</th><th>상품이름</th>
-              <th>발주수량</th><th>확정수량</th><th>매핑</th><th>납품부족사유</th>
+              <th>발주수량</th><th>확정수량</th><th>매핑</th><th>바코드부착</th><th>납품부족사유</th>
             </tr>
           </thead>
           <tbody id="poTableBody"></tbody>
@@ -466,6 +485,7 @@ function renderPreviewTable(items) {
       <td style="text-align:center">${item.발주수량}</td>
       <td style="text-align:center">${item.확정수량}</td>
       <td style="text-align:center" class="${item.매핑여부==='✅'?'':'no-match'}">${item.매핑여부}</td>
+      <td style="text-align:center">${item.바코드부착 ? '<span class="badge-label">🏷 부착</span>' : ''}</td>
       <td><select data-idx="${item.idx}" onchange="onReasonChange(this)" class="${reasonClass(item.사유)}">${opts}</select></td>
     `;
     tbody.appendChild(tr);
@@ -488,19 +508,52 @@ function onReasonChange(sel) {
 
 function updateSummary() {
   const selects = document.querySelectorAll("#poTableBody select");
-  let total=0, exclude=0, nomatch=0;
+  let total=0, exclude=0, nomatch=0, labelCnt=0;
   selects.forEach(s => {
     total++;
     if (s.value.includes("시장 단종") || s.value.includes("생산중단") || s.value.includes("매입가 인상") || s.value.includes("가격 이슈")) exclude++;
   });
   document.querySelectorAll("#poTableBody .no-match").forEach(() => nomatch++);
+  document.querySelectorAll("#poTableBody .badge-label").forEach(() => labelCnt++);
   const send = total - exclude;
   document.getElementById("poSummary").innerHTML = `
     <span class="chip chip-total">전체 ${total}건</span>
     <span class="chip chip-send">이카운트 전송 ${send}건</span>
     <span class="chip chip-exclude">제외(단종/매입가인상) ${exclude}건</span>
     <span class="chip chip-nomatch">바코드 미매칭 ${nomatch}건</span>
+    ${labelCnt > 0 ? `<span class="chip chip-label">🏷 바코드 부착 ${labelCnt}건</span>` : ""}
   `;
+}
+
+function renderLabelSection(labelItems) {
+  // 기존 섹션 제거 후 재생성
+  const existing = document.getElementById("labelSection");
+  if (existing) existing.remove();
+  if (!labelItems || labelItems.length === 0) return;
+
+  const section = document.createElement("div");
+  section.id = "labelSection";
+  section.innerHTML = `
+    <h4>🏷 바코드 부착 필요 품목 (${labelItems.length}건)</h4>
+    <table>
+      <thead><tr><th>#</th><th>발주처/번호</th><th>품목코드</th><th>수량</th></tr></thead>
+      <tbody>
+        ${labelItems.map((it, i) => `
+          <tr>
+            <td style="text-align:center;color:var(--text3)">${i+1}</td>
+            <td style="font-size:11px;font-family:'JetBrains Mono',monospace">${it.remarks || ""}</td>
+            <td>${it.prod_cd || ""}</td>
+            <td style="text-align:center">${it.qty || ""}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+
+  // 재고 테이블 위에 삽입 (이카운트 결과 바로 아래)
+  const invWrap = document.getElementById("invTableWrap");
+  invWrap.parentNode.insertBefore(section, invWrap);
+  elog(`🏷 바코드 부착 필요 ${labelItems.length}건`, "w");
 }
 
 function getShortageReasons() {
@@ -576,6 +629,9 @@ async function sendToEcount() {
     if (wh10HasCnt > 0) {
       elog(`🟠 용산창고에만 재고 있음 ${wh10HasCnt}건 (품절사유 미입력)`, "w");
     }
+
+    // 바코드 부착 필요 목록 표시
+    renderLabelSection(data.label_items || []);
 
     // 전송 완료 후 다운로드 버튼 활성화
     document.getElementById("dlPoBtn").classList.remove("hidden");

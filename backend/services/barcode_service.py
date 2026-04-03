@@ -70,20 +70,21 @@ async def get_ecount_session() -> tuple[str, str]:
 # ──────────────────────────────────────────────
 # 마스터 데이터 로드
 # ──────────────────────────────────────────────
-def load_master() -> tuple[dict, dict, set, set]:
-    """master_data.xlsx에서 매핑 및 단종/매입가인상 목록을 로드한다.
+def load_master() -> tuple[dict, dict, set, set, set]:
+    """master_data.xlsx에서 매핑 및 단종/매입가인상/바코드부착 목록을 로드한다.
 
     Returns:
-        (barcode_to_code, code_to_barcode, discontinued, price_up)
+        (barcode_to_code, code_to_barcode, discontinued, price_up, needs_label)
     """
     barcode_to_code: dict[str, str] = {}
     code_to_barcode: dict[str, str] = {}
     discontinued: set[str] = set()
     price_up: set[str] = set()
+    needs_label: set[str] = set()  # 바코드 부착 필요 바코드/품목코드 집합
 
     if not os.path.exists(MASTER_PATH):
         logger.warning(f"[바코드] master_data.xlsx 없음: {MASTER_PATH}")
-        return barcode_to_code, code_to_barcode, discontinued, price_up
+        return barcode_to_code, code_to_barcode, discontinued, price_up, needs_label
 
     with open(MASTER_PATH, "rb") as f:
         raw = io.BytesIO(f.read())
@@ -143,7 +144,18 @@ def load_master() -> tuple[dict, dict, set, set]:
                 price_up |= set(v for v in vals if v)
         logger.info(f"[바코드] 매입가인상 목록: {len(price_up)}개")
 
-    return barcode_to_code, code_to_barcode, discontinued, price_up
+    # ── 바코드부착 목록 (단종/매입가인상과 동일 구조)
+    if "바코드부착" in xl.sheet_names:
+        raw.seek(0)
+        df_l = pd.read_excel(raw, sheet_name="바코드부착", dtype=str).fillna("")
+        df_l.columns = df_l.columns.str.strip()
+        for col in ["바코드", "품목코드"]:
+            if col in df_l.columns:
+                vals = df_l[col].str.strip().str.replace(r"\.0$", "", regex=True)
+                needs_label |= set(v for v in vals if v)
+        logger.info(f"[바코드] 바코드부착 목록: {len(needs_label)}개")
+
+    return barcode_to_code, code_to_barcode, discontinued, price_up, needs_label
 
 
 # ──────────────────────────────────────────────
@@ -154,7 +166,7 @@ def parse_po_items(contents: bytes) -> list[dict]:
     df = pd.read_excel(io.BytesIO(contents), dtype=str).fillna("")
     df.columns = df.columns.str.strip()
 
-    barcode_to_code, _, discontinued, price_up = load_master()
+    barcode_to_code, _, discontinued, price_up, needs_label = load_master()
 
     items = []
     for i, row in df.iterrows():
@@ -171,6 +183,9 @@ def parse_po_items(contents: bytes) -> list[dict]:
         else:
             auto_reason = ""
 
+        # 바코드부착 필요 여부
+        label_needed = bc in needs_label or (prod_cd and prod_cd in needs_label)
+
         items.append({
             "idx": i,
             "발주번호": str(row.get("발주번호", "")).strip(),
@@ -180,6 +195,7 @@ def parse_po_items(contents: bytes) -> list[dict]:
             "확정수량": str(row.get("확정수량", "")).strip(),
             "매핑여부": "✅" if prod_cd else "❌",
             "사유": auto_reason,
+            "바코드부착": label_needed,
         })
     return items
 
@@ -222,7 +238,7 @@ async def send_to_ecount(
 ) -> dict:
     """PO 파일 → 이카운트 판매전표 BulkSave"""
     today = io_date.strip() if io_date.strip() else datetime.today().strftime("%Y%m%d")
-    barcode_to_code, _, discontinued, price_up = load_master()
+    barcode_to_code, _, discontinued, price_up, needs_label = load_master()
 
     df = pd.read_excel(io.BytesIO(contents), dtype=str)
     df.columns = df.columns.str.strip()
@@ -285,6 +301,7 @@ async def send_to_ecount(
     # ⑥ BulkDatas 구성
     bulk_list = []
     orig_indices = []  # 원본 PO 행 인덱스 추적
+    label_flags = []  # 바코드부착 필요 여부 추적
     for _, row in valid.iterrows():
         doc_no = str(row["발주번호"]).strip()
         warehouse = str(row["물류센터"]).strip()
@@ -312,6 +329,9 @@ async def send_to_ecount(
             "U_MEMO5": f"{warehouse} - {doc_no}",
         }})
         orig_indices.append(int(row["_orig_idx"]))
+        bc_val = str(row.get("상품바코드", "")).strip()
+        cd_val = str(row.get("_품목코드", "")).strip()
+        label_flags.append(bc_val in needs_label or (cd_val and cd_val in needs_label))
 
     logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
 
@@ -398,7 +418,11 @@ async def send_to_ecount(
             "stock_status": stock_status,
             "low_stock": stock_status == "low_stock",  # 하위호환
             "orig_idx": orig_indices[i],
+            "needs_label": label_flags[i],  # 바코드 부착 필요 여부
         })
+
+    # 바코드 부착 필요 항목 별도 추출
+    label_items = [it for it in items_result if it.get("needs_label")]
 
     return {
         "status": status,
@@ -410,5 +434,6 @@ async def send_to_ecount(
         "unmatched": unmatched,
         "excluded": excluded_cnt,
         "items_result": items_result,
+        "label_items": label_items,
         "inv_checked": inv_checked,
     }
