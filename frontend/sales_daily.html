@@ -185,6 +185,26 @@ header{position:relative;z-index:10;background:var(--surface);border-bottom:1px 
 <script>
 const API_BASE = "/api/sales";
 
+// ── 인증 토큰 ──
+function getToken() {
+  return localStorage.getItem("jwt_token") || "";
+}
+function authHeaders() {
+  const t = getToken();
+  return t ? { "Authorization": `Bearer ${t}` } : {};
+}
+
+// 미로그인 시 메인으로 리다이렉트
+window.addEventListener("DOMContentLoaded", () => {
+  if (!getToken()) {
+    alert("로그인이 필요합니다.");
+    window.location.href = "/";
+    return;
+  }
+  document.getElementById("dateInput").value = todayStr();
+  loadData();
+});
+
 function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD
 }
@@ -213,11 +233,7 @@ function diffSign(diff) {
   return "— 0";
 }
 
-// 초기화
-window.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("dateInput").value = todayStr();
-  loadData();
-});
+// 초기화 (위 DOMContentLoaded에서 처리)
 
 function goToday() {
   document.getElementById("dateInput").value = todayStr();
@@ -238,8 +254,13 @@ async function loadData() {
 
   try {
     const res = await fetch(`${API_BASE}/daily-compare?date=${date}`, {
-      credentials: "include",
+      headers: authHeaders(),
     });
+    if (res.status === 401) {
+      alert("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
+      window.location.href = "/";
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     render(data);
