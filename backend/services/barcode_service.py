@@ -192,10 +192,17 @@ def fill_shortage_reasons(contents: bytes, shortage_reasons: dict) -> io.BytesIO
     df = pd.read_excel(io.BytesIO(contents), dtype=str).fillna("")
     df.columns = df.columns.str.strip()
 
+    # 확정수량을 0으로 설정해야 하는 사유 키워드 (단종/품절/인상)
+    ZERO_QTY_KEYWORDS = ["시장 단종", "생산중단", "재고부족", "입고지연", "매입가 인상", "가격 이슈"]
+
     for idx_str, reason in shortage_reasons.items():
         idx = int(idx_str)
         if idx < len(df):
             df.at[idx, "납품부족사유"] = reason
+            # 단종·품절·인상 사유인 경우 확정수량(I열) → 0
+            if any(kw in reason for kw in ZERO_QTY_KEYWORDS):
+                if "확정수량" in df.columns:
+                    df.at[idx, "확정수량"] = "0"
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
