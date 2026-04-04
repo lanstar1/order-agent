@@ -5549,6 +5549,7 @@ async function reconcileBatchStart() {
     const decoder = new TextDecoder();
     let buffer = "";
     let finalResult = null;
+    let currentEvent = "";
 
     while (true) {
       const { done, value } = await reader.read();
@@ -5557,8 +5558,6 @@ async function reconcileBatchStart() {
 
       const lines = buffer.split("\n");
       buffer = lines.pop(); // 마지막 불완전한 줄 유지
-
-      let currentEvent = "";
       for (const line of lines) {
         if (line.startsWith("event: ")) {
           currentEvent = line.slice(7).trim();
