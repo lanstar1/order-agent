@@ -5899,14 +5899,18 @@ function _renderBatchResults(result) {
           const vAmt = r.vendor_amount || v.amount || 0;
           const eAmt = r.erp_amount || 0;
           const diff = r.amount_diff || 0;
+          const vQty = r.vendor_qty || v.qty || 0;
+          const eQty = r.erp_qty || 0;
+          const reason = r.mismatch_reason || "";
           return `<div class="rc-detail-row" style="flex-wrap:wrap;gap:4px">
             <span class="rc-icon">⚠️</span>
             <span class="rc-item-name">${v.product_name||""}</span>
             <span class="rc-item-meta">${v.date||""}</span>
-            <span class="rc-item-meta" style="color:#6366f1">원장 ${vAmt.toLocaleString()}원</span>
+            <span class="rc-item-meta" style="color:#6366f1">원장 ${vQty ? vQty+"개 " : ""}${vAmt.toLocaleString()}원</span>
             <span class="rc-arrow">→</span>
-            <span class="rc-item-meta" style="color:#0891b2">매입 ${eAmt.toLocaleString()}원</span>
+            <span class="rc-item-meta" style="color:#0891b2">매입 ${eQty ? eQty+"개 " : ""}${eAmt.toLocaleString()}원</span>
             <span class="rc-item-meta" style="color:${diff > 0 ? '#dc2626' : '#16a34a'};font-weight:600">차액 ${diff > 0 ? "+" : ""}${diff.toLocaleString()}원</span>
+            ${reason ? `<span class="rc-item-meta" style="color:#f59e0b;font-size:10px;width:100%;padding-left:24px">💡 ${reason}</span>` : ""}
           </div>`;
         }).join("");
         detailHTML += "</div></div>";
@@ -6069,15 +6073,18 @@ function reconcileBatchPrepareInput() {
   }
 
   if (!_rc.purchaseQueue.length) {
-    // 모든 거래처 총액이 일치하면 입력할 게 없는 것이 정상
+    // vendor_total_match 플래그만으로 총액 일치 여부 판단 (amount_mismatch 있으면 불일치)
     const allTotalMatch = (_rc.batchResult.vendor_results || []).every(vr =>
-      vr.error || vr.vendor_total_match === true || (vr.summary?.unmatched_count || 0) === 0
+      vr.error || vr.vendor_total_match === true
     );
     if (allTotalMatch) {
       toast("모든 거래처 총액이 일치하여 추가 입력이 필요 없습니다.", "success");
-    } else {
-      toast("입력할 항목이 없습니다. 판매이력이 있는 미매칭 항목이 있으면 체크 후 시도하세요.", "info");
+      return;
     }
+    // 총액 불일치 거래처가 있으면 → 빈 상태로 step 3 진입 (수동 입력 가능)
+    _renderPurchaseEditCards();
+    reconcileSetStep(3);
+    toast("총액 불일치 거래처가 있습니다. 차액분을 수동으로 추가 입력하세요.", "warning");
     return;
   }
 

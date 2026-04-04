@@ -1099,6 +1099,18 @@ async def batch_reconcile_stream(
                         r["amount_diff_pct"] = round((v_amt - e_amt) / max(v_amt, 1) * 100, 1)
                         r["vendor_amount"] = v_amt
                         r["erp_amount"] = e_amt
+                        r["vendor_qty"] = v_qty
+                        r["erp_qty"] = e_qty
+                        # 원인 분석
+                        reasons = []
+                        if v_qty and e_qty and v_qty != e_qty:
+                            reasons.append(f"수량 다름(원장 {v_qty}개→매입 {e_qty}개)")
+                        if v_qty and e_qty and v_qty == e_qty:
+                            v_unit = round(v_amt / v_qty) if v_qty else 0
+                            e_unit = round(e_amt / e_qty) if e_qty else 0
+                            if v_unit != e_unit:
+                                reasons.append(f"단가 다름(원장 {v_unit:,}→매입 {e_unit:,})")
+                        r["mismatch_reason"] = " / ".join(reasons) if reasons else "금액 차이"
                         amount_mismatches.append(r)
                     if v_qty and e_qty and v_qty != e_qty:
                         r["qty_diff"] = v_qty - e_qty
@@ -1669,6 +1681,11 @@ async def download_result_excel(
     yellow_fill = PatternFill("solid", fgColor="FFF9C4")
     blue_fill = PatternFill("solid", fgColor="DBEAFE")
     orange_fill = PatternFill("solid", fgColor="FFF3E0")
+    # 영역 구분용 헤더 색상
+    vendor_header_fill = PatternFill("solid", fgColor="6366F1")  # 보라 (거래처원장)
+    erp_header_fill = PatternFill("solid", fgColor="0891B2")     # 청록 (ERP구매현황)
+    vendor_cell_fill = PatternFill("solid", fgColor="EDE9FE")    # 연보라
+    erp_cell_fill = PatternFill("solid", fgColor="E0F7FA")       # 연청록
     thin_border = Border(
         left=Side(style="thin"), right=Side(style="thin"),
         top=Side(style="thin"), bottom=Side(style="thin")
@@ -1792,6 +1809,11 @@ async def download_result_excel(
                 for c, h in enumerate(m_headers, 1):
                     ws.cell(row=curr_row, column=c, value=h)
                 style_header(ws, curr_row, len(m_headers))
+                # 영역별 헤더 색상 적용 (C~F: 거래처원장 보라, G~J: ERP 청록)
+                for vc in range(3, 7):
+                    ws.cell(row=curr_row, column=vc).fill = vendor_header_fill
+                for ec in range(7, 11):
+                    ws.cell(row=curr_row, column=ec).fill = erp_header_fill
                 curr_row += 1
 
                 for i, r in enumerate(matched, 1):
@@ -1828,6 +1850,11 @@ async def download_result_excel(
                     for c, val in enumerate(vals, 1):
                         cell = ws.cell(row=curr_row, column=c, value=val)
                         style_data_cell(cell, fill)
+                    # 영역별 데이터 셀 색상 (C~F: 연보라, G~J: 연청록)
+                    for vc in range(3, 7):
+                        ws.cell(row=curr_row, column=vc).fill = vendor_cell_fill
+                    for ec in range(7, 11):
+                        ws.cell(row=curr_row, column=ec).fill = erp_cell_fill
                     curr_row += 1
                 curr_row += 1
 
@@ -1943,6 +1970,11 @@ async def download_result_excel(
         for c, h in enumerate(headers2, 1):
             ws2.cell(row=1, column=c, value=h)
         style_header(ws2, 1, len(headers2))
+        # 영역별 헤더 색상 적용 (C~F: 거래처원장 보라, G~J: ERP 청록)
+        for vc in range(3, 7):
+            ws2.cell(row=1, column=vc).fill = vendor_header_fill
+        for ec in range(7, 11):
+            ws2.cell(row=1, column=ec).fill = erp_header_fill
 
         for i, r in enumerate(matched, 1):
             v = r.get("vendor_item", {})
@@ -1983,6 +2015,11 @@ async def download_result_excel(
             for c, val in enumerate(vals, 1):
                 cell = ws2.cell(row=row, column=c, value=val)
                 style_data_cell(cell, fill)
+            # 영역별 데이터 셀 색상 (C~F: 연보라, G~J: 연청록)
+            for vc in range(3, 7):
+                ws2.cell(row=row, column=vc).fill = vendor_cell_fill
+            for ec in range(7, 11):
+                ws2.cell(row=row, column=ec).fill = erp_cell_fill
 
         for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L","M"]:
             ws2.column_dimensions[col_letter].width = 15
