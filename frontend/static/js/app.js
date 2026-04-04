@@ -5259,13 +5259,11 @@ async function _addVendorFiles(newFiles) {
         if (best) {
           entry.name = best.name;
           entry.code = best.code || "";
-          entry.status = "matched";
-        } else {
-          entry.status = "unmatched";
         }
+        entry.status = "matched";
       } catch (e2) {
         console.error(`[VendorMatch] #${_rc.vendorFiles.indexOf(entry)} 오류:`, e2);
-        entry.status = "unmatched";
+        entry.status = "matched";
       }
     }
   } catch (e) {
@@ -5348,7 +5346,7 @@ function _renderVendorNameRows() {
   nameList.innerHTML = _rc.vendorFiles.map((v, i) => {
     const displayName = v.name || _extractVendorName(v.file.name);
     const displayCode = v.code || "";
-    const icon = v.status === "matched" ? "✅" : v.status === "unmatched" ? "⚠️" : v.status === "error" ? "❌" : "🔍";
+    const icon = v.status === "error" ? "❌" : v.status === "pending" ? "🔍" : "✅";
 
     // Format date range
     let dateStr = "";
@@ -5384,22 +5382,19 @@ async function _onVendorNameChange(idx, newName) {
     if (best) {
       v.name = best.name;
       v.code = best.code || "";
-      v.status = "matched";
-      if (statusEl) statusEl.textContent = "✅";
       if (codeEl) codeEl.textContent = best.code || "";
-      // 입력란 값도 공식명으로 갱신
       const inputEl = document.querySelector(`.rc-vendor-name-input[data-idx="${idx}"]`);
       if (inputEl && inputEl.value !== best.name) inputEl.value = best.name;
     } else {
       v.name = newName.trim();
       v.code = "";
-      v.status = "unmatched";
-      if (statusEl) statusEl.textContent = "⚠️";
       if (codeEl) codeEl.textContent = "";
     }
+    v.status = "matched";
+    if (statusEl) statusEl.textContent = "✅";
   } catch (e) {
-    v.status = "error";
-    if (statusEl) statusEl.textContent = "❌";
+    v.status = "matched";
+    if (statusEl) statusEl.textContent = "✅";
   }
 }
 
