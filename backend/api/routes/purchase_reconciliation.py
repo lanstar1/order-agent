@@ -838,6 +838,8 @@ async def batch_reconcile_stream(
     os.makedirs(str(UPLOAD_DIR), exist_ok=True)
 
     async def event_stream():
+        global _purchase_cache, _sales_cache
+
         def sse(event: str, data: dict):
             return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
