@@ -5752,7 +5752,7 @@ function _renderBatchResults(result) {
       // 매칭됨
       if (vs.matched_count > 0) {
         const matchedTotal = (vr.matched||[]).reduce((s,r) => s + (r.vendor_item?.amount||0), 0);
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title matched">✅ 매칭됨 (${vs.matched_count}건) <span style="font-size:11px;color:var(--gray-300);margin-left:8px">합계 ${matchedTotal.toLocaleString()}원</span></div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title matched" style="cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>✅ 매칭됨 (${vs.matched_count}건) <span style="font-size:11px;color:var(--gray-300);margin-left:8px">합계 ${matchedTotal.toLocaleString()}원</span></div><div style="display:none">`;
         detailHTML += (vr.matched || []).map(r => {
           const v = r.vendor_item || {};
           const e = r.erp_match || {};
@@ -5765,12 +5765,12 @@ function _renderBatchResults(result) {
             <span class="rc-erp-name">${e.prod_cd||""} ${e.prod_name||""}</span>
           </div>`;
         }).join("");
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
       // 할인반영 (매출할인이 매입단가에 반영됨)
       if ((vr.discount_absorbed||[]).length > 0) {
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#16a34a">💰 할인반영 (${vr.discount_absorbed.length}건) <span style="font-size:10px;color:var(--gray-400)">— 할인이 매입단가에 이미 반영됨</span></div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#16a34a;cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>💰 할인반영 (${vr.discount_absorbed.length}건) <span style="font-size:10px;color:var(--gray-400)">— 할인이 매입단가에 이미 반영됨</span></div><div style="display:none">`;
         detailHTML += vr.discount_absorbed.map(r => {
           const v = r.vendor_item || {};
           const pname = v.product_name || v.product_category || "";
@@ -5783,14 +5783,14 @@ function _renderBatchResults(result) {
             ${absorbedBy ? `<span class="rc-arrow">→</span><span class="rc-item-meta" style="color:var(--gray-400);font-size:10px">${absorbedBy} 단가에 반영</span>` : ""}
           </div>`;
         }).join("");
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
       // 반품 매칭
       if ((vr.return_matched||[]).length > 0 || (vr.return_unmatched||[]).length > 0) {
         const rmCount = (vr.return_matched||[]).length;
         const ruCount = (vr.return_unmatched||[]).length;
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#8b5cf6">🔄 반품/교환 (매칭 ${rmCount}건${ruCount > 0 ? `, 미매칭 ${ruCount}건` : ""}) <span style="font-size:10px;color:var(--gray-400)">— 거래처 매입 항목 ↔ ERP 음수 매입전표</span></div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#8b5cf6;cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>🔄 반품/교환 (매칭 ${rmCount}건${ruCount > 0 ? `, 미매칭 ${ruCount}건` : ""}) <span style="font-size:10px;color:var(--gray-400)">— 거래처 매입 항목 ↔ ERP 음수 매입전표</span></div><div style="display:none">`;
         detailHTML += (vr.return_matched||[]).map(r => {
           const v = r.vendor_item || {};
           const e = r.erp_match || {};
@@ -5812,12 +5812,12 @@ function _renderBatchResults(result) {
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
           </div>`;
         }).join("");
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
       // 결제성 항목 (필터링됨)
       if ((vr.payment_items||[]).length > 0) {
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#6b7280">💳 결제성 제외 (${vr.payment_items.length}건) <span style="font-size:10px;color:var(--gray-400)">— 입금/출금/기타 결제 항목</span></div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#6b7280;cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>💳 결제성 제외 (${vr.payment_items.length}건) <span style="font-size:10px;color:var(--gray-400)">— 입금/출금/기타 결제 항목</span></div><div style="display:none">`;
         detailHTML += vr.payment_items.map(p => {
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#6b7280">─</span>
@@ -5826,7 +5826,7 @@ function _renderBatchResults(result) {
             <span class="rc-item-meta">${(p.amount||0).toLocaleString()}원</span>
           </div>`;
         }).join("");
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
       // 누락
@@ -5835,7 +5835,7 @@ function _renderBatchResults(result) {
         const totalMatchNote = vr.vendor_total_match
           ? `<span style="color:#16a34a;font-size:11px;margin-left:8px">✅ 거래처 총액 일치 — 개별 항목 차이는 무시 가능</span>`
           : "";
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title unmatched">❌ 매입전표 누락 (${vs.unmatched_count}건) <span style="font-size:11px;color:#dc2626;margin-left:4px">합계 ${unmatchedTotal.toLocaleString()}원</span>${totalMatchNote}</div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title unmatched" style="cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>❌ 매입전표 누락 (${vs.unmatched_count}건) <span style="font-size:11px;color:#dc2626;margin-left:4px">합계 ${unmatchedTotal.toLocaleString()}원</span>${totalMatchNote}</div><div style="display:none">`;
         detailHTML += (vr.unmatched || []).map(r => {
           const v = r.vendor_item || {};
           const txType = v.tx_type || "";
@@ -5848,13 +5848,13 @@ function _renderBatchResults(result) {
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
           </div>`;
         }).join("");
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
       // 판매이력
       if ((vr.sales_check||[]).length > 0) {
         const withSales = vr.sales_check.filter(sc => sc.has_sales_history);
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title sales">🔍 판매이력 확인 (${withSales.length}/${vr.sales_check.length}건)</div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title sales" style="cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>🔍 판매이력 확인 (${withSales.length}/${vr.sales_check.length}건)</div><div style="display:none">`;
         detailHTML += vr.sales_check.map((sc, sci) => {
           const v = sc.vendor_item || {};
           const best = sc.best_candidate;
@@ -5866,12 +5866,12 @@ function _renderBatchResults(result) {
             ${sc.has_sales_history ? `<label style="margin-left:auto;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="batch-include-check" data-vi="${vi}" data-sci="${sci}" checked> 입력</label>` : ""}
           </div>`;
         }).join("");
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
       // 배송료
       if (vs.shipping_count > 0) {
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title shipping">🚚 배송료 (${vs.shipping_count}건)</div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title shipping" style="cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>🚚 배송료 (${vs.shipping_count}건)</div><div style="display:none">`;
         detailHTML += (vr.shipping_items||[]).map(si => {
           const v = si.vendor_item||{};
           return `<div class="rc-detail-row">
@@ -5881,12 +5881,12 @@ function _renderBatchResults(result) {
             <span class="rc-item-meta">${si.erp_match ? "✓ ERP매칭" : "미매칭"}</span>
           </div>`;
         }).join("");
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
       // 금액차이
       if (vs.amount_mismatch_count > 0) {
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title mismatch">⚠️ 금액 불일치 (${vs.amount_mismatch_count}건)</div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title mismatch" style="cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>⚠️ 금액 불일치 (${vs.amount_mismatch_count}건)</div><div style="display:none">`;
         detailHTML += (vr.amount_mismatches||[]).map(r => {
           const v = r.vendor_item||{};
           const vAmt = r.vendor_amount || v.amount || 0;
@@ -5902,12 +5902,12 @@ function _renderBatchResults(result) {
             <span class="rc-item-meta" style="color:${diff > 0 ? '#dc2626' : '#16a34a'};font-weight:600">차액 ${diff > 0 ? "+" : ""}${diff.toLocaleString()}원</span>
           </div>`;
         }).join("");
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
       // 초과 ERP 항목 (거래처원장에 없지만 매입전표에 있는 항목)
       if ((vr.excess_erp||[]).length > 0) {
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#7c3aed">📋 매입전표 초과 (${vr.excess_erp.length}건) <span style="font-size:10px;color:var(--gray-400)">— 거래처원장에 없는 매입전표</span></div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#7c3aed;cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:4px;display:inline-block;width:12px">▸</span>📋 매입전표 초과 (${vr.excess_erp.length}건) <span style="font-size:10px;color:var(--gray-400)">— 거래처원장에 없는 매입전표</span></div><div style="display:none">`;
         detailHTML += vr.excess_erp.slice(0, 10).map(e => {
           const eName = e.prod_name || e["품명 및 모델"] || "";
           const eCode = e.prod_cd || e["품목코드"] || "";
@@ -5921,10 +5921,10 @@ function _renderBatchResults(result) {
           </div>`;
         }).join("");
         if (vr.excess_erp.length > 10) detailHTML += `<div style="color:var(--gray-400);font-size:11px;padding:4px 24px">... 외 ${vr.excess_erp.length - 10}건</div>`;
-        detailHTML += "</div>";
+        detailHTML += "</div></div>";
       }
 
-      // 거래처 총액 비교
+      // 거래처 총액 비교 (항상 표시)
       if (typeof vr.vendor_ledger_total === "number" && typeof vr.erp_purchase_total === "number") {
         const vTotal = vr.vendor_ledger_total;
         const eTotal = vr.erp_purchase_total;
@@ -5979,6 +5979,20 @@ function _renderBatchResults(result) {
       <div class="rc-vendor-detail">${hasError ? "" : detailHTML}</div>
     </div>`;
   }).join("");
+}
+
+// ── 세부 섹션 토글 ──
+function rcToggleSection(el) {
+  const body = el.nextElementSibling;
+  if (!body) return;
+  const arrow = el.querySelector('.rc-sa');
+  if (body.style.display === 'none') {
+    body.style.display = '';
+    if (arrow) arrow.textContent = '▾';
+  } else {
+    body.style.display = 'none';
+    if (arrow) arrow.textContent = '▸';
+  }
 }
 
 // ── 엑셀 다운로드 ──
