@@ -1109,6 +1109,27 @@ async def batch_reconcile_stream(
                 ]
                 vf_result["amount_mismatches"] = amount_mismatches
                 vf_result["memo_items"] = [item for item in memo_items]
+
+                # 미매칭 ERP 항목 추적 (거래처원장에 없지만 매입전표에 있는 항목)
+                matched_erp_set = set()
+                for r in matched:
+                    e = r.get("erp_match")
+                    if e:
+                        # erp_match의 date+prod_cd를 키로 사용
+                        ekey = f"{_get_field(e, 'date', '월/일', default='')}|{_get_field(e, 'prod_cd', '품목코드', default='')}"
+                        matched_erp_set.add(ekey)
+                for si in vf_result["shipping_items"]:
+                    e = si.get("erp_match")
+                    if e:
+                        ekey = f"{_get_field(e, 'date', '월/일', default='')}|{_get_field(e, 'prod_cd', '품목코드', default='')}"
+                        matched_erp_set.add(ekey)
+                excess_erp = []
+                for p in filtered_purchase:
+                    pkey = f"{_get_field(p, 'date', '월/일', default='')}|{_get_field(p, 'prod_cd', '품목코드', default='')}"
+                    if pkey not in matched_erp_set:
+                        excess_erp.append(p)
+                vf_result["excess_erp"] = excess_erp
+
                 vf_result["vendor_ledger_total"] = vendor_ledger_total
                 vf_result["erp_purchase_total"] = erp_purchase_total
                 vf_result["vendor_total_match"] = vendor_total_match
@@ -1121,6 +1142,7 @@ async def batch_reconcile_stream(
                     "shipping_count": len(shipping_items),
                     "amount_mismatch_count": len(amount_mismatches),
                     "purchase_filtered": len(filtered_purchase),
+                    "excess_erp_count": len(excess_erp),
                     "vendor_total_match": vendor_total_match,
                 }
 

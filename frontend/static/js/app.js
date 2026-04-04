@@ -5762,6 +5762,25 @@ function _renderBatchResults(result) {
         detailHTML += "</div>";
       }
 
+      // 초과 ERP 항목 (거래처원장에 없지만 매입전표에 있는 항목)
+      if ((vr.excess_erp||[]).length > 0) {
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#7c3aed">📋 매입전표 초과 (${vr.excess_erp.length}건) <span style="font-size:10px;color:var(--gray-400)">— 거래처원장에 없는 매입전표</span></div>`;
+        detailHTML += vr.excess_erp.slice(0, 10).map(e => {
+          const eName = e.prod_name || e["품명 및 모델"] || "";
+          const eCode = e.prod_cd || e["품목코드"] || "";
+          const eDate = e.date || e["월/일"] || "";
+          const eAmt = parseFloat(String(e.total || e["합계"] || e["합 계"] || 0).replace(/,/g,""));
+          return `<div class="rc-detail-row">
+            <span class="rc-icon" style="color:#7c3aed">+</span>
+            <span class="rc-item-name">${eCode} ${eName}</span>
+            <span class="rc-item-meta">${eDate}</span>
+            <span class="rc-item-meta">${eAmt.toLocaleString()}원</span>
+          </div>`;
+        }).join("");
+        if (vr.excess_erp.length > 10) detailHTML += `<div style="color:var(--gray-400);font-size:11px;padding:4px 24px">... 외 ${vr.excess_erp.length - 10}건</div>`;
+        detailHTML += "</div>";
+      }
+
       // 거래처 총액 비교
       if (typeof vr.vendor_ledger_total === "number" && typeof vr.erp_purchase_total === "number") {
         const vTotal = vr.vendor_ledger_total;
@@ -5863,7 +5882,7 @@ function reconcileBatchPrepareInput() {
         wh_cd: "", prod_cd: c.product_code || "",
         prod_name: c.product_name || v.product_name || "", size_des: "",
         qty: v.qty || 1, price: v.unit_price || 0,
-        supply_amt: v.amount || 0, vat_amt: Math.round((v.amount || 0) * 0.1),
+        supply_amt: v.amount || 0, vat_amt: 0,
         remarks: "매입정산 자동입력",
       });
     });

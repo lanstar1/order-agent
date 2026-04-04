@@ -335,6 +335,27 @@ def _normalize_product_name(name: str) -> str:
     return name
 
 
+def _extract_model_codes(name: str) -> list[str]:
+    """품명에서 모델코드 후보를 추출 (예: R8R49A, JL806A, GS516PP, CBS220-16T 등)"""
+    if not name:
+        return []
+    # 영문+숫자 조합 모델코드 패턴 (3글자 이상)
+    codes = re.findall(r'[A-Za-z][A-Za-z0-9]{2,}[0-9][A-Za-z0-9]*', name)
+    # 숫자+영문 조합 패턴
+    codes += re.findall(r'[0-9]+[A-Za-z][A-Za-z0-9]{2,}', name)
+    # 하이픈 포함 모델코드 (CBS220-16T 등)
+    codes += re.findall(r'[A-Za-z0-9]{3,}-[A-Za-z0-9]+', name)
+    # 중복 제거, 대문자 변환, 짧은 것 제외
+    seen = set()
+    result = []
+    for c in codes:
+        cu = c.upper()
+        if cu not in seen and len(cu) >= 3:
+            seen.add(cu)
+            result.append(cu)
+    return result
+
+
 def _longest_common_substring(s1: str, s2: str) -> str:
     if not s1 or not s2:
         return ""
@@ -363,13 +384,14 @@ def _safe_num(val) -> float:
 
 def _rule_based_match(vendor_items: list[dict],
                        erp_items: list[dict]) -> list[dict]:
-    """규칙 기반 품목 매칭 — 날짜 + 금액 + 수량 우선
+    """규칙 기반 품목 매칭 — 날짜 + 금액 + 수량 우선, 모델코드 교차검증
 
-    매칭 스코어 배분 (총 100):
+    매칭 스코어 배분 (총 120):
       - 날짜 일치:  30점 (동일일), 15점 (±3일 이내)
       - 금액 일치:  35점 (오차 1원 이내), 25점 (오차 5% 이내)
       - 수량 일치:  20점
       - 품명 유사:  15점 (보조 — 동일 날짜·금액에 여러 건일 때 구별용)
+      - 모델코드:   20점 (거래처원장 모델코드가 ERP 품명/품목코드에 포함)
     매칭 임계값: 50점 이상
     """
     results = []
@@ -378,6 +400,10 @@ def _rule_based_match(vendor_items: list[dict],
     for v_item in vendor_items:
         v_name = _normalize_product_name(v_item.get("product_name", ""))
         v_model = _normalize_product_name(v_item.get("model_name", ""))
+        v_raw_name = v_item.get("product_name", "")
+        v_model_codes = _extract_model_codes(v_raw_name)
+        if v_item.get("model_name"):
+            v_model_codes += _extract_model_codes(v_item["model_name"])
         v_qty = _safe_num(v_item.get("qty", 0))
         v_amount = _safe_num(v_item.get("amount", 0))
         v_date = _parse_date(v_item.get("date", ""))
@@ -389,9 +415,8 @@ def _rule_based_match(vendor_items: list[dict],
             if e_idx in used_erp_indices:
                 continue
 
-            e_name = _normalize_product_name(
-                _get_field(e_item, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default="")
-            )
+            e_raw_name = _get_field(e_item, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default="")
+            e_name = _normalize_product_name(e_raw_name)
             e_code = _get_field(e_item, "prod_cd", "품목코드", "product_code", default="").upper()
             e_qty = _safe_num(_get_field(e_item, "qty", "수량", default=0))
             e_amount = _safe_num(_get_field(e_item, "total", "합계", default=0))
@@ -417,18 +442,29 @@ def _rule_based_match(vendor_items: list[dict],
                 if amt_diff <= 1:
                     score += 35
                     reasons.append("금액 일치")
-                elif amt_diff / max(v_amount, 1) < 0.05:
+                elif amt_diff / max(abs(v_amount), 1) < 0.05:
                     score += 25
                     reasons.append(f"금액 유사 (차이 {int(amt_diff)}원)")
 
             # ── 수량 매칭 (20점) ──
             if v_qty and e_qty:
-                if v_qty == e_qty:
+                if abs(v_qty) == abs(e_qty):
                     score += 20
                     reasons.append("수량 일치")
 
+            # ── 모델코드 매칭 (20점, 강화) ──
+            model_matched = False
+            if v_model_codes:
+                e_full = (e_raw_name + " " + e_code).upper()
+                for mc in v_model_codes:
+                    if mc in e_full:
+                        score += 20
+                        reasons.append(f"모델코드 일치 ({mc})")
+                        model_matched = True
+                        break
+
             # ── 품명 유사도 (15점, 보조) ──
-            if v_name and e_name:
+            if not model_matched and v_name and e_name:
                 if v_name in e_name or e_name in v_name:
                     score += 15
                     reasons.append("품명 포함")
@@ -441,7 +477,7 @@ def _rule_based_match(vendor_items: list[dict],
                         score += min(len(common) * 2, 10)
                         reasons.append(f"품명 유사 ({common})")
 
-            if v_name and e_code and v_name in e_code.replace("-", ""):
+            if not model_matched and v_name and e_code and v_name in e_code.replace("-", ""):
                 score += 10
                 reasons.append("품명↔품목코드 유사")
 
@@ -466,7 +502,7 @@ def _rule_based_match(vendor_items: list[dict],
                 "erp_match": None,
                 "match_type": "unmatched",
                 "confidence": 0.0,
-                "reason": "매칭되는 ERP 항목 없음 — 매입전표 누락 가능성",
+                "reason": f"매칭 실패 (최고점 {best_score}점)" if best_score > 0 else "매칭되는 ERP 항목 없음",
             })
 
     return results
