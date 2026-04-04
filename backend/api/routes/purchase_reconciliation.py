@@ -1910,6 +1910,13 @@ async def download_result_excel(
                     sv = r.get("sales_verify")
                     if sv and sv.get("verdict"):
                         note = sv["verdict"]
+                        # 판매 상세 내역 추가
+                        for sd in sv.get("sales_details", [])[:5]:
+                            sd_date = _format_date_with_slip("", sd.get("date", ""))
+                            sd_cust = sd.get("cust_name", "")
+                            sd_qty = sd.get("qty", 0)
+                            sd_amt = sd.get("amount", 0)
+                            note += f"\n  판매 {sd_date} {sd_cust} {sd_qty}개 {sd_amt:,.0f}원"
                     elif disc_amt:
                         note = r.get("discount_note", "")
                     elif r.get("mismatch_reason"):
@@ -1939,6 +1946,10 @@ async def download_result_excel(
                         ws.cell(row=curr_row, column=vc).fill = vendor_cell_fill
                     for ec in range(7, 11):
                         ws.cell(row=curr_row, column=ec).fill = erp_cell_fill
+                    # 비고 컬럼에 줄바꿈이 있으면 wrapText 적용
+                    if note and "\n" in note:
+                        ws.cell(row=curr_row, column=13).alignment = Alignment(
+                            horizontal="left", vertical="top", wrap_text=True)
                     curr_row += 1
                 curr_row += 1
 
@@ -2084,6 +2095,12 @@ async def download_result_excel(
             sv = r.get("sales_verify")
             if sv and sv.get("verdict"):
                 note = sv["verdict"]
+                for sd in sv.get("sales_details", [])[:5]:
+                    sd_date = _format_date_with_slip("", sd.get("date", ""))
+                    sd_cust = sd.get("cust_name", "")
+                    sd_qty = sd.get("qty", 0)
+                    sd_amt = sd.get("amount", 0)
+                    note += f"\n  판매 {sd_date} {sd_cust} {sd_qty}개 {sd_amt:,.0f}원"
             elif not note and r.get("mismatch_reason"):
                 note = r["mismatch_reason"]
 
@@ -2114,6 +2131,10 @@ async def download_result_excel(
                 ws2.cell(row=row, column=vc).fill = vendor_cell_fill
             for ec in range(7, 11):
                 ws2.cell(row=row, column=ec).fill = erp_cell_fill
+            # 비고 컬럼에 줄바꿈이 있으면 wrapText
+            if note and "\n" in note:
+                ws2.cell(row=row, column=13).alignment = Alignment(
+                    horizontal="left", vertical="top", wrap_text=True)
 
         for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L","M"]:
             ws2.column_dimensions[col_letter].width = 15

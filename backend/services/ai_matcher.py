@@ -265,9 +265,12 @@ def verify_mismatch_with_sales(mismatch_items: list[dict],
             matched_sales.append({
                 "date": sale_date_str,
                 "prod_cd": sale_prod_cd,
-                "prod_name": _get_field(sale, "prod_name", "품명 및 모델", default=""),
+                "prod_name": _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", default=""),
+                "cust_name": _get_field(sale, "cust_name", "거래처명", "판매처명", default=""),
                 "qty": sale_qty,
+                "unit_price": float(_get_field(sale, "unit_price", "단가", default=0) or 0),
                 "amount": sale_amt,
+                "warehouse": _get_field(sale, "warehouse", "창고", "창고명", default=""),
             })
             total_sold_qty += sale_qty
             total_sold_amt += sale_amt
@@ -310,7 +313,7 @@ def verify_mismatch_with_sales(mismatch_items: list[dict],
             "sales_count": len(matched_sales),
             "sales_total_qty": total_sold_qty,
             "sales_total_amt": total_sold_amt,
-            "sales_details": matched_sales[:5],  # 상위 5건만
+            "sales_details": matched_sales[:10],  # 상위 10건
             "verdict": verdict,
             "verdict_code": verdict_code,
         })
