@@ -5198,19 +5198,28 @@ function initReconcilePage() {
   const dropzone = document.getElementById("rc-vendor-dropzone");
   const vf = document.getElementById("reconcile-vendor-files");
   if (dropzone && vf) {
+    let _vendorFileProcessing = false;
     dropzone.addEventListener("click", (e) => {
-      if (e.target === vf) return;
+      if (_vendorFileProcessing) return;
+      if (e.target === vf || e.target.closest("button")) return;
       vf.click();
     });
     dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
     dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
     dropzone.addEventListener("drop", async (e) => {
       e.preventDefault(); dropzone.classList.remove("dragover");
-      if (e.dataTransfer.files.length) await _addVendorFiles(Array.from(e.dataTransfer.files));
+      if (_vendorFileProcessing || !e.dataTransfer.files.length) return;
+      _vendorFileProcessing = true;
+      try { await _addVendorFiles(Array.from(e.dataTransfer.files)); }
+      finally { _vendorFileProcessing = false; }
     });
     vf.addEventListener("change", async () => {
-      if (vf.files.length) await _addVendorFiles(Array.from(vf.files));
-      vf.value = ""; // 같은 파일 다시 선택 가능하도록 리셋
+      if (!vf.files.length) return;
+      _vendorFileProcessing = true;
+      const files = Array.from(vf.files);
+      vf.value = ""; // 먼저 리셋하여 change 재발방지
+      try { await _addVendorFiles(files); }
+      finally { _vendorFileProcessing = false; }
     });
   }
 }
@@ -5226,7 +5235,7 @@ async function _addVendorFiles(newFiles) {
     }
   }
   if (!added.length) return;
-  _renderVendorNameRows();  // show pending state immediately
+  _renderVendorFileList();  // 즉시 파일 태그 + pending 상태 표시
 
   // Upload to preview-vendors
   const formData = new FormData();
