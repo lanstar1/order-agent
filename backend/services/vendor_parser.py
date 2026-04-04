@@ -3,6 +3,7 @@
 패턴 B: 랜마스터 (13컬럼, 거래확인서)
 """
 import os
+import re
 import openpyxl
 from dataclasses import dataclass, field, asdict
 
@@ -155,17 +156,27 @@ def parse_pattern_b(ws) -> list[VendorTransaction]:
     return transactions
 
 
-def parse_vendor_ledger(file_path: str) -> dict:
-    """거래처 원장 엑셀 파싱 (자동 패턴 감지)"""
+def parse_vendor_ledger(file_path: str, original_filename: str = "") -> dict:
+    """거래처 원장 엑셀 파싱 (자동 패턴 감지)
+
+    Args:
+        file_path: 서버에 저장된 파일 경로
+        original_filename: 원본 파일명 (거래처명 추출에 사용)
+    """
     wb = openpyxl.load_workbook(file_path, data_only=True)
     ws = wb.active
 
     vendor_name = ws.title
-    if "라인업" in vendor_name:
-        filename = os.path.basename(file_path)
-        parts = filename.replace(".xlsx", "").split("_")
-        if len(parts) > 1:
-            vendor_name = parts[-1]
+    # 시트명이 자사명(라인업)이거나 generic이면 원본 파일명에서 거래처명 추출
+    _use_filename = original_filename or os.path.basename(file_path)
+    if "라인업" in vendor_name or vendor_name in ("Sheet1", "Sheet", ""):
+        fn_base = os.path.splitext(_use_filename)[0]
+        fn_base = re.sub(r'-[0-9a-f]{6,12}$', '', fn_base)
+        parts = fn_base.replace("-", "_").split("_")
+        skip_prefixes = {"거래장부내역", "거래내역", "거래확인서", "거래원장", "원장", "vendor"}
+        name_parts = [p for p in parts if p and not re.match(r'^[0-9a-f]{6,12}$', p) and p not in skip_prefixes]
+        if name_parts:
+            vendor_name = name_parts[-1]
 
     pattern = detect_pattern(ws)
 

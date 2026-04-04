@@ -296,7 +296,7 @@ async def upload_vendor_ledger(
         f.write(content)
 
     try:
-        result = parse_vendor_ledger(saved_path)
+        result = parse_vendor_ledger(saved_path, original_filename=file.filename)
         result["file_id"] = saved_name
         result["original_filename"] = file.filename
         return result
@@ -588,7 +588,7 @@ async def batch_reconcile(
             with open(saved, "wb") as f:
                 f.write(await vf.read())
 
-            ledger = parse_vendor_ledger(saved)
+            ledger = parse_vendor_ledger(saved, original_filename=vf.filename)
             vendor_name = ledger.get("vendor_name", "")
 
             # 파일명에서 거래처명 추출 시도 (시트명보다 파일명이 더 정확할 수 있음)
@@ -771,8 +771,8 @@ async def preview_vendors(
             with open(saved, "wb") as f:
                 f.write(await vf.read())
 
-            # 거래처명 추출
-            ledger = parse_vendor_ledger(saved)
+            # 거래처명 추출 (원본 파일명 전달)
+            ledger = parse_vendor_ledger(saved, original_filename=vf.filename)
             vendor_name = ledger.get("vendor_name", "")
 
             # 시트명이 generic이면 파일명에서 추출
@@ -957,7 +957,7 @@ async def batch_reconcile_stream(
             try:
                 yield sse("log", {"msg": f"📋 [{vi+1}/{total_vendors}] {vendor_name} 원장 파싱 중..."})
 
-                ledger = parse_vendor_ledger(saved_path)
+                ledger = parse_vendor_ledger(saved_path, original_filename=orig_filename)
 
                 # 확인된 거래처명이 없으면 파싱 결과 사용
                 if not vendor_name:
