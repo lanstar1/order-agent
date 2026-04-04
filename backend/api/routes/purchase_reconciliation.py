@@ -1101,6 +1101,9 @@ async def batch_reconcile_stream(
                         r["erp_amount"] = e_amt
                         r["vendor_qty"] = v_qty
                         r["erp_qty"] = e_qty
+                        # ERP 전표번호 포함 날짜 (예: "20260303-14" → "03.03-14")
+                        erp_date_raw = str(e.get("date", "") or "")
+                        r["erp_date"] = erp_date_raw
                         # 원인 분석
                         reasons = []
                         if v_qty and e_qty and v_qty != e_qty:
@@ -1471,6 +1474,22 @@ async def compare_ledgers(
         if v_amt and e_amt and abs(v_amt - e_amt) > 1:
             r["amount_diff"] = v_amt - e_amt
             r["amount_diff_pct"] = round((v_amt - e_amt) / max(v_amt, 1) * 100, 1)
+            r["vendor_qty"] = v_qty
+            r["erp_qty"] = e_qty
+            r["vendor_amount"] = v_amt
+            r["erp_amount"] = e_amt
+            erp_date_raw = str(e.get("date", "") or "")
+            r["erp_date"] = erp_date_raw
+            # 원인 분석
+            reasons = []
+            if v_qty and e_qty and v_qty != e_qty:
+                reasons.append(f"수량 다름(원장 {v_qty}개→매입 {e_qty}개)")
+            if v_qty and e_qty and v_qty == e_qty:
+                v_unit = round(v_amt / v_qty) if v_qty else 0
+                e_unit = round(e_amt / e_qty) if e_qty else 0
+                if v_unit != e_unit:
+                    reasons.append(f"단가 다름(원장 {v_unit:,}→매입 {e_unit:,})")
+            r["mismatch_reason"] = " / ".join(reasons) if reasons else "금액 차이"
             amount_mismatches.append(r)
         if v_qty and e_qty and v_qty != e_qty:
             r["qty_diff"] = v_qty - e_qty
@@ -1653,6 +1672,22 @@ async def validate_purchase(
     }
 
 
+def _format_date_with_slip(vendor_date: str, erp_date: str) -> str:
+    """거래처 날짜 + ERP 전표번호 조합 (예: "03.03" + "20260303-14" → "03.03-14")"""
+    import re
+    if not erp_date:
+        return vendor_date or ""
+    # "20260303-14" → slip_no="14"
+    m = re.match(r'(?:\d{4})?(\d{2})(\d{2})-(\d+)', str(erp_date))
+    if m:
+        return f"{m.group(1)}.{m.group(2)}-{m.group(3)}"
+    # "03-14" or "03.03-14" 등
+    m2 = re.match(r'(\d{1,2})[.\-/](\d{1,2})[.\-](\d+)', str(erp_date))
+    if m2:
+        return f"{m2.group(1).zfill(2)}.{m2.group(2).zfill(2)}-{m2.group(3)}"
+    return vendor_date or str(erp_date)
+
+
 @router.get("/download-result/{session_id}")
 async def download_result_excel(
     session_id: str,
@@ -1832,10 +1867,13 @@ async def download_result_excel(
                         status_txt = "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이"
                         diff_txt = diff if abs(diff) > 1 else 0
 
+                    # 날짜 + 전표번호 표시 (ERP 날짜에 전표번호 포함 시)
+                    date_display = _format_date_with_slip(v.get("date", ""), e.get("date", ""))
+
                     vals = [
                         i,
                         status_txt,
-                        v.get("date", ""),
+                        date_display,
                         v.get("product_name", ""),
                         v.get("qty", 0),
                         v_amt,
@@ -1996,10 +2034,13 @@ async def download_result_excel(
                 diff_txt = diff if abs(diff) > 1 else 0
                 note = r.get("reason", "")
 
+            # 날짜 + 전표번호 표시
+            date_display = _format_date_with_slip(v.get("date", ""), e.get("date", ""))
+
             vals = [
                 i,
                 status_txt,
-                v.get("date", ""),
+                date_display,
                 v.get("product_name", ""),
                 v.get("qty", 0),
                 v_amt,

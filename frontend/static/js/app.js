@@ -5896,16 +5896,28 @@ function _renderBatchResults(result) {
         detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title mismatch" style="cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:6px;display:inline-block;width:10px;transition:transform 0.2s">▸</span>⚠️ 금액 불일치 (${vs.amount_mismatch_count}건)<span class="rc-sh" style="margin-left:auto;font-size:10px;color:var(--gray-400);white-space:nowrap">상세보기 ▸</span></div><div style="display:none">`;
         detailHTML += (vr.amount_mismatches||[]).map(r => {
           const v = r.vendor_item||{};
+          const e = r.erp_match||{};
           const vAmt = r.vendor_amount || v.amount || 0;
           const eAmt = r.erp_amount || 0;
           const diff = r.amount_diff || 0;
           const vQty = r.vendor_qty || v.qty || 0;
           const eQty = r.erp_qty || 0;
           const reason = r.mismatch_reason || "";
+          // ERP 날짜에서 전표번호 추출 (예: "20260303-14" → "03.03-14", "03-14" → "03-14")
+          const erpDateRaw = e.date || "";
+          let dateDisplay = v.date || "";
+          if (erpDateRaw) {
+            const m = erpDateRaw.match(/(?:\d{4})?(\d{2})(\d{2})-(\d+)/);
+            if (m) { dateDisplay = `${m[1]}.${m[2]}-${m[3]}`; }
+            else {
+              const m2 = erpDateRaw.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-](\d+)/);
+              if (m2) { dateDisplay = `${m2[1].padStart(2,"0")}.${m2[2].padStart(2,"0")}-${m2[3]}`; }
+            }
+          }
           return `<div class="rc-detail-row" style="flex-wrap:wrap;gap:4px">
             <span class="rc-icon">⚠️</span>
             <span class="rc-item-name">${v.product_name||""}</span>
-            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${dateDisplay}</span>
             <span class="rc-item-meta" style="color:#6366f1">원장 ${vQty ? vQty+"개 " : ""}${vAmt.toLocaleString()}원</span>
             <span class="rc-arrow">→</span>
             <span class="rc-item-meta" style="color:#0891b2">매입 ${eQty ? eQty+"개 " : ""}${eAmt.toLocaleString()}원</span>
