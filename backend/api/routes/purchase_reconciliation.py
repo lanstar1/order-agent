@@ -2019,11 +2019,13 @@ async def download_result_excel(
     wb.save(buffer)
     buffer.seek(0)
 
+    from urllib.parse import quote
     filename = f"매입정산_비교결과_{session_id}.xlsx"
+    encoded_filename = quote(filename)
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+        headers={"Content-Disposition": f"attachment; filename=\"result_{session_id}.xlsx\"; filename*=UTF-8''{encoded_filename}"}
     )
 
 
