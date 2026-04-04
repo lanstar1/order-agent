@@ -28,7 +28,7 @@ from security import get_current_user
 
 from config import UPLOAD_DIR, ERP_WH_CD, ERP_EMP_CD
 from services.vendor_parser import parse_vendor_ledger
-from services.ai_matcher import match_products_ai, check_sales_history, _is_shipping_item, _is_discount_item, _is_payment_entry, _get_field
+from services.ai_matcher import match_products_ai, check_sales_history, verify_mismatch_with_sales, _is_shipping_item, _is_discount_item, _is_payment_entry, _get_field
 from services.erp_client import erp_client
 from services.erp_web_scraper import erp_web_scraper
 from services.erp_data_parser import parse_erp_purchase, parse_erp_sales
@@ -1311,6 +1311,26 @@ async def batch_reconcile_stream(
                 if shipping_items and filtered_purchase:
                     shipping_match_results = await match_products_ai(shipping_items, filtered_purchase)
 
+                # ── 금액불일치 판매이력 검증 (수량 차이 시 누가 맞는지 근거 확인) ──
+                if amount_mismatches and all_sales_items:
+                    yield sse("log", {"msg": f"  → 금액불일치 {len(amount_mismatches)}건 판매이력 검증..."})
+                    mismatch_sales_verify = verify_mismatch_with_sales(
+                        amount_mismatches, all_sales_items
+                    )
+                    # 검증 결과를 amount_mismatches에 병합
+                    for mi, sv in zip(amount_mismatches, mismatch_sales_verify):
+                        mi["sales_verify"] = {
+                            "sales_count": sv["sales_count"],
+                            "sales_total_qty": sv["sales_total_qty"],
+                            "sales_total_amt": sv["sales_total_amt"],
+                            "verdict": sv["verdict"],
+                            "verdict_code": sv["verdict_code"],
+                            "sales_details": sv["sales_details"],
+                        }
+                    verdicts = [sv["verdict"] for sv in mismatch_sales_verify if sv["verdict"]]
+                    for vd in verdicts:
+                        yield sse("log", {"msg": f"    📊 {vd}"})
+
                 vf_result["matched"] = matched
                 vf_result["unmatched"] = unmatched
                 vf_result["discount_absorbed"] = discount_absorbed
@@ -1508,6 +1528,21 @@ async def compare_ledgers(
         shipping_match_results = await match_products_ai(
             shipping_items, req.erp_purchase_data
         )
+
+    # 금액불일치 판매이력 검증
+    if amount_mismatches and req.erp_sales_data:
+        mismatch_sales_verify = verify_mismatch_with_sales(
+            amount_mismatches, req.erp_sales_data
+        )
+        for mi, sv in zip(amount_mismatches, mismatch_sales_verify):
+            mi["sales_verify"] = {
+                "sales_count": sv["sales_count"],
+                "sales_total_qty": sv["sales_total_qty"],
+                "sales_total_amt": sv["sales_total_amt"],
+                "verdict": sv["verdict"],
+                "verdict_code": sv["verdict_code"],
+                "sales_details": sv["sales_details"],
+            }
 
     session_id = uuid.uuid4().hex[:12]
     reconcile_sessions[session_id] = {
@@ -1840,7 +1875,7 @@ async def download_result_excel(
                 ws.cell(row=curr_row, column=1, value="✅ 매칭됨").font = Font(bold=True, size=11)
                 curr_row += 1
                 m_headers = ["#", "비교결과", "거래처 날짜", "거래처 품목명", "수량", "금액",
-                             "ERP 품목코드", "ERP 품목명", "ERP 수량", "ERP 금액", "금액차이", "신뢰도"]
+                             "ERP 품목코드", "ERP 품목명", "ERP 수량", "ERP 금액", "금액차이", "신뢰도", "비고"]
                 for c, h in enumerate(m_headers, 1):
                     ws.cell(row=curr_row, column=c, value=h)
                 style_header(ws, curr_row, len(m_headers))
@@ -1870,6 +1905,16 @@ async def download_result_excel(
                     # 날짜 + 전표번호 표시 (ERP 날짜에 전표번호 포함 시)
                     date_display = _format_date_with_slip(v.get("date", ""), e.get("date", ""))
 
+                    # 비고: 판매이력 검증 결과 또는 할인 메모
+                    note = ""
+                    sv = r.get("sales_verify")
+                    if sv and sv.get("verdict"):
+                        note = sv["verdict"]
+                    elif disc_amt:
+                        note = r.get("discount_note", "")
+                    elif r.get("mismatch_reason"):
+                        note = r["mismatch_reason"]
+
                     vals = [
                         i,
                         status_txt,
@@ -1883,6 +1928,7 @@ async def download_result_excel(
                         e_amt,
                         diff_txt,
                         f"{conf}%",
+                        note,
                     ]
                     fill = green_fill if (abs(diff) <= 1 or disc_amt) else yellow_fill
                     for c, val in enumerate(vals, 1):
@@ -1962,11 +2008,12 @@ async def download_result_excel(
                     curr_row += 1
 
             # 열 너비 설정
-            for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L"]:
+            for col_letter in ["A","B","C","D","E","F","G","H","I","J","K","L","M"]:
                 ws.column_dimensions[col_letter].width = 15
             ws.column_dimensions["D"].width = 30
             ws.column_dimensions["H"].width = 30
             ws.column_dimensions["J"].width = 30
+            ws.column_dimensions["M"].width = 40
 
     else:
         # ━━━ 단일 거래처 모드 (기존 로직) ━━━
@@ -2033,6 +2080,12 @@ async def download_result_excel(
                 status_txt = "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이"
                 diff_txt = diff if abs(diff) > 1 else 0
                 note = r.get("reason", "")
+            # 판매이력 검증 결과 우선
+            sv = r.get("sales_verify")
+            if sv and sv.get("verdict"):
+                note = sv["verdict"]
+            elif not note and r.get("mismatch_reason"):
+                note = r["mismatch_reason"]
 
             # 날짜 + 전표번호 표시
             date_display = _format_date_with_slip(v.get("date", ""), e.get("date", ""))

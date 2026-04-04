@@ -5764,7 +5764,7 @@ function _renderBatchResults(result) {
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#16a34a">✓</span>
             <span class="rc-item-name">${v.product_name||""}</span>
-            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, e.date)}</span>
             <span class="rc-item-meta">${vAmt.toLocaleString()}원</span>
             ${discAmt && hasDiff ? `<span class="rc-item-meta" style="color:#f59e0b;font-size:10px">(할인 ${Math.abs(discAmt).toLocaleString()}원 → ${eAmt.toLocaleString()}원)</span>` : ""}
             <span class="rc-arrow">→</span>
@@ -5785,7 +5785,7 @@ function _renderBatchResults(result) {
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#16a34a">✓</span>
             <span class="rc-item-name">${pname}</span>
-            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, "")}</span>
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
             ${absorbedBy ? `<span class="rc-arrow">→</span><span class="rc-item-meta" style="color:var(--gray-400);font-size:10px">${absorbedBy} 단가에 반영</span>` : ""}
           </div>`;
@@ -5804,7 +5804,7 @@ function _renderBatchResults(result) {
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#8b5cf6">↩</span>
             <span class="rc-item-name">${v.product_name||""}</span>
-            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, e.date)}</span>
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
             <span class="rc-arrow">→</span>
             <span class="rc-erp-name">${e.prod_cd||""} ${e.prod_name||""}</span>
@@ -5815,7 +5815,7 @@ function _renderBatchResults(result) {
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#dc2626">✗</span>
             <span class="rc-item-name">${v.product_name||""} (반품-미매칭)</span>
-            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, "")}</span>
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
           </div>`;
         }).join("");
@@ -5829,7 +5829,7 @@ function _renderBatchResults(result) {
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#6b7280">─</span>
             <span class="rc-item-name">${p.product_name||p.tx_type||""}</span>
-            <span class="rc-item-meta">${p.date||""}</span>
+            <span class="rc-item-meta">${rcFmtDate(p.date, "")}</span>
             <span class="rc-item-meta">${(p.amount||0).toLocaleString()}원</span>
           </div>`;
         }).join("");
@@ -5850,7 +5850,7 @@ function _renderBatchResults(result) {
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#dc2626">✗</span>
             <span class="rc-item-name">${pname}${txType ? ` (${txType})` : ""}</span>
-            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, "")}</span>
             <span class="rc-item-meta">수량 ${v.qty||0}</span>
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
           </div>`;
@@ -5868,7 +5868,7 @@ function _renderBatchResults(result) {
           return `<div class="rc-detail-row">
             <span class="rc-icon">${sc.has_sales_history ? "📦" : "❓"}</span>
             <span class="rc-item-name">${v.product_name||""}</span>
-            <span class="rc-item-meta">${v.date||""} | ${(v.amount||0).toLocaleString()}원</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, "")} | ${(v.amount||0).toLocaleString()}원</span>
             ${best ? `<span class="rc-arrow">→</span><span class="rc-erp-name">${best.product_code||""} ${best.product_name||""} (${Math.round((best.confidence||0)*100)}%)</span>` : ""}
             ${sc.has_sales_history ? `<label style="margin-left:auto;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="batch-include-check" data-vi="${vi}" data-sci="${sci}" checked> 입력</label>` : ""}
           </div>`;
@@ -5881,9 +5881,11 @@ function _renderBatchResults(result) {
         detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title shipping" style="cursor:pointer" onclick="rcToggleSection(this)"><span class="rc-sa" style="font-size:10px;margin-right:6px;display:inline-block;width:10px;transition:transform 0.2s">▸</span>🚚 배송료 (${vs.shipping_count}건)<span class="rc-sh" style="margin-left:auto;font-size:10px;color:var(--gray-400);white-space:nowrap">상세보기 ▸</span></div><div style="display:none">`;
         detailHTML += (vr.shipping_items||[]).map(si => {
           const v = si.vendor_item||{};
+          const se = si.erp_match||{};
           return `<div class="rc-detail-row">
             <span class="rc-icon">🚚</span>
             <span class="rc-item-name">${v.product_name||""}</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, se.date)}</span>
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
             <span class="rc-item-meta">${si.erp_match ? "✓ ERP매칭" : "미매칭"}</span>
           </div>`;
@@ -5903,26 +5905,16 @@ function _renderBatchResults(result) {
           const vQty = r.vendor_qty || v.qty || 0;
           const eQty = r.erp_qty || 0;
           const reason = r.mismatch_reason || "";
-          // ERP 날짜에서 전표번호 추출 (예: "20260303-14" → "03.03-14", "03-14" → "03-14")
-          const erpDateRaw = e.date || "";
-          let dateDisplay = v.date || "";
-          if (erpDateRaw) {
-            const m = erpDateRaw.match(/(?:\d{4})?(\d{2})(\d{2})-(\d+)/);
-            if (m) { dateDisplay = `${m[1]}.${m[2]}-${m[3]}`; }
-            else {
-              const m2 = erpDateRaw.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-](\d+)/);
-              if (m2) { dateDisplay = `${m2[1].padStart(2,"0")}.${m2[2].padStart(2,"0")}-${m2[3]}`; }
-            }
-          }
           return `<div class="rc-detail-row" style="flex-wrap:wrap;gap:4px">
             <span class="rc-icon">⚠️</span>
             <span class="rc-item-name">${v.product_name||""}</span>
-            <span class="rc-item-meta">${dateDisplay}</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, e.date)}</span>
             <span class="rc-item-meta" style="color:#6366f1">원장 ${vQty ? vQty+"개 " : ""}${vAmt.toLocaleString()}원</span>
             <span class="rc-arrow">→</span>
             <span class="rc-item-meta" style="color:#0891b2">매입 ${eQty ? eQty+"개 " : ""}${eAmt.toLocaleString()}원</span>
             <span class="rc-item-meta" style="color:${diff > 0 ? '#dc2626' : '#16a34a'};font-weight:600">차액 ${diff > 0 ? "+" : ""}${diff.toLocaleString()}원</span>
             ${reason ? `<span class="rc-item-meta" style="color:#f59e0b;font-size:10px;width:100%;padding-left:24px">💡 ${reason}</span>` : ""}
+            ${r.sales_verify ? `<span class="rc-item-meta" style="font-size:10px;width:100%;padding-left:24px;color:${r.sales_verify.verdict_code==='vendor'?'#dc2626':r.sales_verify.verdict_code==='erp'?'#16a34a':'#6b7280'}">📊 ${r.sales_verify.verdict}${r.sales_verify.sales_count ? ` (판매 ${r.sales_verify.sales_count}건)` : ''}</span>` : ''}
           </div>`;
         }).join("");
         detailHTML += "</div></div>";
@@ -5939,7 +5931,7 @@ function _renderBatchResults(result) {
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#7c3aed">+</span>
             <span class="rc-item-name">${eCode} ${eName}</span>
-            <span class="rc-item-meta">${eDate}</span>
+            <span class="rc-item-meta">${rcFmtDate("", eDate)}</span>
             <span class="rc-item-meta">${eAmt.toLocaleString()}원</span>
           </div>`;
         }).join("");
@@ -6005,6 +5997,20 @@ function _renderBatchResults(result) {
 }
 
 // ── 세부 섹션 토글 ──
+/** ERP 날짜에서 전표번호 추출하여 MM.DD-NN 형식으로 반환 */
+function rcFmtDate(vendorDate, erpDate) {
+  const ed = String(erpDate || "");
+  if (ed) {
+    // "20260303-14" → "03.03-14"
+    const m = ed.match(/(?:\d{4})?(\d{2})(\d{2})-(\d+)/);
+    if (m) return `${m[1]}.${m[2]}-${m[3]}`;
+    // "03-14" or "03.03-14"
+    const m2 = ed.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-](\d+)/);
+    if (m2) return `${m2[1].padStart(2,"0")}.${m2[2].padStart(2,"0")}-${m2[3]}`;
+  }
+  return vendorDate || ed || "";
+}
+
 function rcToggleSection(el) {
   const body = el.nextElementSibling;
   if (!body) return;

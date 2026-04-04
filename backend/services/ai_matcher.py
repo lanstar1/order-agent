@@ -210,6 +210,114 @@ async def check_sales_history(unmatched_items: list[dict],
     return results
 
 
+def verify_mismatch_with_sales(mismatch_items: list[dict],
+                                sales_data: list[dict],
+                                year: int = 2026) -> list[dict]:
+    """금액불일치 항목에 대해 판매현황에서 실제 판매 수량/금액 검증.
+
+    ERP 품목코드가 이미 매칭되어 있으므로 AI 없이 규칙 기반으로 검색.
+    판매현황의 품목코드 + 날짜범위(±14일)로 판매 건수와 수량을 집계하여
+    거래처원장과 구매전표 중 어느 쪽이 맞는지 근거를 제공한다.
+    """
+    results = []
+
+    for r in mismatch_items:
+        v = r.get("vendor_item", {})
+        e = r.get("erp_match", {}) or {}
+        v_qty = int(r.get("vendor_qty", v.get("qty", 0)) or 0)
+        e_qty = int(r.get("erp_qty", 0) or 0)
+        v_amt = float(r.get("vendor_amount", v.get("amount", 0)) or 0)
+        e_amt = float(r.get("erp_amount", 0) or 0)
+
+        # ERP 품목코드로 판매현황 검색
+        erp_prod_cd = _get_field(e, "prod_cd", "품목코드", "product_code", default="")
+        erp_prod_name = _get_field(e, "prod_name", "품명 및 모델", "품명 및 규격", default="")
+        vendor_date = _parse_date(v.get("date", ""), year)
+
+        # 날짜 범위 ±14일 내 판매현황 필터
+        matched_sales = []
+        total_sold_qty = 0
+        total_sold_amt = 0
+
+        for sale in sales_data:
+            sale_prod_cd = _get_field(sale, "prod_cd", "품목코드", "product_code", default="")
+            if not sale_prod_cd or sale_prod_cd != erp_prod_cd:
+                continue
+
+            # 날짜 필터 (±14일)
+            sale_date_str = _get_field(sale, "date", "월/일", "연/월/일", default="")
+            sale_date = _parse_date(sale_date_str, year)
+            if vendor_date and sale_date:
+                if abs((sale_date - vendor_date).days) > 14:
+                    continue
+
+            sale_qty = 0
+            try:
+                sale_qty = int(float(str(_get_field(sale, "qty", "수량", default=0) or 0).replace(",", "")))
+            except (ValueError, TypeError):
+                pass
+            sale_amt = 0
+            try:
+                sale_amt = float(str(_get_field(sale, "total", "합계", "합 계", default=0) or 0).replace(",", ""))
+            except (ValueError, TypeError):
+                pass
+
+            matched_sales.append({
+                "date": sale_date_str,
+                "prod_cd": sale_prod_cd,
+                "prod_name": _get_field(sale, "prod_name", "품명 및 모델", default=""),
+                "qty": sale_qty,
+                "amount": sale_amt,
+            })
+            total_sold_qty += sale_qty
+            total_sold_amt += sale_amt
+
+        # 판정: 판매 수량이 원장/구매전표 중 어느쪽에 가까운지
+        verdict = ""
+        verdict_code = ""  # "vendor" | "erp" | "unknown"
+        if matched_sales:
+            if v_qty and e_qty and v_qty != e_qty:
+                v_diff = abs(total_sold_qty - v_qty)
+                e_diff = abs(total_sold_qty - e_qty)
+                if v_diff < e_diff:
+                    verdict = f"판매 {total_sold_qty}개 → 거래처원장({v_qty}개)과 일치, 구매전표 수정 필요 가능성"
+                    verdict_code = "vendor"
+                elif e_diff < v_diff:
+                    verdict = f"판매 {total_sold_qty}개 → 구매전표({e_qty}개)와 일치, 거래처원장 확인 필요"
+                    verdict_code = "erp"
+                else:
+                    verdict = f"판매 {total_sold_qty}개 — 양쪽 모두 확인 필요"
+                    verdict_code = "unknown"
+            else:
+                verdict = f"판매 {total_sold_qty}개 {total_sold_amt:,.0f}원 확인됨"
+                verdict_code = "found"
+        else:
+            if erp_prod_cd:
+                verdict = f"판매이력 없음 ({erp_prod_cd}) — 수동 확인 필요"
+            else:
+                verdict = "ERP 품목코드 없어 판매이력 검색 불가"
+            verdict_code = "not_found"
+
+        results.append({
+            "vendor_item": v,
+            "erp_match": e,
+            "erp_prod_cd": erp_prod_cd,
+            "erp_prod_name": erp_prod_name,
+            "vendor_qty": v_qty,
+            "erp_qty": e_qty,
+            "vendor_amount": v_amt,
+            "erp_amount": e_amt,
+            "sales_count": len(matched_sales),
+            "sales_total_qty": total_sold_qty,
+            "sales_total_amt": total_sold_amt,
+            "sales_details": matched_sales[:5],  # 상위 5건만
+            "verdict": verdict,
+            "verdict_code": verdict_code,
+        })
+
+    return results
+
+
 def _get_recommendation(has_history: bool, best_candidate: dict | None) -> str:
     if not has_history:
         return "확인 필요 (판매이력 없음 — 미판매 품목이거나 품명이 크게 다를 수 있음)"
