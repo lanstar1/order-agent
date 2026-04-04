@@ -5662,7 +5662,8 @@ function _renderBatchResults(result) {
   accordion.innerHTML = (result.vendor_results || []).map((vr, vi) => {
     const vs = vr.summary || {};
     const hasError = !!vr.error;
-    const isOk = !hasError && vs.unmatched_count === 0 && vs.amount_mismatch_count === 0;
+    const vendorTotalOk = vs.vendor_total_match === true;
+    const isOk = !hasError && (vs.unmatched_count === 0 || vendorTotalOk) && vs.amount_mismatch_count === 0;
     const statusCls = hasError ? "status-error" : isOk ? "status-ok" : "status-warn";
     const statusIcon = hasError ? "❌" : isOk ? "✅" : "⚠️";
 
@@ -5688,12 +5689,17 @@ function _renderBatchResults(result) {
 
       // 누락
       if (vs.unmatched_count > 0) {
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title unmatched">❌ 매입전표 누락 (${vs.unmatched_count}건)</div>`;
+        const totalMatchNote = vr.vendor_total_match
+          ? `<span style="color:#16a34a;font-size:11px;margin-left:8px">✅ 거래처 총액 일치 — 개별 항목 차이는 무시 가능</span>`
+          : "";
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title unmatched">❌ 매입전표 누락 (${vs.unmatched_count}건)${totalMatchNote}</div>`;
         detailHTML += (vr.unmatched || []).map(r => {
           const v = r.vendor_item || {};
+          const txType = v.tx_type || "";
+          const pname = v.product_name || v.product_category || "";
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#dc2626">✗</span>
-            <span class="rc-item-name">${v.product_name||""}</span>
+            <span class="rc-item-name">${pname}${txType ? ` (${txType})` : ""}</span>
             <span class="rc-item-meta">${v.date||""}</span>
             <span class="rc-item-meta">수량 ${v.qty||0}</span>
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
@@ -5740,13 +5746,36 @@ function _renderBatchResults(result) {
         detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title mismatch">⚠️ 금액 불일치 (${vs.amount_mismatch_count}건)</div>`;
         detailHTML += (vr.amount_mismatches||[]).map(r => {
           const v = r.vendor_item||{};
-          return `<div class="rc-detail-row">
+          const vAmt = r.vendor_amount || v.amount || 0;
+          const eAmt = r.erp_amount || 0;
+          const diff = r.amount_diff || 0;
+          return `<div class="rc-detail-row" style="flex-wrap:wrap;gap:4px">
             <span class="rc-icon">⚠️</span>
             <span class="rc-item-name">${v.product_name||""}</span>
-            <span class="rc-item-meta">차이 ${(r.amount_diff||0).toLocaleString()}원 (${r.amount_diff_pct||0}%)</span>
+            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta" style="color:#6366f1">원장 ${vAmt.toLocaleString()}원</span>
+            <span class="rc-arrow">→</span>
+            <span class="rc-item-meta" style="color:#0891b2">매입 ${eAmt.toLocaleString()}원</span>
+            <span class="rc-item-meta" style="color:${diff > 0 ? '#dc2626' : '#16a34a'};font-weight:600">차액 ${diff > 0 ? "+" : ""}${diff.toLocaleString()}원</span>
           </div>`;
         }).join("");
         detailHTML += "</div>";
+      }
+
+      // 거래처 총액 비교
+      if (typeof vr.vendor_ledger_total === "number" && typeof vr.erp_purchase_total === "number") {
+        const vTotal = vr.vendor_ledger_total;
+        const eTotal = vr.erp_purchase_total;
+        const tDiff = vTotal - eTotal;
+        const tMatch = Math.abs(tDiff) <= 1;
+        detailHTML += `<div class="rc-detail-section" style="border-top:1px solid var(--gray-700);padding-top:8px;margin-top:4px">
+          <div style="font-size:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <span style="font-weight:600">${tMatch ? "✅" : "⚠️"} 거래처 총액:</span>
+            <span style="color:#6366f1">원장 ${vTotal.toLocaleString()}원</span>
+            <span style="color:#0891b2">매입전표 ${eTotal.toLocaleString()}원</span>
+            ${!tMatch ? `<span style="color:#dc2626;font-weight:600">차액 ${tDiff > 0 ? "+" : ""}${tDiff.toLocaleString()}원</span>` : `<span style="color:#16a34a">일치</span>`}
+          </div>
+        </div>`;
       }
     }
 
@@ -5756,13 +5785,18 @@ function _renderBatchResults(result) {
         <div>
           <div class="rc-vendor-title">${statusIcon} ${vr.vendor_name || vr.filename}</div>
           <div class="rc-vendor-stats">
-            ${hasError ? `<span style="color:var(--danger)">${vr.error}</span>` : `
-              <span class="rc-vendor-stat good">매칭 ${vs.matched_count}</span>
-              <span class="rc-vendor-stat ${vs.unmatched_count > 0 ? 'bad' : ''}">누락 ${vs.unmatched_count}</span>
-              <span class="rc-vendor-stat">배송 ${vs.shipping_count}</span>
+            ${hasError ? `<span style="color:var(--danger)">${vr.error}</span>` : (() => {
+              const regularTotal = vs.matched_count + vs.unmatched_count;
+              const matchPct = regularTotal > 0 ? Math.round(vs.matched_count / regularTotal * 100) : 0;
+              const pctColor = matchPct === 100 ? "#16a34a" : matchPct >= 80 ? "#ca8a04" : "#dc2626";
+              return `
+              <span class="rc-vendor-stat good">매칭 ${vs.matched_count}/${regularTotal} <b style="color:${pctColor}">(${matchPct}%)</b></span>
+              ${vs.unmatched_count > 0 ? `<span class="rc-vendor-stat bad">누락 ${vs.unmatched_count}</span>` : ""}
+              ${vs.shipping_count > 0 ? `<span class="rc-vendor-stat">배송 ${vs.shipping_count}</span>` : ""}
               <span class="rc-vendor-stat">ERP ${vs.purchase_filtered}건</span>
               ${vr.vendor_code ? `<span class="rc-vendor-stat">코드 ${vr.vendor_code}</span>` : ""}
-            `}
+            `;
+            })()}
           </div>
         </div>
         <span class="rc-vendor-toggle">▼</span>
@@ -5836,7 +5870,16 @@ function reconcileBatchPrepareInput() {
   }
 
   if (!_rc.purchaseQueue.length) {
-    toast("입력할 항목이 없습니다. 판매이력이 있는 항목을 체크하세요.", "info"); return;
+    // 모든 거래처 총액이 일치하면 입력할 게 없는 것이 정상
+    const allTotalMatch = (_rc.batchResult.vendor_results || []).every(vr =>
+      vr.error || vr.vendor_total_match === true || (vr.summary?.unmatched_count || 0) === 0
+    );
+    if (allTotalMatch) {
+      toast("모든 거래처 총액이 일치하여 추가 입력이 필요 없습니다.", "success");
+    } else {
+      toast("입력할 항목이 없습니다. 판매이력이 있는 미매칭 항목이 있으면 체크 후 시도하세요.", "info");
+    }
+    return;
   }
 
   _renderPurchaseEditCards();

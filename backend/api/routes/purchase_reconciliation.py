@@ -669,6 +669,8 @@ async def batch_reconcile(
                 if v_amt and e_amt and abs(v_amt - e_amt) > 1:
                     r["amount_diff"] = v_amt - e_amt
                     r["amount_diff_pct"] = round((v_amt - e_amt) / max(v_amt, 1) * 100, 1)
+                    r["vendor_amount"] = v_amt
+                    r["erp_amount"] = e_amt
                     amount_mismatches.append(r)
                 if v_qty and e_qty and v_qty != e_qty:
                     r["qty_diff"] = v_qty - e_qty
@@ -1044,9 +1046,21 @@ async def batch_reconcile_stream(
                     if v_amt and e_amt and abs(v_amt - e_amt) > 1:
                         r["amount_diff"] = v_amt - e_amt
                         r["amount_diff_pct"] = round((v_amt - e_amt) / max(v_amt, 1) * 100, 1)
+                        r["vendor_amount"] = v_amt
+                        r["erp_amount"] = e_amt
                         amount_mismatches.append(r)
                     if v_qty and e_qty and v_qty != e_qty:
                         r["qty_diff"] = v_qty - e_qty
+
+                # 거래처별 총액 비교 (거래처원장 매입총액 vs ERP 구매현황 매입총액)
+                vendor_ledger_total = sum(
+                    float(item.get("amount", 0) or 0) for item in regular_items
+                )
+                erp_purchase_total = sum(
+                    float(str(_get_field(p, "total", "합계", default=0) or 0).replace(",", ""))
+                    for p in filtered_purchase
+                )
+                vendor_total_match = abs(vendor_ledger_total - erp_purchase_total) <= 1
 
                 # ── 2단계: 미매칭 건 판매이력 확인 (AI) — 최대 10건만 ──
                 sales_check = []
@@ -1095,6 +1109,9 @@ async def batch_reconcile_stream(
                 ]
                 vf_result["amount_mismatches"] = amount_mismatches
                 vf_result["memo_items"] = [item for item in memo_items]
+                vf_result["vendor_ledger_total"] = vendor_ledger_total
+                vf_result["erp_purchase_total"] = erp_purchase_total
+                vf_result["vendor_total_match"] = vendor_total_match
                 vf_result["summary"] = {
                     "total_vendor_items": len(all_vendor_items),
                     "memo_filtered": len(memo_items),
@@ -1104,6 +1121,7 @@ async def batch_reconcile_stream(
                     "shipping_count": len(shipping_items),
                     "amount_mismatch_count": len(amount_mismatches),
                     "purchase_filtered": len(filtered_purchase),
+                    "vendor_total_match": vendor_total_match,
                 }
 
                 match_rate = round(len(matched) / max(len(regular_items), 1) * 100, 1)
