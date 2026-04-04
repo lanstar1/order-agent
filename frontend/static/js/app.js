@@ -5190,10 +5190,31 @@ const _rc = {
   vendorFiles: [],  // {file, name, code, status} 누적 관리
 };
 
+let _reconcileDropzoneInitialized = false;
+
 function initReconcilePage() {
   reconcileSetStep(1);
   reconcileCheckErpCache();
   _rc.vendorFiles = [];
+  _rc.batchResult = null;
+
+  // DOM 초기화 (이전 결과 잔여물 제거)
+  const vfList = document.getElementById("reconcile-vendor-file-list");
+  if (vfList) vfList.innerHTML = "";
+  const vendorConfirm = document.getElementById("reconcile-vendor-confirm");
+  if (vendorConfirm) vendorConfirm.style.display = "none";
+  const vendorNameList = document.getElementById("reconcile-vendor-name-list");
+  if (vendorNameList) vendorNameList.innerHTML = "";
+  const summary = document.getElementById("reconcile-batch-summary");
+  if (summary) summary.innerHTML = "";
+  const accordion = document.getElementById("reconcile-vendor-accordion");
+  if (accordion) accordion.innerHTML = "";
+  const progress = document.getElementById("reconcile-batch-progress");
+  if (progress) progress.style.display = "none";
+
+  // 드롭존 이벤트 리스너 (최초 1회만 등록)
+  if (_reconcileDropzoneInitialized) return;
+  _reconcileDropzoneInitialized = true;
 
   const dropzone = document.getElementById("rc-vendor-dropzone");
   const vf = document.getElementById("reconcile-vendor-files");
@@ -6116,7 +6137,10 @@ function reconcileReset() {
   _rc.step = 1;
   _rc.batchResult = null;
   _rc.purchaseQueue = [];
+  _rc.vendorFiles = [];  // 거래처 파일 목록 초기화
   reconcileSetStep(1);
+
+  // 파일 입력 초기화
   const vendorFiles = document.getElementById("reconcile-vendor-files");
   if (vendorFiles) vendorFiles.value = "";
   const vfList = document.getElementById("reconcile-vendor-file-list");
@@ -6125,9 +6149,49 @@ function reconcileReset() {
   if (pFile) pFile.value = "";
   const sFile = document.getElementById("reconcile-erp-sales-file");
   if (sFile) sFile.value = "";
+
+  // 거래처 확인 영역 초기화
+  const vendorConfirm = document.getElementById("reconcile-vendor-confirm");
+  if (vendorConfirm) vendorConfirm.style.display = "none";
+  const vendorNameList = document.getElementById("reconcile-vendor-name-list");
+  if (vendorNameList) vendorNameList.innerHTML = "";
+
+  // 진행바 초기화
   const progress = document.getElementById("reconcile-batch-progress");
   if (progress) progress.style.display = "none";
+
+  // 결과 영역 초기화
+  const summary = document.getElementById("reconcile-batch-summary");
+  if (summary) summary.innerHTML = "";
+  const accordion = document.getElementById("reconcile-vendor-accordion");
+  if (accordion) accordion.innerHTML = "";
+
   reconcileCheckErpCache();
+}
+
+function reconcileNewMatch() {
+  // 거래처 파일만 초기화 (구매/판매 캐시는 유지)
+  _rc.vendorFiles = [];
+  _rc.batchResult = null;
+  _rc.purchaseQueue = [];
+  reconcileSetStep(1);
+
+  const vendorFiles = document.getElementById("reconcile-vendor-files");
+  if (vendorFiles) vendorFiles.value = "";
+  const vfList = document.getElementById("reconcile-vendor-file-list");
+  if (vfList) vfList.innerHTML = "";
+  const vendorConfirm = document.getElementById("reconcile-vendor-confirm");
+  if (vendorConfirm) vendorConfirm.style.display = "none";
+  const vendorNameList = document.getElementById("reconcile-vendor-name-list");
+  if (vendorNameList) vendorNameList.innerHTML = "";
+  const progress = document.getElementById("reconcile-batch-progress");
+  if (progress) progress.style.display = "none";
+  const summary = document.getElementById("reconcile-batch-summary");
+  if (summary) summary.innerHTML = "";
+  const accordion = document.getElementById("reconcile-vendor-accordion");
+  if (accordion) accordion.innerHTML = "";
+
+  toast("새 매칭을 시작합니다. 거래처 원장을 업로드하세요.", "info");
 }
 
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LANstar Agent</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/css/style.css?v=20260404w">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260404x">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
   <style>
     /* CS/RMA 파이프라인 탭 */
@@ -584,6 +584,7 @@ C규격품 200개
           <div id="reconcile-vendor-accordion"></div>
 
           <div class="rc-actions">
+            <button class="btn btn-outline" onclick="reconcileNewMatch()" title="거래처 파일만 초기화하고 새로 시작 (구매/판매 캐시 유지)">🔄 새 매칭</button>
             <button class="btn btn-outline" onclick="reconcileGoBack(1)">← 이전</button>
             <button class="btn btn-outline rc-btn-excel" onclick="reconcileBatchDownloadExcel()">
               <span>📥</span> 엑셀 다운로드
@@ -602,6 +603,7 @@ C규격품 200개
           </div>
           <div id="reconcile-purchase-list"></div>
           <div class="rc-actions">
+            <button class="btn btn-outline" onclick="reconcileNewMatch()">🔄 새 매칭</button>
             <button class="btn btn-outline" onclick="reconcileGoBack(2)">← 이전</button>
             <button class="btn btn-success" onclick="reconcileSubmitERP()" id="btn-reconcile-submit">
               ERP 구매입력 전송
@@ -612,8 +614,8 @@ C규격품 200개
         <!-- STEP 4: 결과 -->
         <div id="reconcile-step4" style="display:none">
           <div id="reconcile-result"></div>
-          <button class="btn btn-primary rc-start-btn" onclick="reconcileReset()" style="margin-top:16px">
-            새 정산 시작
+          <button class="btn btn-primary rc-start-btn" onclick="reconcileNewMatch()" style="margin-top:16px">
+            🔄 새 매칭 시작
           </button>
         </div>
 
@@ -3330,7 +3332,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260404w"></script>
+<script src="/static/js/app.js?v=20260404x"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
