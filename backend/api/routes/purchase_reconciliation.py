@@ -28,7 +28,7 @@ from security import get_current_user
 
 from config import UPLOAD_DIR, ERP_WH_CD, ERP_EMP_CD
 from services.vendor_parser import parse_vendor_ledger
-from services.ai_matcher import match_products_ai, check_sales_history, _is_shipping_item, _get_field
+from services.ai_matcher import match_products_ai, check_sales_history, _is_shipping_item, _is_discount_item, _is_payment_entry, _get_field
 from services.erp_client import erp_client
 from services.erp_web_scraper import erp_web_scraper
 from services.erp_data_parser import parse_erp_purchase, parse_erp_sales
@@ -983,12 +983,13 @@ async def batch_reconcile_stream(
                 vf_result["vendor_code"] = vendor_code or _find_vendor_code(vendor_name)
 
                 # 거래처 원장 항목 추출
+                # 매출 항목 + 매입(할인/반품) 항목 모두 포함
                 all_vendor_items = ledger.get("sales_items", [])
                 if not all_vendor_items:
                     all_vendor_items = ledger.get("transactions", [])
                     all_vendor_items = [
                         item for item in all_vendor_items
-                        if item.get("tx_type") == "매출" or not item.get("tx_type")
+                        if item.get("tx_type") in ("매출", "매입") or not item.get("tx_type")
                     ]
 
                 if not all_vendor_items:
@@ -1005,10 +1006,39 @@ async def batch_reconcile_stream(
                     or str(item.get("product_name", "")).strip() in memo_keywords
                 ]
                 real_items = [item for item in all_vendor_items if item not in memo_items]
-                shipping_items = [item for item in real_items if _is_shipping_item(item)]
-                regular_items = [item for item in real_items if not _is_shipping_item(item)]
 
-                yield sse("log", {"msg": f"  → 전체 {len(all_vendor_items)}건 (실거래 {len(regular_items)}, 배송 {len(shipping_items)}, 메모 {len(memo_items)})"})
+                # 결제/입출금 항목 필터링 (매칭 대상 제외)
+                payment_items = [item for item in real_items if _is_payment_entry(item)]
+                real_items = [item for item in real_items if item not in payment_items]
+
+                shipping_items = [item for item in real_items if _is_shipping_item(item)]
+                non_shipping = [item for item in real_items if not _is_shipping_item(item)]
+
+                # 매입(할인) 분리: tx_type이 "매입"이면서 할인 항목 → 할인 흡수에서 처리
+                # 매입(반품) 분리: tx_type이 "매입"이면서 비할인 → 반품으로 매칭
+                vendor_purchase_discounts = []  # 매입(할인) — 할인 흡수 대상
+                vendor_returns = []  # 매입(비할인) — 반품 매칭 대상
+                regular_items = []
+
+                for item in non_shipping:
+                    tx = str(item.get("tx_type", "") or "").strip()
+                    if tx == "매입":
+                        if _is_discount_item(item):
+                            vendor_purchase_discounts.append(item)
+                        else:
+                            vendor_returns.append(item)
+                    else:
+                        regular_items.append(item)
+
+                payment_log = f", 결제성 {len(payment_items)}" if payment_items else ""
+                return_log = f", 반품 {len(vendor_returns)}" if vendor_returns else ""
+                pd_log = f", 매입할인 {len(vendor_purchase_discounts)}" if vendor_purchase_discounts else ""
+                yield sse("log", {"msg": f"  → 전체 {len(all_vendor_items)}건 (실거래 {len(regular_items)}, 배송 {len(shipping_items)}, 메모 {len(memo_items)}{payment_log}{return_log}{pd_log})"})
+                if payment_items:
+                    for pi in payment_items:
+                        pname = pi.get("product_name", "") or pi.get("tx_type", "")
+                        pamt = float(pi.get("amount", 0) or 0)
+                        yield sse("log", {"msg": f"    💳 결제성 제외: {pname} ({pamt:,.0f}원)"})
 
                 # 구매현황에서 해당 거래처 필터
                 filtered_purchase = _match_vendor_to_purchase(vendor_name, all_purchase_items)
@@ -1018,6 +1048,26 @@ async def batch_reconcile_stream(
                     # 디버깅: 구매현황의 거래처 목록 표시
                     cust_names = list(set(p.get("cust_name", "") for p in all_purchase_items if p.get("cust_name")))
                     yield sse("log", {"msg": f"  ⚠️ 구매현황에서 '{vendor_name}' 못 찾음. 등록된 거래처: {', '.join(cust_names[:10])}{'...' if len(cust_names) > 10 else ''}", "level": "warn"})
+
+                # ── 반품 매칭: 거래처 매입 항목 vs ERP 음수 구매현황 ──
+                return_matched = []
+                return_unmatched = []
+                if vendor_returns and filtered_purchase:
+                    # ERP 구매현황에서 음수 항목(반품) 추출
+                    negative_purchase = [
+                        p for p in filtered_purchase
+                        if float(str(_get_field(p, "total", "합계", default=0) or 0).replace(",", "")) < 0
+                    ]
+                    if negative_purchase:
+                        return_results = await match_products_ai(vendor_returns, negative_purchase)
+                        return_matched = [r for r in return_results if r["match_type"] != "unmatched"]
+                        return_unmatched = [r for r in return_results if r["match_type"] == "unmatched"]
+                        if return_matched:
+                            yield sse("log", {"msg": f"  → 반품 매칭: {len(return_matched)}/{len(vendor_returns)}건 성공"})
+                    else:
+                        return_unmatched = [{"vendor_item": v, "erp_match": None, "match_type": "unmatched", "confidence": 0, "reason": "음수 매입전표 없음"} for v in vendor_returns]
+                elif vendor_returns:
+                    return_unmatched = [{"vendor_item": v, "erp_match": None, "match_type": "unmatched", "confidence": 0, "reason": "구매현황 없음"} for v in vendor_returns]
 
                 # ── 1단계: 규칙 기반 매칭 ──
                 yield sse("log", {"msg": f"  → 1단계: 규칙 기반 매칭 (날짜/금액/수량)..."})
@@ -1066,33 +1116,41 @@ async def batch_reconcile_stream(
                 # 거래처원장: 상품 354,000 + 매출할인 -12,000 = 342,000
                 # ERP 구매현황: 상품 342,000 (할인된 가격으로 입력)
                 # → 매칭된 항목의 금액차이가 미매칭 할인항목 합계와 일치하면 할인 흡수
-                discount_keywords = {"매출할인", "할인", "리베이트", "DC", "할인DC", "에누리"}
                 discount_absorbed = []
                 still_unmatched = []
 
-                if unmatched:
-                    from collections import defaultdict
+                from collections import defaultdict
+                unmatched_discounts_by_date = defaultdict(list)  # 날짜별 할인 항목
 
-                    # 미매칭 항목을 할인성/비할인성으로 분류
-                    unmatched_discounts_by_date = defaultdict(list)  # 날짜별 할인 항목
-                    unmatched_regular = []  # 비할인 미매칭 항목
+                # 매입(할인) 항목도 할인 흡수 대상에 포함 (랜마스터 등)
+                for vpd in vendor_purchase_discounts:
+                    d = vpd.get("date", "")
+                    unmatched_discounts_by_date[d].append({
+                        "vendor_item": vpd,
+                        "erp_match": None,
+                        "match_type": "unmatched",
+                        "confidence": 0,
+                        "reason": "매입(할인)",
+                    })
 
-                    for r in unmatched:
-                        v = r.get("vendor_item", {})
-                        pname = (v.get("product_name", "") or "").strip()
-                        pcat = (v.get("product_category", "") or "").strip()
-                        is_discount = any(kw in pname for kw in discount_keywords) or \
-                                      any(kw in pcat for kw in discount_keywords)
-                        if is_discount:
-                            d = v.get("date", "")
-                            unmatched_discounts_by_date[d].append(r)
-                        else:
-                            unmatched_regular.append(r)
+                # 미매칭 항목을 할인성/비할인성으로 분류
+                # (_is_discount_item은 DC/ prefix, 매출할인, 에누리 등 모두 포함)
+                unmatched_regular = []  # 비할인 미매칭 항목
 
-                    # 금액불일치 항목에서 할인 흡수 시도
-                    absorbed_discount_ids = set()
-                    resolved_mismatch_indices = []
+                for r in unmatched:
+                    v = r.get("vendor_item", {})
+                    if _is_discount_item(v):
+                        d = v.get("date", "")
+                        unmatched_discounts_by_date[d].append(r)
+                    else:
+                        unmatched_regular.append(r)
 
+                # 금액불일치 항목에서 할인 흡수 시도
+                # (미매칭 할인 항목 + 매입(할인) 항목 모두 흡수 대상)
+                absorbed_discount_ids = set()
+                resolved_mismatch_indices = []
+
+                if amount_mismatches and unmatched_discounts_by_date:
                     for mi_idx, r in enumerate(amount_mismatches):
                         v = r.get("vendor_item", {})
                         e = r.get("erp_match", {})
@@ -1127,25 +1185,25 @@ async def batch_reconcile_stream(
                             # 금액불일치도 해소
                             resolved_mismatch_indices.append(mi_idx)
 
-                    # 해소된 금액불일치 제거
-                    for idx in sorted(resolved_mismatch_indices, reverse=True):
-                        removed = amount_mismatches.pop(idx)
-                        # 매칭 데이터에서 diff 관련 키 제거
-                        removed.pop("amount_diff", None)
-                        removed.pop("amount_diff_pct", None)
-                        removed.pop("vendor_amount", None)
-                        removed.pop("erp_amount", None)
+                # 해소된 금액불일치 제거
+                for idx in sorted(resolved_mismatch_indices, reverse=True):
+                    removed = amount_mismatches.pop(idx)
+                    # 매칭 데이터에서 diff 관련 키 제거
+                    removed.pop("amount_diff", None)
+                    removed.pop("amount_diff_pct", None)
+                    removed.pop("vendor_amount", None)
+                    removed.pop("erp_amount", None)
 
-                    # 흡수되지 않은 할인항목 + 비할인 미매칭 → still_unmatched
-                    for d, dlist in unmatched_discounts_by_date.items():
-                        for dr in dlist:
-                            if id(dr) not in absorbed_discount_ids:
-                                still_unmatched.append(dr)
-                    still_unmatched.extend(unmatched_regular)
+                # 흡수되지 않은 할인항목 + 비할인 미매칭 → still_unmatched
+                for d, dlist in unmatched_discounts_by_date.items():
+                    for dr in dlist:
+                        if id(dr) not in absorbed_discount_ids:
+                            still_unmatched.append(dr)
+                still_unmatched.extend(unmatched_regular)
 
-                    if discount_absorbed:
-                        yield sse("log", {"msg": f"  → 할인반영 처리: {len(discount_absorbed)}건 (할인이 매입단가에 반영됨)"})
-                    unmatched = still_unmatched
+                if discount_absorbed:
+                    yield sse("log", {"msg": f"  → 할인반영 처리: {len(discount_absorbed)}건 (할인이 매입단가에 반영됨)"})
+                unmatched = still_unmatched
 
                 # ── 2단계: 미매칭 건 판매이력 확인 (AI) — 최대 10건만 ──
                 sales_check = []
@@ -1182,6 +1240,9 @@ async def batch_reconcile_stream(
                 vf_result["matched"] = matched
                 vf_result["unmatched"] = unmatched
                 vf_result["discount_absorbed"] = discount_absorbed
+                vf_result["payment_items"] = payment_items
+                vf_result["return_matched"] = return_matched
+                vf_result["return_unmatched"] = return_unmatched
                 vf_result["sales_check"] = sales_check
                 vf_result["shipping_items"] = [
                     {
@@ -1222,9 +1283,12 @@ async def batch_reconcile_stream(
                 vf_result["summary"] = {
                     "total_vendor_items": len(all_vendor_items),
                     "memo_filtered": len(memo_items),
+                    "payment_filtered": len(payment_items),
                     "matched_count": len(matched) + len(discount_absorbed),
                     "unmatched_count": len(unmatched),
                     "discount_absorbed_count": len(discount_absorbed),
+                    "return_matched_count": len(return_matched),
+                    "return_unmatched_count": len(return_unmatched),
                     "with_sales_history": sum(1 for s in sales_check if s.get("has_sales_history")),
                     "shipping_count": len(shipping_items),
                     "amount_mismatch_count": len(amount_mismatches),
@@ -1234,10 +1298,13 @@ async def batch_reconcile_stream(
                 }
 
                 effective_matched = len(matched) + len(discount_absorbed)
-                match_rate = round(effective_matched / max(len(regular_items), 1) * 100, 1)
-                yield sse("log", {"msg": f"✅ {vendor_name} 완료: 매칭률 {match_rate}% ({effective_matched}/{len(regular_items)})"})
+                total_regular = len(regular_items)
+                match_rate = round(effective_matched / max(total_regular, 1) * 100, 1)
+                yield sse("log", {"msg": f"✅ {vendor_name} 완료: 매칭률 {match_rate}% ({effective_matched}/{total_regular})"})
                 if discount_absorbed:
                     yield sse("log", {"msg": f"  ↳ 할인반영 {len(discount_absorbed)}건 포함"})
+                if return_matched:
+                    yield sse("log", {"msg": f"  ↳ 반품 매칭 {len(return_matched)}건"})
 
             except Exception as e:
                 logger.error(f"[일괄] '{orig_filename}' 처리 실패: {e}", exc_info=True)

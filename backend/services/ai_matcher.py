@@ -40,6 +40,57 @@ def _get_field(item: dict, *keys, default=""):
 
 SHIPPING_KEYWORDS = ["배송", "택배", "경동", "로젠", "물류", "운송", "화물", "선불", "착불", "배달", "우편", "등기", "퀵", "용달", "대한통운", "CJ", "한진", "우체국"]
 
+# ============================================================
+# Discount keyword detection (매출할인, DC/, 리베이트 등)
+# ============================================================
+
+DISCOUNT_KEYWORDS = {"매출할인", "할인", "리베이트", "DC", "할인DC", "에누리"}
+
+def _is_discount_item(item: dict) -> bool:
+    """할인 항목인지 판별 (매출할인, DC/, 리베이트 등)"""
+    pname = str(item.get("product_name", "") or "").strip()
+    pcat = str(item.get("product_category", "") or "").strip()
+    combined = f"{pname} {pcat}"
+    # 키워드 직접 포함
+    if any(kw in combined for kw in DISCOUNT_KEYWORDS):
+        return True
+    # DC/ prefix 패턴 (예: "DC/상품명")
+    if pname.upper().startswith("DC/") or pname.upper().startswith("DC\\"):
+        return True
+    return False
+
+
+# ============================================================
+# Payment/settlement entry detection (입금, 출금, 기타 결제)
+# ============================================================
+
+PAYMENT_TX_TYPES = {"입금", "출금", "결제", "수금", "지급", "이체"}
+
+def _is_payment_entry(item: dict) -> bool:
+    """결제/입출금 항목인지 판별 (매칭 대상에서 제외해야 하는 항목)
+
+    - tx_type이 입금/출금/결제/수금/지급/이체
+    - tx_type이 '기타'이면서 금액이 매우 큰 음수 (결제 성격)
+    - 품목명이 비어있고 tx_type이 매출/매입이 아닌 경우
+    """
+    tx_type = str(item.get("tx_type", "") or "").strip()
+
+    # 직접 결제 유형
+    if tx_type in PAYMENT_TX_TYPES:
+        return True
+
+    # '기타' 유형 + 대금성 판단 (금액 100만원 이상 음수이면서 품목명 없음)
+    if tx_type == "기타":
+        amt = float(item.get("amount", 0) or 0)
+        pname = str(item.get("product_name", "") or "").strip()
+        if amt < -1000000 and not pname:
+            return True
+        # 품목명이 "기타"인 경우도 결제성
+        if pname in ("기타", ""):
+            return True
+
+    return False
+
 def _is_shipping_item(item: dict) -> bool:
     """배송료/운송비 항목인지 판별"""
     name = str(item.get("product_name", "") or "").upper()

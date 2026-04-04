@@ -5705,6 +5705,49 @@ function _renderBatchResults(result) {
         detailHTML += "</div>";
       }
 
+      // 반품 매칭
+      if ((vr.return_matched||[]).length > 0 || (vr.return_unmatched||[]).length > 0) {
+        const rmCount = (vr.return_matched||[]).length;
+        const ruCount = (vr.return_unmatched||[]).length;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#8b5cf6">🔄 반품/교환 (매칭 ${rmCount}건${ruCount > 0 ? `, 미매칭 ${ruCount}건` : ""}) <span style="font-size:10px;color:var(--gray-400)">— 거래처 매입 항목 ↔ ERP 음수 매입전표</span></div>`;
+        detailHTML += (vr.return_matched||[]).map(r => {
+          const v = r.vendor_item || {};
+          const e = r.erp_match || {};
+          return `<div class="rc-detail-row">
+            <span class="rc-icon" style="color:#8b5cf6">↩</span>
+            <span class="rc-item-name">${v.product_name||""}</span>
+            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
+            <span class="rc-arrow">→</span>
+            <span class="rc-erp-name">${e.prod_cd||""} ${e.prod_name||""}</span>
+          </div>`;
+        }).join("");
+        detailHTML += (vr.return_unmatched||[]).map(r => {
+          const v = r.vendor_item || {};
+          return `<div class="rc-detail-row">
+            <span class="rc-icon" style="color:#dc2626">✗</span>
+            <span class="rc-item-name">${v.product_name||""} (반품-미매칭)</span>
+            <span class="rc-item-meta">${v.date||""}</span>
+            <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
+          </div>`;
+        }).join("");
+        detailHTML += "</div>";
+      }
+
+      // 결제성 항목 (필터링됨)
+      if ((vr.payment_items||[]).length > 0) {
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#6b7280">💳 결제성 제외 (${vr.payment_items.length}건) <span style="font-size:10px;color:var(--gray-400)">— 입금/출금/기타 결제 항목</span></div>`;
+        detailHTML += vr.payment_items.map(p => {
+          return `<div class="rc-detail-row">
+            <span class="rc-icon" style="color:#6b7280">─</span>
+            <span class="rc-item-name">${p.product_name||p.tx_type||""}</span>
+            <span class="rc-item-meta">${p.date||""}</span>
+            <span class="rc-item-meta">${(p.amount||0).toLocaleString()}원</span>
+          </div>`;
+        }).join("");
+        detailHTML += "</div>";
+      }
+
       // 누락
       if (vs.unmatched_count > 0) {
         const totalMatchNote = vr.vendor_total_match
@@ -5829,6 +5872,8 @@ function _renderBatchResults(result) {
               return `
               <span class="rc-vendor-stat good">매칭 ${vs.matched_count}/${regularTotal} <b style="color:${pctColor}">(${matchPct}%)</b></span>
               ${vs.unmatched_count > 0 ? `<span class="rc-vendor-stat bad">누락 ${vs.unmatched_count}</span>` : ""}
+              ${(vs.return_matched_count||0) > 0 ? `<span class="rc-vendor-stat" style="color:#8b5cf6">반품 ${vs.return_matched_count}</span>` : ""}
+              ${(vs.payment_filtered||0) > 0 ? `<span class="rc-vendor-stat" style="color:#6b7280">결제제외 ${vs.payment_filtered}</span>` : ""}
               ${vs.shipping_count > 0 ? `<span class="rc-vendor-stat">배송 ${vs.shipping_count}</span>` : ""}
               <span class="rc-vendor-stat">ERP ${vs.purchase_filtered}건</span>
               ${vr.vendor_code ? `<span class="rc-vendor-stat">코드 ${vr.vendor_code}</span>` : ""}
