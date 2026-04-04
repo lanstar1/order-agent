@@ -1325,6 +1325,7 @@ async def batch_reconcile_stream(
                             "sales_total_amt": sv["sales_total_amt"],
                             "verdict": sv["verdict"],
                             "verdict_code": sv["verdict_code"],
+                            "ai_reason": sv.get("ai_reason", ""),
                             "sales_details": sv["sales_details"],
                         }
                     verdicts = [sv["verdict"] for sv in mismatch_sales_verify if sv["verdict"]]
@@ -1541,6 +1542,7 @@ async def compare_ledgers(
                 "sales_total_amt": sv["sales_total_amt"],
                 "verdict": sv["verdict"],
                 "verdict_code": sv["verdict_code"],
+                "ai_reason": sv.get("ai_reason", ""),
                 "sales_details": sv["sales_details"],
             }
 
@@ -1917,6 +1919,9 @@ async def download_result_excel(
                             sd_qty = sd.get("qty", 0)
                             sd_amt = sd.get("amount", 0)
                             note += f"\n  판매 {sd_date} {sd_cust} {sd_qty}개 {sd_amt:,.0f}원"
+                        ai_reason = sv.get("ai_reason", "")
+                        if ai_reason:
+                            note += f"\n[AI분석] {ai_reason}"
                     elif disc_amt:
                         note = r.get("discount_note", "")
                     elif r.get("mismatch_reason"):
@@ -2101,6 +2106,9 @@ async def download_result_excel(
                     sd_qty = sd.get("qty", 0)
                     sd_amt = sd.get("amount", 0)
                     note += f"\n  판매 {sd_date} {sd_cust} {sd_qty}개 {sd_amt:,.0f}원"
+                ai_reason = sv.get("ai_reason", "")
+                if ai_reason:
+                    note += f"\n[AI분석] {ai_reason}"
             elif not note and r.get("mismatch_reason"):
                 note = r["mismatch_reason"]
 

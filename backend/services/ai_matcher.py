@@ -278,27 +278,58 @@ def verify_mismatch_with_sales(mismatch_items: list[dict],
         # 판정: 판매 수량이 원장/구매전표 중 어느쪽에 가까운지
         verdict = ""
         verdict_code = ""  # "vendor" | "erp" | "unknown"
+        ai_reason = ""     # AI 추론 사유
+        v_name = v.get("product_name", "")
         if matched_sales:
+            # 판매처 수 집계
+            cust_names = list(set(s.get("cust_name", "") for s in matched_sales if s.get("cust_name")))
+            cust_summary = f"{len(cust_names)}개 거래처({', '.join(cust_names[:3])}{'...' if len(cust_names) > 3 else ''})"
+
             if v_qty and e_qty and v_qty != e_qty:
                 v_diff = abs(total_sold_qty - v_qty)
                 e_diff = abs(total_sold_qty - e_qty)
                 if v_diff < e_diff:
                     verdict = f"판매 {total_sold_qty}개 → 거래처원장({v_qty}개)과 일치, 구매전표 수정 필요 가능성"
                     verdict_code = "vendor"
+                    ai_reason = (
+                        f"판매현황에서 {erp_prod_cd} {erp_prod_name}을(를) "
+                        f"±14일 내 {cust_summary}에 총 {total_sold_qty}개 판매. "
+                        f"거래처원장 {v_qty}개와 일치하므로 구매전표 {e_qty}개는 "
+                        f"입력 오류 가능성이 높습니다. 구매전표를 {v_qty}개로 수정하거나 "
+                        f"거래처에 확인이 필요합니다."
+                    )
                 elif e_diff < v_diff:
                     verdict = f"판매 {total_sold_qty}개 → 구매전표({e_qty}개)와 일치, 거래처원장 확인 필요"
                     verdict_code = "erp"
+                    ai_reason = (
+                        f"판매현황에서 {erp_prod_cd} {erp_prod_name}을(를) "
+                        f"±14일 내 {cust_summary}에 총 {total_sold_qty}개 판매. "
+                        f"구매전표 {e_qty}개와 일치하므로 거래처원장 {v_qty}개는 "
+                        f"거래처 측 기재 오류 가능성이 있습니다. 거래처에 확인 요청이 필요합니다."
+                    )
                 else:
                     verdict = f"판매 {total_sold_qty}개 — 양쪽 모두 확인 필요"
                     verdict_code = "unknown"
+                    ai_reason = (
+                        f"판매 {total_sold_qty}개가 원장 {v_qty}개, 구매전표 {e_qty}개 "
+                        f"어느 쪽과도 정확히 일치하지 않습니다. "
+                        f"분할 입고, 부분 반품 등 복합 거래일 수 있으니 거래처와 직접 확인이 필요합니다."
+                    )
             else:
                 verdict = f"판매 {total_sold_qty}개 {total_sold_amt:,.0f}원 확인됨"
                 verdict_code = "found"
+                if total_sold_qty and v_amt and total_sold_amt:
+                    ai_reason = (
+                        f"{cust_summary}에 총 {total_sold_qty}개 {total_sold_amt:,.0f}원 판매됨. "
+                        f"금액 차이 원인을 확인하세요."
+                    )
         else:
             if erp_prod_cd:
                 verdict = f"판매이력 없음 ({erp_prod_cd}) — 수동 확인 필요"
+                ai_reason = f"±14일 내 {erp_prod_cd} 품목의 판매이력이 없습니다. 재고로 보유 중이거나 품목코드가 다를 수 있습니다."
             else:
                 verdict = "ERP 품목코드 없어 판매이력 검색 불가"
+                ai_reason = "매칭된 ERP 품목코드가 없어 판매현황 검색이 불가합니다."
             verdict_code = "not_found"
 
         results.append({
@@ -316,6 +347,7 @@ def verify_mismatch_with_sales(mismatch_items: list[dict],
             "sales_details": matched_sales[:10],  # 상위 10건
             "verdict": verdict,
             "verdict_code": verdict_code,
+            "ai_reason": ai_reason,
         })
 
     return results

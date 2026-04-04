@@ -5918,27 +5918,40 @@ function _renderBatchResults(result) {
               const sv = r.sales_verify;
               const vc = sv.verdict_code;
               const vColor = vc==='vendor'?'#dc2626':vc==='erp'?'#16a34a':'#6b7280';
-              let html = `<div style="width:100%;padding-left:24px;margin-top:2px">`;
-              html += `<div style="font-size:10px;color:${vColor};font-weight:600;margin-bottom:2px">📊 ${sv.verdict}</div>`;
-              if (sv.sales_details && sv.sales_details.length > 0) {
-                html += `<div style="background:rgba(99,102,241,0.06);border-radius:6px;padding:4px 8px;font-size:10px;margin-top:2px">`;
-                html += `<div style="display:grid;grid-template-columns:80px 1fr 50px 80px;gap:2px 8px;color:var(--gray-300);font-weight:600;margin-bottom:2px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:2px">
-                  <span>판매일자</span><span>거래처</span><span>수량</span><span>금액</span>
-                </div>`;
-                sv.sales_details.forEach(sd => {
-                  html += `<div style="display:grid;grid-template-columns:80px 1fr 50px 80px;gap:2px 8px;color:var(--gray-200)">
-                    <span>${rcFmtDate("", sd.date)}</span>
-                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sd.cust_name||""}</span>
-                    <span>${sd.qty||0}개</span>
-                    <span>${(sd.amount||0).toLocaleString()}원</span>
-                  </div>`;
-                });
-                html += `<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:2px;padding-top:2px;font-weight:600;color:var(--gray-200);display:grid;grid-template-columns:80px 1fr 50px 80px;gap:2px 8px">
-                  <span>합계</span><span>${sv.sales_count}건</span><span>${sv.sales_total_qty}개</span><span>${(sv.sales_total_amt||0).toLocaleString()}원</span>
-                </div>`;
-                html += `</div>`;
+              const bgColor = vc==='vendor'?'rgba(220,38,38,0.08)':vc==='erp'?'rgba(22,163,74,0.08)':'rgba(107,114,128,0.08)';
+              const borderColor = vc==='vendor'?'rgba(220,38,38,0.25)':vc==='erp'?'rgba(22,163,74,0.25)':'rgba(107,114,128,0.2)';
+              let html = `<div style="width:100%;padding-left:24px;margin-top:4px">`;
+              // AI 추론 결과 배지
+              const aiReason = sv.ai_reason || "";
+              html += `<div style="background:${bgColor};border:1px solid ${borderColor};border-radius:8px;padding:8px 10px;font-size:11px">`;
+              html += `<div style="color:${vColor};font-weight:700;margin-bottom:4px">📊 ${sv.verdict}</div>`;
+              if (aiReason) {
+                html += `<div style="color:#d1d5db;font-size:10px;margin-bottom:6px;line-height:1.4">🤖 ${aiReason}</div>`;
               }
-              html += `</div>`;
+              if (sv.sales_details && sv.sales_details.length > 0) {
+                html += `<table style="width:100%;font-size:10px;border-collapse:collapse;margin-top:2px">`;
+                html += `<thead><tr style="color:#9ca3af;font-weight:600;border-bottom:1px solid rgba(156,163,175,0.3)">
+                  <th style="text-align:left;padding:2px 6px">판매일자</th>
+                  <th style="text-align:left;padding:2px 6px">거래처</th>
+                  <th style="text-align:right;padding:2px 6px">수량</th>
+                  <th style="text-align:right;padding:2px 6px">금액</th>
+                </tr></thead><tbody>`;
+                sv.sales_details.forEach(sd => {
+                  html += `<tr style="color:#e5e7eb">
+                    <td style="padding:2px 6px">${rcFmtDate("", sd.date)}</td>
+                    <td style="padding:2px 6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sd.cust_name||""}</td>
+                    <td style="text-align:right;padding:2px 6px">${sd.qty||0}개</td>
+                    <td style="text-align:right;padding:2px 6px">${(sd.amount||0).toLocaleString()}원</td>
+                  </tr>`;
+                });
+                html += `</tbody><tfoot><tr style="color:#f3f4f6;font-weight:700;border-top:1px solid rgba(156,163,175,0.3)">
+                  <td style="padding:3px 6px">합계</td>
+                  <td style="padding:3px 6px">${sv.sales_count}건</td>
+                  <td style="text-align:right;padding:3px 6px">${sv.sales_total_qty}개</td>
+                  <td style="text-align:right;padding:3px 6px">${(sv.sales_total_amt||0).toLocaleString()}원</td>
+                </tr></tfoot></table>`;
+              }
+              html += `</div></div>`;
               return html;
             })() : ''}
           </div>`;
