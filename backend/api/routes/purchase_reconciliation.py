@@ -15,6 +15,7 @@ import logging
 import json
 import io
 import time
+import unicodedata
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Form, Request
 from fastapi.responses import StreamingResponse
@@ -446,17 +447,19 @@ def _match_vendor_to_purchase(vendor_name: str, purchase_items: list[dict]) -> l
     if not vendor_name:
         return []
 
-    v_clean = vendor_name.replace("(주)", "").replace("주식회사", "").strip()
+    # macOS NFD→NFC 정규화
+    vn = unicodedata.normalize("NFC", vendor_name)
+    v_clean = vn.replace("(주)", "").replace("주식회사", "").strip()
 
-    exact = [p for p in purchase_items if p.get("cust_name", "") == vendor_name]
+    exact = [p for p in purchase_items if unicodedata.normalize("NFC", p.get("cust_name", "")) == vn]
     if exact:
         return exact
 
     partial = [
         p for p in purchase_items
         if v_clean and (
-            v_clean in p.get("cust_name", "").replace("(주)", "").replace("주식회사", "")
-            or p.get("cust_name", "").replace("(주)", "").replace("주식회사", "") in v_clean
+            v_clean in unicodedata.normalize("NFC", p.get("cust_name", "")).replace("(주)", "").replace("주식회사", "")
+            or unicodedata.normalize("NFC", p.get("cust_name", "")).replace("(주)", "").replace("주식회사", "") in v_clean
         )
     ]
     return partial
@@ -467,10 +470,11 @@ def _find_vendor_code(vendor_name: str) -> str:
     global _vendor_cache
     if not _vendor_cache or not vendor_name:
         return ""
-    v_clean = vendor_name.replace("(주)", "").replace("주식회사", "").strip()
+    vn = unicodedata.normalize("NFC", vendor_name)
+    v_clean = vn.replace("(주)", "").replace("주식회사", "").strip()
     for v in _vendor_cache:
-        name = v.get("name", "")
-        if name == vendor_name:
+        name = unicodedata.normalize("NFC", v.get("name", ""))
+        if name == vn:
             return v.get("code", "")
         n_clean = name.replace("(주)", "").replace("주식회사", "").strip()
         if v_clean and (v_clean in n_clean or n_clean in v_clean):
@@ -1823,10 +1827,10 @@ async def get_vendor_list(
 
         logger.info(f"[vendor-list] 캐시 로드 완료: {len(_vendor_cache)}건")
 
-        # 검색 쿼리가 있으면 필터링
+        # 검색 쿼리가 있으면 필터링 (macOS NFD→NFC 정규화)
         vendors = _vendor_cache
         if q:
-            q_lower = q.lower()
+            q_lower = unicodedata.normalize("NFC", q).lower()
             vendors = [
                 v for v in _vendor_cache
                 if q_lower in v.get("name", "").lower() or
