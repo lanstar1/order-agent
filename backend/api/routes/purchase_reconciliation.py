@@ -1103,9 +1103,11 @@ async def batch_reconcile_stream(
                     if v_qty and e_qty and v_qty != e_qty:
                         r["qty_diff"] = v_qty - e_qty
 
-                # 거래처별 총액 비교 (거래처원장 매입총액 vs ERP 구매현황 매입총액)
+                # 거래처별 총액 비교 (거래처원장 vs ERP 구매현황)
+                # 양쪽 모두 동일 범위: 실거래 전체 = regular + shipping + discount + returns
+                # (메모, 결제성 항목은 양쪽 모두 제외)
                 vendor_ledger_total = sum(
-                    float(item.get("amount", 0) or 0) for item in regular_items
+                    float(item.get("amount", 0) or 0) for item in real_items  # regular + shipping + returns + discounts
                 )
                 erp_purchase_total = sum(
                     float(str(_get_field(p, "total", "합계", default=0) or 0).replace(",", ""))
