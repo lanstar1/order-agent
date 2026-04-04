@@ -5958,10 +5958,21 @@ function _renderBatchResults(result) {
               ${(vs.payment_filtered||0) > 0 ? `<span class="rc-vendor-stat" style="color:#6b7280">결제제외 ${vs.payment_filtered}</span>` : ""}
               ${vs.shipping_count > 0 ? `<span class="rc-vendor-stat">배송 ${vs.shipping_count}</span>` : ""}
               <span class="rc-vendor-stat">ERP ${vs.purchase_filtered}건</span>
-              ${vr.vendor_code ? `<span class="rc-vendor-stat">코드 ${vr.vendor_code}</span>` : ""}
             `;
             })()}
           </div>
+          ${!hasError && typeof vr.vendor_ledger_total === "number" && typeof vr.erp_purchase_total === "number" ? (() => {
+            const vT = vr.vendor_ledger_total;
+            const eT = vr.erp_purchase_total;
+            const tMatch = Math.abs(vT - eT) <= 1;
+            const tDiff = vT - eT;
+            return `<div style="font-size:11px;margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--gray-400)">
+              <span style="font-weight:600">${tMatch ? "✅" : "⚠️"} 거래처 총액:</span>
+              <span style="color:#6366f1">원장 ${vT.toLocaleString()}원</span>
+              <span style="color:#0891b2">매입전표 ${eT.toLocaleString()}원</span>
+              ${!tMatch ? `<span style="color:#dc2626;font-weight:600">차액 ${tDiff > 0 ? "+" : ""}${tDiff.toLocaleString()}원</span>` : `<span style="color:#16a34a">일치</span>`}
+            </div>`;
+          })() : ""}
         </div>
         <span class="rc-vendor-toggle">▼</span>
       </div>
