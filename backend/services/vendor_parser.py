@@ -181,6 +181,11 @@ def parse_vendor_ledger(file_path: str) -> dict:
     purchase_items = [t for t in transactions if t.tx_type == "매입"]
     sales_items = [t for t in transactions if t.tx_type == "매출"]
 
+    # Calculate date range
+    all_dates = [t.date for t in transactions if t.date]
+    date_from = min(all_dates) if all_dates else ""
+    date_to = max(all_dates) if all_dates else ""
+
     return {
         "vendor_name": vendor_name,
         "pattern": pattern,
@@ -193,4 +198,6 @@ def parse_vendor_ledger(file_path: str) -> dict:
         },
         "purchase_items": [t.to_dict() for t in purchase_items],
         "sales_items": [t.to_dict() for t in sales_items],
+        "date_from": date_from,
+        "date_to": date_to,
     }

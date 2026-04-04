@@ -900,6 +900,12 @@ textarea.form-control { resize: vertical; min-height: 120px; }
   min-width: 80px; text-align: center;
 }
 .rc-vendor-name-row .rc-vnr-code:empty { display: none; }
+.rc-vendor-name-row .rc-vnr-date {
+  font-size: 11px;
+  color: #6b7280;
+  white-space: nowrap;
+  min-width: 140px;
+}
 .rc-vendor-name-row .rc-vnr-status {
   flex: 0 0 auto; font-size: 16px; line-height: 1;
 }

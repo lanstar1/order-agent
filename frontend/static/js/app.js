@@ -5204,23 +5204,75 @@ function initReconcilePage() {
     });
     dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
     dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
-    dropzone.addEventListener("drop", e => {
+    dropzone.addEventListener("drop", async (e) => {
       e.preventDefault(); dropzone.classList.remove("dragover");
-      if (e.dataTransfer.files.length) _addVendorFiles(Array.from(e.dataTransfer.files));
+      if (e.dataTransfer.files.length) await _addVendorFiles(Array.from(e.dataTransfer.files));
     });
-    vf.addEventListener("change", () => {
-      if (vf.files.length) _addVendorFiles(Array.from(vf.files));
+    vf.addEventListener("change", async () => {
+      if (vf.files.length) await _addVendorFiles(Array.from(vf.files));
       vf.value = ""; // 같은 파일 다시 선택 가능하도록 리셋
     });
   }
 }
 
-function _addVendorFiles(newFiles) {
-  // 중복 파일명 제거하면서 추가
+async function _addVendorFiles(newFiles) {
+  const added = [];
   for (const f of newFiles) {
     const exists = _rc.vendorFiles.some(v => v.file.name === f.name && v.file.size === f.size);
-    if (!exists) _rc.vendorFiles.push({ file: f, name: "", status: "pending" });
+    if (!exists) {
+      const entry = { file: f, name: "", code: "", status: "pending", date_from: "", date_to: "", item_count: 0, saved_path: "" };
+      _rc.vendorFiles.push(entry);
+      added.push(entry);
+    }
   }
+  if (!added.length) return;
+  _renderVendorNameRows();  // show pending state immediately
+
+  // Upload to preview-vendors
+  const formData = new FormData();
+  for (const a of added) formData.append("vendor_files", a.file);
+  try {
+    const res = await api.postForm("/api/reconcile/preview-vendors", formData);
+    const previews = res.previews || [];
+    for (let j = 0; j < previews.length; j++) {
+      const p = previews[j];
+      const entry = added[j];
+      if (!entry) continue;
+      entry.name = p.vendor_name || _extractVendorName(entry.file.name);
+      entry.date_from = p.date_from || "";
+      entry.date_to = p.date_to || "";
+      entry.item_count = p.item_count || 0;
+      entry.saved_path = p.saved_path || "";
+
+      if (p.error) {
+        entry.status = "error";
+        continue;
+      }
+
+      // Fuzzy match against vendors.json for code
+      try {
+        const vRes = await api.get(`/api/reconcile/vendor-list?q=${encodeURIComponent(entry.name)}`);
+        const vendors = vRes.vendors || [];
+        console.log(`[VendorMatch] #${_rc.vendorFiles.indexOf(entry)} API 응답: ${vendors.length}건`, vendors.slice(0, 3));
+        const best = _fuzzyMatchVendor(entry.name, vendors);
+        console.log(`[VendorMatch] #${_rc.vendorFiles.indexOf(entry)} fuzzy 결과:`, best);
+        if (best) {
+          entry.name = best.name;
+          entry.code = best.code || "";
+          entry.status = "matched";
+        } else {
+          entry.status = "unmatched";
+        }
+      } catch (e2) {
+        console.error(`[VendorMatch] #${_rc.vendorFiles.indexOf(entry)} 오류:`, e2);
+        entry.status = "unmatched";
+      }
+    }
+  } catch (e) {
+    console.error("[PreviewVendors] API 오류:", e);
+    for (const a of added) { a.status = "error"; }
+  }
+
   _renderVendorFileList();
 }
 
@@ -5236,6 +5288,14 @@ function _extractVendorName(filename) {
   const skipPrefixes = new Set(["거래장부내역","거래내역","거래확인서","거래원장","원장"]);
   const nameParts = parts.filter(p => p && !/^\d+$/.test(p) && !skipPrefixes.has(p));
   return nameParts.length ? nameParts[nameParts.length - 1] : base;
+}
+
+function _fmtDate(d) {
+  // "20260301" → "2026.03.01", "2026-03-01" → "2026.03.01", "03/01" → "03/01"
+  if (!d) return "";
+  const s = d.replace(/[-/.]/g, "");
+  if (s.length === 8) return `${s.slice(0,4)}.${s.slice(4,6)}.${s.slice(6,8)}`;
+  return d;
 }
 
 function _fuzzyMatchVendor(extracted, vendors) {
@@ -5263,10 +5323,9 @@ function _fuzzyMatchVendor(extracted, vendors) {
   return vendors[0] || null;
 }
 
-async function _renderVendorFileList() {
+function _renderVendorFileList() {
   const el = document.getElementById("reconcile-vendor-file-list");
   const confirmArea = document.getElementById("reconcile-vendor-confirm");
-  const nameList = document.getElementById("reconcile-vendor-name-list");
   if (!el) return;
 
   if (!_rc.vendorFiles.length) {
@@ -5275,74 +5334,36 @@ async function _renderVendorFileList() {
     return;
   }
 
-  // 파일 태그 (삭제 버튼 포함)
   el.innerHTML = _rc.vendorFiles.map((v, i) =>
     `<span class="rc-file-tag">📄 ${v.file.name} <button onclick="_removeVendorFile(${i})" style="border:none;background:none;cursor:pointer;color:#999;font-size:14px;padding:0 2px">&times;</button></span>`
   ).join("");
 
-  // 거래처 확인 영역
-  if (!confirmArea || !nameList) return;
-  confirmArea.style.display = "block";
-
-  // 매칭이 필요한 항목만 처리 (status가 pending인 것)
-  const pendingIndices = _rc.vendorFiles
-    .map((v, i) => v.status === "pending" ? i : -1)
-    .filter(i => i >= 0);
-
-  // 전체 리스트 렌더
+  if (confirmArea) confirmArea.style.display = "block";
   _renderVendorNameRows();
-
-  // pending 항목에 대해 API 매칭
-  for (const i of pendingIndices) {
-    const v = _rc.vendorFiles[i];
-    const extracted = _extractVendorName(v.file.name);
-    const statusEl = document.getElementById(`rc-vnr-status-${i}`);
-    const inputEl = nameList.querySelector(`input[data-idx="${i}"]`);
-
-    try {
-      console.log(`[VendorMatch] #${i} extracted="${extracted}" → API 호출...`);
-      const res = await api.get(`/api/reconcile/vendor-list?q=${encodeURIComponent(extracted)}`);
-      const vendors = res.vendors || [];
-      console.log(`[VendorMatch] #${i} API 응답: ${vendors.length}건`, vendors.slice(0, 3));
-      const best = _fuzzyMatchVendor(extracted, vendors);
-      console.log(`[VendorMatch] #${i} fuzzy 결과:`, best);
-      if (best) {
-        v.name = best.name;
-        v.code = best.code || "";
-        v.status = "matched";
-        if (inputEl) inputEl.value = best.name;
-        if (statusEl) statusEl.textContent = "✅";
-        const codeEl = document.getElementById(`rc-vnr-code-${i}`);
-        if (codeEl) codeEl.textContent = best.code || "";
-      } else {
-        v.name = extracted;
-        v.code = "";
-        v.status = "unmatched";
-        if (statusEl) statusEl.textContent = "⚠️";
-      }
-    } catch (e) {
-      console.error(`[VendorMatch] #${i} 오류:`, e);
-      v.name = extracted;
-      v.code = "";
-      v.status = "error";
-      if (statusEl) statusEl.textContent = "❌";
-    }
-  }
 }
 
 function _renderVendorNameRows() {
   const nameList = document.getElementById("reconcile-vendor-name-list");
   if (!nameList) return;
   nameList.innerHTML = _rc.vendorFiles.map((v, i) => {
-    const extracted = _extractVendorName(v.file.name);
-    const displayName = v.name || extracted;
+    const displayName = v.name || _extractVendorName(v.file.name);
     const displayCode = v.code || "";
     const icon = v.status === "matched" ? "✅" : v.status === "unmatched" ? "⚠️" : v.status === "error" ? "❌" : "🔍";
+
+    // Format date range
+    let dateStr = "";
+    if (v.date_from && v.date_to) {
+      dateStr = `${_fmtDate(v.date_from)} ~ ${_fmtDate(v.date_to)}`;
+    } else if (v.date_from) {
+      dateStr = _fmtDate(v.date_from);
+    }
+
     return `<div class="rc-vendor-name-row">
       <span class="rc-vnr-file" title="${v.file.name}">📄 ${v.file.name}</span>
       <input type="text" class="rc-vendor-name-input" data-idx="${i}" value="${displayName}"
         onchange="_onVendorNameChange(${i}, this.value)">
       <span class="rc-vnr-code" id="rc-vnr-code-${i}" title="거래처코드">${displayCode}</span>
+      <span class="rc-vnr-date" id="rc-vnr-date-${i}" title="거래기간">${dateStr}</span>
       <span class="rc-vnr-status" id="rc-vnr-status-${i}">${icon}</span>
       <button onclick="_removeVendorFile(${i})" class="rc-vnr-delete" title="삭제">&times;</button>
     </div>`;
@@ -5505,12 +5526,15 @@ async function reconcileBatchStart() {
 
   try {
     const formData = new FormData();
-    for (const v of _rc.vendorFiles) formData.append("vendor_files", v.file);
+    // Don't re-upload files if saved_paths exist (they're already on server from preview)
+    const filesToUpload = _rc.vendorFiles.filter(v => !v.saved_path);
+    for (const v of filesToUpload) formData.append("vendor_files", v.file);
     if (pFile) formData.append("purchase_file", pFile);
     if (sFile) formData.append("sales_file", sFile);
     formData.append("vendor_names_json", JSON.stringify(confirmedNames));
     formData.append("vendor_codes_json", JSON.stringify(confirmedCodes));
-    formData.append("saved_paths_json", "[]");
+    const savedPaths = _rc.vendorFiles.map(v => v.saved_path).filter(Boolean);
+    formData.append("saved_paths_json", JSON.stringify(savedPaths));
 
     appendLog("📡 서버에 요청 전송 중...");
 

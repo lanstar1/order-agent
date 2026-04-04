@@ -786,12 +786,16 @@ async def preview_vendors(
                 vendor_name = name_parts[-1] if name_parts else fn_base
 
             item_count = len(ledger.get("sales_items", []) or ledger.get("transactions", []))
+            date_from = ledger.get("date_from", "")
+            date_to = ledger.get("date_to", "")
             previews.append({
                 "file_id": file_id,
                 "original_filename": vf.filename,
                 "saved_path": saved,
                 "vendor_name": vendor_name,
                 "item_count": item_count,
+                "date_from": date_from,
+                "date_to": date_to,
             })
         except Exception as e:
             previews.append({
@@ -800,6 +804,8 @@ async def preview_vendors(
                 "saved_path": "",
                 "vendor_name": "",
                 "item_count": 0,
+                "date_from": "",
+                "date_to": "",
                 "error": str(e),
             })
 
