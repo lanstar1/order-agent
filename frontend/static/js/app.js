@@ -5300,9 +5300,12 @@ async function _renderVendorFileList() {
     const inputEl = nameList.querySelector(`input[data-idx="${i}"]`);
 
     try {
+      console.log(`[VendorMatch] #${i} extracted="${extracted}" → API 호출...`);
       const res = await api.get(`/api/reconcile/vendor-list?q=${encodeURIComponent(extracted)}`);
       const vendors = res.vendors || [];
+      console.log(`[VendorMatch] #${i} API 응답: ${vendors.length}건`, vendors.slice(0, 3));
       const best = _fuzzyMatchVendor(extracted, vendors);
+      console.log(`[VendorMatch] #${i} fuzzy 결과:`, best);
       if (best) {
         v.name = best.name;
         v.code = best.code || "";
@@ -5318,6 +5321,7 @@ async function _renderVendorFileList() {
         if (statusEl) statusEl.textContent = "⚠️";
       }
     } catch (e) {
+      console.error(`[VendorMatch] #${i} 오류:`, e);
       v.name = extracted;
       v.code = "";
       v.status = "error";

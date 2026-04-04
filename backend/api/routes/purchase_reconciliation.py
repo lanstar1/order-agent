@@ -1813,6 +1813,8 @@ async def get_vendor_list(
             with open(vendor_path, "r", encoding="utf-8") as f:
                 _vendor_cache = json.load(f)
 
+        logger.info(f"[vendor-list] 캐시 로드 완료: {len(_vendor_cache)}건")
+
         # 검색 쿼리가 있으면 필터링
         vendors = _vendor_cache
         if q:
@@ -1824,6 +1826,7 @@ async def get_vendor_list(
             ]
             # 검색 결과는 최대 50개
             vendors = vendors[:50]
+            logger.info(f"[vendor-list] q='{q}' → {len(vendors)}건 매칭")
 
         return {
             "vendors": vendors,
