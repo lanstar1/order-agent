@@ -1036,6 +1036,10 @@ textarea.form-control { resize: vertical; min-height: 120px; }
 .rc-detail-title {
   font-size: 12px; font-weight: 700; margin-bottom: 8px;
   display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 6px; transition: background 0.15s;
+}
+.rc-detail-title[onclick]:hover {
+  background: var(--gray-800, rgba(255,255,255,0.06));
 }
 .rc-detail-title.matched { color: #16a34a; }
 .rc-detail-title.unmatched { color: #dc2626; }
