@@ -1219,10 +1219,35 @@ async def batch_reconcile_stream(
                                     discount_absorbed.append(dr)
                             resolved_mismatch_indices.append(mi_idx)
 
-                # 해소된 금액불일치 제거
+                # 해소된 금액불일치 제거 + 할인 정보 태깅
+                # resolved_mismatch_indices의 각 idx에 대해 어떤 할인이 흡수되었는지 매핑
+                _mismatch_to_discounts = {}  # mi_idx → [discount items]
+                for da_item in discount_absorbed:
+                    absorbed_by_name = da_item.get("absorbed_by", "")
+                    da_amt = float(da_item.get("vendor_item", {}).get("amount", 0) or 0)
+                    da_pname = da_item.get("vendor_item", {}).get("product_name", "")
+                    for mi_idx in resolved_mismatch_indices:
+                        r = amount_mismatches[mi_idx]
+                        v_name = r.get("vendor_item", {}).get("product_name", "")
+                        if absorbed_by_name == v_name:
+                            if mi_idx not in _mismatch_to_discounts:
+                                _mismatch_to_discounts[mi_idx] = []
+                            _mismatch_to_discounts[mi_idx].append({
+                                "amount": da_amt,
+                                "name": da_pname,
+                            })
+
                 for idx in sorted(resolved_mismatch_indices, reverse=True):
                     removed = amount_mismatches.pop(idx)
-                    # 매칭 데이터에서 diff 관련 키 제거
+                    # 할인 정보 태깅: 이 항목에 흡수된 할인 내역 기록
+                    disc_list = _mismatch_to_discounts.get(idx, [])
+                    total_disc = sum(d["amount"] for d in disc_list)
+                    disc_names = ", ".join(d["name"] for d in disc_list if d["name"])
+                    removed["discount_absorbed_amount"] = total_disc
+                    removed["discount_absorbed_names"] = disc_names or "할인"
+                    removed["confidence"] = 1.0  # 할인 흡수 후 신뢰도 100%
+                    removed["discount_note"] = f"할인 {abs(total_disc):,.0f}원 반영됨"
+                    # diff 관련 키 제거
                     removed.pop("amount_diff", None)
                     removed.pop("amount_diff_pct", None)
                     removed.pop("vendor_amount", None)
@@ -1775,11 +1800,19 @@ async def download_result_excel(
                     v_amt = float(v.get("amount", 0) or 0)
                     e_amt = float(str(e.get("total", e.get("합계", 0)) or 0).replace(",", ""))
                     diff = v_amt - e_amt if v_amt and e_amt else 0
+                    disc_amt = r.get("discount_absorbed_amount", 0)
                     conf = round((r.get("confidence", 0)) * 100)
+
+                    if disc_amt and abs(diff) > 1:
+                        status_txt = "✅ 일치(할인반영)"
+                        diff_txt = f"{diff:,.0f} (할인 {abs(disc_amt):,.0f}원 반영)"
+                    else:
+                        status_txt = "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이"
+                        diff_txt = diff if abs(diff) > 1 else 0
 
                     vals = [
                         i,
-                        "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이",
+                        status_txt,
                         v.get("date", ""),
                         v.get("product_name", ""),
                         v.get("qty", 0),
@@ -1788,10 +1821,10 @@ async def download_result_excel(
                         e.get("prod_name", e.get("품명 및 모델", "")),
                         e.get("qty", e.get("수량", "")),
                         e_amt,
-                        diff if abs(diff) > 1 else 0,
+                        diff_txt,
                         f"{conf}%",
                     ]
-                    fill = yellow_fill if abs(diff) > 1 else green_fill
+                    fill = green_fill if (abs(diff) <= 1 or disc_amt) else yellow_fill
                     for c, val in enumerate(vals, 1):
                         cell = ws.cell(row=curr_row, column=c, value=val)
                         style_data_cell(cell, fill)
@@ -1918,11 +1951,22 @@ async def download_result_excel(
             v_amt = float(v.get("amount", 0) or 0)
             e_amt = float(str(e.get("total", e.get("합계", 0)) or 0).replace(",", ""))
             diff = v_amt - e_amt if v_amt and e_amt else 0
+            disc_amt = r.get("discount_absorbed_amount", 0)
             conf = round((r.get("confidence", 0)) * 100)
+
+            # 할인 흡수된 항목: 금액차이가 아닌 "할인반영" 표시
+            if disc_amt and abs(diff) > 1:
+                status_txt = "✅ 일치(할인반영)"
+                diff_txt = f"{diff:,.0f} (할인 {abs(disc_amt):,.0f}원 반영)"
+                note = r.get("discount_note", "")
+            else:
+                status_txt = "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이"
+                diff_txt = diff if abs(diff) > 1 else 0
+                note = r.get("reason", "")
 
             vals = [
                 i,
-                "✅ 일치" if abs(diff) <= 1 else "⚠️ 금액차이",
+                status_txt,
                 v.get("date", ""),
                 v.get("product_name", ""),
                 v.get("qty", 0),
@@ -1931,11 +1975,11 @@ async def download_result_excel(
                 e.get("prod_name", e.get("품명 및 모델", "")),
                 e.get("qty", e.get("수량", "")),
                 e_amt,
-                diff if abs(diff) > 1 else 0,
+                diff_txt,
                 f"{conf}%",
-                r.get("reason", ""),
+                note,
             ]
-            fill = yellow_fill if abs(diff) > 1 else green_fill
+            fill = green_fill if (abs(diff) <= 1 or disc_amt) else yellow_fill
             for c, val in enumerate(vals, 1):
                 cell = ws2.cell(row=row, column=c, value=val)
                 style_data_cell(cell, fill)

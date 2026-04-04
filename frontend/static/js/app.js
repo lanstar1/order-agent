@@ -5756,13 +5756,20 @@ function _renderBatchResults(result) {
         detailHTML += (vr.matched || []).map(r => {
           const v = r.vendor_item || {};
           const e = r.erp_match || {};
+          const discAmt = r.discount_absorbed_amount || 0;
+          const vAmt = v.amount || 0;
+          const eAmt = parseFloat(String(e.total || e["합계"] || e["합 계"] || 0).replace(/,/g, ""));
+          const hasDiff = Math.abs(vAmt - eAmt) > 1;
+          const conf = Math.round((r.confidence || 0) * 100);
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#16a34a">✓</span>
             <span class="rc-item-name">${v.product_name||""}</span>
             <span class="rc-item-meta">${v.date||""}</span>
-            <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
+            <span class="rc-item-meta">${vAmt.toLocaleString()}원</span>
+            ${discAmt && hasDiff ? `<span class="rc-item-meta" style="color:#f59e0b;font-size:10px">(할인 ${Math.abs(discAmt).toLocaleString()}원 → ${eAmt.toLocaleString()}원)</span>` : ""}
             <span class="rc-arrow">→</span>
             <span class="rc-erp-name">${e.prod_cd||""} ${e.prod_name||""}</span>
+            ${discAmt && hasDiff ? `<span class="rc-item-meta" style="color:#16a34a;font-size:10px;font-weight:600">${conf}%</span>` : ""}
           </div>`;
         }).join("");
         detailHTML += "</div></div>";
