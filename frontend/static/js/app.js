@@ -5199,6 +5199,26 @@ function initReconcilePage() {
   const vf = document.getElementById("reconcile-vendor-files");
   if (dropzone && vf) {
     let _vendorFileProcessing = false;
+    let _processingTimeout = null;
+
+    function _setProcessing(val) {
+      _vendorFileProcessing = val;
+      // 타임아웃 안전장치: 30초 후 자동 해제
+      if (_processingTimeout) clearTimeout(_processingTimeout);
+      if (val) {
+        dropzone.style.opacity = "0.6";
+        dropzone.style.pointerEvents = "none";
+        _processingTimeout = setTimeout(() => {
+          _vendorFileProcessing = false;
+          dropzone.style.opacity = "";
+          dropzone.style.pointerEvents = "";
+        }, 30000);
+      } else {
+        dropzone.style.opacity = "";
+        dropzone.style.pointerEvents = "";
+      }
+    }
+
     dropzone.addEventListener("click", (e) => {
       if (_vendorFileProcessing) return;
       if (e.target === vf || e.target.closest("button")) return;
@@ -5209,30 +5229,40 @@ function initReconcilePage() {
     dropzone.addEventListener("drop", async (e) => {
       e.preventDefault(); dropzone.classList.remove("dragover");
       if (_vendorFileProcessing || !e.dataTransfer.files.length) return;
-      _vendorFileProcessing = true;
+      _setProcessing(true);
       try { await _addVendorFiles(Array.from(e.dataTransfer.files)); }
-      finally { _vendorFileProcessing = false; }
+      finally { _setProcessing(false); }
     });
     vf.addEventListener("change", async () => {
       if (!vf.files.length) return;
-      _vendorFileProcessing = true;
       const files = Array.from(vf.files);
       vf.value = ""; // 먼저 리셋하여 change 재발방지
+      if (_vendorFileProcessing) return;
+      _setProcessing(true);
       try { await _addVendorFiles(files); }
-      finally { _vendorFileProcessing = false; }
+      finally { _setProcessing(false); }
     });
   }
 }
 
 async function _addVendorFiles(newFiles) {
   const added = [];
+  const ALLOWED_EXTS = [".xlsx", ".xls"];
   for (const f of newFiles) {
-    const exists = _rc.vendorFiles.some(v => v.file.name === f.name && v.file.size === f.size);
-    if (!exists) {
-      const entry = { file: f, name: "", code: "", status: "pending", date_from: "", date_to: "", item_count: 0, saved_path: "" };
-      _rc.vendorFiles.push(entry);
-      added.push(entry);
+    // 파일 타입 검증
+    const ext = (f.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+    if (!ALLOWED_EXTS.includes(ext)) {
+      toast(`${f.name}: 엑셀 파일(.xlsx, .xls)만 업로드 가능합니다`, "error");
+      continue;
     }
+    const exists = _rc.vendorFiles.some(v => v.file.name === f.name && v.file.size === f.size);
+    if (exists) {
+      toast(`${f.name}: 이미 추가된 파일입니다`, "warn");
+      continue;
+    }
+    const entry = { file: f, name: "", code: "", status: "pending", date_from: "", date_to: "", item_count: 0, saved_path: "" };
+    _rc.vendorFiles.push(entry);
+    added.push(entry);
   }
   if (!added.length) return;
   _renderVendorFileList();  // 즉시 파일 태그 + pending 상태 표시
@@ -5255,6 +5285,7 @@ async function _addVendorFiles(newFiles) {
 
       if (p.error) {
         entry.status = "error";
+        toast(`${entry.file.name}: 파싱 실패 — ${p.error}`, "error");
         continue;
       }
 
@@ -5262,9 +5293,7 @@ async function _addVendorFiles(newFiles) {
       try {
         const vRes = await api.get(`/api/reconcile/vendor-list?q=${encodeURIComponent(entry.name)}`);
         const vendors = vRes.vendors || [];
-        console.log(`[VendorMatch] #${_rc.vendorFiles.indexOf(entry)} API 응답: ${vendors.length}건`, vendors.slice(0, 3));
         const best = _fuzzyMatchVendor(entry.name, vendors);
-        console.log(`[VendorMatch] #${_rc.vendorFiles.indexOf(entry)} fuzzy 결과:`, best);
         if (best) {
           entry.name = best.name;
           entry.code = best.code || "";
@@ -5272,12 +5301,16 @@ async function _addVendorFiles(newFiles) {
         entry.status = "matched";
       } catch (e2) {
         console.error(`[VendorMatch] #${_rc.vendorFiles.indexOf(entry)} 오류:`, e2);
-        entry.status = "matched";
+        entry.status = "matched"; // 코드 못 찾아도 파일 자체는 유효
       }
+    }
+    if (added.length > 0 && added.every(a => a.status === "matched")) {
+      toast(`${added.length}개 파일 업로드 완료`, "success");
     }
   } catch (e) {
     console.error("[PreviewVendors] API 오류:", e);
     for (const a of added) { a.status = "error"; }
+    toast("파일 업로드 실패: " + (e.message || e), "error");
   }
 
   _renderVendorFileList();
@@ -5620,23 +5653,30 @@ async function reconcileBatchStart() {
 
 function _renderBatchResults(result) {
   const s = result.summary;
-  const totalMemo = (result.vendor_results || []).reduce((sum, vr) =>
-    sum + (vr.summary?.memo_filtered || 0), 0);
+  const vrs = result.vendor_results || [];
+  const totalMemo = vrs.reduce((sum, vr) => sum + (vr.summary?.memo_filtered || 0), 0);
+  const totalPayment = vrs.reduce((sum, vr) => sum + (vr.summary?.payment_filtered || 0), 0);
+  const totalDiscount = vrs.reduce((sum, vr) => sum + (vr.summary?.discount_absorbed_count || 0), 0);
+  const totalReturns = vrs.reduce((sum, vr) => sum + (vr.summary?.return_matched_count || 0) + (vr.summary?.return_unmatched_count || 0), 0);
+  const totalRegular = s.total_matched + s.total_unmatched;
+  const overallPct = totalRegular > 0 ? Math.round(s.total_matched / totalRegular * 100) : 0;
+  const pctColor = overallPct === 100 ? "#16a34a" : overallPct >= 90 ? "#ca8a04" : "#dc2626";
 
   // 요약 카드
   document.getElementById("reconcile-batch-summary").innerHTML = `
+    <div class="rc-overall-rate" style="text-align:center;padding:12px 0 8px;font-size:14px">
+      <span style="font-weight:700;font-size:22px;color:${pctColor}">${overallPct}%</span>
+      <span style="color:var(--gray-300);margin-left:6px">전체 매칭률</span>
+      <span style="color:var(--gray-400);font-size:12px;margin-left:4px">(${s.total_matched}/${totalRegular}건)</span>
+    </div>
     <div class="rc-summary-grid">
       <div class="rc-summary-card matched">
         <div class="rc-summary-num">${s.total_matched}</div>
-        <div class="rc-summary-label">매칭</div>
+        <div class="rc-summary-label">매칭 완료</div>
       </div>
       <div class="rc-summary-card unmatched">
         <div class="rc-summary-num">${s.total_unmatched}</div>
-        <div class="rc-summary-label">누락</div>
-      </div>
-      <div class="rc-summary-card shipping">
-        <div class="rc-summary-num">${s.total_shipping}</div>
-        <div class="rc-summary-label">배송료</div>
+        <div class="rc-summary-label">미매칭</div>
       </div>
       <div class="rc-summary-card mismatch">
         <div class="rc-summary-num">${s.total_amount_mismatch}</div>
@@ -5646,6 +5686,22 @@ function _renderBatchResults(result) {
         <div class="rc-summary-num">${s.vendor_count}</div>
         <div class="rc-summary-label">거래처</div>
       </div>
+      ${totalDiscount > 0 ? `<div class="rc-summary-card" style="border-left:3px solid #16a34a">
+        <div class="rc-summary-num">${totalDiscount}</div>
+        <div class="rc-summary-label">할인반영</div>
+      </div>` : ""}
+      ${totalReturns > 0 ? `<div class="rc-summary-card" style="border-left:3px solid #8b5cf6">
+        <div class="rc-summary-num">${totalReturns}</div>
+        <div class="rc-summary-label">반품</div>
+      </div>` : ""}
+      ${s.total_shipping > 0 ? `<div class="rc-summary-card shipping">
+        <div class="rc-summary-num">${s.total_shipping}</div>
+        <div class="rc-summary-label">배송료</div>
+      </div>` : ""}
+      ${totalPayment > 0 ? `<div class="rc-summary-card" style="border-left:3px solid #6b7280">
+        <div class="rc-summary-num">${totalPayment}</div>
+        <div class="rc-summary-label">결제제외</div>
+      </div>` : ""}
       ${totalMemo > 0 ? `<div class="rc-summary-card memo">
         <div class="rc-summary-num">${totalMemo}</div>
         <div class="rc-summary-label">메모제외</div>
@@ -5663,15 +5719,19 @@ function _renderBatchResults(result) {
     const vs = vr.summary || {};
     const hasError = !!vr.error;
     const vendorTotalOk = vs.vendor_total_match === true;
-    const isOk = !hasError && (vs.unmatched_count === 0 || vendorTotalOk) && vs.amount_mismatch_count === 0;
-    const statusCls = hasError ? "status-error" : isOk ? "status-ok" : "status-warn";
-    const statusIcon = hasError ? "❌" : isOk ? "✅" : "⚠️";
+    const vendorMatchPct = (vs.matched_count + vs.unmatched_count) > 0
+      ? Math.round(vs.matched_count / (vs.matched_count + vs.unmatched_count) * 100) : 0;
+    // 상태 판단: 100%매칭 or 총액일치 → OK, 80%+ → 주의, 그 외 → 경고
+    const isOk = !hasError && (vendorMatchPct === 100 || vendorTotalOk) && vs.amount_mismatch_count === 0;
+    const statusCls = hasError ? "status-error" : isOk ? "status-ok" : vendorMatchPct >= 80 ? "status-warn" : "status-error";
+    const statusIcon = hasError ? "❌" : isOk ? "✅" : vendorMatchPct >= 80 ? "⚠️" : "❌";
 
     let detailHTML = "";
     if (!hasError) {
       // 매칭됨
       if (vs.matched_count > 0) {
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title matched">✅ 매칭됨 (${vs.matched_count}건)</div>`;
+        const matchedTotal = (vr.matched||[]).reduce((s,r) => s + (r.vendor_item?.amount||0), 0);
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title matched">✅ 매칭됨 (${vs.matched_count}건) <span style="font-size:11px;color:var(--gray-300);margin-left:8px">합계 ${matchedTotal.toLocaleString()}원</span></div>`;
         detailHTML += (vr.matched || []).map(r => {
           const v = r.vendor_item || {};
           const e = r.erp_match || {};
@@ -5750,10 +5810,11 @@ function _renderBatchResults(result) {
 
       // 누락
       if (vs.unmatched_count > 0) {
+        const unmatchedTotal = (vr.unmatched||[]).reduce((s,r) => s + (r.vendor_item?.amount||0), 0);
         const totalMatchNote = vr.vendor_total_match
           ? `<span style="color:#16a34a;font-size:11px;margin-left:8px">✅ 거래처 총액 일치 — 개별 항목 차이는 무시 가능</span>`
           : "";
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title unmatched">❌ 매입전표 누락 (${vs.unmatched_count}건)${totalMatchNote}</div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title unmatched">❌ 매입전표 누락 (${vs.unmatched_count}건) <span style="font-size:11px;color:#dc2626;margin-left:4px">합계 ${unmatchedTotal.toLocaleString()}원</span>${totalMatchNote}</div>`;
         detailHTML += (vr.unmatched || []).map(r => {
           const v = r.vendor_item || {};
           const txType = v.tx_type || "";
