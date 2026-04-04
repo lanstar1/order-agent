@@ -1062,6 +1062,56 @@ async def batch_reconcile_stream(
                 )
                 vendor_total_match = abs(vendor_ledger_total - erp_purchase_total) <= 1
 
+                # ── 날짜별 총액 비교로 매출할인/할인반영 자동 처리 ──
+                # 매출할인 등의 이유로 개별 매칭이 안 되더라도
+                # 날짜별 총액이 일치하면 할인이 반영된 것으로 간주
+                discount_absorbed = []
+                still_unmatched = []
+                if unmatched:
+                    # 날짜별 거래처원장 총액 (매칭+미매칭 모두 포함)
+                    from collections import defaultdict
+                    vendor_date_totals = defaultdict(float)
+                    for r in matched:
+                        v = r.get("vendor_item", {})
+                        d = v.get("date", "")
+                        vendor_date_totals[d] += float(v.get("amount", 0) or 0)
+                    for r in unmatched:
+                        v = r.get("vendor_item", {})
+                        d = v.get("date", "")
+                        vendor_date_totals[d] += float(v.get("amount", 0) or 0)
+
+                    # 날짜별 ERP 매입 총액 (해당 거래처)
+                    erp_date_totals = defaultdict(float)
+                    for p in filtered_purchase:
+                        d = _get_field(p, "date", "월/일", default="")
+                        erp_date_totals[d] += float(str(_get_field(p, "total", "합계", default=0) or 0).replace(",", ""))
+
+                    # ERP 날짜 정규화 (20260303-1 → 03.03)
+                    erp_date_norm = {}
+                    for d, total in erp_date_totals.items():
+                        parsed = None
+                        d_clean = re.sub(r'-\d+$', '', d) if d else ""
+                        if len(d_clean) == 8 and d_clean.isdigit():
+                            norm_key = f"{d_clean[4:6]}.{d_clean[6:8]}"
+                            erp_date_norm[norm_key] = erp_date_norm.get(norm_key, 0) + total
+
+                    for r in unmatched:
+                        v = r.get("vendor_item", {})
+                        d = v.get("date", "")
+                        v_total = vendor_date_totals.get(d, 0)
+                        e_total = erp_date_norm.get(d, 0)
+                        if e_total and abs(v_total - e_total) <= max(abs(v_total) * 0.01, 10):
+                            # 날짜별 총액 일치 → 할인 반영으로 처리
+                            r["match_type"] = "discount_absorbed"
+                            r["reason"] = f"날짜({d}) 총액 일치 — 할인이 매입단가에 반영됨"
+                            discount_absorbed.append(r)
+                        else:
+                            still_unmatched.append(r)
+
+                    if discount_absorbed:
+                        yield sse("log", {"msg": f"  → 할인반영 처리: {len(discount_absorbed)}건 (날짜별 총액 일치)"})
+                    unmatched = still_unmatched
+
                 # ── 2단계: 미매칭 건 판매이력 확인 (AI) — 최대 10건만 ──
                 sales_check = []
                 if unmatched and all_sales_items:
@@ -1096,6 +1146,7 @@ async def batch_reconcile_stream(
 
                 vf_result["matched"] = matched
                 vf_result["unmatched"] = unmatched
+                vf_result["discount_absorbed"] = discount_absorbed
                 vf_result["sales_check"] = sales_check
                 vf_result["shipping_items"] = [
                     {
@@ -1136,8 +1187,9 @@ async def batch_reconcile_stream(
                 vf_result["summary"] = {
                     "total_vendor_items": len(all_vendor_items),
                     "memo_filtered": len(memo_items),
-                    "matched_count": len(matched),
+                    "matched_count": len(matched) + len(discount_absorbed),
                     "unmatched_count": len(unmatched),
+                    "discount_absorbed_count": len(discount_absorbed),
                     "with_sales_history": sum(1 for s in sales_check if s.get("has_sales_history")),
                     "shipping_count": len(shipping_items),
                     "amount_mismatch_count": len(amount_mismatches),
@@ -1146,8 +1198,11 @@ async def batch_reconcile_stream(
                     "vendor_total_match": vendor_total_match,
                 }
 
-                match_rate = round(len(matched) / max(len(regular_items), 1) * 100, 1)
-                yield sse("log", {"msg": f"✅ {vendor_name} 완료: 매칭률 {match_rate}% ({len(matched)}/{len(regular_items)})"})
+                effective_matched = len(matched) + len(discount_absorbed)
+                match_rate = round(effective_matched / max(len(regular_items), 1) * 100, 1)
+                yield sse("log", {"msg": f"✅ {vendor_name} 완료: 매칭률 {match_rate}% ({effective_matched}/{len(regular_items)})"})
+                if discount_absorbed:
+                    yield sse("log", {"msg": f"  ↳ 할인반영 {len(discount_absorbed)}건 포함"})
 
             except Exception as e:
                 logger.error(f"[일괄] '{orig_filename}' 처리 실패: {e}", exc_info=True)
