@@ -5687,19 +5687,19 @@ function _renderBatchResults(result) {
         detailHTML += "</div>";
       }
 
-      // 할인반영 (날짜별 총액 일치 — 매출할인 등)
+      // 할인반영 (매출할인이 매입단가에 반영됨)
       if ((vr.discount_absorbed||[]).length > 0) {
-        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#16a34a">💰 할인반영 (${vr.discount_absorbed.length}건) <span style="font-size:10px;color:var(--gray-400)">— 날짜별 총액 일치, 할인이 매입단가에 반영됨</span></div>`;
+        detailHTML += `<div class="rc-detail-section"><div class="rc-detail-title" style="color:#16a34a">💰 할인반영 (${vr.discount_absorbed.length}건) <span style="font-size:10px;color:var(--gray-400)">— 할인이 매입단가에 이미 반영됨</span></div>`;
         detailHTML += vr.discount_absorbed.map(r => {
           const v = r.vendor_item || {};
           const pname = v.product_name || v.product_category || "";
+          const absorbedBy = r.absorbed_by || "";
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#16a34a">✓</span>
             <span class="rc-item-name">${pname}</span>
             <span class="rc-item-meta">${v.date||""}</span>
-            <span class="rc-item-meta">수량 ${v.qty||0}</span>
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
-            <span class="rc-item-meta" style="color:var(--gray-400);font-size:10px">날짜총액 일치</span>
+            ${absorbedBy ? `<span class="rc-arrow">→</span><span class="rc-item-meta" style="color:var(--gray-400);font-size:10px">${absorbedBy} 단가에 반영</span>` : ""}
           </div>`;
         }).join("");
         detailHTML += "</div>";

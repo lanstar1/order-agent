@@ -1062,54 +1062,89 @@ async def batch_reconcile_stream(
                 )
                 vendor_total_match = abs(vendor_ledger_total - erp_purchase_total) <= 1
 
-                # ── 날짜별 총액 비교로 매출할인/할인반영 자동 처리 ──
-                # 매출할인 등의 이유로 개별 매칭이 안 되더라도
-                # 날짜별 총액이 일치하면 할인이 반영된 것으로 간주
+                # ── 할인 흡수 처리 ──
+                # 거래처원장: 상품 354,000 + 매출할인 -12,000 = 342,000
+                # ERP 구매현황: 상품 342,000 (할인된 가격으로 입력)
+                # → 매칭된 항목의 금액차이가 미매칭 할인항목 합계와 일치하면 할인 흡수
+                discount_keywords = {"매출할인", "할인", "리베이트", "DC", "할인DC", "에누리"}
                 discount_absorbed = []
                 still_unmatched = []
+
                 if unmatched:
-                    # 날짜별 거래처원장 총액 (매칭+미매칭 모두 포함)
                     from collections import defaultdict
-                    vendor_date_totals = defaultdict(float)
-                    for r in matched:
-                        v = r.get("vendor_item", {})
-                        d = v.get("date", "")
-                        vendor_date_totals[d] += float(v.get("amount", 0) or 0)
-                    for r in unmatched:
-                        v = r.get("vendor_item", {})
-                        d = v.get("date", "")
-                        vendor_date_totals[d] += float(v.get("amount", 0) or 0)
 
-                    # 날짜별 ERP 매입 총액 (해당 거래처)
-                    erp_date_totals = defaultdict(float)
-                    for p in filtered_purchase:
-                        d = _get_field(p, "date", "월/일", default="")
-                        erp_date_totals[d] += float(str(_get_field(p, "total", "합계", default=0) or 0).replace(",", ""))
-
-                    # ERP 날짜 정규화 (20260303-1 → 03.03)
-                    erp_date_norm = {}
-                    for d, total in erp_date_totals.items():
-                        parsed = None
-                        d_clean = re.sub(r'-\d+$', '', d) if d else ""
-                        if len(d_clean) == 8 and d_clean.isdigit():
-                            norm_key = f"{d_clean[4:6]}.{d_clean[6:8]}"
-                            erp_date_norm[norm_key] = erp_date_norm.get(norm_key, 0) + total
+                    # 미매칭 항목을 할인성/비할인성으로 분류
+                    unmatched_discounts_by_date = defaultdict(list)  # 날짜별 할인 항목
+                    unmatched_regular = []  # 비할인 미매칭 항목
 
                     for r in unmatched:
                         v = r.get("vendor_item", {})
-                        d = v.get("date", "")
-                        v_total = vendor_date_totals.get(d, 0)
-                        e_total = erp_date_norm.get(d, 0)
-                        if e_total and abs(v_total - e_total) <= max(abs(v_total) * 0.01, 10):
-                            # 날짜별 총액 일치 → 할인 반영으로 처리
-                            r["match_type"] = "discount_absorbed"
-                            r["reason"] = f"날짜({d}) 총액 일치 — 할인이 매입단가에 반영됨"
-                            discount_absorbed.append(r)
+                        pname = (v.get("product_name", "") or "").strip()
+                        pcat = (v.get("product_category", "") or "").strip()
+                        is_discount = any(kw in pname for kw in discount_keywords) or \
+                                      any(kw in pcat for kw in discount_keywords)
+                        if is_discount:
+                            d = v.get("date", "")
+                            unmatched_discounts_by_date[d].append(r)
                         else:
-                            still_unmatched.append(r)
+                            unmatched_regular.append(r)
+
+                    # 금액불일치 항목에서 할인 흡수 시도
+                    absorbed_discount_ids = set()
+                    resolved_mismatch_indices = []
+
+                    for mi_idx, r in enumerate(amount_mismatches):
+                        v = r.get("vendor_item", {})
+                        e = r.get("erp_match", {})
+                        v_date = v.get("date", "")
+                        v_amt = float(v.get("amount", 0) or 0)
+                        e_amt = float(str(_get_field(e, "total", "합계", default=0) or 0).replace(",", ""))
+                        diff = v_amt - e_amt  # 양수 = 원장이 더 큼 (할인이 있을 것)
+
+                        # 같은 날짜의 할인 항목 확인
+                        date_discounts = unmatched_discounts_by_date.get(v_date, [])
+                        if not date_discounts or abs(diff) <= 1:
+                            continue
+
+                        # 할인 합계가 금액차이를 설명하는지 확인
+                        discount_total = sum(
+                            float(dr.get("vendor_item", {}).get("amount", 0) or 0)
+                            for dr in date_discounts
+                            if id(dr) not in absorbed_discount_ids
+                        )
+                        # v_amt + discount_total ≈ e_amt → 할인이 단가에 반영됨
+                        adjusted = v_amt + discount_total
+                        if abs(adjusted - e_amt) <= max(abs(e_amt) * 0.01, 10):
+                            # 할인 흡수 성공
+                            for dr in date_discounts:
+                                if id(dr) not in absorbed_discount_ids:
+                                    absorbed_discount_ids.add(id(dr))
+                                    dr["match_type"] = "discount_absorbed"
+                                    dv = dr.get("vendor_item", {})
+                                    dr["reason"] = f"할인({dv.get('product_name', '')}) → {v.get('product_name', '')}에 단가 반영됨"
+                                    dr["absorbed_by"] = v.get("product_name", "")
+                                    discount_absorbed.append(dr)
+                            # 금액불일치도 해소
+                            resolved_mismatch_indices.append(mi_idx)
+
+                    # 해소된 금액불일치 제거
+                    for idx in sorted(resolved_mismatch_indices, reverse=True):
+                        removed = amount_mismatches.pop(idx)
+                        # 매칭 데이터에서 diff 관련 키 제거
+                        removed.pop("amount_diff", None)
+                        removed.pop("amount_diff_pct", None)
+                        removed.pop("vendor_amount", None)
+                        removed.pop("erp_amount", None)
+
+                    # 흡수되지 않은 할인항목 + 비할인 미매칭 → still_unmatched
+                    for d, dlist in unmatched_discounts_by_date.items():
+                        for dr in dlist:
+                            if id(dr) not in absorbed_discount_ids:
+                                still_unmatched.append(dr)
+                    still_unmatched.extend(unmatched_regular)
 
                     if discount_absorbed:
-                        yield sse("log", {"msg": f"  → 할인반영 처리: {len(discount_absorbed)}건 (날짜별 총액 일치)"})
+                        yield sse("log", {"msg": f"  → 할인반영 처리: {len(discount_absorbed)}건 (할인이 매입단가에 반영됨)"})
                     unmatched = still_unmatched
 
                 # ── 2단계: 미매칭 건 판매이력 확인 (AI) — 최대 10건만 ──
