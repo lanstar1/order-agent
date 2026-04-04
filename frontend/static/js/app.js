@@ -5679,7 +5679,7 @@ function _renderBatchResults(result) {
   const totalPayment = vrs.reduce((sum, vr) => sum + (vr.summary?.payment_filtered || 0), 0);
   const totalDiscount = vrs.reduce((sum, vr) => sum + (vr.summary?.discount_absorbed_count || 0), 0);
   const totalReturns = vrs.reduce((sum, vr) => sum + (vr.summary?.return_matched_count || 0) + (vr.summary?.return_unmatched_count || 0), 0);
-  const totalRegular = s.total_matched + s.total_unmatched;
+  const totalRegular = s.total_matched + s.total_unmatched + (s.total_amount_mismatch || 0);
   const overallPct = totalRegular > 0 ? Math.round(s.total_matched / totalRegular * 100) : 0;
   const pctColor = overallPct === 100 ? "#16a34a" : overallPct >= 90 ? "#ca8a04" : "#dc2626";
 
@@ -5740,8 +5740,9 @@ function _renderBatchResults(result) {
     const vs = vr.summary || {};
     const hasError = !!vr.error;
     const vendorTotalOk = vs.vendor_total_match === true;
-    const vendorMatchPct = (vs.matched_count + vs.unmatched_count) > 0
-      ? Math.round(vs.matched_count / (vs.matched_count + vs.unmatched_count) * 100) : 0;
+    const vendorRegularTotal = vs.matched_count + vs.unmatched_count + (vs.amount_mismatch_count || 0);
+    const vendorMatchPct = vendorRegularTotal > 0
+      ? Math.round(vs.matched_count / vendorRegularTotal * 100) : 0;
     // 상태 판단: 100%매칭 or 총액일치 → OK, 80%+ → 주의, 그 외 → 경고
     const isOk = !hasError && (vendorMatchPct === 100 || vendorTotalOk) && vs.amount_mismatch_count === 0;
     const statusCls = hasError ? "status-error" : isOk ? "status-ok" : vendorMatchPct >= 80 ? "status-warn" : "status-error";
@@ -5917,38 +5918,37 @@ function _renderBatchResults(result) {
             ${r.sales_verify ? (() => {
               const sv = r.sales_verify;
               const vc = sv.verdict_code;
-              const vColor = vc==='vendor'?'#dc2626':vc==='erp'?'#16a34a':'#6b7280';
-              const bgColor = vc==='vendor'?'rgba(220,38,38,0.08)':vc==='erp'?'rgba(22,163,74,0.08)':'rgba(107,114,128,0.08)';
-              const borderColor = vc==='vendor'?'rgba(220,38,38,0.25)':vc==='erp'?'rgba(22,163,74,0.25)':'rgba(107,114,128,0.2)';
+              const vColor = vc==='vendor'?'#b91c1c':vc==='erp'?'#15803d':'#374151';
+              const bgColor = vc==='vendor'?'#fef2f2':vc==='erp'?'#f0fdf4':'#f9fafb';
+              const borderColor = vc==='vendor'?'#fca5a5':vc==='erp'?'#86efac':'#d1d5db';
               let html = `<div style="width:100%;padding-left:24px;margin-top:4px">`;
-              // AI 추론 결과 배지
               const aiReason = sv.ai_reason || "";
-              html += `<div style="background:${bgColor};border:1px solid ${borderColor};border-radius:8px;padding:8px 10px;font-size:11px">`;
-              html += `<div style="color:${vColor};font-weight:700;margin-bottom:4px">📊 ${sv.verdict}</div>`;
+              html += `<div style="background:${bgColor};border:1px solid ${borderColor};border-radius:8px;padding:10px 12px;font-size:11px">`;
+              html += `<div style="color:${vColor};font-weight:700;margin-bottom:4px;font-size:12px">📊 ${sv.verdict}</div>`;
               if (aiReason) {
-                html += `<div style="color:#d1d5db;font-size:10px;margin-bottom:6px;line-height:1.4">🤖 ${aiReason}</div>`;
+                html += `<div style="color:#374151;font-size:11px;margin-bottom:8px;line-height:1.5">🤖 ${aiReason}</div>`;
               }
               if (sv.sales_details && sv.sales_details.length > 0) {
-                html += `<table style="width:100%;font-size:10px;border-collapse:collapse;margin-top:2px">`;
-                html += `<thead><tr style="color:#9ca3af;font-weight:600;border-bottom:1px solid rgba(156,163,175,0.3)">
-                  <th style="text-align:left;padding:2px 6px">판매일자</th>
-                  <th style="text-align:left;padding:2px 6px">거래처</th>
-                  <th style="text-align:right;padding:2px 6px">수량</th>
-                  <th style="text-align:right;padding:2px 6px">금액</th>
+                html += `<table style="width:100%;font-size:11px;border-collapse:collapse;margin-top:4px">`;
+                html += `<thead><tr style="color:#1f2937;font-weight:700;border-bottom:2px solid #9ca3af">
+                  <th style="text-align:left;padding:4px 8px">판매일자</th>
+                  <th style="text-align:left;padding:4px 8px">거래처</th>
+                  <th style="text-align:right;padding:4px 8px">수량</th>
+                  <th style="text-align:right;padding:4px 8px">금액</th>
                 </tr></thead><tbody>`;
                 sv.sales_details.forEach(sd => {
-                  html += `<tr style="color:#e5e7eb">
-                    <td style="padding:2px 6px">${rcFmtDate("", sd.date)}</td>
-                    <td style="padding:2px 6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sd.cust_name||""}</td>
-                    <td style="text-align:right;padding:2px 6px">${sd.qty||0}개</td>
-                    <td style="text-align:right;padding:2px 6px">${(sd.amount||0).toLocaleString()}원</td>
+                  html += `<tr style="color:#111827;border-bottom:1px solid #e5e7eb">
+                    <td style="padding:4px 8px;font-weight:500">${rcFmtDate("", sd.date)}</td>
+                    <td style="padding:4px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sd.cust_name||""}</td>
+                    <td style="text-align:right;padding:4px 8px;font-weight:600">${sd.qty||0}개</td>
+                    <td style="text-align:right;padding:4px 8px;font-weight:500">${(sd.amount||0).toLocaleString()}원</td>
                   </tr>`;
                 });
-                html += `</tbody><tfoot><tr style="color:#f3f4f6;font-weight:700;border-top:1px solid rgba(156,163,175,0.3)">
-                  <td style="padding:3px 6px">합계</td>
-                  <td style="padding:3px 6px">${sv.sales_count}건</td>
-                  <td style="text-align:right;padding:3px 6px">${sv.sales_total_qty}개</td>
-                  <td style="text-align:right;padding:3px 6px">${(sv.sales_total_amt||0).toLocaleString()}원</td>
+                html += `</tbody><tfoot><tr style="color:#111827;font-weight:700;border-top:2px solid #6b7280;background:rgba(0,0,0,0.03)">
+                  <td style="padding:5px 8px">합계</td>
+                  <td style="padding:5px 8px">${sv.sales_count}건</td>
+                  <td style="text-align:right;padding:5px 8px">${sv.sales_total_qty}개</td>
+                  <td style="text-align:right;padding:5px 8px">${(sv.sales_total_amt||0).toLocaleString()}원</td>
                 </tr></tfoot></table>`;
               }
               html += `</div></div>`;
@@ -6002,7 +6002,7 @@ function _renderBatchResults(result) {
           <div class="rc-vendor-title">${statusIcon} ${vr.vendor_name || vr.filename}</div>
           <div class="rc-vendor-stats">
             ${hasError ? `<span style="color:var(--danger)">${vr.error}</span>` : (() => {
-              const regularTotal = vs.matched_count + vs.unmatched_count;
+              const regularTotal = vs.matched_count + vs.unmatched_count + (vs.amount_mismatch_count || 0);
               const matchPct = regularTotal > 0 ? Math.round(vs.matched_count / regularTotal * 100) : 0;
               const pctColor = matchPct === 100 ? "#16a34a" : matchPct >= 80 ? "#ca8a04" : "#dc2626";
               return `

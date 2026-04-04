@@ -1375,11 +1375,13 @@ async def batch_reconcile_stream(
                 vf_result["vendor_ledger_total"] = vendor_ledger_total
                 vf_result["erp_purchase_total"] = erp_purchase_total
                 vf_result["vendor_total_match"] = vendor_total_match
+                # 금액불일치 항목은 완전 매칭이 아니므로 매칭 건수에서 제외
+                exact_matched = len(matched) - len(amount_mismatches)
                 vf_result["summary"] = {
                     "total_vendor_items": len(all_vendor_items),
                     "memo_filtered": len(memo_items),
                     "payment_filtered": len(payment_items),
-                    "matched_count": len(matched) + len(discount_absorbed),
+                    "matched_count": exact_matched + len(discount_absorbed),
                     "unmatched_count": len(unmatched),
                     "discount_absorbed_count": len(discount_absorbed),
                     "return_matched_count": len(return_matched),
@@ -1392,7 +1394,7 @@ async def batch_reconcile_stream(
                     "vendor_total_match": vendor_total_match,
                 }
 
-                effective_matched = len(matched) + len(discount_absorbed)
+                effective_matched = exact_matched + len(discount_absorbed)
                 total_regular = len(regular_items)
                 match_rate = round(effective_matched / max(total_regular, 1) * 100, 1)
                 yield sse("log", {"msg": f"✅ {vendor_name} 완료: 매칭률 {match_rate}% ({effective_matched}/{total_regular})"})
@@ -1568,7 +1570,7 @@ async def compare_ledgers(
         "session_id": session_id,
         "summary": {
             "total_vendor_items": len(all_vendor_items),
-            "matched_count": len(matched),
+            "matched_count": len(matched) - len(amount_mismatches),
             "unmatched_count": len(unmatched),
             "with_sales_history": sum(
                 1 for s in sales_check if s.get("has_sales_history")
