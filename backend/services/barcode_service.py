@@ -298,64 +298,19 @@ async def send_to_ecount(
             doc_to_ser[doc_no] = str(ser_counter)
             ser_counter += 1
 
-    # ⑥ BulkDatas 구성
-    bulk_list = []
-    orig_indices = []  # 원본 PO 행 인덱스 추적
-    label_flags = []  # 바코드부착 필요 여부 추적
-    for _, row in valid.iterrows():
-        doc_no = str(row["발주번호"]).strip()
-        warehouse = str(row["물류센터"]).strip()
-        qty_str = str(row[qty_col]).replace(",", "").strip()
-        supply_str = str(row.get("총발주 매입금", "")).replace(",", "").strip()
-
-        try:
-            price_val = round(float(supply_str) / float(qty_str)) if supply_str and qty_str and float(qty_str) != 0 else 0
-        except Exception:
-            price_val = 0
-
-        bc_val = str(row.get("상품바코드", "")).strip()
-        cd_val = str(row.get("_품목코드", "")).strip()
-        is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
-        label_flags.append(is_label)
-
-        bulk_list.append({"BulkDatas": {
-            "UPLOAD_SER_NO": doc_to_ser[doc_no],
-            "IO_DATE": today,
-            "CUST": BARCODE_CUST_CODE,
-            "WH_CD": BARCODE_WH_CD,
-            "EMP_CD": staff_code,
-            "PROD_CD": str(row["_품목코드"]).strip(),
-            "PROD_DES": "★ 바코드 부착 필요" if is_label else "",
-            "QTY": qty_str,
-            "PRICE": str(price_val),
-            "SUPPLY_AMT": supply_str,
-            "VAT_AMT": "",
-            "REMARKS": f"{warehouse} - {doc_no}",
-            "U_MEMO5": f"{warehouse} - {doc_no}",
-        }})
-        orig_indices.append(int(row["_orig_idx"]))
-
-    logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
-
-    # ⑦ 세션 발급 및 전송
+    # ⑥ 세션 발급 후 재고 먼저 조회 → WH_CD 결정
     session_id, zone = await get_ecount_session()
-    sale_url = f"https://oapi{zone.lower()}.ecount.com/OAPI/V2/Sale/SaveSale?SESSION_ID={session_id}"
 
+    inv_10: dict = {}  # 용산(10) 재고
+    inv_30: dict = {}  # 통진(30) 재고
+    inv_checked = False
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(sale_url, json={"SaleList": bulk_list})
-        result = resp.json()
-
-        # ⑧ 재고 조회 — 10번(용산) + 30번(통진) 두 창고
-        inv_10: dict = {}  # 용산창고
-        inv_30: dict = {}  # 통진창고
-        inv_checked = False
         try:
             inv_url = (
                 f"https://oapi{zone.lower()}.ecount.com/OAPI/V2/"
                 f"InventoryBalance/GetListInventoryBalanceStatusByLocation"
                 f"?SESSION_ID={session_id}"
             )
-            # WH_CD 빈값이면 전체 창고 조회
             inv_resp = await client.post(inv_url, json={
                 "BASE_DATE": today,
                 "WH_CD": "",
@@ -374,9 +329,70 @@ async def send_to_ecount(
                 elif pc and wh == "30":
                     inv_30[pc] = bq
             inv_checked = True
-            logger.info(f"[바코드] 재고 조회 완료: 용산 {len(inv_10)}건, 통진 {len(inv_30)}건")
+            logger.info(f"[바코드] 재고 사전조회 완료: 용산 {len(inv_10)}건, 통진 {len(inv_30)}건")
         except Exception as e:
-            logger.warning(f"[바코드] 재고 조회 실패: {e}")
+            logger.warning(f"[바코드] 재고 사전조회 실패 (기본창고로 진행): {e}")
+
+        # ⑦ BulkDatas 구성 — 재고 기반으로 WH_CD 결정
+        bulk_list = []
+        orig_indices = []
+        label_flags = []
+        item_wh_list = []  # 각 항목의 실제 전송 창고 기록
+
+        for _, row in valid.iterrows():
+            doc_no = str(row["발주번호"]).strip()
+            warehouse = str(row["물류센터"]).strip()
+            qty_str = str(row[qty_col]).replace(",", "").strip()
+            supply_str = str(row.get("총발주 매입금", "")).replace(",", "").strip()
+
+            try:
+                price_val = round(float(supply_str) / float(qty_str)) if supply_str and qty_str and float(qty_str) != 0 else 0
+            except Exception:
+                price_val = 0
+
+            bc_val = str(row.get("상품바코드", "")).strip()
+            cd_val = str(row.get("_품목코드", "")).strip()
+            is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
+            label_flags.append(is_label)
+
+            prod_cd = str(row["_품목코드"]).strip()
+            has_30 = inv_30.get(prod_cd, 0) > 0
+            has_10 = inv_10.get(prod_cd, 0) > 0
+
+            # 통진 재고 없고 용산 재고 있으면 → 용산(10)으로 전표
+            if inv_checked and not has_30 and has_10:
+                wh_cd = "10"
+            else:
+                wh_cd = BARCODE_WH_CD  # 기본: 통진(30)
+
+            item_wh_list.append(wh_cd)
+
+            bulk_list.append({"BulkDatas": {
+                "UPLOAD_SER_NO": doc_to_ser[doc_no],
+                "IO_DATE": today,
+                "CUST": BARCODE_CUST_CODE,
+                "WH_CD": wh_cd,
+                "EMP_CD": staff_code,
+                "PROD_CD": prod_cd,
+                "PROD_DES": "★ 바코드 부착 필요" if is_label else "",
+                "QTY": qty_str,
+                "PRICE": str(price_val),
+                "SUPPLY_AMT": supply_str,
+                "VAT_AMT": "",
+                "REMARKS": f"{warehouse} - {doc_no}",
+                "U_MEMO5": f"{warehouse} - {doc_no}",
+            }})
+            orig_indices.append(int(row["_orig_idx"]))
+
+        logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
+        yongsan_cnt = sum(1 for w in item_wh_list if w == "10")
+        if yongsan_cnt:
+            logger.info(f"[바코드] 통진 재고 없어 용산 전표 전환: {yongsan_cnt}건")
+
+        # ⑧ 전표 전송
+        sale_url = f"https://oapi{zone.lower()}.ecount.com/OAPI/V2/Sale/SaveSale?SESSION_ID={session_id}"
+        resp = await client.post(sale_url, json={"SaleList": bulk_list})
+        result = resp.json()
 
     # ⑨ 결과 구성
     status = result.get("Status")
@@ -395,20 +411,21 @@ async def send_to_ecount(
         prod_cd = bd["PROD_CD"]
         bal_10 = inv_10.get(prod_cd, None)  # 용산
         bal_30 = inv_30.get(prod_cd, None)  # 통진
+        used_wh = item_wh_list[i]  # 실제 전송된 창고
 
-        # 재고 상태 판별:
-        # - 통진(30) 재고 > 0 → 정상 (ok)
-        # - 통진(30) 재고 ≤ 0 이지만 용산(10) 재고 > 0 → 주황 (wh10_has)
-        # - 둘 다 없음 → 빨강 (low_stock)
         has_30 = bal_30 is not None and bal_30 > 0
         has_10 = bal_10 is not None and bal_10 > 0
 
+        # 재고 상태:
+        # - 통진(30) 있음 → ok (통진 전표)
+        # - 통진(30) 없고 용산(10) 있음 → wh10_used (용산으로 자동 전환됨)
+        # - 둘 다 없음 → low_stock (납품부족사유 자동 입력 대상)
         if has_30:
             stock_status = "ok"
         elif has_10:
-            stock_status = "wh10_has"  # 용산에만 재고 있음
+            stock_status = "wh10_used"  # 용산으로 전표 전환됨
         else:
-            stock_status = "low_stock"  # 둘 다 재고 없음
+            stock_status = "low_stock"
 
         items_result.append({
             "upload_ser_no": bd["UPLOAD_SER_NO"],
@@ -418,9 +435,10 @@ async def send_to_ecount(
             "bal_10": round(bal_10) if bal_10 is not None else None,
             "bal_30": round(bal_30) if bal_30 is not None else None,
             "stock_status": stock_status,
+            "used_wh": used_wh,           # 실제 전표 창고 (10=용산, 30=통진)
             "low_stock": stock_status == "low_stock",  # 하위호환
             "orig_idx": orig_indices[i],
-            "needs_label": label_flags[i],  # 바코드 부착 필요 여부
+            "needs_label": label_flags[i],
         })
 
     # 바코드 부착 필요 항목 별도 추출

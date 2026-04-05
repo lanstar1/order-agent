@@ -588,8 +588,9 @@ async function sendToEcount() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "서버 오류");
 
-    const isOk   = String(data.status) === "200" && data.fail === 0;
-    const lowCnt = (data.items_result || []).filter(r => r.low_stock).length;
+    const isOk      = String(data.status) === "200" && data.fail === 0;
+    const lowCnt    = (data.items_result || []).filter(r => r.low_stock).length;
+    const wh10Cnt   = (data.items_result || []).filter(r => r.stock_status === "wh10_used").length;
 
     resultDiv.className = `ecount-result ${isOk ? "success" : "fail"}`;
     resultDiv.innerHTML = `
@@ -598,18 +599,18 @@ async function sendToEcount() {
       ${data.slip_nos?.length ? `<br>전표번호: <strong>${data.slip_nos.join(", ")}</strong>` : ""}
       ${data.excluded  > 0 ? `<br>🚫 제외(제품단종/제품인상): ${data.excluded}건` : ""}
       ${data.unmatched > 0 ? `<br>⚠ 바코드 미매칭 ${data.unmatched}건 (미전송)` : ""}
-      ${lowCnt         > 0 ? `<br>🔴 재고 부족 품목: <strong>${lowCnt}건</strong>` : ""}
-      ${!data.inv_checked  ? `<br><span style="color:var(--text3);font-size:11px">※ 재고 조회 실패 (전표는 정상 등록됨)</span>` : ""}
+      ${wh10Cnt        > 0 ? `<br>🔄 통진 재고 없어 용산 전표로 자동 전환: <strong>${wh10Cnt}건</strong>` : ""}
+      ${lowCnt         > 0 ? `<br>🔴 재고 부족(둘 다 없음): <strong>${lowCnt}건</strong> → 납품부족사유 자동 반영` : ""}
+      ${!data.inv_checked  ? `<br><span style="color:var(--text3);font-size:11px">※ 재고 조회 실패 (기본창고로 전표 등록됨)</span>` : ""}
       ${data.errors?.length ? `<br><span style="color:var(--danger)">${data.errors.join("<br>")}</span>` : ""}
     `;
     resultDiv.classList.remove("hidden");
     renderInvTable(data.items_result || []);
 
-    // 재고부족 품목 → 납품부족사유 자동 설정
-    // low_stock(둘 다 없음)만 품절사유 입력, wh10_has(용산에 있음)는 제외
+    // 재고 완전 부족(low_stock)만 납품부족사유 자동 입력
+    // wh10_used(용산 전환)는 전표가 이미 잡혔으므로 사유 불필요
     const LOW_STOCK_REASON = "협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)";
     let autoSetCnt = 0;
-    let wh10HasCnt = 0;
     (data.items_result || []).forEach(item => {
       const ss = item.stock_status || (item.low_stock ? "low_stock" : "ok");
       if (ss === "low_stock" && item.orig_idx !== undefined) {
@@ -620,14 +621,13 @@ async function sendToEcount() {
           autoSetCnt++;
         }
       }
-      if (ss === "wh10_has") wh10HasCnt++;
     });
     if (autoSetCnt > 0) {
       updateSummary();
-      elog(`📋 재고 부족 ${autoSetCnt}건 → 납품부족사유 자동 설정 완료`, "o");
+      elog(`📋 재고 부족 ${autoSetCnt}건 → 납품부족사유 자동 설정`, "o");
     }
-    if (wh10HasCnt > 0) {
-      elog(`🟠 용산창고에만 재고 있음 ${wh10HasCnt}건 (품절사유 미입력)`, "w");
+    if (wh10Cnt > 0) {
+      elog(`🔄 통진 재고 없음 → 용산 전표 자동 전환 ${wh10Cnt}건`, "o");
     }
 
     // 바코드 부착 필요 목록 표시
@@ -660,19 +660,24 @@ function renderInvTable(items) {
   items.forEach(item => {
     const tr = document.createElement("tr");
     const ss = item.stock_status || (item.low_stock ? "low_stock" : "ok");
-    if (ss === "low_stock") tr.classList.add("low-stock");
-    if (ss === "wh10_has") tr.classList.add("wh10-has");
+    if (ss === "low_stock")  tr.classList.add("low-stock");
+    if (ss === "wh10_used")  tr.classList.add("wh10-has");  // 주황 스타일 재활용
 
     const bal10Html = item.bal_10 === null || item.bal_10 === undefined
       ? `<span style="color:var(--text3)">-</span>`
-      : `<span class="${item.bal_10 > 0 ? (ss === 'wh10_has' ? 'inv-qty-warn' : 'inv-qty-ok') : 'inv-qty-bad'}">${item.bal_10}</span>`;
+      : `<span class="${item.bal_10 > 0 ? 'inv-qty-warn' : 'inv-qty-bad'}">${item.bal_10}</span>`;
     const bal30Html = item.bal_30 === null || item.bal_30 === undefined
       ? `<span style="color:var(--text3)">-</span>`
       : `<span class="${item.bal_30 > 0 ? 'inv-qty-ok' : 'inv-qty-bad'}">${item.bal_30}</span>`;
 
+    // 사용된 창고 배지
+    const whBadge = ss === "wh10_used"
+      ? `<span style="font-size:10px;background:rgba(255,176,32,.2);color:var(--warning);padding:1px 6px;border-radius:4px;margin-left:4px">용산전환</span>`
+      : "";
+
     tr.innerHTML = `
       <td>${item.upload_ser_no}</td>
-      <td style="text-align:left;white-space:nowrap">${item.remarks}</td>
+      <td style="text-align:left;white-space:nowrap">${item.remarks}${whBadge}</td>
       <td style="font-weight:600;font-family:'JetBrains Mono',monospace">${item.prod_cd}</td>
       <td>${item.qty}</td>
       <td>${bal10Html}</td>
