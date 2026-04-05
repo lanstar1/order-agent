@@ -5870,7 +5870,7 @@ function _renderBatchResults(result) {
             <span class="rc-icon">${sc.has_sales_history ? "📦" : "❓"}</span>
             <span class="rc-item-name">${v.product_name||""}</span>
             <span class="rc-item-meta">${rcFmtDate(v.date, "")} | ${(v.amount||0).toLocaleString()}원</span>
-            ${best ? `<span class="rc-arrow">→</span><span class="rc-erp-name">${best.product_code||""} ${best.product_name||""} (${Math.round((best.confidence||0)*100)}%)</span>` : ""}
+            ${best ? `<span class="rc-arrow">→</span><span class="rc-erp-name">${best.product_code||""} ${best.product_name||""} (${Math.round((best.confidence||0)*100)}%)</span>${best.reason ? `<span style="font-size:10px;color:#6b7280;display:block;margin-left:28px;margin-top:2px">💡 ${best.reason}</span>` : ""}` : ""}
             ${sc.has_sales_history ? `<label style="margin-left:auto;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="batch-include-check" data-vi="${vi}" data-sci="${sci}" checked> 입력</label>` : ""}
           </div>`;
         }).join("");

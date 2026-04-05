@@ -389,30 +389,61 @@ async def _ai_find_candidates(vendor_item: dict,
             "date": _get_field(sale, "date", "월/일", "연/월/일", default=""),
         })
 
+    # 거래처 품명에서 속성 추출 (AI에게 힌트 제공)
+    vendor_attrs = _extract_product_attributes(vendor_info["name"])
+    vendor_attrs_str = ""
+    if vendor_attrs:
+        attr_parts = []
+        for k, v in vendor_attrs.items():
+            if k != "keywords" and v:
+                attr_parts.append(f"{k}: {v}")
+        if attr_parts:
+            vendor_attrs_str = f"\n추출된 제품 특성: {', '.join(attr_parts)}"
+
     prompt = f"""거래처 원장에서 우리에게 판매한 품목인데, 우리 ERP 구매현황에 매입전표가 없습니다.
 이 품목이 우리 ERP 판매현황에서 판매된 적이 있는지 찾아주세요.
 
 ## 찾아야 할 품목 (거래처가 우리에게 판매)
-{json.dumps(vendor_info, ensure_ascii=False)}
+{json.dumps(vendor_info, ensure_ascii=False)}{vendor_attrs_str}
 
 ## 우리 ERP 판매현황 (우리가 고객에게 판매한 것)
 {json.dumps(sales_summary, ensure_ascii=False)}
 
-## 중요 참고사항
-- 품명이 완전히 다를 수 있습니다!
-  예: 거래처 "mpc-721 황색 부트" = 우리 "노란색 부트" 또는 "황색부트"
-  예: 거래처 "LS-6UTPD-10MG" = 우리 "CAT6 UTP 10M"
-- 색상명 변환: 황색↔노란색↔Yellow, 적색↔빨간색↔Red, 청색↔파란색↔Blue 등
-- 브랜드명이 다르거나 생략될 수 있음
-- 모델명의 약어/변형에 주의
-- 수량과 금액이 비슷하면 같은 품목일 가능성 높음
+## 크로스매칭 가이드 (네트워크/케이블/영상기기/전산용품 전문)
+
+### 핵심 원칙
+거래처 제품을 우리 자체 브랜드(LS-, LSP-, LSN- 등)로 판매하는 경우가 많습니다.
+**품명/모델명이 완전히 달라도 같은 물건**일 수 있습니다!
+
+### 제품 특성 기반 매칭 (우선순위순)
+1. **카테고리 + 핵심 스펙 일치** (가장 중요)
+   - 케이블류: 규격(HDMI/DP/USB/LAN/UTP/CAT6) + 길이(1M/2M/3M/5M/10M)
+   - 허브/선택기: 규격(HDMI/DP/USB) + 포트수(4포트/5포트/8포트)
+   - 충전기: 타입(USB-C/PD) + 와트수(30W/65W/100W)
+   - 네트워크: 속도(100M/1G/10G) + 포트수
+
+2. **색상 동의어 매칭**
+   황색=노란색=Yellow, 적색=빨간색=Red, 청색=파란색=Blue
+   흑색=검정색=Black, 백색=흰색=White, 녹색=초록색=Green
+
+3. **브랜드명 무시**: LANSTAR, NEXI, NEXT, MBF, EFM 등 자체 브랜드명 무시
+4. **모델코드 대응**: 거래처 모델(ABC-123)과 우리 모델(LS-XXX)은 다르지만 스펙이 같으면 동일 제품
+
+### 수량 참고사항
+- 수량은 **참고용**으로만 사용 (일부만 판매하고 재고 보관 가능)
+- 수량이 일치하면 가능성 높지만, 불일치해도 제외하지 말 것
+- 거래처에서 5개 납품 → 3개 판매 + 2개 재고 가능
+
+### 응답 시 reason에 포함할 내용
+- 어떤 특성이 일치하는지 구체적으로 (예: "HDMI 2M 케이블, 4K 지원, 색상 일치(노란색)")
+- 확신도가 낮은 경우 그 이유도 명시
 
 ## 응답 형식 (JSON 배열, 가능성 높은 순서로 최대 5개)
 [
   {{
     "sales_idx": 3,
     "confidence": 0.85,
-    "reason": "품목명 유사, 수량/금액 일치"
+    "reason": "HDMI 2M 케이블 일치, 4K 지원, 수량 유사"
   }}
 ]
 
@@ -460,51 +491,72 @@ JSON 배열만 출력하세요."""
 def _rule_find_candidates(vendor_item: dict,
                            sales_data: list[dict],
                            max_candidates: int = 5) -> list[dict]:
-    """규칙 기반 판매이력 후보 찾기 (AI 폴백)"""
+    """규칙 기반 판매이력 후보 찾기 (AI 폴백) — 속성 크로스매칭 포함"""
     v_name = _normalize_product_name(vendor_item.get("product_name", ""))
     v_model = _normalize_product_name(vendor_item.get("model_name", ""))
     v_qty = vendor_item.get("qty", 0)
     v_amount = vendor_item.get("amount", 0)
 
+    # 거래처 품명에서 속성 추출
+    v_raw_name = vendor_item.get("product_name", "")
+    v_attrs = _extract_product_attributes(v_raw_name)
+
     scored = []
     for i, sale in enumerate(sales_data):
-        s_name = _normalize_product_name(
-            _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default="")
-        )
+        s_raw_name = _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default="")
+        s_name = _normalize_product_name(s_raw_name)
         s_code = _get_field(sale, "prod_cd", "품목코드", "product_code", default="").upper()
         s_qty = _safe_num(_get_field(sale, "qty", "수량", default=0))
         s_amount = _safe_num(_get_field(sale, "total", "합계", default=0))
 
         score = 0
+        match_reasons = []
 
+        # 기존: 품명 직접 매칭
         if v_name and s_name:
             if v_name in s_name or s_name in v_name:
                 score += 40
+                match_reasons.append("품명 포함 일치")
             common = _longest_common_substring(v_name, s_name)
             if len(common) >= 3:
                 score += min(len(common) * 3, 30)
+                if len(common) >= 5:
+                    match_reasons.append(f"공통문자열({common})")
 
         if v_model and s_name and v_model in s_name:
             score += 20
+            match_reasons.append("모델코드 포함")
         if v_name and s_code and v_name in s_code.replace("-", ""):
             score += 20
 
+        # 기존: 수량/금액 참고
         if v_qty and s_qty and v_qty == s_qty:
-            score += 15
-        if v_amount and s_amount and abs(v_amount - s_amount) / max(v_amount, 1) < 0.1:
-            score += 15
+            score += 10  # 15→10 (참고용으로 감소)
+            match_reasons.append(f"수량 일치({int(v_qty)}개)")
+        if v_amount and s_amount and abs(v_amount - s_amount) / max(abs(v_amount), 1) < 0.1:
+            score += 10  # 15→10
+            match_reasons.append("금액 유사")
+
+        # ★ 신규: 제품 속성 크로스매칭
+        if v_attrs:
+            s_attrs = _extract_product_attributes(s_raw_name)
+            attr_score, attr_reasons = _compute_attribute_similarity(v_attrs, s_attrs)
+            if attr_score > 0:
+                score += min(attr_score, 50)  # 속성 최대 50점 부여
+                match_reasons.extend(attr_reasons)
 
         if score > 0:
-            scored.append((score, i, sale))
+            scored.append((score, i, sale, match_reasons))
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
     candidates = []
-    for score, idx, sale in scored[:max_candidates]:
+    for score, idx, sale, reasons in scored[:max_candidates]:
+        reason_str = ", ".join(reasons) if reasons else f"규칙 기반 매칭"
         candidates.append({
             "sales_item": sale,
-            "confidence": min(score / 100, 1.0),
-            "reason": f"규칙 기반 매칭 (점수: {score}/100)",
+            "confidence": min(score / 120, 1.0),  # 총 만점 ~120→1.0
+            "reason": f"{reason_str} (점수: {score})",
             "product_code": _get_field(sale, "prod_cd", "품목코드", "product_code", default=""),
             "product_name": _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default=""),
             "qty": _get_field(sale, "qty", "수량", default=""),
@@ -518,6 +570,275 @@ def _rule_find_candidates(vendor_item: dict,
 # ============================================================
 # 유틸리티
 # ============================================================
+
+# ============================================================
+# 제품 속성 추출 (크로스매칭용)
+# ============================================================
+
+# 색상 동의어 매핑 (정규화)
+COLOR_SYNONYMS = {
+    "황색": "노란색", "옐로우": "노란색", "yellow": "노란색", "YL": "노란색",
+    "적색": "빨간색", "레드": "빨간색", "red": "빨간색", "RD": "빨간색",
+    "청색": "파란색", "블루": "파란색", "blue": "파란색", "BL": "파란색",
+    "녹색": "초록색", "그린": "초록색", "green": "초록색", "GR": "초록색",
+    "백색": "흰색", "화이트": "흰색", "white": "흰색", "WH": "흰색",
+    "흑색": "검정색", "블랙": "검정색", "black": "검정색", "BK": "검정색",
+    "회색": "회색", "그레이": "회색", "gray": "회색", "grey": "회색",
+    "은색": "실버", "실버": "실버", "silver": "실버",
+    "투명": "투명", "클리어": "투명", "clear": "투명",
+    "핑크": "핑크", "pink": "핑크",
+    "오렌지": "오렌지", "주황": "오렌지", "orange": "오렌지",
+}
+
+# 카테고리 키워드 → 정규화된 카테고리
+CATEGORY_KEYWORDS = {
+    # 케이블류
+    "HDMI": "HDMI케이블", "DP": "DP케이블", "DISPLAYPORT": "DP케이블",
+    "USB": "USB케이블", "LAN": "LAN케이블", "UTP": "LAN케이블", "STP": "LAN케이블",
+    "CAT5": "LAN케이블", "CAT5E": "LAN케이블", "CAT6": "LAN케이블", "CAT6A": "LAN케이블",
+    "CAT7": "LAN케이블", "CAT8": "LAN케이블", "RJ45": "LAN케이블",
+    "DVI": "DVI케이블", "VGA": "VGA케이블", "RGB": "VGA케이블",
+    "광케이블": "광케이블", "OPTICAL": "광케이블", "TOSLINK": "광케이블",
+    "전원케이블": "전원케이블", "파워케이블": "전원케이블",
+    "AUX": "오디오케이블", "3.5MM": "오디오케이블", "RCA": "오디오케이블",
+    "SATA": "SATA케이블", "타입C": "USB케이블", "TYPE-C": "USB케이블", "TYPEC": "USB케이블",
+    # 허브/선택기/분배기
+    "허브": "허브", "HUB": "허브",
+    "선택기": "선택기", "SWITCH": "선택기", "셀렉터": "선택기", "SELECTOR": "선택기",
+    "분배기": "분배기", "SPLITTER": "분배기", "스플리터": "분배기",
+    "KVM": "KVM스위치",
+    # 네트워크 장비
+    "스위칭허브": "스위칭허브", "L2": "스위칭허브", "L3": "스위칭허브",
+    "공유기": "공유기", "라우터": "공유기", "ROUTER": "공유기",
+    "AP": "AP", "무선AP": "AP", "액세스포인트": "AP",
+    # 충전/전원
+    "충전기": "충전기", "어댑터": "어댑터", "ADAPTER": "어댑터",
+    "충전독": "충전독", "DOCK": "충전독", "도킹": "충전독",
+    "멀티탭": "멀티탭", "전원분배": "멀티탭",
+    # 변환
+    "컨버터": "컨버터", "CONVERTER": "컨버터", "변환": "컨버터",
+    "젠더": "젠더", "GENDER": "젠더",
+    "연장": "연장", "EXTENSION": "연장", "EXTENDER": "연장",
+    "리피터": "리피터", "REPEATER": "리피터",
+    # 부자재
+    "부트": "부트", "BOOT": "부트", "보호캡": "부트",
+    "타이": "케이블타이", "클립": "클립", "홀더": "홀더",
+    "몰드": "몰드", "몰딩": "몰드", "배선": "몰드",
+    # 영상장비
+    "안테나": "안테나", "TV": "안테나",
+    "캡쳐": "캡쳐보드", "CAPTURE": "캡쳐보드",
+    # 저장장치
+    "SSD": "SSD", "HDD": "HDD", "외장하드": "외장HDD", "USB메모리": "USB메모리",
+    # 기타
+    "마우스": "마우스", "키보드": "키보드", "모니터": "모니터",
+    "케이스": "케이스", "CASE": "케이스",
+    "거치대": "거치대", "스탠드": "거치대", "STAND": "거치대",
+    "캐리어저울": "캐리어저울", "저울": "캐리어저울",
+}
+
+def _extract_product_attributes(name: str) -> dict:
+    """제품명에서 매칭에 유용한 속성들을 추출한다.
+
+    네트워크/케이블/영상기기/전산용품 도메인 특화.
+    거래처 제품명과 우리 제품명이 다를 때 특성 기반 크로스매칭에 사용.
+
+    Returns:
+        {
+            "category": "HDMI케이블",
+            "length": "2M",
+            "color": "노란색",
+            "ports": 4,
+            "version": "2.1",
+            "speed": "10G",
+            "watt": "65W",
+            "resolution": "4K",
+            "raw_specs": ["4K", "120HZ", "2M"],
+            "keywords": ["hdmi", "케이블", "4k"]
+        }
+    """
+    if not name:
+        return {}
+
+    upper = name.upper().strip()
+    attrs = {}
+
+    # 1. 카테고리 추출
+    for kw, cat in CATEGORY_KEYWORDS.items():
+        if kw.upper() in upper:
+            attrs["category"] = cat
+            break
+
+    # 2. 길이 추출 (케이블류 핵심 스펙)
+    length_m = re.search(r'(\d+(?:\.\d+)?)\s*[Mm미](?:터)?', name)
+    if length_m:
+        attrs["length"] = f"{length_m.group(1)}M"
+    else:
+        # "10CM", "50CM" 등
+        length_cm = re.search(r'(\d+)\s*[Cc][Mm]', name)
+        if length_cm:
+            attrs["length"] = f"{length_cm.group(1)}CM"
+
+    # 3. 색상 추출
+    name_lower = name.lower()
+    for color_kw, normalized in COLOR_SYNONYMS.items():
+        if color_kw.lower() in name_lower:
+            attrs["color"] = normalized
+            break
+
+    # 4. 포트 수 추출
+    ports_m = re.search(r'(\d+)\s*(?:포트|PORT|P\b|구)', upper)
+    if ports_m:
+        attrs["ports"] = int(ports_m.group(1))
+    # "1:2", "1:4" 등 분배비율도 포트수 힌트
+    ratio_m = re.search(r'1\s*[:\s]\s*(\d+)', name)
+    if ratio_m and "ports" not in attrs:
+        attrs["ports"] = int(ratio_m.group(1))
+
+    # 5. 버전 추출 (USB, HDMI 등)
+    ver_m = re.search(r'(\d+\.\d+)\s*(?:VER|V\b)?', upper)
+    if ver_m:
+        v = ver_m.group(1)
+        if v in ("2.0", "2.1", "3.0", "3.1", "3.2", "1.4", "1.2"):
+            attrs["version"] = v
+
+    # 6. 전송속도
+    speed_m = re.search(r'(\d+)\s*(?:GBPS|GBE|G\b)', upper)
+    if speed_m:
+        attrs["speed"] = f"{speed_m.group(1)}G"
+    speed_m2 = re.search(r'(\d+)\s*(?:MBPS)', upper)
+    if speed_m2 and "speed" not in attrs:
+        attrs["speed"] = f"{speed_m2.group(1)}M"
+
+    # 7. 와트 (충전기류)
+    watt_m = re.search(r'(\d+)\s*[Ww](?:ATT)?', name)
+    if watt_m:
+        attrs["watt"] = f"{watt_m.group(1)}W"
+
+    # 8. 해상도
+    for res in ["8K", "4K", "2K", "1080P", "FHD", "QHD", "UHD"]:
+        if res in upper:
+            attrs["resolution"] = res
+            break
+
+    # 9. 주파수 (영상기기)
+    hz_m = re.search(r'(\d+)\s*HZ', upper)
+    if hz_m:
+        attrs["hz"] = f"{hz_m.group(1)}HZ"
+
+    # 10. 핵심 키워드 목록 (소문자, 공백/특수문자 제거)
+    keywords = set()
+    tokens = re.split(r'[\s,/\-_()（）\[\]]+', upper)
+    for t in tokens:
+        t = t.strip()
+        if len(t) >= 2:
+            keywords.add(t.lower())
+    attrs["keywords"] = list(keywords)
+
+    return attrs
+
+
+def _compute_attribute_similarity(attrs1: dict, attrs2: dict) -> tuple[float, list[str]]:
+    """두 제품 속성 간 유사도 계산 (0~100점, 매칭근거 리스트)
+
+    카테고리 일치가 필수 전제조건. 카테고리가 다르면 0점.
+    """
+    if not attrs1 or not attrs2:
+        return 0.0, []
+
+    score = 0.0
+    reasons = []
+
+    # 카테고리 일치 (필수 — 불일치 시 0점)
+    cat1 = attrs1.get("category", "")
+    cat2 = attrs2.get("category", "")
+    if cat1 and cat2:
+        if cat1 == cat2:
+            score += 30
+            reasons.append(f"카테고리 일치({cat1})")
+        else:
+            return 0.0, []  # 카테고리 불일치 → 매칭 불가
+    elif not cat1 and not cat2:
+        pass  # 양쪽 다 카테고리 미식별 → 다른 속성으로 판단
+    else:
+        return 0.0, []  # 한쪽만 카테고리 있는 경우 → 매칭 불가
+
+    # 길이 일치 (케이블류 결정적 스펙)
+    len1 = attrs1.get("length", "")
+    len2 = attrs2.get("length", "")
+    if len1 and len2:
+        if len1 == len2:
+            score += 25
+            reasons.append(f"길이 일치({len1})")
+        else:
+            score -= 20  # 길이 불일치 → 다른 제품일 가능성 높음
+            reasons.append(f"길이 불일치({len1}≠{len2})")
+
+    # 색상 일치
+    col1 = attrs1.get("color", "")
+    col2 = attrs2.get("color", "")
+    if col1 and col2:
+        if col1 == col2:
+            score += 15
+            reasons.append(f"색상 일치({col1})")
+        else:
+            score -= 10
+            reasons.append(f"색상 불일치({col1}≠{col2})")
+
+    # 포트 수 일치
+    p1 = attrs1.get("ports")
+    p2 = attrs2.get("ports")
+    if p1 and p2:
+        if p1 == p2:
+            score += 20
+            reasons.append(f"포트수 일치({p1}포트)")
+        else:
+            score -= 15
+            reasons.append(f"포트수 불일치({p1}≠{p2})")
+
+    # 버전 일치
+    v1 = attrs1.get("version", "")
+    v2 = attrs2.get("version", "")
+    if v1 and v2:
+        if v1 == v2:
+            score += 10
+            reasons.append(f"버전 일치({v1})")
+        else:
+            score -= 5
+
+    # 해상도 일치
+    r1 = attrs1.get("resolution", "")
+    r2 = attrs2.get("resolution", "")
+    if r1 and r2:
+        if r1 == r2:
+            score += 10
+            reasons.append(f"해상도 일치({r1})")
+
+    # 속도 일치
+    sp1 = attrs1.get("speed", "")
+    sp2 = attrs2.get("speed", "")
+    if sp1 and sp2:
+        if sp1 == sp2:
+            score += 10
+            reasons.append(f"속도 일치({sp1})")
+
+    # 와트 일치
+    w1 = attrs1.get("watt", "")
+    w2 = attrs2.get("watt", "")
+    if w1 and w2:
+        if w1 == w2:
+            score += 10
+            reasons.append(f"와트 일치({w1})")
+
+    # 주파수 일치
+    hz1 = attrs1.get("hz", "")
+    hz2 = attrs2.get("hz", "")
+    if hz1 and hz2:
+        if hz1 == hz2:
+            score += 5
+            reasons.append(f"주파수 일치({hz1})")
+
+    return max(score, 0.0), reasons
+
 
 def _normalize_product_name(name: str) -> str:
     name = name.upper().strip()
