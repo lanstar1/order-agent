@@ -378,10 +378,53 @@ async def _ai_find_candidates(vendor_item: dict,
         "date": vendor_item.get("date", ""),
     }
 
+    # ★ 키워드/모델코드 사전 필터링: 관련성 높은 항목 우선 선택
+    v_name_raw = vendor_info["name"]
+    v_model_raw = vendor_info["model"]
+    v_model_codes = _extract_model_codes(v_name_raw) + _extract_model_codes(v_model_raw)
+    v_attrs = _extract_product_attributes(v_name_raw)
+    v_keywords = set()
+    for code in v_model_codes:
+        v_keywords.add(code.upper())
+    # 품명에서 핵심 토큰 추출 (3자 이상)
+    for token in re.split(r'[\s,/\-_()（）\[\]]+', v_name_raw.upper()):
+        token = token.strip()
+        if len(token) >= 3:
+            v_keywords.add(token)
+
+    # 1단계: 키워드 매칭으로 관련 항목 우선 수집
+    priority_items = []
+    other_items = []
+    for i, sale in enumerate(sales_data):
+        s_code = _get_field(sale, "prod_cd", "품목코드", "product_code", default="").upper()
+        s_name = _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default="").upper()
+        combined = s_code + " " + s_name
+
+        # 모델코드 또는 키워드가 매칭되는지 확인
+        matched_kw = False
+        for kw in v_keywords:
+            if kw in combined:
+                matched_kw = True
+                break
+
+        # 속성 기반 매칭도 확인
+        if not matched_kw and v_attrs.get("category"):
+            s_attrs = _extract_product_attributes(s_name)
+            if s_attrs.get("category") == v_attrs["category"]:
+                matched_kw = True
+
+        if matched_kw:
+            priority_items.append((i, sale))
+        else:
+            other_items.append((i, sale))
+
+    # 우선순위 항목 + 나머지로 200건 구성
+    selected = priority_items[:150] + other_items[:max(200 - len(priority_items[:150]), 50)]
+
     sales_summary = []
-    for i, sale in enumerate(sales_data[:200]):
+    for orig_idx, sale in selected:
         sales_summary.append({
-            "idx": i,
+            "idx": orig_idx,
             "code": _get_field(sale, "prod_cd", "품목코드", "product_code", default=""),
             "name": _get_field(sale, "prod_name", "품명 및 모델", "품명 및 규격", "product_name", default=""),
             "qty": _get_field(sale, "qty", "수량", default=""),

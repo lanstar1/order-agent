@@ -1052,13 +1052,14 @@ textarea.form-control { resize: vertical; min-height: 120px; }
   padding: 6px 8px; font-size: 12px;
   border-radius: 6px; margin-bottom: 2px;
   transition: background 0.15s;
+  flex-wrap: wrap;
 }
 .rc-detail-row:hover { background: var(--gray-50); }
 .rc-detail-row .rc-icon { flex-shrink: 0; width: 16px; text-align: center; }
-.rc-detail-row .rc-item-name { flex: 1; color: var(--gray-800); word-break: break-word; }
+.rc-detail-row .rc-item-name { min-width: 120px; flex: 1; color: var(--gray-800); word-break: break-word; }
 .rc-detail-row .rc-item-meta { color: var(--gray-400); white-space: nowrap; }
-.rc-detail-row .rc-arrow { color: var(--gray-300); margin: 0 4px; }
-.rc-detail-row .rc-erp-name { color: var(--primary); font-weight: 500; }
+.rc-detail-row .rc-arrow { color: var(--gray-300); margin: 0 4px; flex-shrink: 0; }
+.rc-detail-row .rc-erp-name { color: var(--primary); font-weight: 500; flex: 1; min-width: 150px; word-break: break-word; }
 
 /* ── STEP 3: 전표 입력 카드 ── */
 .rc-purchase-card {
