@@ -531,7 +531,7 @@ function renderRes(d){
                 <td>${u.optionInfo||''}</td>
                 <td style="text-align:center">${u.quantity||0}</td>
                 <td style="text-align:right">${Number(u.settlementAmount||0).toLocaleString()}원</td>
-                <td>${u.deliveryMethod||''}</td>
+                <td>${({'DELIVERY':'택배','QUICK_SVC':'퀵서비스','VISIT':'방문수령','VISIT_RECEIPT':'방문수령','DIRECT_DELIVERY':'직접전달','NOTHING':'배송없음'})[u.deliveryMethod] || u.deliveryMethod || ''}</td>
                 <td>${u.rcvName||''}</td>
                 <td><input class="inp-sm" id="um-erp-${i}" placeholder="품목코드"></td>
                 <td><input class="inp-sm" id="um-model-${i}" placeholder="모델명" style="width:100px;"></td>
