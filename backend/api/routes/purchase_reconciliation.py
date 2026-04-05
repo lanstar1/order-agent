@@ -1197,6 +1197,8 @@ async def batch_reconcile_stream(
                                 dv = dr.get("vendor_item", {})
                                 dr["reason"] = f"할인({dv.get('product_name', '')}) → {v.get('product_name', '')}에 단가 반영됨"
                                 dr["absorbed_by"] = v.get("product_name", "")
+                                dr["absorbed_erp_date"] = _get_field(e, "date", "월/일", "연/월/일", default="")
+                                dr["absorbed_erp_name"] = _get_field(e, "prod_name", "품명 및 모델", "품명 및 규격", default="")
                                 discount_absorbed.append(dr)
                                 resolved_mismatch_indices.append(mi_idx)
                                 break
@@ -1231,6 +1233,8 @@ async def batch_reconcile_stream(
                                     dv = dr.get("vendor_item", {})
                                     dr["reason"] = f"할인({dv.get('product_name', '')}) → {v.get('product_name', '')}에 단가 반영됨"
                                     dr["absorbed_by"] = v.get("product_name", "")
+                                    dr["absorbed_erp_date"] = _get_field(e, "date", "월/일", "연/월/일", default="")
+                                    dr["absorbed_erp_name"] = _get_field(e, "prod_name", "품명 및 모델", "품명 및 규격", default="")
                                     discount_absorbed.append(dr)
                             resolved_mismatch_indices.append(mi_idx)
 

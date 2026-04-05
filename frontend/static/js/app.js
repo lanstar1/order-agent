@@ -5783,12 +5783,13 @@ function _renderBatchResults(result) {
           const v = r.vendor_item || {};
           const pname = v.product_name || v.product_category || "";
           const absorbedBy = r.absorbed_by || "";
+          const erpDate = r.absorbed_erp_date || "";
           return `<div class="rc-detail-row">
             <span class="rc-icon" style="color:#16a34a">✓</span>
             <span class="rc-item-name">${pname}</span>
-            <span class="rc-item-meta">${rcFmtDate(v.date, "")}</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, erpDate)}</span>
             <span class="rc-item-meta">${(v.amount||0).toLocaleString()}원</span>
-            ${absorbedBy ? `<span class="rc-arrow">→</span><span class="rc-item-meta" style="color:var(--gray-400);font-size:10px">${absorbedBy} 단가에 반영</span>` : ""}
+            ${absorbedBy ? `<span class="rc-arrow">→</span><span class="rc-item-meta" style="color:var(--gray-400);font-size:10px">${r.absorbed_erp_name||absorbedBy} 단가에 반영</span>` : ""}
           </div>`;
         }).join("");
         detailHTML += "</div></div>";
@@ -5866,10 +5867,11 @@ function _renderBatchResults(result) {
         detailHTML += vr.sales_check.map((sc, sci) => {
           const v = sc.vendor_item || {};
           const best = sc.best_candidate;
+          const bestDate = best ? (best.date || "") : "";
           return `<div class="rc-detail-row">
             <span class="rc-icon">${sc.has_sales_history ? "📦" : "❓"}</span>
             <span class="rc-item-name">${v.product_name||""}</span>
-            <span class="rc-item-meta">${rcFmtDate(v.date, "")} | ${(v.amount||0).toLocaleString()}원</span>
+            <span class="rc-item-meta">${rcFmtDate(v.date, bestDate)} | ${(v.amount||0).toLocaleString()}원</span>
             ${best ? `<span class="rc-arrow">→</span><span class="rc-erp-name">${best.product_code||""} ${best.product_name||""} (${Math.round((best.confidence||0)*100)}%)</span>${best.reason ? `<span style="font-size:10px;color:#6b7280;display:block;margin-left:28px;margin-top:2px">💡 ${best.reason}</span>` : ""}` : ""}
             ${sc.has_sales_history ? `<label style="margin-left:auto;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="batch-include-check" data-vi="${vi}" data-sci="${sci}" checked> 입력</label>` : ""}
           </div>`;
