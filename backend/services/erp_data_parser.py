@@ -59,10 +59,16 @@ def parse_erp_purchase(filepath: str) -> dict:
     # Remove rows where 품목코드 looks like a summary
     df = df[~df['품목코드'].astype(str).str.contains('계|합계|총', na=False)]
 
+    # 전표번호 포함된 날짜 컬럼 우선 사용 (연/월/일: "20260303-22", 월/일: "03/03")
+    purchase_date_col = '연/월/일' if '연/월/일' in df.columns else '월/일'
+
     items = []
     for _, row in df.iterrows():
-        date_raw = str(row.get('월/일', '')).strip()
+        date_raw = str(row.get(purchase_date_col, '') or row.get('월/일', '')).strip()
         if not date_raw or date_raw == 'nan':
+            continue
+        # 합계 행 제거 (날짜가 "2026/03 계" 같은 형식)
+        if '계' in date_raw or '합' in date_raw:
             continue
 
         items.append({
