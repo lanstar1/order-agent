@@ -413,6 +413,13 @@ async function fetchEcount() {
   icon.textContent = "⏳";
   setCollectStatus("show", "수집 요청 중...");
 
+  // ★ POST 전에 먼저 현재 최신 log ID 저장 (race condition 방지)
+  let startId = -1;
+  try {
+    const init = await fetch(`${API_BASE}/fetch-status`, { headers: authHeaders() });
+    if (init.ok) { const d = await init.json(); startId = d.id || -1; }
+  } catch(e) {}
+
   try {
     const res = await fetch(`${API_BASE}/fetch-ecount`, {
       method: "POST",
@@ -425,8 +432,8 @@ async function fetchEcount() {
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    // 폴링으로 완료 여부 확인
-    await pollFetchStatus();
+    // startId를 넘겨서 폴링
+    await pollFetchStatus(startId);
   } catch(e) {
     statusEl.classList.remove("show");
     alert("수집 요청 실패: " + e.message);
@@ -458,17 +465,7 @@ function setCollectStatus(action, text) {
   }
 }
 
-async function pollFetchStatus() {
-  // 수집 시작 전 현재 최신 log ID 저장
-  let startId = -1;
-  try {
-    const init = await fetch(`${API_BASE}/fetch-status`, { headers: authHeaders() });
-    if (init.ok) {
-      const d = await init.json();
-      startId = d.id || -1;
-    }
-  } catch(e) {}
-
+async function pollFetchStatus(startId = -1) {
   const maxTries = 40;  // 최대 80초
   for (let i = 0; i < maxTries; i++) {
     await sleep(2000);
