@@ -37,7 +37,11 @@ def _ensure_rebate_tables():
                 status TEXT DEFAULT 'calculated',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 submitted_at TIMESTAMP,
-                csv_filename TEXT
+                csv_filename TEXT,
+                approved_by TEXT,
+                approved_at TIMESTAMP,
+                approval_status TEXT DEFAULT 'pending',
+                approval_note TEXT
             )
         """)
         conn.execute("""
@@ -63,6 +67,7 @@ def _ensure_rebate_tables():
                 erp_status TEXT DEFAULT 'pending',
                 erp_slip_no TEXT,
                 emp_cd TEXT,
+                returns_amount INTEGER DEFAULT 0,
                 FOREIGN KEY (run_id) REFERENCES rebate_runs(id)
             )
         """)
@@ -75,8 +80,26 @@ def _ensure_rebate_tables():
             )
         """)
         conn.commit()
+
+        # Add missing columns to existing tables
+        _add_column_if_not_exists(conn, "rebate_runs", "approved_by", "TEXT")
+        _add_column_if_not_exists(conn, "rebate_runs", "approved_at", "TIMESTAMP")
+        _add_column_if_not_exists(conn, "rebate_runs", "approval_status", "TEXT DEFAULT 'pending'")
+        _add_column_if_not_exists(conn, "rebate_runs", "approval_note", "TEXT")
+        _add_column_if_not_exists(conn, "rebate_details", "returns_amount", "INTEGER DEFAULT 0")
     finally:
         conn.close()
+
+
+def _add_column_if_not_exists(conn, table_name: str, column_name: str, column_def: str):
+    """컬럼이 없으면 추가."""
+    try:
+        # SQLite와 PostgreSQL 모두 지원
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+        conn.commit()
+    except Exception:
+        # 컬럼이 이미 있거나 다른 오류 - 무시
+        pass
 
 
 # 모듈 로드 시 테이블 확인
@@ -123,6 +146,35 @@ async def calculate(file: UploadFile = File(...)):
     finally:
         db.close()
 
+    # Feature 1: 이중 지급 방지 - 기존 제출 리베이트 확인
+    db = _get_rebate_db()
+    duplicate_warning = None
+    try:
+        existing_run = db.execute(
+            "SELECT id, submitted_at FROM rebate_runs WHERE target_month = ? AND status = 'submitted' ORDER BY submitted_at DESC LIMIT 1",
+            (result["target_month"],)
+        ).fetchone()
+        if existing_run:
+            duplicate_warning = {
+                "existing_run_id": existing_run["id"],
+                "submitted_at": existing_run["submitted_at"],
+                "message": "해당 월은 이미 ERP 전표가 제출되었습니다."
+            }
+
+        # 계산된 상태의 리베이트도 경고
+        calculated_run = db.execute(
+            "SELECT id, created_at FROM rebate_runs WHERE target_month = ? AND status = 'calculated' ORDER BY created_at DESC LIMIT 1",
+            (result["target_month"],)
+        ).fetchone()
+        if calculated_run and not duplicate_warning:
+            duplicate_warning = {
+                "existing_run_id": calculated_run["id"],
+                "created_at": calculated_run["created_at"],
+                "message": "해당 월의 이전 계산 결과가 있습니다. (아직 제출되지 않음)"
+            }
+    finally:
+        db.close()
+
     # DB에 실행 이력 저장
     db = _get_rebate_db()
     try:
@@ -140,13 +192,14 @@ async def calculate(file: UploadFile = File(...)):
         run_id = cursor.lastrowid
 
         for cust in result["customers"]:
+            returns_amt = cust.get("returns_amount", 0)
             db.execute(
                 """INSERT INTO rebate_details
                    (run_id, customer_name, customer_code, tier, total_sales,
                     main_sales, lanstar3_sales, lanstar5_sales, printer_sales,
                     main_rebate, lanstar3_rebate, lanstar5_rebate, printer_rebate,
-                    total_rebate, is_exception, is_excluded, manual_adjustment, emp_cd)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    total_rebate, is_exception, is_excluded, manual_adjustment, emp_cd, returns_amount)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     run_id,
                     cust["customer_name"],
@@ -166,6 +219,7 @@ async def calculate(file: UploadFile = File(...)):
                     0,
                     0,
                     settings.get("customer_employees", {}).get(cust["customer_name"], ""),
+                    returns_amt,
                 ),
             )
 
@@ -175,6 +229,8 @@ async def calculate(file: UploadFile = File(...)):
 
     result["run_id"] = run_id
     result["status"] = "calculated"
+    if duplicate_warning:
+        result["duplicate_warning"] = duplicate_warning
     _cache[run_id] = result
 
     return result
@@ -218,6 +274,7 @@ async def preview(run_id: int):
                 "manual_adjustment": d["manual_adjustment"],
                 "erp_status": d["erp_status"],
                 "emp_cd": d["emp_cd"] or "",
+                "returns_amount": d.get("returns_amount", 0),  # Feature 5
             })
 
         active = [c for c in customers if not c["is_excluded"]]
@@ -228,6 +285,9 @@ async def preview(run_id: int):
             "run_id": run_id,
             "target_month": run["target_month"],
             "status": run["status"],
+            "approval_status": run.get("approval_status", "pending"),  # Feature 3
+            "approved_by": run.get("approved_by"),  # Feature 3
+            "approved_at": run.get("approved_at"),  # Feature 3
             "summary": {
                 "total_customers": len(active),
                 "tier_10_count": len(tier_10),
@@ -290,6 +350,7 @@ async def update_detail(detail_id: int, req: UpdateDetailRequest):
 class SubmitRequest(BaseModel):
     run_id: int
     io_date: str
+    force: bool = False
 
 
 @router.post("/submit")
@@ -304,6 +365,22 @@ async def submit_to_erp(req: SubmitRequest):
             raise HTTPException(404, "계산 결과를 찾을 수 없습니다.")
         if run["status"] == "submitted":
             raise HTTPException(400, "이미 제출된 리베이트입니다.")
+
+        # Feature 3: 승인 워크플로우 - 승인 상태 확인
+        if run.get("approval_status") != "approved":
+            raise HTTPException(400, "승인되지 않은 리베이트입니다. 먼저 승인을 요청하세요.")
+
+        # Feature 1: 이중 지급 방지 - 같은 월의 다른 제출된 리베이트 확인
+        if not req.force:
+            other_submitted = db.execute(
+                "SELECT id, submitted_at FROM rebate_runs WHERE target_month = ? AND status = 'submitted' AND id != ? LIMIT 1",
+                (run["target_month"], req.run_id)
+            ).fetchone()
+            if other_submitted:
+                raise HTTPException(
+                    400,
+                    f"다른 리베이트가 이미 제출되었습니다. (ID: {other_submitted['id']}, 제출: {other_submitted['submitted_at']})"
+                )
 
         details = db.execute(
             """SELECT * FROM rebate_details
@@ -423,6 +500,144 @@ async def history():
             "SELECT * FROM rebate_runs ORDER BY created_at DESC LIMIT 50"
         ).fetchall()
         return [dict(r) for r in runs]
+    finally:
+        db.close()
+
+
+# ═══════════════════════════════════════════
+# Feature 3: 승인 워크플로우
+# ═══════════════════════════════════════════
+
+class ApprovalRequest(BaseModel):
+    run_id: int
+    action: str  # "approve" or "reject"
+    note: str = ""
+    emp_cd: str
+
+
+@router.post("/approve")
+async def approve_rebate(req: ApprovalRequest):
+    if req.action not in ("approve", "reject"):
+        raise HTTPException(400, "action은 'approve' 또는 'reject'만 가능합니다.")
+
+    db = _get_rebate_db()
+    try:
+        run = db.execute("SELECT * FROM rebate_runs WHERE id = ?", (req.run_id,)).fetchone()
+        if not run:
+            raise HTTPException(404, "계산 결과를 찾을 수 없습니다.")
+
+        approval_status = "approved" if req.action == "approve" else "rejected"
+        db.execute(
+            """UPDATE rebate_runs
+               SET approval_status = ?, approved_by = ?, approved_at = ?, approval_note = ?
+               WHERE id = ?""",
+            (
+                approval_status,
+                req.emp_cd,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                req.note,
+                req.run_id,
+            ),
+        )
+        db.commit()
+
+        _cache.pop(req.run_id, None)
+        return {"status": "ok", "approval_status": approval_status}
+    finally:
+        db.close()
+
+
+# ═══════════════════════════════════════════
+# Feature 2: 전월 대비 이상치 감지
+# ═══════════════════════════════════════════
+
+@router.get("/anomalies/{run_id}")
+async def detect_anomalies(run_id: int):
+    db = _get_rebate_db()
+    try:
+        run = db.execute("SELECT * FROM rebate_runs WHERE id = ?", (run_id,)).fetchone()
+        if not run:
+            raise HTTPException(404, "계산 결과를 찾을 수 없습니다.")
+
+        current_details = db.execute(
+            "SELECT * FROM rebate_details WHERE run_id = ?",
+            (run_id,),
+        ).fetchall()
+
+        # 이전 월 데이터 찾기
+        prev_run = db.execute(
+            "SELECT * FROM rebate_runs WHERE target_month < ? AND status IN ('calculated', 'submitted') ORDER BY target_month DESC LIMIT 1",
+            (run["target_month"],)
+        ).fetchone()
+
+        if not prev_run:
+            return {"anomalies": [], "prev_month": None}
+
+        # 이전 월 거래처별 판매액
+        prev_details = db.execute(
+            "SELECT customer_name, total_sales FROM rebate_details WHERE run_id = ?",
+            (prev_run["id"],),
+        ).fetchall()
+        prev_sales_map = {d["customer_name"]: d["total_sales"] for d in prev_details}
+
+        # 이상치 감지 (30% 이상 변경)
+        anomalies = []
+        for curr in current_details:
+            cust_name = curr["customer_name"]
+            curr_sales = curr["total_sales"]
+            if cust_name in prev_sales_map:
+                prev_sales = prev_sales_map[cust_name]
+                if prev_sales > 0:
+                    change_pct = ((curr_sales - prev_sales) / prev_sales) * 100
+                    if abs(change_pct) >= 30:
+                        anomalies.append({
+                            "customer_name": cust_name,
+                            "current_sales": curr_sales,
+                            "prev_sales": prev_sales,
+                            "change_pct": round(change_pct, 1),
+                            "direction": "up" if change_pct > 0 else "down",
+                        })
+
+        return {
+            "anomalies": sorted(anomalies, key=lambda x: abs(x["change_pct"]), reverse=True),
+            "prev_month": prev_run["target_month"]
+        }
+    finally:
+        db.close()
+
+
+# ═══════════════════════════════════════════
+# Feature 4: 거래처별 정산내역서 PDF (데이터 제공)
+# ═══════════════════════════════════════════
+
+@router.get("/statement/{run_id}")
+async def get_statement_data(run_id: int, customer_ids: str = "all"):
+    db = _get_rebate_db()
+    try:
+        run = db.execute("SELECT * FROM rebate_runs WHERE id = ?", (run_id,)).fetchone()
+        if not run:
+            raise HTTPException(404, "계산 결과를 찾을 수 없습니다.")
+
+        if customer_ids == "all":
+            details = db.execute(
+                "SELECT * FROM rebate_details WHERE run_id = ? ORDER BY customer_name",
+                (run_id,),
+            ).fetchall()
+        else:
+            ids = [int(x.strip()) for x in customer_ids.split(",")]
+            placeholders = ",".join(["?"] * len(ids))
+            details = db.execute(
+                f"SELECT * FROM rebate_details WHERE run_id = ? AND id IN ({placeholders}) ORDER BY customer_name",
+                [run_id] + ids,
+            ).fetchall()
+
+        customers = [dict(d) for d in details]
+        return {
+            "run_id": run_id,
+            "target_month": run["target_month"],
+            "created_at": run["created_at"],
+            "customers": customers,
+        }
     finally:
         db.close()
 

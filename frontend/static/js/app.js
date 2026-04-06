@@ -6465,6 +6465,16 @@ function reconcileNewMatch() {
     rbRenderTable(result.customers);
     document.getElementById('rebateResultSection').style.display = 'block';
 
+    // Feature 1: 이중 지급 방지 - 경고 배너 표시
+    if (result.duplicate_warning) {
+      const banner = document.createElement('div');
+      banner.className = 'rb-warning-banner';
+      banner.style.cssText = 'padding:16px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:6px;margin-bottom:16px;color:#92400e;font-size:13px';
+      banner.innerHTML = `<strong style="display:block;margin-bottom:4px">⚠ 중복 리베이트 경고</strong>${result.duplicate_warning.message}<br/><span style="font-size:11px;color:#b45309">기존: ID ${result.duplicate_warning.existing_run_id}</span>`;
+      const section = document.getElementById('rbSubmitSection');
+      if (section) section.parentNode.insertBefore(banner, section);
+    }
+
     if (result.status === 'submitted') {
       document.getElementById('rbSubmitSection').innerHTML = `
         <h3 class="rb-section-title">ERP 전표 생성</h3>
@@ -6472,6 +6482,9 @@ function reconcileNewMatch() {
           <svg width="32" height="32" viewBox="0 0 20 20" fill="currentColor" style="margin-bottom:8px"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
           <div style="font-size:14px;font-weight:600">이미 제출 완료된 리베이트입니다.</div>
         </div>`;
+    } else {
+      // Feature 3: 승인 워크플로우 및 Feature 2: 이상치 로드
+      rbLoadAnomaliesAndApproval();
     }
   }
 
@@ -6506,10 +6519,11 @@ function reconcileNewMatch() {
 
       const tr = document.createElement('tr');
       if (c.is_excluded) tr.className = 'excluded';
+      tr.setAttribute('data-cust-id', c.customer_name);  // Feature 2: 이상치 마크용
       tr.innerHTML = `
         <td><input type="checkbox" class="rb-check rb-row-check" data-rbidx="${idx}" onchange="rbOnRowCheck(${idx},this.checked)"></td>
         <td><button class="btn btn-outline btn-sm" data-rbidx="${idx}" onclick="rbToggleDetail(${idx})">▶</button></td>
-        <td>${c.customer_name}${c.customer_code ? `<span style="font-size:11px;color:var(--gray-400);margin-left:4px">${c.customer_code}</span>` : ''}</td>
+        <td>${c.customer_name}${c.customer_code ? `<span style="font-size:11px;color:var(--gray-400);margin-left:4px">${c.customer_code}</span>` : ''}${c.returns_amount ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;background:#fee2e2;color:#991b1b;border-radius:3px;font-size:11px;font-weight:500">반품</span>` : ''}</td>
         <td><span class="rb-tier ${tierCls}${c.is_exception ? ' exc' : ''}">${c.tier}${c.is_exception ? ' 예외' : ''}${c.is_rate_upgrade ? ' ↑' : ''}</span></td>
         <td class="r">${rbFmt(c.total_sales)}</td>
         <td class="r">${rbFmt(c.total_rebate)}</td>
@@ -6550,6 +6564,12 @@ function reconcileNewMatch() {
               <div class="rb-breakdown-label">미분류 매출</div>
               <div class="rb-breakdown-amount">${rbFmt(unclassifiedSales)}</div>
               <div class="rb-breakdown-calc">리베이트 미적용 (배송비·차감 등)</div>
+            </div>` : ''}
+            ${c.returns_amount && c.returns_amount < 0 ? `
+            <div class="rb-breakdown-item" style="background:#fee2e2;border:1px solid #fecaca">
+              <div class="rb-breakdown-label" style="color:#991b1b;font-weight:600">반품/환불</div>
+              <div class="rb-breakdown-amount" style="color:#991b1b">${rbFmt(c.returns_amount)}</div>
+              <div class="rb-breakdown-calc" style="color:#991b1b">공급가액 < 0</div>
             </div>` : ''}
           </div>
           ${c.is_rate_upgrade ? '<div style="margin-top:10px;font-size:12px;color:var(--primary);font-weight:500">⬆ 할인율 상향 적용 업체</div>' : ''}
@@ -6672,11 +6692,307 @@ function reconcileNewMatch() {
       rbResult = result;
       rbRenderResult(result);
     } catch (e) {
-      rbToast(`ERP 제출 실패: ${e.message}`, 'error');
-      document.getElementById('rbSubmitStatus').textContent = `오류: ${e.message}`;
+      if (e.message && e.message.includes('다른 리베이트가 이미 제출')) {
+        if (confirm(e.message + '\n\n강제로 제출하시겠습니까?')) {
+          try {
+            const resp = await rbApi('POST', '/api/rebate/submit', { run_id: rbRunId, io_date: ioDate, force: true });
+            rbToast(`ERP 전표 생성 완료: 성공 ${resp.success_count}건`, 'success');
+            document.getElementById('rbSubmitStatus').textContent = `성공 ${resp.success_count}건 / 총 ${rbFmt(resp.total_rebate)}원`;
+            const result = await rbApi('GET', `/api/rebate/preview/${rbRunId}`);
+            rbResult = result;
+            rbRenderResult(result);
+          } catch (e2) { rbToast(`강제 제출 실패: ${e2.message}`, 'error'); }
+        }
+      } else {
+        rbToast(`ERP 제출 실패: ${e.message}`, 'error');
+        document.getElementById('rbSubmitStatus').textContent = `오류: ${e.message}`;
+      }
       document.getElementById('btnRbSubmitERP').disabled = false;
     }
   }
+
+  // ═════════════════════════════════════════════════════════
+  // Feature 1: 이중 지급 방지 - 결과 렌더링에서 경고 표시
+  // Feature 2: 이상치 감지 - 자동 호출 및 배지 표시
+  // Feature 3: 승인 워크플로우
+  // Feature 5: 반품/크레딧 노트
+  // ═════════════════════════════════════════════════════════
+
+  // Feature 1, 2, 3, 5 통합: rbRenderResult 호출 후 추가 처리
+  async function rbLoadAnomaliesAndApproval() {
+    if (!rbRunId || !rbResult) return;
+
+    // Feature 2: 이상치 감지 로드
+    try {
+      const anomalies = await rbApi('GET', `/api/rebate/anomalies/${rbRunId}`);
+      rbResult._anomalies = anomalies.anomalies || [];
+      rbResult._prevMonth = anomalies.prev_month;
+
+      // 테이블에 이상치 배지 추가
+      if (anomalies.anomalies.length > 0) {
+        const banner = document.getElementById('rbAnomalyBanner');
+        if (banner) {
+          banner.innerHTML = `<svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" style="margin-right:6px"><path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0zM8 7a1 1 0 000 2h6a1 1 0 100-2H8zm0 3a1 1 0 000 2h2a1 1 0 100-2H8z" clip-rule="evenodd"/></svg>이상치 ${anomalies.anomalies.length}건`;
+          banner.style.display = 'block';
+        }
+        // 각 행에 이상치 마크 추가
+        anomalies.anomalies.forEach(a => {
+          const row = document.querySelector(`[data-cust-id="${a.customer_name}"]`);
+          if (row) {
+            const badge = document.createElement('span');
+            badge.className = 'rb-anomaly-badge';
+            badge.innerHTML = `⚠ ${a.change_pct > 0 ? '+' : ''}${a.change_pct}%`;
+            badge.title = `전월: ${rbFmt(a.prev_sales)}원 → 당월: ${rbFmt(a.current_sales)}원`;
+            row.querySelector('td:first-child').appendChild(badge);
+          }
+        });
+      }
+    } catch (e) { /* ignore anomaly load error */ }
+
+    // Feature 3: 승인 상태 확인 및 UI 업데이트
+    try {
+      const run = await rbApi('GET', `/api/rebate/preview/${rbRunId}`);
+      rbResult._approval_status = run.approval_status || 'pending';
+      rbResult._approved_by = run.approved_by;
+      rbResult._approved_at = run.approved_at;
+
+      // 승인 UI 업데이트
+      rbUpdateApprovalUI();
+    } catch (e) { /* ignore */ }
+  }
+
+  function rbUpdateApprovalUI() {
+    const approvalSection = document.getElementById('rbApprovalSection');
+    if (!approvalSection || !rbResult) return;
+
+    const status = rbResult._approval_status || 'pending';
+    const approvedBy = rbResult._approved_by;
+    const approvedAt = rbResult._approved_at;
+
+    if (status === 'approved') {
+      approvalSection.innerHTML = `
+        <h3 class="rb-section-title">승인 상태</h3>
+        <div style="padding:16px;background:#f0fdf4;border-radius:8px;border-left:4px solid var(--success)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success)"></span>
+            <strong style="color:var(--success)">승인됨</strong>
+          </div>
+          <div style="font-size:12px;color:#666">승인자: ${approvedBy || '-'}</div>
+          <div style="font-size:12px;color:#666">승인시간: ${approvedAt || '-'}</div>
+        </div>
+      `;
+    } else if (status === 'rejected') {
+      approvalSection.innerHTML = `
+        <h3 class="rb-section-title">승인 상태</h3>
+        <div style="padding:16px;background:#fee2e2;border-radius:8px;border-left:4px solid var(--danger)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger)"></span>
+            <strong style="color:var(--danger)">거부됨</strong>
+          </div>
+          <div style="font-size:12px;color:#666">거부자: ${approvedBy || '-'}</div>
+        </div>
+      `;
+    } else {
+      // pending - 승인 요청 UI
+      approvalSection.innerHTML = `
+        <h3 class="rb-section-title">승인 워크플로우</h3>
+        <div style="padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
+          <div style="font-size:13px;color:#666;margin-bottom:12px">이 리베이트를 제출하려면 먼저 승인이 필요합니다.</div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="rbEmpCd" placeholder="사원코드" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+            <input type="text" id="rbApprovalNote" placeholder="메모 (선택사항)" style="flex:2;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+            <button class="btn btn-success btn-sm" onclick="rbApproveRequest()">승인</button>
+            <button class="btn btn-outline btn-sm" onclick="rbRejectRequest()">거부</button>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  window.rbApproveRequest = async function() {
+    if (!rbRunId) return;
+    const empCd = document.getElementById('rbEmpCd')?.value.trim() || '';
+    const note = document.getElementById('rbApprovalNote')?.value.trim() || '';
+    try {
+      await rbApi('POST', '/api/rebate/approve', {
+        run_id: rbRunId,
+        action: 'approve',
+        emp_cd: empCd,
+        note: note
+      });
+      rbToast('승인되었습니다.', 'success');
+      const result = await rbApi('GET', `/api/rebate/preview/${rbRunId}`);
+      rbResult = result;
+      rbUpdateApprovalUI();
+    } catch (e) { rbToast(`승인 실패: ${e.message}`, 'error'); }
+  };
+
+  window.rbRejectRequest = async function() {
+    if (!rbRunId) return;
+    if (!confirm('거부하시겠습니까?')) return;
+    const empCd = document.getElementById('rbEmpCd')?.value.trim() || '';
+    const note = document.getElementById('rbApprovalNote')?.value.trim() || '거부';
+    try {
+      await rbApi('POST', '/api/rebate/approve', {
+        run_id: rbRunId,
+        action: 'reject',
+        emp_cd: empCd,
+        note: note
+      });
+      rbToast('거부되었습니다.', 'success');
+      const result = await rbApi('GET', `/api/rebate/preview/${rbRunId}`);
+      rbResult = result;
+      rbUpdateApprovalUI();
+    } catch (e) { rbToast(`거부 실패: ${e.message}`, 'error'); }
+  };
+
+  // Feature 4: 정산내역서 PDF 인쇄
+  window.rbGenerateStatementPDF = async function() {
+    if (!rbRunId || !rbResult) return;
+
+    const customers = rbResult.customers.filter(c => !c.is_excluded && c.total_rebate > 0);
+    if (customers.length === 0) { rbToast('인쇄할 거래처가 없습니다.', 'error'); return; }
+
+    const month = rbResult.target_month || '월명';
+    let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>정산내역서</title>
+        <style>
+          @media print { body { margin: 0; padding: 0; } }
+          body { font-family: 'Arial', sans-serif; margin: 20px; background: #f5f5f5; }
+          .statement { page-break-after: always; background: white; padding: 40px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #6366f1; padding-bottom: 15px; }
+          .company-name { font-size: 18px; font-weight: bold; color: #6366f1; }
+          .doc-title { font-size: 16px; font-weight: bold; margin-top: 10px; }
+          .meta { display: flex; justify-content: space-between; margin-top: 15px; font-size: 12px; color: #666; }
+          .customer-info { margin-bottom: 20px; }
+          .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+          .info-label { font-weight: bold; color: #333; }
+          .info-value { color: #666; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+          th { background: #f0f0f0; border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold; }
+          td { border: 1px solid #ddd; padding: 8px; text-align: right; }
+          td:first-child { text-align: left; }
+          .total-row { background: #f9f9f9; font-weight: bold; }
+          .signature { display: flex; justify-content: space-between; margin-top: 40px; }
+          .sig-box { width: 40%; border-top: 1px solid #333; padding-top: 10px; text-align: center; font-size: 11px; }
+          .sig-label { color: #666; margin-top: 5px; }
+        </style>
+      </head>
+      <body>
+    `;
+
+    customers.forEach(c => {
+      const finalRebate = c.total_rebate + (c.manual_adjustment || 0);
+      html += `
+        <div class="statement">
+          <div class="header">
+            <div class="company-name">LANstar Co., Ltd.</div>
+            <div class="doc-title">정산내역서</div>
+            <div class="meta">
+              <span>대상월: ${month}</span>
+              <span>작성일: ${new Date().toLocaleDateString('ko-KR')}</span>
+            </div>
+          </div>
+
+          <div class="customer-info">
+            <div class="info-row">
+              <span class="info-label">거래처명:</span>
+              <span class="info-value">${c.customer_name}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">거래처코드:</span>
+              <span class="info-value">${c.customer_code || '-'}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">등급:</span>
+              <span class="info-value">${c.tier}</span>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>항목</th>
+                <th>판매액</th>
+                <th>요율</th>
+                <th>정산액</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>메인상품</td>
+                <td style="text-align: right">${c.main_sales.toLocaleString()}</td>
+                <td style="text-align: center">${c.main_sales ? ((c.main_rebate/c.main_sales)*100).toFixed(0) : '-'}%</td>
+                <td>${c.main_rebate.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td>LANSTAR3</td>
+                <td style="text-align: right">${c.lanstar3_sales.toLocaleString()}</td>
+                <td style="text-align: center">3%</td>
+                <td>${c.lanstar3_rebate.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td>LANSTAR5</td>
+                <td style="text-align: right">${c.lanstar5_sales.toLocaleString()}</td>
+                <td style="text-align: center">5%</td>
+                <td>${c.lanstar5_rebate.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td>프린터</td>
+                <td style="text-align: right">${c.printer_sales.toLocaleString()}</td>
+                <td style="text-align: center">7%</td>
+                <td>${c.printer_rebate.toLocaleString()}</td>
+              </tr>
+      `;
+
+      if (c.manual_adjustment) {
+        html += `
+              <tr>
+                <td>수동조정</td>
+                <td style="text-align: right">-</td>
+                <td style="text-align: center">-</td>
+                <td>${c.manual_adjustment.toLocaleString()}</td>
+              </tr>
+        `;
+      }
+
+      html += `
+              <tr class="total-row">
+                <td>합계</td>
+                <td style="text-align: right">${c.total_sales.toLocaleString()}</td>
+                <td style="text-align: center">-</td>
+                <td>${finalRebate.toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signature">
+            <div class="sig-box">
+              <div class="sig-label">발행처</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-label">인수 (${c.customer_name})</div>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</body></html>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => win.print(), 250);
+    rbToast('정산내역서가 열렸습니다.', 'info');
+  };
+
+  // Feature 5: 반품/환불 표시를 위해 rbRenderTable 내에서 처리
+  // 테이블 행 렌더링 시 returns_amount 확인
 
   // ── 이력 ──
   async function rbLoadHistory() {

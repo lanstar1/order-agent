@@ -79,7 +79,12 @@ def calculate_rebates(csv_content: str, settings: dict = None) -> dict:
                 "lanstar_3": 0,
                 "lanstar_5": 0,
                 "printer": 0,
+                "returns_amount": 0,  # Feature 5: 반품/크레딧 노트
             }
+
+        # Feature 5: 반품/크레딧 노트 별도 처리
+        if supply_amt < 0:
+            customer_data[cust_name]["returns_amount"] += supply_amt
 
         category = classify_product_group(group_name, settings)
         if category:
@@ -142,6 +147,8 @@ def calculate_rebates(csv_content: str, settings: dict = None) -> dict:
         if cust_name in exception_customers:
             customer_code = exception_customers[cust_name].get("code", "")
 
+        returns_amt = int(data.get("returns_amount", 0))
+
         results.append({
             "customer_name": cust_name,
             "customer_code": customer_code,
@@ -160,6 +167,7 @@ def calculate_rebates(csv_content: str, settings: dict = None) -> dict:
             "is_rate_upgrade": is_rate_upgrade,
             "is_excluded": False,
             "manual_adjustment": 0,
+            "returns_amount": returns_amt,  # Feature 5: 반품/크레딧 노트
         })
 
     results.sort(key=lambda x: x["total_sales"], reverse=True)
