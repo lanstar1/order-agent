@@ -6409,8 +6409,12 @@ function reconcileNewMatch() {
       }
     });
 
-    // CSV 다운로드
-    document.getElementById('btnRbExportCsv').addEventListener('click', rbExportCsv);
+    // 정산내역서 다운로드
+    document.getElementById('btnRbExportCsv').addEventListener('click', () => rbExportCsv('all'));
+    document.getElementById('btnRbExportSelected').addEventListener('click', () => rbExportCsv('selected'));
+
+    // 전체선택 체크박스
+    rbBindCheckAll();
 
     // ERP 제출
     document.getElementById('btnRbSubmitERP').addEventListener('click', rbSubmitERP);
@@ -6471,23 +6475,47 @@ function reconcileNewMatch() {
     }
   }
 
+  // 체크박스 선택 상태 관리
+  let rbCheckedSet = new Set();
+
+  function rbUpdateSelectionUI() {
+    const count = rbCheckedSet.size;
+    const countEl = document.getElementById('rbSelectedCount');
+    const btnSelected = document.getElementById('btnRbExportSelected');
+    if (countEl) countEl.textContent = count > 0 ? `${count}개 선택됨` : '';
+    if (btnSelected) btnSelected.disabled = count === 0;
+    // 전체선택 체크박스 상태
+    const checkAll = document.getElementById('rbCheckAll');
+    if (checkAll && rbResult) {
+      const total = rbResult.customers.length;
+      checkAll.checked = count > 0 && count === total;
+      checkAll.indeterminate = count > 0 && count < total;
+    }
+  }
+
   function rbRenderTable(customers) {
     const tbody = document.getElementById('rbTableBody');
     tbody.innerHTML = '';
+    rbCheckedSet.clear();
     customers.forEach((c, idx) => {
       const finalRebate = c.total_rebate + (c.manual_adjustment || 0);
       const tierCls = c.tier === '10%' ? 't10' : 't5';
+      // 미분류 매출 계산
+      const classifiedSales = (c.main_sales||0) + (c.lanstar3_sales||0) + (c.lanstar5_sales||0) + (c.printer_sales||0);
+      const unclassifiedSales = (c.total_sales||0) - classifiedSales;
+
       const tr = document.createElement('tr');
       if (c.is_excluded) tr.className = 'excluded';
       tr.innerHTML = `
+        <td><input type="checkbox" class="rb-check rb-row-check" data-rbidx="${idx}" onchange="rbOnRowCheck(${idx},this.checked)"></td>
         <td><button class="btn btn-outline btn-sm" data-rbidx="${idx}" onclick="rbToggleDetail(${idx})">▶</button></td>
-        <td>${c.customer_name}${c.customer_code ? `<span style="font-size:11px;color:#64748b;margin-left:4px">${c.customer_code}</span>` : ''}</td>
+        <td>${c.customer_name}${c.customer_code ? `<span style="font-size:11px;color:var(--gray-400);margin-left:4px">${c.customer_code}</span>` : ''}</td>
         <td><span class="rb-tier ${tierCls}${c.is_exception ? ' exc' : ''}">${c.tier}${c.is_exception ? ' 예외' : ''}${c.is_rate_upgrade ? ' ↑' : ''}</span></td>
         <td class="r">${rbFmt(c.total_sales)}</td>
         <td class="r">${rbFmt(c.total_rebate)}</td>
-        <td class="r" style="color:${c.manual_adjustment ? '#2563eb' : 'inherit'}">${c.manual_adjustment ? rbFmt(c.manual_adjustment) : '-'}</td>
+        <td class="r" style="color:${c.manual_adjustment ? 'var(--primary)' : 'inherit'}">${c.manual_adjustment ? rbFmt(c.manual_adjustment) : '-'}</td>
         <td class="r" style="font-weight:600">${rbFmt(finalRebate)}</td>
-        <td><button class="btn btn-sm ${c.is_excluded ? 'btn-outline' : 'btn-danger'}" onclick="rbToggleExclude(${c.id},${c.is_excluded?'false':'true'})">${c.is_excluded ? '복원' : '제외'}</button></td>
+        <td style="text-align:center"><button class="btn btn-sm ${c.is_excluded ? 'btn-outline' : 'btn-danger'}" onclick="rbToggleExclude(${c.id},${c.is_excluded?'false':'true'})">${c.is_excluded ? '복원' : '제외'}</button></td>
       `;
       tbody.appendChild(tr);
 
@@ -6495,39 +6523,73 @@ function reconcileNewMatch() {
       detailTr.className = 'rb-detail-row';
       detailTr.id = `rb-detail-${idx}`;
       detailTr.innerHTML = `
-        <td colspan="8">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
-            <div style="text-align:center">
-              <div style="font-size:11px;color:#64748b">메인 (수입/심천/plus/단종)</div>
-              <div style="font-size:16px;font-weight:600">${rbFmt(c.main_sales)}</div>
-              <div style="font-size:11px;color:#64748b">×${c.main_sales?((c.main_rebate/c.main_sales)*100).toFixed(0):(c.tier==='10%'?10:5)}% = ${rbFmt(c.main_rebate)}</div>
+        <td colspan="9">
+          <div class="rb-breakdown-grid">
+            <div class="rb-breakdown-item">
+              <div class="rb-breakdown-label">메인 (수입/심천/plus/단종)</div>
+              <div class="rb-breakdown-amount">${rbFmt(c.main_sales)}</div>
+              <div class="rb-breakdown-calc">×${c.main_sales?((c.main_rebate/c.main_sales)*100).toFixed(0):(c.tier==='10%'?10:5)}% = ${rbFmt(c.main_rebate)}</div>
             </div>
-            <div style="text-align:center">
-              <div style="font-size:11px;color:#64748b">랜스타 3%</div>
-              <div style="font-size:16px;font-weight:600">${rbFmt(c.lanstar3_sales)}</div>
-              <div style="font-size:11px;color:#64748b">×${c.lanstar3_sales?((c.lanstar3_rebate/c.lanstar3_sales)*100).toFixed(0):3}% = ${rbFmt(c.lanstar3_rebate)}</div>
+            <div class="rb-breakdown-item">
+              <div class="rb-breakdown-label">랜스타 3%</div>
+              <div class="rb-breakdown-amount">${rbFmt(c.lanstar3_sales)}</div>
+              <div class="rb-breakdown-calc">×${c.lanstar3_sales?((c.lanstar3_rebate/c.lanstar3_sales)*100).toFixed(0):3}% = ${rbFmt(c.lanstar3_rebate)}</div>
             </div>
-            <div style="text-align:center">
-              <div style="font-size:11px;color:#64748b">랜스타 5%</div>
-              <div style="font-size:16px;font-weight:600">${rbFmt(c.lanstar5_sales)}</div>
-              <div style="font-size:11px;color:#64748b">×${c.lanstar5_sales?((c.lanstar5_rebate/c.lanstar5_sales)*100).toFixed(0):5}% = ${rbFmt(c.lanstar5_rebate)}</div>
+            <div class="rb-breakdown-item">
+              <div class="rb-breakdown-label">랜스타 5%</div>
+              <div class="rb-breakdown-amount">${rbFmt(c.lanstar5_sales)}</div>
+              <div class="rb-breakdown-calc">×${c.lanstar5_sales?((c.lanstar5_rebate/c.lanstar5_sales)*100).toFixed(0):5}% = ${rbFmt(c.lanstar5_rebate)}</div>
             </div>
-            <div style="text-align:center">
-              <div style="font-size:11px;color:#64748b">프린터서버류</div>
-              <div style="font-size:16px;font-weight:600">${rbFmt(c.printer_sales)}</div>
-              <div style="font-size:11px;color:#64748b">×${c.printer_sales?((c.printer_rebate/c.printer_sales)*100).toFixed(0):7}% = ${rbFmt(c.printer_rebate)}</div>
+            <div class="rb-breakdown-item">
+              <div class="rb-breakdown-label">프린터서버류</div>
+              <div class="rb-breakdown-amount">${rbFmt(c.printer_sales)}</div>
+              <div class="rb-breakdown-calc">×${c.printer_sales?((c.printer_rebate/c.printer_sales)*100).toFixed(0):7}% = ${rbFmt(c.printer_rebate)}</div>
             </div>
+            ${unclassifiedSales !== 0 ? `
+            <div class="rb-breakdown-item rb-breakdown-unclassified">
+              <div class="rb-breakdown-label">미분류 매출</div>
+              <div class="rb-breakdown-amount">${rbFmt(unclassifiedSales)}</div>
+              <div class="rb-breakdown-calc">리베이트 미적용 (배송비·차감 등)</div>
+            </div>` : ''}
           </div>
-          ${c.is_rate_upgrade ? '<div style="margin-top:8px;font-size:12px;color:#2563eb">⬆ 할인율 상향 적용 업체</div>' : ''}
-          <div style="margin-top:12px;display:flex;gap:12px;align-items:center">
-            <label style="font-size:12px;color:#64748b">금액 조정:</label>
-            <input type="number" style="max-width:150px;font-size:13px" placeholder="0" value="${c.manual_adjustment||''}" onchange="rbUpdateAdj(${c.id},this.value)">
-            <label style="font-size:12px;color:#64748b;margin-left:12px">담당 사원:</label>
-            <input type="text" style="max-width:100px;font-size:13px" placeholder="사원코드" value="${c.emp_cd||''}" onchange="rbUpdateEmp(${c.id},this.value)">
+          ${c.is_rate_upgrade ? '<div style="margin-top:10px;font-size:12px;color:var(--primary);font-weight:500">⬆ 할인율 상향 적용 업체</div>' : ''}
+          <div class="rb-breakdown-controls">
+            <div class="rb-control-group">
+              <label class="rb-field-label">금액 조정</label>
+              <input type="number" class="rb-field-input" style="max-width:140px" placeholder="0" value="${c.manual_adjustment||''}" onchange="rbUpdateAdj(${c.id},this.value)">
+            </div>
+            <div class="rb-control-group">
+              <label class="rb-field-label">담당 사원</label>
+              <input type="text" class="rb-field-input" style="max-width:100px" placeholder="사원코드" value="${c.emp_cd||''}" onchange="rbUpdateEmp(${c.id},this.value)">
+            </div>
           </div>
         </td>
       `;
       tbody.appendChild(detailTr);
+    });
+    rbUpdateSelectionUI();
+  }
+
+  // 행 체크박스 토글
+  window.rbOnRowCheck = function(idx, checked) {
+    if (checked) rbCheckedSet.add(idx);
+    else rbCheckedSet.delete(idx);
+    rbUpdateSelectionUI();
+  };
+
+  // 전체 선택 체크박스
+  function rbBindCheckAll() {
+    const el = document.getElementById('rbCheckAll');
+    if (!el) return;
+    el.addEventListener('change', function() {
+      const checks = document.querySelectorAll('.rb-row-check');
+      checks.forEach(cb => {
+        cb.checked = el.checked;
+        const idx = parseInt(cb.dataset.rbidx);
+        if (el.checked) rbCheckedSet.add(idx);
+        else rbCheckedSet.delete(idx);
+      });
+      rbUpdateSelectionUI();
     });
   }
 
@@ -6567,18 +6629,30 @@ function reconcileNewMatch() {
     } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
   };
 
-  function rbExportCsv() {
+  function rbExportCsv(mode) {
     if (!rbResult) return;
-    const rows = [['거래처명','거래처코드','등급','총매출','메인매출','랜스타3%매출','랜스타5%매출','프린터서버류매출','메인리베이트','랜스타3%리베이트','랜스타5%리베이트','프린터서버류리베이트','총리베이트','조정','최종리베이트','예외','제외']];
-    rbResult.customers.forEach(c => {
-      rows.push([c.customer_name,c.customer_code,c.tier,c.total_sales,c.main_sales,c.lanstar3_sales,c.lanstar5_sales,c.printer_sales,c.main_rebate,c.lanstar3_rebate,c.lanstar5_rebate,c.printer_rebate,c.total_rebate,c.manual_adjustment,c.total_rebate+c.manual_adjustment,c.is_exception?'Y':'',c.is_excluded?'Y':'']);
+    let customers = rbResult.customers;
+    let suffix = '전체';
+
+    if (mode === 'selected') {
+      if (rbCheckedSet.size === 0) { rbToast('거래처를 선택해주세요.', 'error'); return; }
+      customers = customers.filter((_, idx) => rbCheckedSet.has(idx));
+      suffix = `선택${customers.length}건`;
+    }
+
+    const rows = [['거래처명','거래처코드','등급','총매출','메인매출','랜스타3%매출','랜스타5%매출','프린터서버류매출','미분류매출','메인리베이트','랜스타3%리베이트','랜스타5%리베이트','프린터서버류리베이트','총리베이트','조정','최종리베이트','예외','제외']];
+    customers.forEach(c => {
+      const classified = (c.main_sales||0) + (c.lanstar3_sales||0) + (c.lanstar5_sales||0) + (c.printer_sales||0);
+      const unclassified = (c.total_sales||0) - classified;
+      rows.push([c.customer_name,c.customer_code||'',c.tier,c.total_sales,c.main_sales,c.lanstar3_sales,c.lanstar5_sales,c.printer_sales,unclassified,c.main_rebate,c.lanstar3_rebate,c.lanstar5_rebate,c.printer_rebate,c.total_rebate,c.manual_adjustment||0,c.total_rebate+(c.manual_adjustment||0),c.is_exception?'Y':'',c.is_excluded?'Y':'']);
     });
     const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `리베이트_${rbResult.target_month||'result'}.csv`;
+    a.download = `리베이트_정산내역서_${rbResult.target_month||'result'}_${suffix}.csv`;
     a.click();
+    rbToast(`정산내역서 다운로드 완료 (${customers.length}건)`, 'success');
   }
 
   async function rbSubmitERP() {

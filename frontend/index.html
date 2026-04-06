@@ -2207,16 +2207,26 @@ C규격품 200개
           <!-- 상세 테이블 -->
           <div class="card rb-detail-card">
             <div class="rb-detail-header">
-              <h3 class="rb-section-title">거래처별 리베이트 상세</h3>
-              <button class="btn btn-outline btn-sm" id="btnRbExportCsv">
-                <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-                CSV 다운로드
-              </button>
+              <div class="rb-detail-header-left">
+                <h3 class="rb-section-title">거래처별 리베이트 상세</h3>
+                <span class="rb-selected-count" id="rbSelectedCount"></span>
+              </div>
+              <div class="rb-detail-header-right">
+                <button class="btn btn-outline btn-sm" id="btnRbExportSelected" disabled>
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                  선택 정산내역서
+                </button>
+                <button class="btn btn-primary btn-sm" id="btnRbExportCsv">
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                  전체 정산내역서
+                </button>
+              </div>
             </div>
             <div class="rb-table-wrap">
               <table class="rb-table">
                 <thead>
                   <tr>
+                    <th style="width:36px"><input type="checkbox" id="rbCheckAll" class="rb-check" title="전체 선택"></th>
                     <th style="width:36px"></th>
                     <th>거래처명</th>
                     <th style="width:90px">등급</th>
@@ -3707,6 +3717,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 .rb-detail-header {
   display:flex; justify-content:space-between; align-items:center;
   padding:18px 22px; border-bottom:1px solid var(--gray-100);
+  flex-wrap:wrap; gap:12px;
+}
+.rb-detail-header-left { display:flex; align-items:center; gap:10px; }
+.rb-detail-header-right { display:flex; align-items:center; gap:8px; }
+.rb-selected-count { font-size:12px; color:var(--primary); font-weight:600; }
+
+/* ── 체크박스 ── */
+.rb-check {
+  width:16px; height:16px; cursor:pointer; accent-color:var(--primary);
+  border-radius:3px; flex-shrink:0;
 }
 .rb-section-title { font-size:15px; font-weight:700; color:var(--gray-800); margin:0; }
 .rb-table-wrap { overflow-x:auto; }
@@ -3747,6 +3767,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   background:var(--gray-50) !important; padding:16px 22px !important;
   border-bottom:1px solid var(--gray-200) !important;
 }
+.rb-breakdown-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px;
+}
+.rb-breakdown-item {
+  text-align:center; padding:10px 8px; background:#fff;
+  border-radius:8px; border:1px solid var(--gray-100);
+}
+.rb-breakdown-label { font-size:11px; color:var(--gray-400); margin-bottom:4px; font-weight:500; }
+.rb-breakdown-amount { font-size:15px; font-weight:600; color:var(--gray-800); }
+.rb-breakdown-calc { font-size:11px; color:var(--gray-400); margin-top:2px; }
+.rb-breakdown-unclassified { border-color:#fde68a; background:#fffbeb; }
+.rb-breakdown-unclassified .rb-breakdown-label { color:#b45309; }
+.rb-breakdown-unclassified .rb-breakdown-amount { color:#92400e; }
+.rb-breakdown-unclassified .rb-breakdown-calc { color:#b45309; }
+.rb-breakdown-controls {
+  margin-top:12px; display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap;
+}
+.rb-control-group { display:flex; flex-direction:column; gap:3px; }
 
 /* ── ERP 전표 생성 ── */
 .rb-erp-card { padding:22px; }
@@ -3844,7 +3882,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260406d"></script>
+<script src="/static/js/app.js?v=20260406e"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
