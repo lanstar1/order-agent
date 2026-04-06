@@ -2119,6 +2119,235 @@ C규격품 200개
 
     </div>
 
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- 리베이트 페이지 -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div class="page" id="page-rebate">
+      <!-- 내부 탭 네비게이션 -->
+      <div style="display:flex;gap:0;background:#fff;border-bottom:2px solid #e2e8f0;margin:-20px -20px 20px;padding:0 20px">
+        <button class="rebate-tab active" data-rtab="calc" onclick="switchRebateTab('calc')">리베이트 계산</button>
+        <button class="rebate-tab" data-rtab="history" onclick="switchRebateTab('history')">실행 이력</button>
+        <button class="rebate-tab" data-rtab="rsettings" onclick="switchRebateTab('rsettings')">설정</button>
+      </div>
+
+      <!-- 계산 탭 -->
+      <div id="rtab-calc" class="rebate-tab-content active">
+        <div id="rebateUploadSection" class="card">
+          <h2>판매현황 CSV 업로드</h2>
+          <div class="rebate-upload-area" id="rebateUploadArea">
+            <div style="font-size:48px;margin-bottom:12px">📊</div>
+            <div style="font-size:14px;color:#64748b">
+              이카운트 ERP에서 내보낸 <strong>판매현황 CSV</strong> 파일을 여기에 드래그하거나 클릭하세요
+            </div>
+            <input type="file" id="rebateCsvFile" accept=".csv" style="display:none">
+          </div>
+          <div style="text-align:center">
+            <button class="btn btn-primary" id="btnRebateCalc" disabled>리베이트 계산</button>
+          </div>
+        </div>
+
+        <div id="rebateLoadingSection" class="card" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:center;padding:60px;color:#64748b">
+            <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite;margin-right:12px"></div>
+            <span>리베이트 계산 중...</span>
+          </div>
+        </div>
+
+        <div id="rebateResultSection" style="display:none">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px">
+            <div class="card" style="text-align:center;border-left:4px solid #2563eb">
+              <div style="font-size:13px;color:#64748b;margin-bottom:4px">대상 월</div>
+              <div style="font-size:28px;font-weight:700" id="rbSumMonth">-</div>
+            </div>
+            <div class="card" style="text-align:center">
+              <div style="font-size:13px;color:#64748b;margin-bottom:4px">대상 거래처</div>
+              <div style="font-size:28px;font-weight:700" id="rbSumCustomers">0</div>
+              <div style="font-size:12px;color:#64748b;margin-top:4px" id="rbSumTierInfo"></div>
+            </div>
+            <div class="card" style="text-align:center;border-left:4px solid #2563eb">
+              <div style="font-size:13px;color:#64748b;margin-bottom:4px">총 리베이트</div>
+              <div style="font-size:28px;font-weight:700" id="rbSumTotal">0</div>
+              <div style="font-size:12px;color:#64748b;margin-top:4px">원</div>
+            </div>
+            <div class="card" style="text-align:center">
+              <div style="font-size:13px;color:#64748b;margin-bottom:4px">10% 등급 합계</div>
+              <div style="font-size:28px;font-weight:700" id="rbSum10">0</div>
+              <div style="font-size:12px;color:#64748b;margin-top:4px">원</div>
+            </div>
+            <div class="card" style="text-align:center">
+              <div style="font-size:13px;color:#64748b;margin-bottom:4px">5% 등급 합계</div>
+              <div style="font-size:28px;font-weight:700" id="rbSum5">0</div>
+              <div style="font-size:12px;color:#64748b;margin-top:4px">원</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <h2>거래처별 리베이트 상세</h2>
+              <button class="btn btn-outline btn-sm" id="btnRbExportCsv">CSV 다운로드</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:30px"></th>
+                    <th>거래처명</th>
+                    <th>등급</th>
+                    <th class="r">총매출</th>
+                    <th class="r">리베이트</th>
+                    <th class="r">조정</th>
+                    <th class="r">최종</th>
+                    <th style="width:80px">제외</th>
+                  </tr>
+                </thead>
+                <tbody id="rbTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" id="rbSubmitSection">
+            <h2>ERP 전표 생성</h2>
+            <div class="form-row">
+              <label>전표 일자</label>
+              <input type="text" id="rbIoDate" placeholder="YYYYMMDD (예: 20260328)" style="max-width:200px">
+            </div>
+            <div style="margin-top:16px;display:flex;gap:12px">
+              <button class="btn btn-success" id="btnRbSubmitERP">ERP 전표 생성 실행</button>
+              <span id="rbSubmitStatus" style="font-size:13px;color:#64748b;align-self:center"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 이력 탭 -->
+      <div id="rtab-history" class="rebate-tab-content">
+        <div class="card">
+          <h2>실행 이력</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>대상 월</th>
+                  <th>거래처 수</th>
+                  <th class="r">총 리베이트</th>
+                  <th>상태</th>
+                  <th>실행일시</th>
+                  <th>제출일시</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="rbHistoryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 설정 탭 -->
+      <div id="rtab-rsettings" class="rebate-tab-content">
+        <div class="card">
+          <h2>리베이트 대상 거래처 (허용 목록)</h2>
+          <div class="form-row" style="margin-bottom:16px">
+            <label style="min-width:auto">허용 목록 사용</label>
+            <input type="checkbox" id="rbUseAllowed" style="width:auto">
+            <span style="font-size:13px;color:#64748b">체크 시 아래 목록에 있는 거래처만 리베이트 대상</span>
+          </div>
+          <textarea id="rbAllowedText" rows="12" style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;resize:vertical;font-family:monospace"></textarea>
+          <p style="font-size:12px;color:#64748b;margin-top:4px">한 줄에 거래처명 하나씩 입력. 허용 목록 OFF시 매출 기준만 적용됩니다.</p>
+          <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;color:#64748b">거래처명 별칭 (동일 업체 다른 이름)</h3>
+          <div id="rbAliasesContainer"></div>
+          <button class="btn btn-outline btn-sm" id="btnRbAddAlias" style="margin-top:8px">+ 별칭 추가</button>
+          <button class="btn btn-primary btn-sm" id="btnRbSaveAllowed" style="margin-top:8px;margin-left:8px">저장</button>
+        </div>
+
+        <div class="card">
+          <h2>업체 등급 기준</h2>
+          <div class="form-row">
+            <label>10% 등급 기준</label>
+            <input type="number" id="rbTier10" placeholder="10000000"> <span style="white-space:nowrap">원 이상</span>
+          </div>
+          <div class="form-row">
+            <label>5% 등급 기준</label>
+            <input type="number" id="rbTier5" placeholder="5000000"> <span style="white-space:nowrap">원 이상</span>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btnRbSaveTier">저장</button>
+        </div>
+
+        <div class="card">
+          <h2>품목그룹별 할인율</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>카테고리</th><th>품목그룹</th><th>5% 업체 할인율</th><th>10% 업체 할인율</th></tr></thead>
+              <tbody id="rbRatesBody"></tbody>
+            </table>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btnRbSaveRates" style="margin-top:12px">저장</button>
+        </div>
+
+        <div class="card">
+          <h2>예외 업체</h2>
+          <p style="font-size:13px;color:#64748b;margin-bottom:12px">매출 기준 미달이어도 리베이트가 적용되는 거래처</p>
+          <div id="rbExceptionsContainer"></div>
+          <button class="btn btn-outline btn-sm" id="btnRbAddException" style="margin-top:8px">+ 예외 업체 추가</button>
+          <button class="btn btn-primary btn-sm" id="btnRbSaveExceptions" style="margin-top:8px;margin-left:8px">저장</button>
+        </div>
+
+        <div class="card">
+          <h2>할인율 상향 업체</h2>
+          <p style="font-size:13px;color:#64748b;margin-bottom:12px">특정 거래처의 할인율을 한 단계 상향 적용 (예: 레알몰 5%→10%, 3%→5%)</p>
+          <div id="rbRateUpgradeContainer"></div>
+          <button class="btn btn-outline btn-sm" id="btnRbAddRateUpgrade" style="margin-top:8px">+ 상향 업체 추가</button>
+          <button class="btn btn-primary btn-sm" id="btnRbSaveRateUpgrade" style="margin-top:8px;margin-left:8px">저장</button>
+        </div>
+
+        <div class="card">
+          <h2>오픈마켓 제외 거래처</h2>
+          <textarea id="rbExcludedText" rows="6" style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;resize:vertical"></textarea>
+          <p style="font-size:12px;color:#64748b;margin-top:4px">한 줄에 거래처명 하나씩 입력</p>
+          <button class="btn btn-primary btn-sm" id="btnRbSaveExcluded" style="margin-top:8px">저장</button>
+        </div>
+
+        <div class="card">
+          <h2>거래처별 담당 사원</h2>
+          <div id="rbEmployeesContainer"></div>
+          <button class="btn btn-outline btn-sm" id="btnRbAddEmployee" style="margin-top:8px">+ 매핑 추가</button>
+          <button class="btn btn-primary btn-sm" id="btnRbSaveEmployees" style="margin-top:8px;margin-left:8px">저장</button>
+        </div>
+
+        <div class="card">
+          <h2>거래처 마스터 (거래처코드 매핑)</h2>
+          <p style="font-size:13px;color:#64748b;margin-bottom:12px">거래처.xlsx 파일을 업로드하면 거래처명 ↔ 거래처코드가 자동 매핑됩니다.</p>
+          <div style="display:flex;gap:12px;align-items:center">
+            <input type="file" id="rbMasterFile" accept=".xlsx,.xls,.csv">
+            <button class="btn btn-primary btn-sm" id="btnRbUploadMaster">업로드</button>
+          </div>
+          <div id="rbMasterCount" style="margin-top:8px;font-size:13px;color:#64748b"></div>
+        </div>
+
+        <div class="card">
+          <h2>ERP 전표 기본값</h2>
+          <div class="form-row">
+            <label>출하창고 코드</label>
+            <input type="text" id="rbWhCd" placeholder="10" style="max-width:100px">
+          </div>
+          <div class="form-row">
+            <label>거래유형</label>
+            <input type="text" id="rbIoType" placeholder="1Z" style="max-width:100px">
+          </div>
+          <div class="form-row">
+            <label>품목코드</label>
+            <input type="text" id="rbProdCd" placeholder="판매장려금할인006" style="max-width:250px">
+          </div>
+          <div class="form-row">
+            <label>비고사항 형식</label>
+            <input type="text" id="rbRemarks" placeholder="{month}월분 / 수고하셨습니다">
+          </div>
+          <button class="btn btn-primary btn-sm" id="btnRbSaveErp">저장</button>
+        </div>
+      </div>
+    </div>
+
+
   </div>
 </div>
 
@@ -3329,235 +3558,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 </div>
 </div>
 
-    <!-- ═══════════════════════════════════════════ -->
-    <!-- 리베이트 페이지 -->
-    <!-- ═══════════════════════════════════════════ -->
-    <div class="page" id="page-rebate">
-      <!-- 내부 탭 네비게이션 -->
-      <div style="display:flex;gap:0;background:#fff;border-bottom:2px solid #e2e8f0;margin:-20px -20px 20px;padding:0 20px">
-        <button class="rebate-tab active" data-rtab="calc" onclick="switchRebateTab('calc')">리베이트 계산</button>
-        <button class="rebate-tab" data-rtab="history" onclick="switchRebateTab('history')">실행 이력</button>
-        <button class="rebate-tab" data-rtab="rsettings" onclick="switchRebateTab('rsettings')">설정</button>
-      </div>
-
-      <!-- 계산 탭 -->
-      <div id="rtab-calc" class="rebate-tab-content active">
-        <div id="rebateUploadSection" class="card">
-          <h2>판매현황 CSV 업로드</h2>
-          <div class="rebate-upload-area" id="rebateUploadArea">
-            <div style="font-size:48px;margin-bottom:12px">📊</div>
-            <div style="font-size:14px;color:#64748b">
-              이카운트 ERP에서 내보낸 <strong>판매현황 CSV</strong> 파일을 여기에 드래그하거나 클릭하세요
-            </div>
-            <input type="file" id="rebateCsvFile" accept=".csv" style="display:none">
-          </div>
-          <div style="text-align:center">
-            <button class="btn btn-primary" id="btnRebateCalc" disabled>리베이트 계산</button>
-          </div>
-        </div>
-
-        <div id="rebateLoadingSection" class="card" style="display:none">
-          <div style="display:flex;align-items:center;justify-content:center;padding:60px;color:#64748b">
-            <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite;margin-right:12px"></div>
-            <span>리베이트 계산 중...</span>
-          </div>
-        </div>
-
-        <div id="rebateResultSection" style="display:none">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px">
-            <div class="card" style="text-align:center;border-left:4px solid #2563eb">
-              <div style="font-size:13px;color:#64748b;margin-bottom:4px">대상 월</div>
-              <div style="font-size:28px;font-weight:700" id="rbSumMonth">-</div>
-            </div>
-            <div class="card" style="text-align:center">
-              <div style="font-size:13px;color:#64748b;margin-bottom:4px">대상 거래처</div>
-              <div style="font-size:28px;font-weight:700" id="rbSumCustomers">0</div>
-              <div style="font-size:12px;color:#64748b;margin-top:4px" id="rbSumTierInfo"></div>
-            </div>
-            <div class="card" style="text-align:center;border-left:4px solid #2563eb">
-              <div style="font-size:13px;color:#64748b;margin-bottom:4px">총 리베이트</div>
-              <div style="font-size:28px;font-weight:700" id="rbSumTotal">0</div>
-              <div style="font-size:12px;color:#64748b;margin-top:4px">원</div>
-            </div>
-            <div class="card" style="text-align:center">
-              <div style="font-size:13px;color:#64748b;margin-bottom:4px">10% 등급 합계</div>
-              <div style="font-size:28px;font-weight:700" id="rbSum10">0</div>
-              <div style="font-size:12px;color:#64748b;margin-top:4px">원</div>
-            </div>
-            <div class="card" style="text-align:center">
-              <div style="font-size:13px;color:#64748b;margin-bottom:4px">5% 등급 합계</div>
-              <div style="font-size:28px;font-weight:700" id="rbSum5">0</div>
-              <div style="font-size:12px;color:#64748b;margin-top:4px">원</div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-              <h2>거래처별 리베이트 상세</h2>
-              <button class="btn btn-outline btn-sm" id="btnRbExportCsv">CSV 다운로드</button>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th style="width:30px"></th>
-                    <th>거래처명</th>
-                    <th>등급</th>
-                    <th class="r">총매출</th>
-                    <th class="r">리베이트</th>
-                    <th class="r">조정</th>
-                    <th class="r">최종</th>
-                    <th style="width:80px">제외</th>
-                  </tr>
-                </thead>
-                <tbody id="rbTableBody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card" id="rbSubmitSection">
-            <h2>ERP 전표 생성</h2>
-            <div class="form-row">
-              <label>전표 일자</label>
-              <input type="text" id="rbIoDate" placeholder="YYYYMMDD (예: 20260328)" style="max-width:200px">
-            </div>
-            <div style="margin-top:16px;display:flex;gap:12px">
-              <button class="btn btn-success" id="btnRbSubmitERP">ERP 전표 생성 실행</button>
-              <span id="rbSubmitStatus" style="font-size:13px;color:#64748b;align-self:center"></span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 이력 탭 -->
-      <div id="rtab-history" class="rebate-tab-content">
-        <div class="card">
-          <h2>실행 이력</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>대상 월</th>
-                  <th>거래처 수</th>
-                  <th class="r">총 리베이트</th>
-                  <th>상태</th>
-                  <th>실행일시</th>
-                  <th>제출일시</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="rbHistoryBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- 설정 탭 -->
-      <div id="rtab-rsettings" class="rebate-tab-content">
-        <div class="card">
-          <h2>리베이트 대상 거래처 (허용 목록)</h2>
-          <div class="form-row" style="margin-bottom:16px">
-            <label style="min-width:auto">허용 목록 사용</label>
-            <input type="checkbox" id="rbUseAllowed" style="width:auto">
-            <span style="font-size:13px;color:#64748b">체크 시 아래 목록에 있는 거래처만 리베이트 대상</span>
-          </div>
-          <textarea id="rbAllowedText" rows="12" style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;resize:vertical;font-family:monospace"></textarea>
-          <p style="font-size:12px;color:#64748b;margin-top:4px">한 줄에 거래처명 하나씩 입력. 허용 목록 OFF시 매출 기준만 적용됩니다.</p>
-          <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;color:#64748b">거래처명 별칭 (동일 업체 다른 이름)</h3>
-          <div id="rbAliasesContainer"></div>
-          <button class="btn btn-outline btn-sm" id="btnRbAddAlias" style="margin-top:8px">+ 별칭 추가</button>
-          <button class="btn btn-primary btn-sm" id="btnRbSaveAllowed" style="margin-top:8px;margin-left:8px">저장</button>
-        </div>
-
-        <div class="card">
-          <h2>업체 등급 기준</h2>
-          <div class="form-row">
-            <label>10% 등급 기준</label>
-            <input type="number" id="rbTier10" placeholder="10000000"> <span style="white-space:nowrap">원 이상</span>
-          </div>
-          <div class="form-row">
-            <label>5% 등급 기준</label>
-            <input type="number" id="rbTier5" placeholder="5000000"> <span style="white-space:nowrap">원 이상</span>
-          </div>
-          <button class="btn btn-primary btn-sm" id="btnRbSaveTier">저장</button>
-        </div>
-
-        <div class="card">
-          <h2>품목그룹별 할인율</h2>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>카테고리</th><th>품목그룹</th><th>5% 업체 할인율</th><th>10% 업체 할인율</th></tr></thead>
-              <tbody id="rbRatesBody"></tbody>
-            </table>
-          </div>
-          <button class="btn btn-primary btn-sm" id="btnRbSaveRates" style="margin-top:12px">저장</button>
-        </div>
-
-        <div class="card">
-          <h2>예외 업체</h2>
-          <p style="font-size:13px;color:#64748b;margin-bottom:12px">매출 기준 미달이어도 리베이트가 적용되는 거래처</p>
-          <div id="rbExceptionsContainer"></div>
-          <button class="btn btn-outline btn-sm" id="btnRbAddException" style="margin-top:8px">+ 예외 업체 추가</button>
-          <button class="btn btn-primary btn-sm" id="btnRbSaveExceptions" style="margin-top:8px;margin-left:8px">저장</button>
-        </div>
-
-        <div class="card">
-          <h2>할인율 상향 업체</h2>
-          <p style="font-size:13px;color:#64748b;margin-bottom:12px">특정 거래처의 할인율을 한 단계 상향 적용 (예: 레알몰 5%→10%, 3%→5%)</p>
-          <div id="rbRateUpgradeContainer"></div>
-          <button class="btn btn-outline btn-sm" id="btnRbAddRateUpgrade" style="margin-top:8px">+ 상향 업체 추가</button>
-          <button class="btn btn-primary btn-sm" id="btnRbSaveRateUpgrade" style="margin-top:8px;margin-left:8px">저장</button>
-        </div>
-
-        <div class="card">
-          <h2>오픈마켓 제외 거래처</h2>
-          <textarea id="rbExcludedText" rows="6" style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;resize:vertical"></textarea>
-          <p style="font-size:12px;color:#64748b;margin-top:4px">한 줄에 거래처명 하나씩 입력</p>
-          <button class="btn btn-primary btn-sm" id="btnRbSaveExcluded" style="margin-top:8px">저장</button>
-        </div>
-
-        <div class="card">
-          <h2>거래처별 담당 사원</h2>
-          <div id="rbEmployeesContainer"></div>
-          <button class="btn btn-outline btn-sm" id="btnRbAddEmployee" style="margin-top:8px">+ 매핑 추가</button>
-          <button class="btn btn-primary btn-sm" id="btnRbSaveEmployees" style="margin-top:8px;margin-left:8px">저장</button>
-        </div>
-
-        <div class="card">
-          <h2>거래처 마스터 (거래처코드 매핑)</h2>
-          <p style="font-size:13px;color:#64748b;margin-bottom:12px">거래처.xlsx 파일을 업로드하면 거래처명 ↔ 거래처코드가 자동 매핑됩니다.</p>
-          <div style="display:flex;gap:12px;align-items:center">
-            <input type="file" id="rbMasterFile" accept=".xlsx,.xls,.csv">
-            <button class="btn btn-primary btn-sm" id="btnRbUploadMaster">업로드</button>
-          </div>
-          <div id="rbMasterCount" style="margin-top:8px;font-size:13px;color:#64748b"></div>
-        </div>
-
-        <div class="card">
-          <h2>ERP 전표 기본값</h2>
-          <div class="form-row">
-            <label>출하창고 코드</label>
-            <input type="text" id="rbWhCd" placeholder="10" style="max-width:100px">
-          </div>
-          <div class="form-row">
-            <label>거래유형</label>
-            <input type="text" id="rbIoType" placeholder="1Z" style="max-width:100px">
-          </div>
-          <div class="form-row">
-            <label>품목코드</label>
-            <input type="text" id="rbProdCd" placeholder="판매장려금할인006" style="max-width:250px">
-          </div>
-          <div class="form-row">
-            <label>비고사항 형식</label>
-            <input type="text" id="rbRemarks" placeholder="{month}월분 / 수고하셨습니다">
-          </div>
-          <button class="btn btn-primary btn-sm" id="btnRbSaveErp">저장</button>
-        </div>
-      </div>
-    </div>
-
-</div>
 
 <style>
 /* 리베이트 내부 탭 스타일 */
