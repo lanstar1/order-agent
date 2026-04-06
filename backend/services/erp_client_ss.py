@@ -50,11 +50,11 @@ class ERPClientSS:
         io_date = datetime.now(KST).strftime("%Y%m%d")
 
         sale_list = []
-        for idx, line in enumerate(lines, start=1):
+        for line in lines:
             qty = float(line["qty"])
             qty_str = str(int(qty)) if qty == int(qty) else str(qty)
             bulk = {
-                "UPLOAD_SER_NO": str(idx),
+                "UPLOAD_SER_NO": "1",
                 "IO_DATE": io_date,
                 "CUST": cust_code,
                 "PROD_CD": line["prod_cd"],
