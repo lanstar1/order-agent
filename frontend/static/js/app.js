@@ -6986,6 +6986,21 @@ function reconcileNewMatch() {
 
 
   // ── 이력 ──
+  function rbFormatKST(dtStr) {
+    if (!dtStr) return '-';
+    // 이미 KST로 저장된 값이면 그대로 표시, ISO 형식이면 변환
+    try {
+      // "2026-04-06 16:09:32" 형식이면 그대로 반환
+      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dtStr)) return dtStr;
+      // ISO 형식 "2026-04-06T07:09:32.334393" → KST 변환
+      const d = new Date(dtStr + (dtStr.includes('+') || dtStr.includes('Z') ? '' : 'Z'));
+      if (isNaN(d.getTime())) return dtStr;
+      const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+      const pad = n => String(n).padStart(2, '0');
+      return `${kst.getUTCFullYear()}-${pad(kst.getUTCMonth()+1)}-${pad(kst.getUTCDate())} ${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}:${pad(kst.getUTCSeconds())}`;
+    } catch { return dtStr; }
+  }
+
   async function rbLoadHistory() {
     try {
       const runs = await rbApi('GET', '/api/rebate/history');
@@ -6993,6 +7008,7 @@ function reconcileNewMatch() {
       tbody.innerHTML = '';
       runs.forEach(r => {
         const statusCls = r.status === 'submitted' ? 'submitted' : 'pending';
+        const executor = r.executed_by_name ? `${r.executed_by_name}` : '-';
         tbody.innerHTML += `
           <tr>
             <td>${r.id}</td>
@@ -7000,12 +7016,13 @@ function reconcileNewMatch() {
             <td>${r.total_customers}</td>
             <td class="r">${rbFmt(r.total_rebate)}</td>
             <td><span class="status-badge ${statusCls}">${r.status==='submitted'?'제출완료':'계산완료'}</span></td>
-            <td>${r.created_at||''}</td>
-            <td>${r.submitted_at||'-'}</td>
+            <td>${executor}</td>
+            <td>${rbFormatKST(r.created_at)}</td>
+            <td>${rbFormatKST(r.submitted_at)}</td>
             <td><button class="btn btn-outline btn-sm" onclick="rbLoadRun(${r.id})">보기</button></td>
           </tr>`;
       });
-      if (!runs.length) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#64748b">실행 이력이 없습니다.</td></tr>';
+      if (!runs.length) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:#64748b">실행 이력이 없습니다.</td></tr>';
     } catch (e) { rbToast(`이력 로드 실패: ${e.message}`, 'error'); }
   }
 

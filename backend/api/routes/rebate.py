@@ -3,14 +3,15 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from datetime import datetime, timezone, timedelta
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from pydantic import BaseModel
 
 from services.rebate_config import load_rebate_settings, save_rebate_settings, ERP_COM_CODE, ERP_USER_ID, ERP_API_KEY, ERP_ZONE
 from services.rebate_service import calculate_rebates, update_customer_codes
 from services.rebate_erp_client import RebateERPClient
 from db.database import get_connection
+from security import get_current_user, get_optional_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/rebate", tags=["rebate"])
@@ -87,6 +88,8 @@ def _ensure_rebate_tables():
         _add_column_if_not_exists(conn, "rebate_runs", "approval_status", "TEXT DEFAULT 'pending'")
         _add_column_if_not_exists(conn, "rebate_runs", "approval_note", "TEXT")
         _add_column_if_not_exists(conn, "rebate_details", "returns_amount", "INTEGER DEFAULT 0")
+        _add_column_if_not_exists(conn, "rebate_runs", "executed_by", "TEXT")
+        _add_column_if_not_exists(conn, "rebate_runs", "executed_by_name", "TEXT")
     finally:
         conn.close()
 
@@ -109,8 +112,14 @@ except Exception:
     pass
 
 
+def _now_kst() -> str:
+    """현재 한국 표준시(KST, UTC+9) 문자열 반환"""
+    KST = timezone(timedelta(hours=9))
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
 @router.post("/calculate")
-async def calculate(file: UploadFile = File(...)):
+async def calculate(file: UploadFile = File(...), user: dict = Depends(get_optional_user)):
     if not file.filename.endswith((".csv", ".CSV")):
         raise HTTPException(400, "CSV 파일만 업로드 가능합니다.")
 
@@ -178,15 +187,20 @@ async def calculate(file: UploadFile = File(...)):
     # DB에 실행 이력 저장
     db = _get_rebate_db()
     try:
+        executed_by = user["emp_cd"] if user else None
+        executed_by_name = user["name"] if user else None
         cursor = db.execute(
-            """INSERT INTO rebate_runs (run_date, target_month, total_customers, total_rebate, status, csv_filename)
-               VALUES (?, ?, ?, ?, 'calculated', ?)""",
+            """INSERT INTO rebate_runs (run_date, target_month, total_customers, total_rebate, status, csv_filename, created_at, executed_by, executed_by_name)
+               VALUES (?, ?, ?, ?, 'calculated', ?, ?, ?, ?)""",
             (
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                _now_kst(),
                 result["target_month"],
                 result["summary"]["total_customers"],
                 result["summary"]["total_rebate"],
                 file.filename,
+                _now_kst(),
+                executed_by,
+                executed_by_name,
             ),
         )
         run_id = cursor.lastrowid
@@ -475,7 +489,7 @@ async def submit_to_erp(req: SubmitRequest):
     try:
         db.execute(
             "UPDATE rebate_runs SET status = 'submitted', submitted_at = ? WHERE id = ?",
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), req.run_id),
+            (_now_kst(), req.run_id),
         )
         db.commit()
     finally:
@@ -534,7 +548,7 @@ async def approve_rebate(req: ApprovalRequest):
             (
                 approval_status,
                 req.emp_cd,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                _now_kst(),
                 req.note,
                 req.run_id,
             ),
