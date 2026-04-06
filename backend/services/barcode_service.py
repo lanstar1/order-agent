@@ -290,15 +290,7 @@ async def send_to_ecount(
     valid["_orig_idx"] = valid.index
     valid = valid.sort_values(["물류센터", "발주번호"]).reset_index(drop=True)
 
-    # ⑤ 발주번호별 순번 할당
-    doc_to_ser: dict = {}
-    ser_counter = 1
-    for doc_no in valid["발주번호"]:
-        if doc_no not in doc_to_ser:
-            doc_to_ser[doc_no] = str(ser_counter)
-            ser_counter += 1
-
-    # ⑥ 세션 발급 후 재고 먼저 조회 → WH_CD 결정
+    # ⑤ 세션 발급 후 재고 먼저 조회 → 품목별 WH_CD 결정
     session_id, zone = await get_ecount_session()
 
     inv_10: dict = {}  # 용산(10) 재고
@@ -333,47 +325,77 @@ async def send_to_ecount(
         except Exception as e:
             logger.warning(f"[바코드] 재고 사전조회 실패 (기본창고로 진행): {e}")
 
-        # ⑦ BulkDatas 구성 — 재고 기반으로 WH_CD 결정
+        # ⑥ 품목별 WH_CD 결정 후 통진/용산 두 그룹으로 분리
+        #    → 통진(30) 전체 먼저, 용산(10) 전체 나중에 전송해야
+        #      같은 발주번호가 창고별로 각각 하나의 전표로 묶임
+        rows_30 = []  # (row, orig_idx, is_label)
+        rows_10 = []
+
+        for _, row in valid.iterrows():
+            prod_cd = str(row["_품목코드"]).strip()
+            has_30 = inv_30.get(prod_cd, 0) > 0
+            has_10 = inv_10.get(prod_cd, 0) > 0
+            bc_val = str(row.get("상품바코드", "")).strip()
+            cd_val = prod_cd
+            is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
+
+            if inv_checked and not has_30 and has_10:
+                rows_10.append((row, int(row["_orig_idx"]), is_label))
+            else:
+                rows_30.append((row, int(row["_orig_idx"]), is_label))
+
+        # ⑦ 통진 그룹 순번 할당 → 용산 그룹 순번 이어서 할당
+        def assign_ser_nos(rows):
+            doc_to_ser: dict = {}
+            counter = [1]
+            def get_ser(doc_no):
+                if doc_no not in doc_to_ser:
+                    doc_to_ser[doc_no] = str(counter[0])
+                    counter[0] += 1
+                return doc_to_ser[doc_no]
+            return get_ser, counter
+
+        get_ser_30, cnt_30 = assign_ser_nos(rows_30)
+        # 용산 순번은 통진 마지막 순번 이후부터 시작하지 않고 1부터 독립적으로
+        # (ERP에서 창고가 다르면 별도 전표이므로 순번 중복 무방)
+        doc_to_ser_30: dict = {}
+        ser_30 = 1
+        for row, _, _ in rows_30:
+            doc_no = str(row["발주번호"]).strip()
+            if doc_no not in doc_to_ser_30:
+                doc_to_ser_30[doc_no] = str(ser_30)
+                ser_30 += 1
+
+        doc_to_ser_10: dict = {}
+        ser_10 = 1
+        for row, _, _ in rows_10:
+            doc_no = str(row["발주번호"]).strip()
+            if doc_no not in doc_to_ser_10:
+                doc_to_ser_10[doc_no] = str(ser_10)
+                ser_10 += 1
+
+        # ⑧ BulkDatas 구성 — 통진 그룹 먼저, 용산 그룹 나중
         bulk_list = []
         orig_indices = []
         label_flags = []
-        item_wh_list = []  # 각 항목의 실제 전송 창고 기록
+        item_wh_list = []
 
-        for _, row in valid.iterrows():
+        def build_entry(row, orig_idx, is_label, wh_cd, doc_to_ser):
             doc_no = str(row["발주번호"]).strip()
             warehouse = str(row["물류센터"]).strip()
             qty_str = str(row[qty_col]).replace(",", "").strip()
             supply_str = str(row.get("총발주 매입금", "")).replace(",", "").strip()
-
             try:
                 price_val = round(float(supply_str) / float(qty_str)) if supply_str and qty_str and float(qty_str) != 0 else 0
             except Exception:
                 price_val = 0
-
-            bc_val = str(row.get("상품바코드", "")).strip()
-            cd_val = str(row.get("_품목코드", "")).strip()
-            is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
-            label_flags.append(is_label)
-
-            prod_cd = str(row["_품목코드"]).strip()
-            has_30 = inv_30.get(prod_cd, 0) > 0
-            has_10 = inv_10.get(prod_cd, 0) > 0
-
-            # 통진 재고 없고 용산 재고 있으면 → 용산(10)으로 전표
-            if inv_checked and not has_30 and has_10:
-                wh_cd = "10"
-            else:
-                wh_cd = BARCODE_WH_CD  # 기본: 통진(30)
-
-            item_wh_list.append(wh_cd)
-
-            bulk_list.append({"BulkDatas": {
+            return {"BulkDatas": {
                 "UPLOAD_SER_NO": doc_to_ser[doc_no],
                 "IO_DATE": today,
                 "CUST": BARCODE_CUST_CODE,
                 "WH_CD": wh_cd,
                 "EMP_CD": staff_code,
-                "PROD_CD": prod_cd,
+                "PROD_CD": str(row["_품목코드"]).strip(),
                 "PROD_DES": "★ 바코드 부착 필요" if is_label else "",
                 "QTY": qty_str,
                 "PRICE": str(price_val),
@@ -381,13 +403,24 @@ async def send_to_ecount(
                 "VAT_AMT": "",
                 "REMARKS": f"{warehouse} - {doc_no}",
                 "U_MEMO5": f"{warehouse} - {doc_no}",
-            }})
-            orig_indices.append(int(row["_orig_idx"]))
+            }}
 
-        logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
-        yongsan_cnt = sum(1 for w in item_wh_list if w == "10")
+        for row, orig_idx, is_label in rows_30:
+            bulk_list.append(build_entry(row, orig_idx, is_label, BARCODE_WH_CD, doc_to_ser_30))
+            orig_indices.append(orig_idx)
+            label_flags.append(is_label)
+            item_wh_list.append(BARCODE_WH_CD)
+
+        for row, orig_idx, is_label in rows_10:
+            bulk_list.append(build_entry(row, orig_idx, is_label, "10", doc_to_ser_10))
+            orig_indices.append(orig_idx)
+            label_flags.append(is_label)
+            item_wh_list.append("10")
+
+        yongsan_cnt = len(rows_10)
+        logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 통진: {len(rows_30)}개 | 용산: {yongsan_cnt}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
         if yongsan_cnt:
-            logger.info(f"[바코드] 통진 재고 없어 용산 전표 전환: {yongsan_cnt}건")
+            logger.info(f"[바코드] 통진→용산 전환 {yongsan_cnt}건 (용산 전표 후순위 전송)")
 
         # ⑧ 전표 전송
         sale_url = f"https://oapi{zone.lower()}.ecount.com/OAPI/V2/Sale/SaveSale?SESSION_ID={session_id}"
