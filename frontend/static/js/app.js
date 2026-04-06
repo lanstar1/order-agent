@@ -6391,6 +6391,7 @@ function reconcileNewMatch() {
       document.getElementById('rebateUploadSection').style.display = 'none';
       document.getElementById('rebateLoadingSection').style.display = 'block';
       document.getElementById('rebateResultSection').style.display = 'none';
+      if (window._rbStopGuide) window._rbStopGuide();
 
       try {
         const fd = new FormData();
@@ -6403,6 +6404,7 @@ function reconcileNewMatch() {
       } catch (e) {
         rbToast(`계산 실패: ${e.message}`, 'error');
         document.getElementById('rebateUploadSection').style.display = 'block';
+        if (window._rbStartGuide) window._rbStartGuide();
         btnCalc.disabled = false;
       } finally {
         document.getElementById('rebateLoadingSection').style.display = 'none';
@@ -6955,6 +6957,144 @@ function reconcileNewMatch() {
     rbToast('정산내역서가 열렸습니다.', 'info');
   };
 
+
+  // ── ERP 가이드 모션그래픽 ──
+  (function initGuideMotion() {
+    let guideTimer = null;
+    let guideStep = 0;
+
+    function resetGuide() {
+      const els = {
+        menu: document.getElementById('rbGuideMenu'),
+        date: document.getElementById('rbGuideDate'),
+        arrow: document.getElementById('rbGuideArrow'),
+        dropdown: document.getElementById('rbGuideDropdown'),
+        csv: document.getElementById('rbGuideCsv'),
+        cursor: document.getElementById('rbGuideCursor'),
+      };
+      if (!els.menu) return els;
+      els.menu.classList.remove('rb-erp-highlight','rb-click-effect');
+      if(els.date) els.date.classList.remove('rb-erp-date-highlight','rb-erp-highlight');
+      if(els.arrow) els.arrow.classList.remove('rb-erp-arrow-highlight','rb-erp-highlight','rb-click-effect');
+      if(els.dropdown) els.dropdown.classList.remove('rb-erp-dropdown-show');
+      if(els.csv) els.csv.classList.remove('rb-erp-dd-csv-highlight','rb-click-effect');
+      ['rbStep1','rbStep2','rbStep3','rbStep4'].forEach(id => {
+        const s = document.getElementById(id);
+        if (s) s.classList.remove('active');
+      });
+      if(els.cursor) { els.cursor.style.opacity = '0'; }
+      return els;
+    }
+
+    function moveCursor(cursor, target, offsetX, offsetY) {
+      if (!cursor || !target) return;
+      const parent = cursor.closest('.rb-guide-screen');
+      if (!parent) return;
+      const pRect = parent.getBoundingClientRect();
+      const tRect = target.getBoundingClientRect();
+      cursor.style.left = (tRect.left - pRect.left + (offsetX||0)) + 'px';
+      cursor.style.top = (tRect.top - pRect.top + (offsetY||0)) + 'px';
+      cursor.style.opacity = '1';
+    }
+
+    function runGuideAnimation() {
+      const els = resetGuide();
+      if (!els.menu) return;
+      guideStep = 0;
+
+      // Step 1: 판매현황 클릭 (0ms ~ 1800ms)
+      setTimeout(() => {
+        const s1 = document.getElementById('rbStep1');
+        if(s1) s1.classList.add('active');
+        moveCursor(els.cursor, els.menu, 30, 8);
+      }, 300);
+      setTimeout(() => {
+        els.menu.classList.add('rb-erp-highlight','rb-click-effect');
+      }, 900);
+
+      // Step 2: 기준일자 입력 (2000ms ~ 3800ms)
+      setTimeout(() => {
+        const s1 = document.getElementById('rbStep1');
+        if(s1) s1.classList.remove('active');
+        const s2 = document.getElementById('rbStep2');
+        if(s2) s2.classList.add('active');
+        els.menu.classList.remove('rb-erp-highlight','rb-click-effect');
+        if(els.date) moveCursor(els.cursor, els.date, 40, 6);
+      }, 2000);
+      setTimeout(() => {
+        if(els.date) els.date.classList.add('rb-erp-date-highlight');
+      }, 2600);
+
+      // Step 3: 화살표 클릭 (4000ms ~ 5800ms)
+      setTimeout(() => {
+        const s2 = document.getElementById('rbStep2');
+        if(s2) s2.classList.remove('active');
+        const s3 = document.getElementById('rbStep3');
+        if(s3) s3.classList.add('active');
+        if(els.date) els.date.classList.remove('rb-erp-date-highlight');
+        moveCursor(els.cursor, els.arrow, 4, 4);
+      }, 4000);
+      setTimeout(() => {
+        if(els.arrow) els.arrow.classList.add('rb-erp-arrow-highlight','rb-click-effect');
+        if(els.dropdown) els.dropdown.classList.add('rb-erp-dropdown-show');
+      }, 4600);
+
+      // Step 4: CSV 클릭 (6000ms ~ 7800ms)
+      setTimeout(() => {
+        const s3 = document.getElementById('rbStep3');
+        if(s3) s3.classList.remove('active');
+        const s4 = document.getElementById('rbStep4');
+        if(s4) s4.classList.add('active');
+        if(els.arrow) els.arrow.classList.remove('rb-erp-arrow-highlight','rb-click-effect');
+        moveCursor(els.cursor, els.csv, 20, 6);
+      }, 6000);
+      setTimeout(() => {
+        if(els.csv) els.csv.classList.add('rb-erp-dd-csv-highlight','rb-click-effect');
+      }, 6600);
+
+      // 리셋 후 반복 (8500ms)
+      setTimeout(() => {
+        resetGuide();
+      }, 8200);
+    }
+
+    function startGuide() {
+      if (guideTimer) return;
+      runGuideAnimation();
+      guideTimer = setInterval(runGuideAnimation, 9000);
+    }
+
+    function stopGuide() {
+      if (guideTimer) { clearInterval(guideTimer); guideTimer = null; }
+      resetGuide();
+    }
+
+    // 탭 전환 시 가이드 시작/중지
+    const origSwitch = window.switchRebateTab;
+    window.switchRebateTab = function(tabId) {
+      origSwitch(tabId);
+      if (tabId === 'calc') {
+        const uploadSec = document.getElementById('rebateUploadSection');
+        if (uploadSec && uploadSec.style.display !== 'none') startGuide();
+      } else {
+        stopGuide();
+      }
+    };
+
+    // 페이지 로드 시 자동 시작 (리베이트 탭 활성화 시)
+    setTimeout(() => {
+      const uploadSec = document.getElementById('rebateUploadSection');
+      const calcTab = document.getElementById('rtab-calc');
+      if (uploadSec && calcTab && calcTab.classList.contains('active') &&
+          uploadSec.style.display !== 'none') {
+        startGuide();
+      }
+    }, 500);
+
+    // 결과 표시 시 가이드 중지
+    window._rbStopGuide = stopGuide;
+    window._rbStartGuide = startGuide;
+  })();
 
   // ── 이력 ──
   function rbFormatKST(dtStr) {
