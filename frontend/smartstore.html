@@ -143,8 +143,9 @@
                 <button class="btn btn-sm btn-gray" onclick="selectAll()">전체선택</button>
                 <button class="btn btn-sm btn-gray" onclick="deselectAll()">전체해제</button>
                 <span style="flex:1;"></span>
-                <button class="btn btn-red" onclick="autoReg('gimpo')" id="b-gp">김포 로젠등록</button>
-                <button class="btn btn-orange" onclick="autoReg('yongsan')" id="b-ys">용산 로젠등록</button>
+                <button class="btn btn-blue" onclick="sendErp()" id="b-erp">📤 ERP 전송</button>
+                <button class="btn btn-red" onclick="regLogen('gimpo')" id="b-gp">📦 김포 로젠등록</button>
+                <button class="btn btn-orange" onclick="regLogen('yongsan')" id="b-ys">📦 용산 로젠등록</button>
             </div>
 
             <div style="margin-top:12px;">
@@ -447,7 +448,158 @@ function renderTbl(orders){
     w.innerHTML = h + '</tbody></table>';
 }
 
-// ── 자동 등록 (선택된 주문만) ──
+// ── ERP 전송만 ──
+async function sendErp(){
+    if(!_rawOrders || _checkedSet.size === 0){
+        ss('s-auto','warn','선택된 주문이 없습니다.');
+        document.getElementById('card-result').style.display = 'block';
+        return;
+    }
+    const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
+    const groupSet = new Set(selectedOrders.map(o => getOrderId(o)));
+    if(!confirm(`ERP 판매전표 전송\n\n선택: ${selectedOrders.length}건 (${groupSet.size}그룹)\n\n※ 로젠등록/발송처리는 포함되지 않습니다.`)) return;
+
+    const btn = document.getElementById('b-erp');
+    const bg = document.getElementById('b-gp'), by = document.getElementById('b-ys');
+    btn.disabled = bg.disabled = by.disabled = true;
+    const ot = btn.innerHTML;
+    btn.innerHTML = '<span class="sp"></span> 전송 중...';
+
+    document.getElementById('card-result').style.display = 'block';
+    ss('s-auto','load',`ERP 전송 중... (${selectedOrders.length}건)`);
+    document.getElementById('res').style.display = 'none';
+    log(`=== ERP 전송 (${selectedOrders.length}건) ===`);
+
+    try{
+        const r = await(await fetch(B+'/api/smartstore/send-erp', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(selectedOrders),
+        })).json();
+
+        if(r.success){
+            ss('s-auto','ok',`ERP 전송 완료! 매칭 ${r.erp_matched||0}건 + 택배비 ${r.lines? r.lines - (r.erp_matched||0) : 0}건`);
+            log('완료: '+JSON.stringify({lines: r.lines, matched: r.erp_matched, unmatched: r.erp_unmatched}));
+            renderErpResult(r);
+        } else {
+            ss('s-auto','err', r.error || r.detail || 'ERP 전송 실패');
+            log('실패: '+JSON.stringify(r));
+        }
+    }catch(e){ss('s-auto','err',e.message);log('오류: '+e.message);}
+    finally{btn.disabled=bg.disabled=by.disabled=false; btn.innerHTML=ot; updateSelCount();}
+}
+
+function renderErpResult(r){
+    const g = document.getElementById('res'); g.style.display = 'grid';
+    g.innerHTML = `
+        <div class="rc ${r.success?'g':'r'}">
+            <h3>ERP 판매입력</h3>
+            <div class="v">${r.lines||0}건</div>
+            <div class="d">매칭 ${r.erp_matched||0}건${r.erp_unmatched>0?`<br><span style="color:#dc2626;">미매칭 ${r.erp_unmatched}건 (수기입력)</span>`:''}</div>
+        </div>`;
+
+    const um = r.unmatched_items || [];
+    const umSec = document.getElementById('unmatched-section');
+    if(um.length > 0){
+        umSec.style.display = 'block';
+        document.getElementById('unmatched-cnt').textContent = um.length;
+        let h = `<table><thead><tr>
+            <th>상품번호</th><th>상품명</th><th>옵션</th><th>수량</th><th>정산금액</th><th>품목코드</th><th>모델명</th><th></th>
+            </tr></thead><tbody>`;
+        um.forEach((it,i) => {
+            const pno = it.productNo || '';
+            h += `<tr>
+                <td>${pno}</td><td>${it.productName||''}</td><td>${it.optionInfo||''}</td>
+                <td>${it.quantity||1}</td><td>${Number(it.settlementAmount||0).toLocaleString()}원</td>
+                <td><input id="mc-erp-${i}" style="width:120px;padding:3px 6px;font-size:12px;border:1px solid #ccc;border-radius:4px;" placeholder="품목코드"></td>
+                <td><input id="mm-erp-${i}" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid #ccc;border-radius:4px;" placeholder="모델명(선택)"></td>
+                <td><button class="btn-xs btn-xs-green" onclick="addMapFromErp('${pno}',${i})">매핑추가</button></td>
+            </tr>`;
+        });
+        umSec.querySelector('tbody') ? umSec.querySelector('tbody').innerHTML = h + '</tbody>' : null;
+        umSec.innerHTML = `<h2 style="color:#dc2626;">ERP 미매칭 — 수기입력 필요 <span class="count-badge" style="background:#dc2626;">${um.length}</span></h2>
+            <p style="font-size:13px;color:#64748b;margin:8px 0 12px;">품목코드를 매핑하면 다음 전송 시 자동 처리됩니다.</p>
+            <table><thead><tr><th>상품번호</th><th>상품명</th><th>옵션</th><th>수량</th><th>정산금액</th><th>품목코드</th><th>모델명</th><th></th></tr></thead><tbody>${h}</tbody></table>`;
+    } else {
+        umSec.style.display = 'none';
+    }
+}
+
+async function addMapFromErp(pno, i){
+    const code = document.getElementById(`mc-erp-${i}`)?.value?.trim();
+    const model = document.getElementById(`mm-erp-${i}`)?.value?.trim() || '';
+    if(!code){ alert('품목코드를 입력하세요.'); return; }
+    const r = await(await fetch(B+'/api/smartstore/product-map',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({productNo: pno, erpCode: code, model}),
+    })).json();
+    if(r.success){ alert(`매핑 추가 완료: ${pno} → ${code}`); loadMap(); }
+    else alert('실패: '+(r.error||''));
+}
+
+// ── 로젠등록만 ──
+async function regLogen(wh){
+    if(!_rawOrders || _checkedSet.size === 0){
+        ss('s-auto','warn','선택된 주문이 없습니다.');
+        document.getElementById('card-result').style.display = 'block';
+        return;
+    }
+    const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
+    const groupSet = new Set(selectedOrders.map(o => getOrderId(o)));
+    const nm = wh==='gimpo'?'김포':'용산';
+    if(!confirm(`${nm} 로젠택배 등록\n\n선택: ${selectedOrders.length}건 (${groupSet.size}그룹)\n\n발주확인 + 발송처리 포함\n※ ERP 전송은 포함되지 않습니다.`)) return;
+
+    const btn = document.getElementById(wh==='gimpo'?'b-gp':'b-ys');
+    const be = document.getElementById('b-erp'), bo = document.getElementById(wh==='gimpo'?'b-ys':'b-gp');
+    btn.disabled = be.disabled = bo.disabled = true;
+    const ot = btn.innerHTML;
+    btn.innerHTML = '<span class="sp"></span> 처리 중...';
+
+    document.getElementById('card-result').style.display = 'block';
+    ss('s-auto','load',`${nm} 로젠등록 중... (${groupSet.size}그룹, 1~2분 소요)`);
+    document.getElementById('res').style.display = 'none';
+    log(`=== ${nm} 로젠등록 (${selectedOrders.length}건) ===`);
+
+    try{
+        const r = await(await fetch(B+'/api/smartstore/register-logen?warehouse='+wh,{
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(selectedOrders),
+        })).json();
+
+        if(r.success){
+            ss('s-auto','ok',`${nm} 로젠등록 완료! 송장 ${r.tracking_count||0}건`);
+            log('완료: '+JSON.stringify({tracking: r.tracking_count, confirm: r.confirm?.confirmed, dispatch: r.dispatch?.dispatched}));
+            renderLogenResult(r, nm);
+        } else {
+            ss('s-auto','err', r.logen?.error || r.detail || '로젠등록 실패');
+            log('실패: '+JSON.stringify(r));
+        }
+    }catch(e){ss('s-auto','err',e.message);log('오류: '+e.message);}
+    finally{btn.disabled=be.disabled=bo.disabled=false; btn.innerHTML=ot; updateSelCount();}
+}
+
+function renderLogenResult(r, nm){
+    const g = document.getElementById('res'); g.style.display = 'grid';
+    const l = r.logen||{}, c = r.confirm||{}, p = r.dispatch||{};
+    g.innerHTML = `
+        <div class="rc ${l.success&&r.tracking_count>0?'g':'r'}">
+            <h3>${nm} 로젠등록</h3>
+            <div class="v">${r.tracking_count||0}건</div>
+            <div class="d">${l.error||('등록 '+(l.total_registered||0)+' / 채번 '+(l.total_tracking||0))}</div>
+        </div>
+        <div class="rc ${c.confirmed>0?'g':'y'}">
+            <h3>발주확인</h3>
+            <div class="v">${c.confirmed||0}건</div>
+            <div class="d">${c.message||''}</div>
+        </div>
+        <div class="rc ${p.dispatched>0?'g':'y'}">
+            <h3>발송처리</h3>
+            <div class="v">${p.dispatched||0}건</div>
+            <div class="d">${p.message||(p.failed>0?'실패 '+p.failed+'건':'완료')}</div>
+        </div>`;
+}
+
+// ── 자동 등록 (선택된 주문만) — 기존 유지 ──
 async function autoReg(wh){
     if(!_rawOrders || _checkedSet.size === 0){
         ss('s-auto','warn','선택된 주문이 없습니다. 체크박스로 주문을 선택해주세요.');

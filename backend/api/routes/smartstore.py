@@ -115,6 +115,177 @@ async def fetch_orders(
         return {"success": False, "error": str(e), "orders": []}
 
 
+@router.post("/send-erp")
+async def send_erp_only(
+    selected_orders: list[dict] = Body(...),
+):
+    """ERP 판매전표만 전송 (로젠 미포함)"""
+    from services.erp_client_ss import ERPClientSS
+
+    if not selected_orders:
+        return {"success": True, "message": "선택된 주문이 없습니다.", "lines": 0}
+
+    order_groups = {}
+    unmatched_items = []
+
+    for o in selected_orders:
+        od = o.get("order", {})
+        po = o.get("productOrder", {})
+        oid = od.get("orderId", "")
+        poid = po.get("productOrderId", "")
+        if not oid or not poid:
+            continue
+        if oid not in order_groups:
+            order_groups[oid] = []
+        product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
+        seller_code = po.get("sellerProductCode", "") or ""
+        order_groups[oid].append({
+            "orderId": oid, "productOrderId": poid,
+            "productName": po.get("productName", ""),
+            "productNo": product_id, "productId": product_id,
+            "sellerProductCode": seller_code,
+            "optionInfo": po.get("productOption", "") or seller_code,
+            "quantity": po.get("quantity", 1),
+            "settlementAmount": po.get("expectedSettlementAmount", 0) or po.get("totalPaymentAmount", 0),
+        })
+
+    DELIVERY_PROD_CD = "DEL-매출배002"
+    erp_lines = []
+
+    for oid, group in order_groups.items():
+        for o in group:
+            code = _match_item_code(o)
+            qty = int(o.get("quantity", 1) or 1)
+            settle = float(o.get("settlementAmount", 0) or 0)
+            if code:
+                erp_lines.append({"prod_cd": code, "qty": qty, "price": round(settle / qty, 2) if qty else 0})
+            else:
+                unmatched_items.append({
+                    "orderId": oid,
+                    "productOrderId": o.get("productOrderId", ""),
+                    "productNo": o.get("productNo", "") or o.get("productId", ""),
+                    "productName": o.get("productName", ""),
+                    "optionInfo": o.get("optionInfo", ""),
+                    "quantity": qty, "settlementAmount": settle,
+                })
+
+    delivery_count = len(order_groups)
+    if delivery_count > 0:
+        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": delivery_count, "price": 0})
+
+    if not erp_lines:
+        return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
+
+    if not SMARTSTORE_CUST_CODE:
+        return {"success": False, "error": "SMARTSTORE_CUST_CODE 미설정"}
+
+    try:
+        erp = ERPClientSS()
+        await erp.ensure_session()
+        r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, SMARTSTORE_EMP_CODE)
+        r["lines"] = len(erp_lines)
+        r["erp_matched"] = len(erp_lines) - (1 if delivery_count > 0 else 0)
+        r["erp_unmatched"] = len(unmatched_items)
+        r["unmatched_items"] = unmatched_items
+        return r
+    except Exception as e:
+        logger.error(f"[SS] ERP 전송 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/register-logen")
+async def register_logen_only(
+    warehouse: str = Query(..., pattern="^(gimpo|yongsan)$"),
+    selected_orders: list[dict] = Body(...),
+):
+    """로젠택배 등록 + 발주확인 + 발송처리 (ERP 미포함)"""
+    from services.naver_client import naver_client
+    from services.ilogen_client import register_orders, get_sender
+
+    if not selected_orders:
+        return {"success": True, "message": "선택된 주문이 없습니다."}
+
+    order_groups = {}
+    all_po_ids = []
+
+    for o in selected_orders:
+        od = o.get("order", {})
+        po = o.get("productOrder", {})
+        oid = od.get("orderId", "")
+        poid = po.get("productOrderId", "")
+        if not oid or not poid:
+            continue
+        all_po_ids.append(poid)
+        if oid not in order_groups:
+            order_groups[oid] = []
+        product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
+        seller_code = po.get("sellerProductCode", "") or ""
+        order_groups[oid].append({
+            "orderId": oid, "productOrderId": poid,
+            "productName": po.get("productName", ""),
+            "productNo": product_id, "productId": product_id,
+            "sellerProductCode": seller_code,
+            "optionInfo": po.get("productOption", "") or seller_code,
+            "quantity": po.get("quantity", 1),
+            "deliveryFeeType": po.get("shippingFeeType", ""),
+            "rcvName": po.get("shippingAddress", {}).get("name", ""),
+            "rcvTel": po.get("shippingAddress", {}).get("tel1", ""),
+            "rcvAddr": (po.get("shippingAddress", {}).get("baseAddress", "") + " " + po.get("shippingAddress", {}).get("detailedAddress", "")).strip(),
+        })
+
+    sender = get_sender(warehouse)
+    ilogen_orders = []
+    oid_to_idx = {}
+
+    for oid, group in order_groups.items():
+        first = group[0]
+        fare_code = "020" if "착불" in str(first.get("deliveryFeeType", "")) else "030"
+        ilogen_orders.append({
+            "snd_name": sender["name"], "snd_tel": sender["tel"], "snd_addr": sender["addr"],
+            "rcv_name": first["rcvName"], "rcv_tel": first["rcvTel"], "rcv_addr": first["rcvAddr"],
+            "fare_code": fare_code, "goods_nm": _build_goods_nm(group),
+        })
+        oid_to_idx[oid] = len(ilogen_orders) - 1
+
+    try:
+        logen_res = await register_orders(warehouse, ilogen_orders)
+        tns = logen_res.get("tracking_numbers", [])
+        logen_ok = logen_res.get("success", False) and len(tns) > 0
+
+        confirm_result = {"confirmed": 0, "message": "로젠 등록 실패로 보류"}
+        dispatch_result = {"dispatched": 0, "message": "로젠 등록 실패로 보류"}
+
+        if logen_ok:
+            confirm_result = await naver_client.confirm_orders(all_po_ids)
+            if confirm_result.get("confirmed", 0) > 0:
+                oid_slip = {}
+                for tn in tns:
+                    for oid, idx in oid_to_idx.items():
+                        if idx == tn["index"]:
+                            oid_slip[oid] = tn["slip_no"]
+                            break
+                dispatch_list = []
+                for oid, group in order_groups.items():
+                    slip = oid_slip.get(oid)
+                    if not slip:
+                        continue
+                    for o in group:
+                        dispatch_list.append({"productOrderId": o["productOrderId"], "deliveryCompanyCode": "LOGEN", "trackingNumber": slip})
+                dispatch_result = await naver_client.dispatch_orders(dispatch_list) if dispatch_list else {"success": True, "message": "대상 없음"}
+
+        return {
+            "success": logen_ok,
+            "logen": logen_res,
+            "confirm": confirm_result,
+            "dispatch": dispatch_result,
+            "tracking_count": len(tns),
+            "total_orders": len(all_po_ids),
+        }
+    except Exception as e:
+        logger.error(f"[SS] 로젠등록 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/auto-register-logen")
 async def auto_register_logen(
     warehouse: str = Query(..., pattern="^(gimpo|yongsan)$"),
