@@ -33,6 +33,7 @@ from api.routes.inventory_alert import router as inventory_alert_router
 from api.routes.barcode import router as barcode_router
 from api.routes.smartstore import router as smartstore_router
 from api.routes.purchase_reconciliation import router as reconcile_router
+from api.routes.rebate import router as rebate_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -161,6 +162,9 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/reconcile/upload-vendor-ledger"): "매입정산 원장 업로드",
     ("POST", "/api/reconcile/compare"): "매입정산 비교 분석",
     ("POST", "/api/reconcile/save-purchase"): "매입정산 전표 입력",
+
+    ("POST", "/api/rebate/calculate"): "리베이트 계산",
+    ("POST", "/api/rebate/submit"): "리베이트 ERP 제출",
 }
 
 @app.middleware("http")
@@ -260,6 +264,7 @@ app.include_router(inventory_alert_router)
 app.include_router(barcode_router)
 app.include_router(smartstore_router)
 app.include_router(reconcile_router)
+app.include_router(rebate_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -390,6 +395,14 @@ async def startup():
     logger.info("=== Order Agent 시작 (v0.2.0) ===")
     init_db()
     logger.info("데이터베이스 초기화 완료")
+
+    # 리베이트 테이블 초기화
+    try:
+        from api.routes.rebate import _ensure_rebate_tables
+        _ensure_rebate_tables()
+        logger.info("리베이트 테이블 초기화 완료")
+    except Exception as e:
+        logger.warning(f"리베이트 테이블 초기화 실패 (서비스는 계속): {e}")
 
     # 매입정산 ERP 캐시 복원 (DB → 메모리)
     try:

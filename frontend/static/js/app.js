@@ -153,6 +153,7 @@ function navigateTo(pageId) {
     ai_dashboard: "AI 대시보드",
     settings:     "설정",
     reconcile:    "매입정산",
+    rebate:       "리베이트",
   }[pageId] || "";
   // AI 상담 페이지 진입 시 초기화
   if (pageId === "aicc") initAiccTab();
@@ -178,6 +179,8 @@ function navigateTo(pageId) {
   if (pageId === "ai_dashboard" && typeof loadDashboard === "function") loadDashboard();
   // 설정 페이지 진입 시 관리자 인증 확인
   if (pageId === "settings" && typeof showAdminOverlay === "function") showAdminOverlay();
+  // 리베이트 페이지 진입 시 초기화
+  if (pageId === "rebate" && typeof initRebatePage === "function") initRebatePage();
 }
 
 function statusBadge(status) {
@@ -6295,4 +6298,632 @@ function reconcileNewMatch() {
   toast("새 매칭을 시작합니다. 거래처 원장을 업로드하세요.", "info");
 }
 
+
+// ═══════════════════════════════════════════════════════
+// 리베이트 자동계산기
+// ═══════════════════════════════════════════════════════
+(function() {
+  'use strict';
+
+  let rbRunId = null;
+  let rbResult = null;
+  let rbSettings = null;
+  let _rbInitialized = false;
+
+  function rbFmt(n) { return Number(n).toLocaleString('ko-KR'); }
+
+  function rbToast(msg, type) {
+    const el = document.createElement('div');
+    el.className = `rb-toast ${type || 'info'}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  function rbApi(method, path, body, isForm) {
+    const opts = { method, headers: {} };
+    const token = localStorage.getItem("token");
+    if (token) opts.headers["Authorization"] = "Bearer " + token;
+    if (body && !isForm) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    } else if (body && isForm) {
+      opts.body = body;
+    }
+    return fetch(path, opts).then(async res => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return res.json();
+    });
+  }
+
+  // 탭 전환
+  window.switchRebateTab = function(tabId) {
+    document.querySelectorAll('.rebate-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.rebate-tab-content').forEach(c => c.classList.remove('active'));
+    const btn = document.querySelector(`.rebate-tab[data-rtab="${tabId}"]`);
+    if (btn) btn.classList.add('active');
+    const content = document.getElementById('rtab-' + tabId);
+    if (content) content.classList.add('active');
+    if (tabId === 'history') rbLoadHistory();
+    if (tabId === 'rsettings') rbLoadSettings();
+  };
+
+  // 페이지 초기화
+  window.initRebatePage = function() {
+    if (_rbInitialized) return;
+    _rbInitialized = true;
+
+    // 업로드 영역
+    const area = document.getElementById('rebateUploadArea');
+    const fileInput = document.getElementById('rebateCsvFile');
+    const btnCalc = document.getElementById('btnRebateCalc');
+
+    area.addEventListener('click', () => fileInput.click());
+    area.addEventListener('dragover', e => { e.preventDefault(); area.style.borderColor = '#2563eb'; area.style.background = '#eff6ff'; });
+    area.addEventListener('dragleave', () => { area.style.borderColor = '#e2e8f0'; area.style.background = ''; });
+    area.addEventListener('drop', e => {
+      e.preventDefault();
+      area.style.borderColor = '#e2e8f0'; area.style.background = '';
+      if (e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        rbOnFile();
+      }
+    });
+    fileInput.addEventListener('change', rbOnFile);
+
+    function rbOnFile() {
+      if (fileInput.files.length) {
+        area.querySelector('div:nth-child(2)').innerHTML =
+          `<strong>${fileInput.files[0].name}</strong> 선택됨 (${(fileInput.files[0].size/1024).toFixed(0)} KB)`;
+        btnCalc.disabled = false;
+      }
+    }
+
+    btnCalc.addEventListener('click', async () => {
+      if (!fileInput.files.length) return;
+      btnCalc.disabled = true;
+      document.getElementById('rebateUploadSection').style.display = 'none';
+      document.getElementById('rebateLoadingSection').style.display = 'block';
+      document.getElementById('rebateResultSection').style.display = 'none';
+
+      try {
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        const result = await rbApi('POST', '/api/rebate/calculate', fd, true);
+        rbRunId = result.run_id;
+        rbResult = result;
+        rbRenderResult(result);
+        rbToast(`리베이트 계산 완료: ${result.summary.total_customers}개 거래처, ${rbFmt(result.summary.total_rebate)}원`, 'success');
+      } catch (e) {
+        rbToast(`계산 실패: ${e.message}`, 'error');
+        document.getElementById('rebateUploadSection').style.display = 'block';
+        btnCalc.disabled = false;
+      } finally {
+        document.getElementById('rebateLoadingSection').style.display = 'none';
+      }
+    });
+
+    // CSV 다운로드
+    document.getElementById('btnRbExportCsv').addEventListener('click', rbExportCsv);
+
+    // ERP 제출
+    document.getElementById('btnRbSubmitERP').addEventListener('click', rbSubmitERP);
+
+    // 설정 저장 버튼들
+    document.getElementById('btnRbSaveAllowed').addEventListener('click', rbSaveAllowed);
+    document.getElementById('btnRbAddAlias').addEventListener('click', rbAddAlias);
+    document.getElementById('btnRbSaveTier').addEventListener('click', rbSaveTier);
+    document.getElementById('btnRbSaveRates').addEventListener('click', rbSaveRates);
+    document.getElementById('btnRbSaveExceptions').addEventListener('click', rbSaveExceptions);
+    document.getElementById('btnRbAddException').addEventListener('click', rbAddException);
+    document.getElementById('btnRbSaveRateUpgrade').addEventListener('click', rbSaveRateUpgrade);
+    document.getElementById('btnRbAddRateUpgrade').addEventListener('click', rbAddRateUpgrade);
+    document.getElementById('btnRbSaveExcluded').addEventListener('click', rbSaveExcluded);
+    document.getElementById('btnRbSaveEmployees').addEventListener('click', rbSaveEmployees);
+    document.getElementById('btnRbAddEmployee').addEventListener('click', rbAddEmployee);
+    document.getElementById('btnRbUploadMaster').addEventListener('click', rbUploadMaster);
+    document.getElementById('btnRbSaveErp').addEventListener('click', rbSaveErpDefaults);
+  };
+
+  // 결과 렌더링
+  function rbRenderResult(result) {
+    const s = result.summary;
+    const month = result.target_month || '-';
+    document.getElementById('rbSumMonth').textContent = month;
+    document.getElementById('rbSumCustomers').textContent = s.total_customers;
+    document.getElementById('rbSumTierInfo').textContent = `10%: ${s.tier_10_count}개 / 5%: ${s.tier_5_count}개`;
+    document.getElementById('rbSumTotal').textContent = rbFmt(s.total_rebate);
+    document.getElementById('rbSum10').textContent = rbFmt(s.tier_10_rebate);
+    document.getElementById('rbSum5').textContent = rbFmt(s.tier_5_rebate);
+
+    if (month && month.includes('-')) {
+      const [y, m] = month.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      document.getElementById('rbIoDate').value = `${y}${String(m).padStart(2,'0')}${lastDay}`;
+    }
+
+    rbRenderTable(result.customers);
+    document.getElementById('rebateResultSection').style.display = 'block';
+
+    if (result.status === 'submitted') {
+      document.getElementById('rbSubmitSection').innerHTML = `
+        <h2>ERP 전표 생성</h2>
+        <div style="padding:20px;text-align:center;color:#16a34a">
+          <div style="font-size:24px;margin-bottom:8px">✅</div>
+          <div>이미 제출 완료된 리베이트입니다.</div>
+        </div>`;
+    }
+  }
+
+  function rbRenderTable(customers) {
+    const tbody = document.getElementById('rbTableBody');
+    tbody.innerHTML = '';
+    customers.forEach((c, idx) => {
+      const finalRebate = c.total_rebate + (c.manual_adjustment || 0);
+      const tierCls = c.tier === '10%' ? 't10' : 't5';
+      const tr = document.createElement('tr');
+      if (c.is_excluded) tr.className = 'excluded';
+      tr.innerHTML = `
+        <td><button class="btn btn-outline btn-sm" data-rbidx="${idx}" onclick="rbToggleDetail(${idx})">▶</button></td>
+        <td>${c.customer_name}${c.customer_code ? `<span style="font-size:11px;color:#64748b;margin-left:4px">${c.customer_code}</span>` : ''}</td>
+        <td><span class="rb-tier ${tierCls}${c.is_exception ? ' exc' : ''}">${c.tier}${c.is_exception ? ' 예외' : ''}${c.is_rate_upgrade ? ' ↑' : ''}</span></td>
+        <td class="r">${rbFmt(c.total_sales)}</td>
+        <td class="r">${rbFmt(c.total_rebate)}</td>
+        <td class="r" style="color:${c.manual_adjustment ? '#2563eb' : 'inherit'}">${c.manual_adjustment ? rbFmt(c.manual_adjustment) : '-'}</td>
+        <td class="r" style="font-weight:600">${rbFmt(finalRebate)}</td>
+        <td><button class="btn btn-sm ${c.is_excluded ? 'btn-outline' : 'btn-danger'}" onclick="rbToggleExclude(${c.id},${c.is_excluded?'false':'true'})">${c.is_excluded ? '복원' : '제외'}</button></td>
+      `;
+      tbody.appendChild(tr);
+
+      const detailTr = document.createElement('tr');
+      detailTr.className = 'rb-detail-row';
+      detailTr.id = `rb-detail-${idx}`;
+      detailTr.innerHTML = `
+        <td colspan="8">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+            <div style="text-align:center">
+              <div style="font-size:11px;color:#64748b">메인 (수입/심천/plus/단종)</div>
+              <div style="font-size:16px;font-weight:600">${rbFmt(c.main_sales)}</div>
+              <div style="font-size:11px;color:#64748b">×${c.main_sales?((c.main_rebate/c.main_sales)*100).toFixed(0):(c.tier==='10%'?10:5)}% = ${rbFmt(c.main_rebate)}</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:11px;color:#64748b">랜스타 3%</div>
+              <div style="font-size:16px;font-weight:600">${rbFmt(c.lanstar3_sales)}</div>
+              <div style="font-size:11px;color:#64748b">×${c.lanstar3_sales?((c.lanstar3_rebate/c.lanstar3_sales)*100).toFixed(0):3}% = ${rbFmt(c.lanstar3_rebate)}</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:11px;color:#64748b">랜스타 5%</div>
+              <div style="font-size:16px;font-weight:600">${rbFmt(c.lanstar5_sales)}</div>
+              <div style="font-size:11px;color:#64748b">×${c.lanstar5_sales?((c.lanstar5_rebate/c.lanstar5_sales)*100).toFixed(0):5}% = ${rbFmt(c.lanstar5_rebate)}</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:11px;color:#64748b">프린터서버류</div>
+              <div style="font-size:16px;font-weight:600">${rbFmt(c.printer_sales)}</div>
+              <div style="font-size:11px;color:#64748b">×${c.printer_sales?((c.printer_rebate/c.printer_sales)*100).toFixed(0):7}% = ${rbFmt(c.printer_rebate)}</div>
+            </div>
+          </div>
+          ${c.is_rate_upgrade ? '<div style="margin-top:8px;font-size:12px;color:#2563eb">⬆ 할인율 상향 적용 업체</div>' : ''}
+          <div style="margin-top:12px;display:flex;gap:12px;align-items:center">
+            <label style="font-size:12px;color:#64748b">금액 조정:</label>
+            <input type="number" style="max-width:150px;font-size:13px" placeholder="0" value="${c.manual_adjustment||''}" onchange="rbUpdateAdj(${c.id},this.value)">
+            <label style="font-size:12px;color:#64748b;margin-left:12px">담당 사원:</label>
+            <input type="text" style="max-width:100px;font-size:13px" placeholder="사원코드" value="${c.emp_cd||''}" onchange="rbUpdateEmp(${c.id},this.value)">
+          </div>
+        </td>
+      `;
+      tbody.appendChild(detailTr);
+    });
+  }
+
+  window.rbToggleDetail = function(idx) {
+    const row = document.getElementById(`rb-detail-${idx}`);
+    const btn = document.querySelector(`button[data-rbidx="${idx}"]`);
+    if (row.classList.contains('open')) {
+      row.classList.remove('open'); btn.textContent = '▶';
+    } else {
+      row.classList.add('open'); btn.textContent = '▼';
+    }
+  };
+
+  window.rbToggleExclude = async function(detailId, exclude) {
+    try {
+      await rbApi('PUT', `/api/rebate/detail/${detailId}`, { is_excluded: exclude });
+      const result = await rbApi('GET', `/api/rebate/preview/${rbRunId}`);
+      rbResult = result;
+      rbRenderResult(result);
+      rbToast(exclude ? '거래처 제외됨' : '거래처 복원됨', 'info');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  };
+
+  window.rbUpdateAdj = async function(detailId, value) {
+    try {
+      await rbApi('PUT', `/api/rebate/detail/${detailId}`, { manual_adjustment: parseInt(value)||0 });
+      const result = await rbApi('GET', `/api/rebate/preview/${rbRunId}`);
+      rbResult = result;
+      rbRenderResult(result);
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  };
+
+  window.rbUpdateEmp = async function(detailId, value) {
+    try {
+      await rbApi('PUT', `/api/rebate/detail/${detailId}`, { emp_cd: value });
+      rbToast('담당 사원 업데이트', 'info');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  };
+
+  function rbExportCsv() {
+    if (!rbResult) return;
+    const rows = [['거래처명','거래처코드','등급','총매출','메인매출','랜스타3%매출','랜스타5%매출','프린터서버류매출','메인리베이트','랜스타3%리베이트','랜스타5%리베이트','프린터서버류리베이트','총리베이트','조정','최종리베이트','예외','제외']];
+    rbResult.customers.forEach(c => {
+      rows.push([c.customer_name,c.customer_code,c.tier,c.total_sales,c.main_sales,c.lanstar3_sales,c.lanstar5_sales,c.printer_sales,c.main_rebate,c.lanstar3_rebate,c.lanstar5_rebate,c.printer_rebate,c.total_rebate,c.manual_adjustment,c.total_rebate+c.manual_adjustment,c.is_exception?'Y':'',c.is_excluded?'Y':'']);
+    });
+    const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `리베이트_${rbResult.target_month||'result'}.csv`;
+    a.click();
+  }
+
+  async function rbSubmitERP() {
+    const ioDate = document.getElementById('rbIoDate').value.trim();
+    if (!ioDate || ioDate.length !== 8) { rbToast('전표 일자를 YYYYMMDD 형식으로 입력하세요.', 'error'); return; }
+    if (!rbRunId) return;
+    const activeCount = rbResult.customers.filter(c => !c.is_excluded && c.total_rebate > 0).length;
+    if (!confirm(`${activeCount}개 거래처에 대해 ERP 전표를 생성합니다.\n\n전표일자: ${ioDate}\n\n진행하시겠습니까?`)) return;
+
+    document.getElementById('btnRbSubmitERP').disabled = true;
+    document.getElementById('rbSubmitStatus').textContent = '처리 중...';
+    try {
+      const resp = await rbApi('POST', '/api/rebate/submit', { run_id: rbRunId, io_date: ioDate });
+      rbToast(`ERP 전표 생성 완료: 성공 ${resp.success_count}건, 실패 ${resp.fail_count}건`, resp.fail_count ? 'error' : 'success');
+      document.getElementById('rbSubmitStatus').textContent = `성공 ${resp.success_count}건 / 실패 ${resp.fail_count}건 / 총 ${rbFmt(resp.total_rebate)}원`;
+      const result = await rbApi('GET', `/api/rebate/preview/${rbRunId}`);
+      rbResult = result;
+      rbRenderResult(result);
+    } catch (e) {
+      rbToast(`ERP 제출 실패: ${e.message}`, 'error');
+      document.getElementById('rbSubmitStatus').textContent = `오류: ${e.message}`;
+      document.getElementById('btnRbSubmitERP').disabled = false;
+    }
+  }
+
+  // ── 이력 ──
+  async function rbLoadHistory() {
+    try {
+      const runs = await rbApi('GET', '/api/rebate/history');
+      const tbody = document.getElementById('rbHistoryBody');
+      tbody.innerHTML = '';
+      runs.forEach(r => {
+        const statusCls = r.status === 'submitted' ? 'submitted' : 'pending';
+        tbody.innerHTML += `
+          <tr>
+            <td>${r.id}</td>
+            <td>${r.target_month}</td>
+            <td>${r.total_customers}</td>
+            <td class="r">${rbFmt(r.total_rebate)}</td>
+            <td><span class="status-badge ${statusCls}">${r.status==='submitted'?'제출완료':'계산완료'}</span></td>
+            <td>${r.created_at||''}</td>
+            <td>${r.submitted_at||'-'}</td>
+            <td><button class="btn btn-outline btn-sm" onclick="rbLoadRun(${r.id})">보기</button></td>
+          </tr>`;
+      });
+      if (!runs.length) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#64748b">실행 이력이 없습니다.</td></tr>';
+    } catch (e) { rbToast(`이력 로드 실패: ${e.message}`, 'error'); }
+  }
+
+  window.rbLoadRun = async function(runId) {
+    switchRebateTab('calc');
+    document.getElementById('rebateUploadSection').style.display = 'none';
+    document.getElementById('rebateLoadingSection').style.display = 'block';
+    document.getElementById('rebateResultSection').style.display = 'none';
+    try {
+      const result = await rbApi('GET', `/api/rebate/preview/${runId}`);
+      rbRunId = runId;
+      rbResult = result;
+      rbRenderResult(result);
+    } catch (e) { rbToast(`데이터 로드 실패: ${e.message}`, 'error'); }
+    finally { document.getElementById('rebateLoadingSection').style.display = 'none'; }
+  };
+
+  // ── 설정 ──
+  const RB_RATE_LABELS = {
+    main: { label: '메인', group: '수입제품/심천시장/plus/단종/재고소진' },
+    lanstar_3: { label: '랜스타 3%', group: '수입제품(랜스타)★ 3%할인품목' },
+    lanstar_5: { label: '랜스타 5%', group: '수입제품(랜스타)★ 5%할인품목' },
+    printer: { label: '프린터서버류', group: '프린터서버류(매출별할인) 5%/7%' },
+  };
+
+  async function rbLoadSettings() {
+    try {
+      rbSettings = await rbApi('GET', '/api/rebate/settings');
+      rbRenderSettings(rbSettings);
+    } catch (e) { rbToast(`설정 로드 실패: ${e.message}`, 'error'); }
+  }
+
+  function rbRenderSettings(s) {
+    document.getElementById('rbUseAllowed').checked = s.use_allowed_list || false;
+    document.getElementById('rbAllowedText').value = (s.allowed_customers || []).join('\n');
+    rbRenderAliases(s.allowed_customer_aliases || {});
+    document.getElementById('rbTier10').value = s.tier_thresholds.tier_10_min;
+    document.getElementById('rbTier5').value = s.tier_thresholds.tier_5_min;
+
+    const rBody = document.getElementById('rbRatesBody');
+    rBody.innerHTML = '';
+    for (const [key, rates] of Object.entries(s.discount_rates)) {
+      const info = RB_RATE_LABELS[key] || { label: key, group: key };
+      rBody.innerHTML += `<tr>
+        <td>${info.label}</td>
+        <td style="font-size:12px;color:#64748b">${info.group}</td>
+        <td><input type="number" step="0.01" data-rbrate="${key}" data-rbtier="5" value="${rates['5%']}" style="max-width:80px"></td>
+        <td><input type="number" step="0.01" data-rbrate="${key}" data-rbtier="10" value="${rates['10%']}" style="max-width:80px"></td>
+      </tr>`;
+    }
+
+    rbRenderExceptions(s.exception_customers);
+    rbRenderRateUpgrades(s.rate_upgrade_customers || []);
+    document.getElementById('rbExcludedText').value = (s.excluded_customers || []).join('\n');
+    rbRenderEmployees(s.customer_employees || {});
+
+    const erp = s.erp_defaults || {};
+    document.getElementById('rbWhCd').value = erp.wh_cd || '10';
+    document.getElementById('rbIoType').value = erp.io_type || '1Z';
+    document.getElementById('rbProdCd').value = erp.prod_cd || '';
+    document.getElementById('rbRemarks').value = erp.remarks_format || '';
+
+    rbLoadMasterCount();
+  }
+
+  function rbRenderAliases(aliasMap) {
+    const container = document.getElementById('rbAliasesContainer');
+    container.innerHTML = '';
+    Object.entries(aliasMap || {}).forEach(([from, to]) => {
+      container.innerHTML += `<div class="form-row">
+        <input type="text" placeholder="CSV상 거래처명" value="${from}" data-field="from" style="flex:1">
+        <span style="color:#64748b">→</span>
+        <input type="text" placeholder="정식 거래처명" value="${to}" data-field="to" style="flex:1">
+        <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">삭제</button>
+      </div>`;
+    });
+  }
+
+  function rbAddAlias() {
+    const container = document.getElementById('rbAliasesContainer');
+    const div = document.createElement('div');
+    div.className = 'form-row';
+    div.innerHTML = `<input type="text" placeholder="CSV상 거래처명" data-field="from" style="flex:1">
+      <span style="color:#64748b">→</span>
+      <input type="text" placeholder="정식 거래처명" data-field="to" style="flex:1">
+      <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">삭제</button>`;
+    container.appendChild(div);
+  }
+
+  async function rbSaveAllowed() {
+    try {
+      const customers = document.getElementById('rbAllowedText').value.split('\n').map(s=>s.trim()).filter(Boolean);
+      const aliases = {};
+      document.querySelectorAll('#rbAliasesContainer .form-row').forEach(row => {
+        const from = row.querySelector('[data-field="from"]').value.trim();
+        const to = row.querySelector('[data-field="to"]').value.trim();
+        if (from && to) aliases[from] = to;
+      });
+      await rbApi('PUT', '/api/rebate/settings/allowed-customers', { use_allowed_list: document.getElementById('rbUseAllowed').checked, customers, aliases });
+      rbToast(`허용 목록 저장 완료 (${customers.length}개 거래처)`, 'success');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  }
+
+  function rbRenderExceptions(exceptions) {
+    const container = document.getElementById('rbExceptionsContainer');
+    container.innerHTML = '';
+    (exceptions || []).forEach((e, i) => {
+      container.innerHTML += `<div class="form-row" data-exc-idx="${i}">
+        <input type="text" placeholder="거래처명" value="${e.name}" data-field="name" style="flex:2">
+        <input type="text" placeholder="거래처코드" value="${e.code}" data-field="code" style="flex:1">
+        <select data-field="min_tier" style="flex:0.5">
+          <option value="5%" ${e.min_tier==='5%'?'selected':''}>5%</option>
+          <option value="10%" ${e.min_tier==='10%'?'selected':''}>10%</option>
+        </select>
+        <button class="btn btn-danger btn-sm" onclick="rbRemoveException(${i})">삭제</button>
+      </div>`;
+    });
+  }
+
+  window.rbRemoveException = function(idx) {
+    rbSettings.exception_customers.splice(idx, 1);
+    rbRenderExceptions(rbSettings.exception_customers);
+  };
+
+  function rbAddException() {
+    if (!rbSettings) rbSettings = { exception_customers: [] };
+    rbSettings.exception_customers.push({ name: '', code: '', min_tier: '5%' });
+    rbRenderExceptions(rbSettings.exception_customers);
+  }
+
+  async function rbSaveExceptions() {
+    try {
+      const exceptions = [];
+      document.querySelectorAll('#rbExceptionsContainer .form-row').forEach(row => {
+        exceptions.push({ name: row.querySelector('[data-field="name"]').value, code: row.querySelector('[data-field="code"]').value, min_tier: row.querySelector('[data-field="min_tier"]').value });
+      });
+      await rbApi('PUT', '/api/rebate/settings/exceptions', exceptions);
+      rbSettings.exception_customers = exceptions;
+      rbToast('예외 업체 저장 완료', 'success');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  }
+
+  function rbRenderRateUpgrades(entries) {
+    const container = document.getElementById('rbRateUpgradeContainer');
+    container.innerHTML = '';
+    (entries || []).forEach((e, i) => {
+      container.innerHTML += `<div class="form-row" data-rup-idx="${i}" style="flex-wrap:wrap;gap:8px">
+        <input type="text" placeholder="거래처명" value="${e.name}" data-field="name" style="flex:1.5;min-width:120px">
+        <input type="text" placeholder="설명" value="${e.description||''}" data-field="desc" style="flex:2;min-width:150px">
+        <div style="display:flex;flex-direction:column;gap:4px;flex:2;min-width:200px">
+          ${Object.entries(e.upgrades||{}).map(([from,to],j) => `
+            <div class="form-row" style="margin:0;gap:4px" data-upgrade-idx="${j}">
+              <input type="number" step="0.01" placeholder="원래율" value="${from}" data-field="from" style="max-width:70px">
+              <span style="color:#64748b">→</span>
+              <input type="number" step="0.01" placeholder="상향율" value="${to}" data-field="to" style="max-width:70px">
+              <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="padding:2px 6px">×</button>
+            </div>
+          `).join('')}
+          <button class="btn btn-outline btn-sm" onclick="rbAddUpgradeRule(this)" style="align-self:flex-start;font-size:11px;padding:2px 8px">+ 규칙</button>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="rbRemoveRateUpgrade(${i})">삭제</button>
+      </div>`;
+    });
+  }
+
+  window.rbAddUpgradeRule = function(btn) {
+    const div = document.createElement('div');
+    div.className = 'form-row';
+    div.style.cssText = 'margin:0;gap:4px';
+    div.innerHTML = `<input type="number" step="0.01" placeholder="원래율" data-field="from" style="max-width:70px">
+      <span style="color:#64748b">→</span>
+      <input type="number" step="0.01" placeholder="상향율" data-field="to" style="max-width:70px">
+      <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="padding:2px 6px">×</button>`;
+    btn.parentElement.insertBefore(div, btn);
+  };
+
+  window.rbRemoveRateUpgrade = function(idx) {
+    if (!rbSettings.rate_upgrade_customers) return;
+    rbSettings.rate_upgrade_customers.splice(idx, 1);
+    rbRenderRateUpgrades(rbSettings.rate_upgrade_customers);
+  };
+
+  function rbAddRateUpgrade() {
+    if (!rbSettings) rbSettings = {};
+    if (!rbSettings.rate_upgrade_customers) rbSettings.rate_upgrade_customers = [];
+    rbSettings.rate_upgrade_customers.push({ name: '', description: '', upgrades: {'0.05': 0.10} });
+    rbRenderRateUpgrades(rbSettings.rate_upgrade_customers);
+  }
+
+  async function rbSaveRateUpgrade() {
+    try {
+      const entries = [];
+      document.querySelectorAll('#rbRateUpgradeContainer > .form-row').forEach(row => {
+        const name = row.querySelector('[data-field="name"]').value.trim();
+        const desc = row.querySelector('[data-field="desc"]').value.trim();
+        const upgrades = {};
+        row.querySelectorAll('[data-upgrade-idx], [data-field="from"]').forEach(el => {
+          const container = el.closest('.form-row[style]');
+          if (!container) return;
+          const fromEl = container.querySelector('[data-field="from"]');
+          const toEl = container.querySelector('[data-field="to"]');
+          if (fromEl && toEl && fromEl.value && toEl.value) upgrades[fromEl.value] = parseFloat(toEl.value);
+        });
+        if (name) entries.push({ name, description: desc, upgrades });
+      });
+      await rbApi('PUT', '/api/rebate/settings/rate-upgrade-customers', entries);
+      rbSettings.rate_upgrade_customers = entries;
+      rbToast(`할인율 상향 업체 저장 완료 (${entries.length}개)`, 'success');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  }
+
+  async function rbSaveTier() {
+    try {
+      await rbApi('PUT', '/api/rebate/settings/tier-thresholds', {
+        tier_10_min: parseInt(document.getElementById('rbTier10').value),
+        tier_5_min: parseInt(document.getElementById('rbTier5').value),
+      });
+      rbToast('등급 기준 저장 완료', 'success');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  }
+
+  async function rbSaveRates() {
+    try {
+      const rates = [];
+      document.querySelectorAll('#rbRatesBody input[data-rbrate]').forEach(input => {
+        const cat = input.dataset.rbrate;
+        const tier = input.dataset.rbtier;
+        let entry = rates.find(r => r.category === cat);
+        if (!entry) { entry = { category: cat, rate_5: 0, rate_10: 0 }; rates.push(entry); }
+        if (tier === '5') entry.rate_5 = parseFloat(input.value);
+        if (tier === '10') entry.rate_10 = parseFloat(input.value);
+      });
+      await rbApi('PUT', '/api/rebate/settings/discount-rates', rates);
+      rbToast('할인율 저장 완료', 'success');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  }
+
+  async function rbSaveExcluded() {
+    try {
+      const list = document.getElementById('rbExcludedText').value.split('\n').map(s=>s.trim()).filter(Boolean);
+      await rbApi('PUT', '/api/rebate/settings/excluded-customers', list);
+      rbToast('제외 거래처 저장 완료', 'success');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  }
+
+  function rbRenderEmployees(map) {
+    const container = document.getElementById('rbEmployeesContainer');
+    container.innerHTML = '';
+    Object.entries(map).forEach(([name, code]) => {
+      container.innerHTML += `<div class="form-row">
+        <input type="text" placeholder="거래처명" value="${name}" data-field="name" style="flex:2">
+        <input type="text" placeholder="사원코드" value="${code}" data-field="code" style="flex:1">
+        <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">삭제</button>
+      </div>`;
+    });
+  }
+
+  function rbAddEmployee() {
+    const container = document.getElementById('rbEmployeesContainer');
+    const div = document.createElement('div');
+    div.className = 'form-row';
+    div.innerHTML = `<input type="text" placeholder="거래처명" data-field="name" style="flex:2">
+      <input type="text" placeholder="사원코드" data-field="code" style="flex:1">
+      <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">삭제</button>`;
+    container.appendChild(div);
+  }
+
+  async function rbSaveEmployees() {
+    try {
+      const mappings = [];
+      document.querySelectorAll('#rbEmployeesContainer .form-row').forEach(row => {
+        const name = row.querySelector('[data-field="name"]').value.trim();
+        const code = row.querySelector('[data-field="code"]').value.trim();
+        if (name && code) mappings.push({ customer_name: name, emp_cd: code });
+      });
+      await rbApi('PUT', '/api/rebate/settings/customer-employees', mappings);
+      rbToast('담당 사원 저장 완료', 'success');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  }
+
+  async function rbUploadMaster() {
+    const file = document.getElementById('rbMasterFile').files[0];
+    if (!file) { rbToast('파일을 선택하세요', 'error'); return; }
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const resp = await rbApi('POST', '/api/rebate/settings/customer-master/upload', fd, true);
+      rbToast(`거래처 마스터 ${resp.count}건 업로드 완료`, 'success');
+      rbLoadMasterCount();
+    } catch (e) { rbToast(`업로드 실패: ${e.message}`, 'error'); }
+  }
+
+  async function rbLoadMasterCount() {
+    try {
+      const data = await rbApi('GET', '/api/rebate/settings/customer-master');
+      document.getElementById('rbMasterCount').textContent = `등록된 거래처: ${data.length}건`;
+    } catch (e) { /* ignore */ }
+  }
+
+  async function rbSaveErpDefaults() {
+    try {
+      await rbApi('PUT', '/api/rebate/settings/erp-defaults', {
+        wh_cd: document.getElementById('rbWhCd').value,
+        io_type: document.getElementById('rbIoType').value,
+        prod_cd: document.getElementById('rbProdCd').value,
+        prod_des: '리베이트',
+        remarks_format: document.getElementById('rbRemarks').value,
+      });
+      rbToast('ERP 기본값 저장 완료', 'success');
+    } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
+  }
+
+  console.log('리베이트 모듈 로드 완료');
+})();
 
