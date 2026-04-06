@@ -6523,7 +6523,7 @@ function reconcileNewMatch() {
       tr.innerHTML = `
         <td><input type="checkbox" class="rb-check rb-row-check" data-rbidx="${idx}" onchange="rbOnRowCheck(${idx},this.checked)"></td>
         <td><button class="btn btn-outline btn-sm" data-rbidx="${idx}" onclick="rbToggleDetail(${idx})">▶</button></td>
-        <td>${c.customer_name}${c.customer_code ? `<span style="font-size:11px;color:var(--gray-400);margin-left:4px">${c.customer_code}</span>` : ''}${c.returns_amount ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;background:#fee2e2;color:#991b1b;border-radius:3px;font-size:11px;font-weight:500">반품</span>` : ''}</td>
+        <td>${c.customer_name}${c.customer_code ? `<span style="font-size:11px;color:var(--gray-400);margin-left:4px">${c.customer_code}</span>` : ''}</td>
         <td><span class="rb-tier ${tierCls}${c.is_exception ? ' exc' : ''}">${c.tier}${c.is_exception ? ' 예외' : ''}${c.is_rate_upgrade ? ' ↑' : ''}</span></td>
         <td class="r">${rbFmt(c.total_sales)}</td>
         <td class="r">${rbFmt(c.total_rebate)}</td>
@@ -6564,12 +6564,6 @@ function reconcileNewMatch() {
               <div class="rb-breakdown-label">미분류 매출</div>
               <div class="rb-breakdown-amount">${rbFmt(unclassifiedSales)}</div>
               <div class="rb-breakdown-calc">리베이트 미적용 (배송비·차감 등)</div>
-            </div>` : ''}
-            ${c.returns_amount && c.returns_amount < 0 ? `
-            <div class="rb-breakdown-item" style="background:#fee2e2;border:1px solid #fecaca">
-              <div class="rb-breakdown-label" style="color:#991b1b;font-weight:600">반품/환불</div>
-              <div class="rb-breakdown-amount" style="color:#991b1b">${rbFmt(c.returns_amount)}</div>
-              <div class="rb-breakdown-calc" style="color:#991b1b">공급가액 < 0</div>
             </div>` : ''}
           </div>
           ${c.is_rate_upgrade ? '<div style="margin-top:10px;font-size:12px;color:var(--primary);font-weight:500">⬆ 할인율 상향 적용 업체</div>' : ''}
@@ -6715,7 +6709,7 @@ function reconcileNewMatch() {
   // Feature 1: 이중 지급 방지 - 결과 렌더링에서 경고 표시
   // Feature 2: 이상치 감지 - 자동 호출 및 배지 표시
   // Feature 3: 승인 워크플로우
-  // Feature 5: 반품/크레딧 노트
+  // Feature 5: (반품 표시 제거됨)
   // ═════════════════════════════════════════════════════════
 
   // Feature 1, 2, 3, 5 통합: rbRenderResult 호출 후 추가 처리
@@ -6991,8 +6985,6 @@ function reconcileNewMatch() {
     rbToast('정산내역서가 열렸습니다.', 'info');
   };
 
-  // Feature 5: 반품/환불 표시를 위해 rbRenderTable 내에서 처리
-  // 테이블 행 렌더링 시 returns_amount 확인
 
   // ── 이력 ──
   async function rbLoadHistory() {
