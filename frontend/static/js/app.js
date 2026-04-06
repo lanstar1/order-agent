@@ -6482,7 +6482,7 @@ function reconcileNewMatch() {
           <div style="font-size:14px;font-weight:600">이미 제출 완료된 리베이트입니다.</div>
         </div>`;
     } else {
-      // Feature 3: 승인 워크플로우 및 Feature 2: 이상치 로드
+      // Feature 3: 승인 워크플로우 로드
       rbLoadAnomaliesAndApproval();
     }
   }
@@ -6518,7 +6518,7 @@ function reconcileNewMatch() {
 
       const tr = document.createElement('tr');
       if (c.is_excluded) tr.className = 'excluded';
-      tr.setAttribute('data-cust-id', c.customer_name);  // Feature 2: 이상치 마크용
+      tr.setAttribute('data-cust-id', c.customer_name);
       tr.innerHTML = `
         <td><input type="checkbox" class="rb-check rb-row-check" data-rbidx="${idx}" onchange="rbOnRowCheck(${idx},this.checked)"></td>
         <td><button class="btn btn-outline btn-sm" data-rbidx="${idx}" onclick="rbToggleDetail(${idx})">▶</button></td>
@@ -6706,41 +6706,12 @@ function reconcileNewMatch() {
 
   // ═════════════════════════════════════════════════════════
   // Feature 1: 이중 지급 방지 - 결과 렌더링에서 경고 표시
-  // Feature 2: 이상치 감지 - 자동 호출 및 배지 표시
   // Feature 3: 승인 워크플로우
-  // Feature 5: (반품 표시 제거됨)
   // ═════════════════════════════════════════════════════════
 
-  // Feature 1, 2, 3, 5 통합: rbRenderResult 호출 후 추가 처리
+  // Feature 1, 3 통합: rbRenderResult 호출 후 추가 처리
   async function rbLoadAnomaliesAndApproval() {
     if (!rbRunId || !rbResult) return;
-
-    // Feature 2: 이상치 감지 로드
-    try {
-      const anomalies = await rbApi('GET', `/api/rebate/anomalies/${rbRunId}`);
-      rbResult._anomalies = anomalies.anomalies || [];
-      rbResult._prevMonth = anomalies.prev_month;
-
-      // 테이블에 이상치 배지 추가
-      if (anomalies.anomalies.length > 0) {
-        const banner = document.getElementById('rbAnomalyBanner');
-        if (banner) {
-          banner.innerHTML = `<svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" style="margin-right:6px"><path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0zM8 7a1 1 0 000 2h6a1 1 0 100-2H8zm0 3a1 1 0 000 2h2a1 1 0 100-2H8z" clip-rule="evenodd"/></svg>이상치 ${anomalies.anomalies.length}건`;
-          banner.style.display = 'block';
-        }
-        // 각 행에 이상치 마크 추가
-        anomalies.anomalies.forEach(a => {
-          const row = document.querySelector(`[data-cust-id="${a.customer_name}"]`);
-          if (row) {
-            const badge = document.createElement('span');
-            badge.className = 'rb-anomaly-badge';
-            badge.innerHTML = `⚠ ${a.change_pct > 0 ? '+' : ''}${a.change_pct}%`;
-            badge.title = `전월: ${rbFmt(a.prev_sales)}원 → 당월: ${rbFmt(a.current_sales)}원`;
-            row.querySelector('td:first-child').appendChild(badge);
-          }
-        });
-      }
-    } catch (e) { /* ignore anomaly load error */ }
 
     // Feature 3: 승인 상태 확인 및 UI 업데이트
     try {
