@@ -6421,7 +6421,6 @@ function reconcileNewMatch() {
 
     // 설정 저장 버튼들
     document.getElementById('btnRbSaveAllowed').addEventListener('click', rbSaveAllowed);
-    document.getElementById('btnRbAddAlias').addEventListener('click', rbAddAlias);
     document.getElementById('btnRbSaveTier').addEventListener('click', rbSaveTier);
     document.getElementById('btnRbSaveRates').addEventListener('click', rbSaveRates);
     document.getElementById('btnRbSaveExceptions').addEventListener('click', rbSaveExceptions);
@@ -7042,7 +7041,6 @@ function reconcileNewMatch() {
   function rbRenderSettings(s) {
     document.getElementById('rbUseAllowed').checked = s.use_allowed_list || false;
     document.getElementById('rbAllowedText').value = (s.allowed_customers || []).join('\n');
-    rbRenderAliases(s.allowed_customer_aliases || {});
     document.getElementById('rbTier10').value = s.tier_thresholds.tier_10_min;
     document.getElementById('rbTier5').value = s.tier_thresholds.tier_5_min;
 
@@ -7072,40 +7070,10 @@ function reconcileNewMatch() {
     rbLoadMasterCount();
   }
 
-  function rbRenderAliases(aliasMap) {
-    const container = document.getElementById('rbAliasesContainer');
-    container.innerHTML = '';
-    Object.entries(aliasMap || {}).forEach(([from, to]) => {
-      container.innerHTML += `<div class="form-row">
-        <input type="text" placeholder="CSV상 거래처명" value="${from}" data-field="from" style="flex:1">
-        <span style="color:#64748b">→</span>
-        <input type="text" placeholder="정식 거래처명" value="${to}" data-field="to" style="flex:1">
-        <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">삭제</button>
-      </div>`;
-    });
-  }
-
-  function rbAddAlias() {
-    const container = document.getElementById('rbAliasesContainer');
-    const div = document.createElement('div');
-    div.className = 'form-row';
-    div.innerHTML = `<input type="text" placeholder="CSV상 거래처명" data-field="from" style="flex:1">
-      <span style="color:#64748b">→</span>
-      <input type="text" placeholder="정식 거래처명" data-field="to" style="flex:1">
-      <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">삭제</button>`;
-    container.appendChild(div);
-  }
-
   async function rbSaveAllowed() {
     try {
       const customers = document.getElementById('rbAllowedText').value.split('\n').map(s=>s.trim()).filter(Boolean);
-      const aliases = {};
-      document.querySelectorAll('#rbAliasesContainer .form-row').forEach(row => {
-        const from = row.querySelector('[data-field="from"]').value.trim();
-        const to = row.querySelector('[data-field="to"]').value.trim();
-        if (from && to) aliases[from] = to;
-      });
-      await rbApi('PUT', '/api/rebate/settings/allowed-customers', { use_allowed_list: document.getElementById('rbUseAllowed').checked, customers, aliases });
+      await rbApi('PUT', '/api/rebate/settings/allowed-customers', { use_allowed_list: document.getElementById('rbUseAllowed').checked, customers, aliases: {} });
       rbToast(`허용 목록 저장 완료 (${customers.length}개 거래처)`, 'success');
     } catch (e) { rbToast(`오류: ${e.message}`, 'error'); }
   }
