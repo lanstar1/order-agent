@@ -328,8 +328,9 @@ async def send_to_ecount(
         # ⑥ 품목별 WH_CD 결정 후 통진/용산 두 그룹으로 분리
         #    → 통진(30) 전체 먼저, 용산(10) 전체 나중에 전송해야
         #      같은 발주번호가 창고별로 각각 하나의 전표로 묶임
-        rows_30 = []  # (row, orig_idx, is_label)
-        rows_10 = []
+        rows_30 = []       # (row, orig_idx, is_label) — 통진(30)
+        rows_10 = []       # 용산(10) 전환
+        rows_no_stock = [] # 둘 다 재고 없음 → 전표 제외
 
         for _, row in valid.iterrows():
             prod_cd = str(row["_품목코드"]).strip()
@@ -339,7 +340,10 @@ async def send_to_ecount(
             cd_val = prod_cd
             is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
 
-            if inv_checked and not has_30 and has_10:
+            if inv_checked and not has_30 and not has_10:
+                # 둘 다 재고 없음 → 전표 제외 (low_stock 처리만)
+                rows_no_stock.append((row, int(row["_orig_idx"]), is_label))
+            elif inv_checked and not has_30 and has_10:
                 rows_10.append((row, int(row["_orig_idx"]), is_label))
             else:
                 rows_30.append((row, int(row["_orig_idx"]), is_label))
@@ -418,9 +422,12 @@ async def send_to_ecount(
             item_wh_list.append("10")
 
         yongsan_cnt = len(rows_10)
-        logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 통진: {len(rows_30)}개 | 용산: {yongsan_cnt}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
+        no_stock_cnt = len(rows_no_stock)
+        logger.info(f"[바코드] 전송 항목: {len(bulk_list)}개 | 통진: {len(rows_30)}개 | 용산: {yongsan_cnt}개 | 재고없음(전표제외): {no_stock_cnt}개 | 미매칭: {unmatched}개 | 제외: {excluded_cnt}개")
         if yongsan_cnt:
             logger.info(f"[바코드] 통진→용산 전환 {yongsan_cnt}건 (용산 전표 후순위 전송)")
+        if no_stock_cnt:
+            logger.info(f"[바코드] 재고 없음 전표 제외 {no_stock_cnt}건")
 
         # ⑧ 전표 전송
         sale_url = f"https://oapi{zone.lower()}.ecount.com/OAPI/V2/Sale/SaveSale?SESSION_ID={session_id}"
@@ -474,6 +481,25 @@ async def send_to_ecount(
             "needs_label": label_flags[i],
         })
 
+    # 재고 없어 전표 제외된 품목 → items_result에 low_stock으로 추가 (납품부족사유 자동 입력용)
+    for row, orig_idx, is_label in rows_no_stock:
+        prod_cd = str(row["_품목코드"]).strip()
+        bal_10 = inv_10.get(prod_cd, None)
+        bal_30 = inv_30.get(prod_cd, None)
+        items_result.append({
+            "upload_ser_no": "-",
+            "remarks": f"{str(row['물류센터']).strip()} - {str(row['발주번호']).strip()}",
+            "prod_cd": prod_cd,
+            "qty": str(row[qty_col]).replace(",", "").strip(),
+            "bal_10": round(bal_10) if bal_10 is not None else None,
+            "bal_30": round(bal_30) if bal_30 is not None else None,
+            "stock_status": "low_stock",
+            "used_wh": None,
+            "low_stock": True,
+            "orig_idx": orig_idx,
+            "needs_label": is_label,
+        })
+
     # 바코드 부착 필요 항목 별도 추출
     label_items = [it for it in items_result if it.get("needs_label")]
 
@@ -486,6 +512,7 @@ async def send_to_ecount(
         "errors": errors,
         "unmatched": unmatched,
         "excluded": excluded_cnt,
+        "no_stock": len(rows_no_stock),
         "items_result": items_result,
         "label_items": label_items,
         "inv_checked": inv_checked,

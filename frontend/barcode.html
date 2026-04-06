@@ -600,7 +600,7 @@ async function sendToEcount() {
       ${data.excluded  > 0 ? `<br>🚫 제외(제품단종/제품인상): ${data.excluded}건` : ""}
       ${data.unmatched > 0 ? `<br>⚠ 바코드 미매칭 ${data.unmatched}건 (미전송)` : ""}
       ${wh10Cnt        > 0 ? `<br>🔄 통진 재고 없어 용산 전표로 자동 전환: <strong>${wh10Cnt}건</strong>` : ""}
-      ${lowCnt         > 0 ? `<br>🔴 재고 부족(둘 다 없음): <strong>${lowCnt}건</strong> → 납품부족사유 자동 반영` : ""}
+      ${data.no_stock  > 0 ? `<br>🔴 재고 없음(전표 미생성): <strong>${data.no_stock}건</strong> → 납품부족사유 자동 반영` : ""}
       ${!data.inv_checked  ? `<br><span style="color:var(--text3);font-size:11px">※ 재고 조회 실패 (기본창고로 전표 등록됨)</span>` : ""}
       ${data.errors?.length ? `<br><span style="color:var(--danger)">${data.errors.join("<br>")}</span>` : ""}
     `;
