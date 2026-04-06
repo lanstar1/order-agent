@@ -6341,9 +6341,9 @@ function reconcileNewMatch() {
 
   // 탭 전환
   window.switchRebateTab = function(tabId) {
-    document.querySelectorAll('.rebate-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.rb-tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.rebate-tab-content').forEach(c => c.classList.remove('active'));
-    const btn = document.querySelector(`.rebate-tab[data-rtab="${tabId}"]`);
+    const btn = document.querySelector(`.rb-tab[data-rtab="${tabId}"]`);
     if (btn) btn.classList.add('active');
     const content = document.getElementById('rtab-' + tabId);
     if (content) content.classList.add('active');
@@ -6362,11 +6362,11 @@ function reconcileNewMatch() {
     const btnCalc = document.getElementById('btnRebateCalc');
 
     area.addEventListener('click', () => fileInput.click());
-    area.addEventListener('dragover', e => { e.preventDefault(); area.style.borderColor = '#2563eb'; area.style.background = '#eff6ff'; });
-    area.addEventListener('dragleave', () => { area.style.borderColor = '#e2e8f0'; area.style.background = ''; });
+    area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('dragging'); });
+    area.addEventListener('dragleave', () => { area.classList.remove('dragging'); });
     area.addEventListener('drop', e => {
       e.preventDefault();
-      area.style.borderColor = '#e2e8f0'; area.style.background = '';
+      area.classList.remove('dragging');
       if (e.dataTransfer.files.length) {
         fileInput.files = e.dataTransfer.files;
         rbOnFile();
@@ -6376,8 +6376,11 @@ function reconcileNewMatch() {
 
     function rbOnFile() {
       if (fileInput.files.length) {
-        area.querySelector('div:nth-child(2)').innerHTML =
-          `<strong>${fileInput.files[0].name}</strong> 선택됨 (${(fileInput.files[0].size/1024).toFixed(0)} KB)`;
+        const f = fileInput.files[0];
+        area.querySelector('.rb-upload-text').innerHTML =
+          `<strong>${f.name}</strong> 선택됨 <span style="color:var(--gray-400)">(${(f.size/1024).toFixed(0)} KB)</span>`;
+        area.querySelector('.rb-upload-hint').textContent = '파일이 준비되었습니다. 아래 버튼을 클릭하세요.';
+        area.querySelector('.rb-upload-icon').style.color = 'var(--primary)';
         btnCalc.disabled = false;
       }
     }
@@ -6440,9 +6443,19 @@ function reconcileNewMatch() {
     document.getElementById('rbSum5').textContent = rbFmt(s.tier_5_rebate);
 
     if (month && month.includes('-')) {
+      // 대상월의 다음 달 마지막 일요일을 전표일자로 설정
       const [y, m] = month.split('-').map(Number);
-      const lastDay = new Date(y, m, 0).getDate();
-      document.getElementById('rbIoDate').value = `${y}${String(m).padStart(2,'0')}${lastDay}`;
+      let nextMonth = m + 1, nextYear = y;
+      if (nextMonth > 12) { nextMonth = 1; nextYear++; }
+      // 다음 달의 마지막 날부터 역으로 일요일 찾기
+      const lastDayOfNext = new Date(nextYear, nextMonth, 0);
+      const dayOfWeek = lastDayOfNext.getDay(); // 0=일요일
+      const lastSunday = new Date(lastDayOfNext);
+      lastSunday.setDate(lastDayOfNext.getDate() - dayOfWeek);
+      const sy = lastSunday.getFullYear();
+      const sm = String(lastSunday.getMonth() + 1).padStart(2, '0');
+      const sd = String(lastSunday.getDate()).padStart(2, '0');
+      document.getElementById('rbIoDate').value = `${sy}${sm}${sd}`;
     }
 
     rbRenderTable(result.customers);
@@ -6450,10 +6463,10 @@ function reconcileNewMatch() {
 
     if (result.status === 'submitted') {
       document.getElementById('rbSubmitSection').innerHTML = `
-        <h2>ERP 전표 생성</h2>
-        <div style="padding:20px;text-align:center;color:#16a34a">
-          <div style="font-size:24px;margin-bottom:8px">✅</div>
-          <div>이미 제출 완료된 리베이트입니다.</div>
+        <h3 class="rb-section-title">ERP 전표 생성</h3>
+        <div style="padding:24px;text-align:center;color:var(--success);border-radius:8px;background:#f0fdf4">
+          <svg width="32" height="32" viewBox="0 0 20 20" fill="currentColor" style="margin-bottom:8px"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+          <div style="font-size:14px;font-weight:600">이미 제출 완료된 리베이트입니다.</div>
         </div>`;
     }
   }
