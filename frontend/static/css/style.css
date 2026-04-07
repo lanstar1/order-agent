@@ -515,6 +515,43 @@ textarea.form-control { resize: vertical; min-height: 120px; }
 .ship-tab-panel { display: none; }
 .ship-tab-panel.active { display: block; }
 
+/* MAP Monitor 탭 */
+.map-tab-btn {
+  padding: 8px 18px; border: none; border-bottom: 2px solid transparent;
+  background: transparent; color: #64748b; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .15s;
+}
+.map-tab-btn:hover { color: #2563eb; }
+.map-tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 700; }
+.map-tab-content { display: none; }
+.map-tab-content.active { display: block; }
+.map-stat-card {
+  background: #fff; border-radius: 10px; padding: 16px 20px; flex: 1; min-width: 160px;
+  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.map-stat-card .label { font-size: 12px; color: #64748b; margin-bottom: 6px; }
+.map-stat-card .value { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.map-stat-card .sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+.map-sev { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.map-sev-CRITICAL { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.map-sev-HIGH { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+.map-sev-MEDIUM { background: #fefce8; color: #ca8a04; border: 1px solid #fef08a; }
+.map-sev-LOW { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+.map-plat { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; }
+.map-plat-naver { background: #03c75a; } .map-plat-coupang { background: #e44332; }
+.map-plat-gmarket { background: #6db33f; } .map-plat-auction { background: #ff6f00; }
+.map-plat-11st { background: #ff5a2e; }
+.map-toggle { width: 40px; height: 22px; border-radius: 11px; border: none; cursor: pointer; position: relative; transition: background .2s; }
+.map-toggle .knob { width: 18px; height: 18px; border-radius: 50%; background: #fff; position: absolute; top: 2px; transition: left .2s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.map-toggle.on { background: #7c3aed; } .map-toggle.on .knob { left: 20px; }
+.map-toggle.off { background: #d1d5db; } .map-toggle.off .knob { left: 2px; }
+table.map-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.map-tbl th { padding: 8px 12px; text-align: left; font-weight: 600; color: #64748b; font-size: 12px; background: #f8fafc; white-space: nowrap; }
+table.map-tbl td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; }
+.map-settings-section { background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 16px; overflow: hidden; }
+.map-settings-section .hdr { padding: 14px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; font-weight: 700; font-size: 15px; }
+.map-settings-section .body { padding: 20px; }
+
 /* =============================================
    판매현황 분석 대시보드
    ============================================= */

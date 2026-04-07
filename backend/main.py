@@ -34,6 +34,7 @@ from api.routes.barcode import router as barcode_router
 from api.routes.smartstore import router as smartstore_router
 from api.routes.purchase_reconciliation import router as reconcile_router
 from api.routes.rebate import router as rebate_router
+from api.routes.map_monitor import router as map_monitor_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -165,6 +166,11 @@ _ACTIVITY_ACTIONS = {
 
     ("POST", "/api/rebate/calculate"): "리베이트 계산",
     ("POST", "/api/rebate/submit"): "리베이트 ERP 제출",
+
+    ("POST", "/api/map/collect/run"): "MAP 즉시 수집",
+    ("POST", "/api/map/products/upload"): "MAP 제품 엑셀 업로드",
+    ("PUT", "/api/map/settings"): "MAP 설정 변경",
+    ("POST", "/api/map/products"): "MAP 제품 등록",
 }
 
 @app.middleware("http")
@@ -265,6 +271,7 @@ app.include_router(barcode_router)
 app.include_router(smartstore_router)
 app.include_router(reconcile_router)
 app.include_router(rebate_router)
+app.include_router(map_monitor_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -606,6 +613,14 @@ async def startup():
             logger.info("재고 모니터링 스케줄러 등록 완료 (평일 09:00 KST)")
     except Exception as e:
         logger.warning(f"재고 모니터링 스케줄러 등록 실패: {e}")
+
+    # MAP 지도가 감시 스케줄러
+    try:
+        from services.map_scheduler import setup_map_scheduler
+        setup_map_scheduler()
+        logger.info("MAP 지도가 감시 스케줄러 등록 완료")
+    except Exception as e:
+        logger.warning(f"MAP 스케줄러 시작 실패 (서비스는 계속): {e}")
 
     # 판매현황 자동 수집 + 에이전트 스케줄러
     try:

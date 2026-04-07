@@ -68,6 +68,11 @@ def _sql_to_pg(sql):
                 'inventory_snapshots', 'inventory_alert_history',
                 'inventory_exclude_keywords', 'inventory_alert_settings',
             })
+            # MAP 감시 테이블 추가
+            _ALLOWED_TABLES.update({
+                'map_settings', 'map_products', 'map_sellers',
+                'map_price_records', 'map_violations', 'map_collection_logs',
+            })
             if table.lower() not in _ALLOWED_TABLES:
                 logger.warning(f"[DB] PRAGMA table_info 거부: 미허용 테이블 '{table}'")
                 return None
@@ -794,6 +799,130 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_aicc_unans_resolved ON aicc_unanswered(resolved);
         CREATE INDEX IF NOT EXISTS idx_inv_snapshots_date ON inventory_snapshots(snapshot_date);
         CREATE INDEX IF NOT EXISTS idx_inv_alert_date ON inventory_alert_history(check_date);
+    """)
+
+    # ── MAP 감시 테이블 ────────────────────────────────
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS map_settings (
+        id INTEGER PRIMARY KEY,
+        min_price INTEGER DEFAULT 5000,
+        tolerance_pct REAL DEFAULT 5.0,
+        schedules TEXT DEFAULT '["00:00","12:00"]',
+        watch_interval_hours INTEGER DEFAULT 2,
+        platforms TEXT DEFAULT '["네이버 쇼핑","쿠팡","G마켓","옥션","11번가"]',
+        alert_email INTEGER DEFAULT 1,
+        alert_kakao INTEGER DEFAULT 0,
+        alert_nateon INTEGER DEFAULT 1,
+        alert_email_address TEXT DEFAULT '',
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+    cur_or_conn.execute(
+        "INSERT OR IGNORE INTO map_settings(id) VALUES(1)"
+    )
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS map_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_name TEXT NOT NULL UNIQUE,
+        product_name TEXT NOT NULL,
+        brand TEXT DEFAULT 'LANstar',
+        features TEXT DEFAULT '',
+        map_price INTEGER NOT NULL DEFAULT 0,
+        tolerance_pct REAL DEFAULT NULL,
+        search_keywords TEXT DEFAULT '',
+        is_active INTEGER DEFAULT 1,
+        is_watched INTEGER DEFAULT 0,
+        watch_interval_hours INTEGER DEFAULT NULL,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS map_sellers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_name TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        seller_url TEXT DEFAULT '',
+        risk_level TEXT DEFAULT 'low',
+        total_violations INTEGER DEFAULT 0,
+        last_violation_at TEXT DEFAULT NULL,
+        is_blacklisted INTEGER DEFAULT 0,
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(seller_name, platform)
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS map_price_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        seller_id INTEGER,
+        platform TEXT NOT NULL,
+        seller_name TEXT NOT NULL,
+        product_url TEXT DEFAULT '',
+        display_price INTEGER NOT NULL,
+        sale_price INTEGER DEFAULT NULL,
+        coupon_name TEXT DEFAULT '',
+        coupon_discount INTEGER DEFAULT 0,
+        coupon_price INTEGER DEFAULT NULL,
+        point_reward INTEGER DEFAULT 0,
+        effective_price INTEGER NOT NULL,
+        free_shipping INTEGER DEFAULT 0,
+        screenshot_path TEXT DEFAULT '',
+        page_html_path TEXT DEFAULT '',
+        is_violation INTEGER DEFAULT 0,
+        collected_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (product_id) REFERENCES map_products(id)
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS map_violations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        price_record_id INTEGER,
+        product_id INTEGER NOT NULL,
+        seller_id INTEGER,
+        platform TEXT NOT NULL,
+        seller_name TEXT NOT NULL,
+        violation_type TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'MEDIUM',
+        map_price INTEGER NOT NULL,
+        violated_price INTEGER NOT NULL,
+        deviation_pct REAL NOT NULL,
+        evidence_screenshot TEXT DEFAULT '',
+        evidence_url TEXT DEFAULT '',
+        is_notified INTEGER DEFAULT 0,
+        notified_at TEXT DEFAULT NULL,
+        is_resolved INTEGER DEFAULT 0,
+        resolved_at TEXT DEFAULT NULL,
+        resolution_note TEXT DEFAULT '',
+        detected_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (price_record_id) REFERENCES map_price_records(id),
+        FOREIGN KEY (product_id) REFERENCES map_products(id)
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS map_collection_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        collection_type TEXT NOT NULL DEFAULT 'scheduled',
+        platforms_searched TEXT DEFAULT '',
+        products_checked INTEGER DEFAULT 0,
+        prices_collected INTEGER DEFAULT 0,
+        violations_found INTEGER DEFAULT 0,
+        errors TEXT DEFAULT '',
+        started_at TEXT DEFAULT (datetime('now','localtime')),
+        finished_at TEXT DEFAULT NULL,
+        status TEXT DEFAULT 'running'
+    )""")
+
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_map_pr_product ON map_price_records(product_id);
+        CREATE INDEX IF NOT EXISTS idx_map_pr_collected ON map_price_records(collected_at);
+        CREATE INDEX IF NOT EXISTS idx_map_pr_violation ON map_price_records(is_violation);
+        CREATE INDEX IF NOT EXISTS idx_map_vio_product ON map_violations(product_id);
+        CREATE INDEX IF NOT EXISTS idx_map_vio_severity ON map_violations(severity);
+        CREATE INDEX IF NOT EXISTS idx_map_vio_detected ON map_violations(detected_at);
+        CREATE INDEX IF NOT EXISTS idx_map_vio_resolved ON map_violations(is_resolved);
     """)
 
     conn.commit()
