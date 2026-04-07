@@ -100,6 +100,12 @@ ALLOWED_ORIGINS = [
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
 
 # ─────────────────────────────────────────
+#  네이버 검색/데이터랩 API (MAP 감시 + 트렌드 분석)
+# ─────────────────────────────────────────
+NAVER_SEARCH_ID     = os.getenv("NAVER_SEARCH_ID", "")
+NAVER_SEARCH_SECRET = os.getenv("NAVER_SEARCH_SECRET", "")
+
+# ─────────────────────────────────────────
 #  네이버 커머스 API (스마트스토어)
 # ─────────────────────────────────────────
 NAVER_CLIENT_ID     = os.getenv("NAVER_CLIENT_ID", "")

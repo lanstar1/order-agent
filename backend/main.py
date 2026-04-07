@@ -35,6 +35,7 @@ from api.routes.smartstore import router as smartstore_router
 from api.routes.purchase_reconciliation import router as reconcile_router
 from api.routes.rebate import router as rebate_router
 from api.routes.map_monitor import router as map_monitor_router
+from api.routes.naver_datalab import router as naver_datalab_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -272,6 +273,7 @@ app.include_router(smartstore_router)
 app.include_router(reconcile_router)
 app.include_router(rebate_router)
 app.include_router(map_monitor_router)
+app.include_router(naver_datalab_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:

@@ -939,6 +939,37 @@ def init_db():
         FOREIGN KEY (violation_id) REFERENCES map_violations(id)
     )""")
 
+    # ── 네이버 데이터랩 테이블 ──────────────────────────
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS datalab_keywords (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        keyword TEXT NOT NULL,
+        category_hint TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (product_id) REFERENCES map_products(id)
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS datalab_trend_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        trend_type TEXT NOT NULL,
+        result_json TEXT DEFAULT '{}',
+        analyzed_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (product_id) REFERENCES map_products(id)
+    )""")
+
+    cur_or_conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_datalab_kw_product ON datalab_keywords(product_id);
+    """)
+    cur_or_conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_datalab_tr_product ON datalab_trend_results(product_id);
+    """)
+    cur_or_conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_datalab_tr_type ON datalab_trend_results(trend_type);
+    """)
+
     conn.commit()
     conn.close()
     db_type = "PostgreSQL" if USE_PG else f"SQLite ({DB_PATH})"
