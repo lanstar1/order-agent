@@ -283,24 +283,49 @@ async def compare_products_trend(
 
 @router.get("/shopping/categories")
 async def get_category_list():
-    """사용 가능한 카테고리 코드 목록 (DB 기반)"""
+    """사용 가능한 카테고리 코드 목록 (계층형)"""
     conn = get_connection()
     rows = conn.execute(
         "SELECT * FROM datalab_categories WHERE is_active=1 ORDER BY sort_order, name"
     ).fetchall()
     conn.close()
-    return {"categories": [dict(r) for r in rows]}
+    cats = [dict(r) for r in rows]
+
+    # 대/중/소 계층 구조로 그룹핑
+    grouped = {}
+    for c in cats:
+        level = c.get("level") or 1
+        parent = c.get("parent_code") or ""
+        if level == 1:
+            grouped[c["code"]] = {"info": c, "children": {}}
+        elif level == 2:
+            if parent in grouped:
+                grouped[parent]["children"][c["code"]] = {"info": c, "sub": []}
+            else:
+                grouped.setdefault("_etc", {"info": {"name": "기타", "code": "_etc"}, "children": {}})
+                grouped["_etc"]["children"][c["code"]] = {"info": c, "sub": []}
+        elif level == 3:
+            for g in grouped.values():
+                if parent in g["children"]:
+                    g["children"][parent]["sub"].append(c)
+                    break
+
+    return {"categories": cats, "grouped": grouped}
 
 
 class CategoryCreate(BaseModel):
     name: str
     code: str
+    level: int = 1
+    parent_code: str = ""
     sort_order: int = 0
 
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
+    level: Optional[int] = None
+    parent_code: Optional[str] = None
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
 
@@ -311,8 +336,8 @@ async def create_category(data: CategoryCreate):
     conn = get_connection()
     try:
         cur = conn.execute(
-            "INSERT INTO datalab_categories (name, code, sort_order) VALUES (?,?,?)",
-            (data.name.strip(), data.code.strip(), data.sort_order)
+            "INSERT INTO datalab_categories (name, code, level, parent_code, sort_order) VALUES (?,?,?,?,?)",
+            (data.name.strip(), data.code.strip(), data.level, data.parent_code.strip(), data.sort_order)
         )
         conn.commit()
         cat_id = cur.lastrowid

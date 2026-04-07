@@ -1621,8 +1621,14 @@ C규격품 200개
 
           <!-- 추가 폼 -->
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:12px;background:#f8fafc;border-radius:8px">
-            <input type="text" id="dl-cat-name" placeholder="카테고리명 (예: USB허브)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:160px">
-            <input type="text" id="dl-cat-code" placeholder="코드 (예: 50000835)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:140px">
+            <select id="dl-cat-level" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:70px">
+              <option value="1">대</option>
+              <option value="2" selected>중</option>
+              <option value="3">소</option>
+            </select>
+            <input type="text" id="dl-cat-parent" placeholder="상위코드 (예: 50000003)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:140px">
+            <input type="text" id="dl-cat-name" placeholder="카테고리명" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:140px">
+            <input type="text" id="dl-cat-code" placeholder="코드 (catId)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:120px">
             <input type="number" id="dl-cat-sort" placeholder="순서" value="0" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:60px">
             <button class="btn btn-sm" style="background:#6366f1;color:#fff" onclick="dlAddCategory()">+ 추가</button>
           </div>
@@ -1631,11 +1637,11 @@ C규격품 200개
           <div style="overflow-x:auto">
             <table style="width:100%;font-size:13px;border-collapse:collapse">
               <thead><tr style="background:#f8fafc">
-                <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e2e8f0;width:40px">순서</th>
-                <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e2e8f0">카테고리명</th>
-                <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e2e8f0;width:120px">코드</th>
-                <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e2e8f0;width:60px">상태</th>
-                <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e2e8f0;width:80px">액션</th>
+                <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #e2e8f0;width:36px">분류</th>
+                <th style="padding:5px 8px;text-align:left;border-bottom:1px solid #e2e8f0">카테고리명</th>
+                <th style="padding:5px 8px;text-align:left;border-bottom:1px solid #e2e8f0;width:100px">코드</th>
+                <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #e2e8f0;width:40px">상태</th>
+                <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #e2e8f0;width:70px">액션</th>
               </tr></thead>
               <tbody id="dl-cat-tbody"><tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8">로딩 중...</td></tr></tbody>
             </table>
@@ -4718,32 +4724,60 @@ document.addEventListener("DOMContentLoaded", async () => {
       const r = await fetch(DL_API + '/shopping/categories');
       const data = await r.json();
       const cats = data.categories || [];
+      const grouped = data.grouped || {};
 
-      // 드롭다운 갱신
+      // 드롭다운: optgroup 계층 구조
       const sel = document.getElementById('dl-shop-category');
       const prev = sel.value;
-      sel.innerHTML = '<option value="">카테고리 선택...</option>' +
-        cats.map(c => `<option value="${c.code}">${c.name} (${c.code})</option>`).join('');
+      let opts = '<option value="">카테고리 선택...</option>';
+      // 대분류 순회
+      const sortedGroups = Object.entries(grouped).sort((a,b) => (a[1].info.sort_order||0) - (b[1].info.sort_order||0));
+      for (const [gCode, group] of sortedGroups) {
+        const gName = group.info.name;
+        const children = Object.entries(group.children||{}).sort((a,b) => (a[1].info.sort_order||0) - (b[1].info.sort_order||0));
+        if (children.length) {
+          opts += `<optgroup label="■ ${gName}">`;
+          opts += `<option value="${gCode}">▸ ${gName} (전체)</option>`;
+          for (const [cCode, child] of children) {
+            opts += `<option value="${cCode}">&nbsp;&nbsp;${child.info.name}</option>`;
+            for (const sub of (child.sub||[]).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))) {
+              opts += `<option value="${sub.code}">&nbsp;&nbsp;&nbsp;&nbsp;└ ${sub.name}</option>`;
+            }
+          }
+          opts += '</optgroup>';
+        } else {
+          opts += `<option value="${gCode}">■ ${gName}</option>`;
+        }
+      }
+      sel.innerHTML = opts;
       if (prev) sel.value = prev;
 
-      // 관리 테이블 갱신
+      // 관리 테이블
       const tbody = document.getElementById('dl-cat-tbody');
       if (!cats.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8">등록된 카테고리가 없습니다</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:#94a3b8">등록된 카테고리가 없습니다</td></tr>';
         return;
       }
-      tbody.innerHTML = cats.map(c => `<tr style="border-bottom:1px solid #f1f5f9">
-        <td style="padding:6px 8px;text-align:center;color:#94a3b8;font-size:12px">${c.sort_order}</td>
-        <td style="padding:6px 8px;font-weight:500">${c.name}</td>
-        <td style="padding:6px 8px;font-family:monospace;font-size:12px;color:#6366f1">${c.code}</td>
-        <td style="padding:6px 8px;text-align:center">
-          <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;${c.is_active ? 'background:#d1fae5;color:#065f46' : 'background:#fee2e2;color:#991b1b'}">${c.is_active ? '활성' : '비활성'}</span>
+      const levelBadge = (lv) => {
+        if (lv===1) return '<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">대</span>';
+        if (lv===2) return '<span style="background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">중</span>';
+        return '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">소</span>';
+      };
+      const indent = (lv) => lv===1?'':'&nbsp;'.repeat((lv-1)*4) + (lv===2?'├ ':'└ ');
+      tbody.innerHTML = cats.map(c => {
+        const lv = c.level||1;
+        return `<tr style="border-bottom:1px solid #f1f5f9;${lv===1?'background:#f8fafc;font-weight:500':''}">
+        <td style="padding:5px 8px;text-align:center">${levelBadge(lv)}</td>
+        <td style="padding:5px 8px;font-size:13px">${indent(lv)}${c.name}</td>
+        <td style="padding:5px 8px;font-family:monospace;font-size:11px;color:#6366f1">${c.code}</td>
+        <td style="padding:5px 8px;text-align:center">
+          <span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;${c.is_active?'background:#d1fae5;color:#065f46':'background:#fee2e2;color:#991b1b'}">${c.is_active?'ON':'OFF'}</span>
         </td>
-        <td style="padding:6px 8px;text-align:center;white-space:nowrap">
-          <button class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px" onclick="dlEditCategory(${c.id},'${c.name.replace(/'/g,"\\'")}','${c.code}',${c.sort_order})" title="수정">✏️</button>
+        <td style="padding:5px 8px;text-align:center;white-space:nowrap">
+          <button class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px" onclick="dlEditCategory(${c.id},'${c.name.replace(/'/g,"\\'")}','${c.code}',${c.sort_order},${lv},'${c.parent_code||''}')" title="수정">✏️</button>
           <button class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px;color:#ef4444" onclick="dlDeleteCategory(${c.id},'${c.name.replace(/'/g,"\\'")}')">🗑</button>
         </td>
-      </tr>`).join('');
+      </tr>`}).join('');
     } catch(e) {
       console.error('카테고리 로드 실패:', e);
     }
@@ -4753,6 +4787,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const name = document.getElementById('dl-cat-name').value.trim();
     const code = document.getElementById('dl-cat-code').value.trim();
     const sort = parseInt(document.getElementById('dl-cat-sort').value) || 0;
+    const level = parseInt(document.getElementById('dl-cat-level').value) || 2;
+    const parent = document.getElementById('dl-cat-parent').value.trim();
     if (!name) { alert('카테고리명을 입력하세요'); return; }
     if (!code) { alert('카테고리 코드를 입력하세요'); return; }
     if (!/^\d+$/.test(code)) { alert('코드는 숫자만 입력 가능합니다\n(예: 50000832)'); return; }
@@ -4761,24 +4797,23 @@ document.addEventListener("DOMContentLoaded", async () => {
       const r = await fetch(DL_API + '/shopping/categories', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name, code, sort_order: sort}),
+        body: JSON.stringify({name, code, level, parent_code: parent, sort_order: sort}),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || '추가 실패');
       document.getElementById('dl-cat-name').value = '';
       document.getElementById('dl-cat-code').value = '';
       document.getElementById('dl-cat-sort').value = '0';
+      document.getElementById('dl-cat-parent').value = '';
       dlLoadCategories();
     } catch(e) { alert('카테고리 추가 실패: ' + e.message); }
   };
 
-  window.dlEditCategory = async function(id, name, code, sort) {
+  window.dlEditCategory = async function(id, name, code, sort, level, parent) {
     const newName = prompt('카테고리명:', name);
     if (newName === null) return;
     const newCode = prompt('카테고리 코드:', code);
     if (newCode === null) return;
-    const newSort = prompt('정렬 순서:', sort);
-    if (newSort === null) return;
 
     try {
       const r = await fetch(`${DL_API}/shopping/categories/${id}`, {
@@ -4787,7 +4822,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         body: JSON.stringify({
           name: newName.trim() || name,
           code: newCode.trim() || code,
-          sort_order: parseInt(newSort) || sort,
         }),
       });
       const d = await r.json();
@@ -4927,7 +4961,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260407n"></script>
+<script src="/static/js/app.js?v=20260407p"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
