@@ -7496,7 +7496,7 @@ function reconcileNewMatch() {
       const vios = d.violations || [];
       if (!vios.length) { document.getElementById('map-violations-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">위반 없음</p>'; return; }
       let h = '<table class="map-tbl"><thead><tr><th>심각도</th><th>제품</th><th>모델</th><th>셀러</th><th>플랫폼</th><th>지도가</th><th>판매가</th><th>편차</th><th>유형</th><th>탐지</th><th>조치</th></tr></thead><tbody>';
-      vios.forEach(v => { const link = v.evidence_url ? `<a href="${v.evidence_url}" target="_blank" style="color:#1e293b;text-decoration:none;border-bottom:1px dashed #94a3b8" title="판매 페이지 열기">${v.product_name||''}</a>` : `<span>${v.product_name||''}</span>`; h += `<tr><td>${sev(v.severity)}</td><td><b>${link}</b></td><td style="font-family:monospace;font-size:12px;color:#64748b">${v.model_name||''}</td><td>${v.evidence_url?`<a href="${v.evidence_url}" target="_blank" style="color:#334155;text-decoration:none;border-bottom:1px dashed #cbd5e1">${v.seller_name}</a>`:v.seller_name}</td><td>${plat(v.platform)}</td><td style="color:#64748b">${won(v.map_price)}</td><td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626">-${v.deviation_pct}%</td><td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">${v.violation_type}</span></td><td style="font-size:11px;color:#64748b;white-space:nowrap">${(v.detected_at||'').slice(0,16)}</td><td><button class="btn btn-xs" onclick="mapResolveVio(${v.id})" style="font-size:11px;padding:2px 8px">해결</button></td></tr>`; });
+      vios.forEach(v => { const link = v.evidence_url ? `<a href="${v.evidence_url}" target="_blank" style="color:#1e293b;text-decoration:none;border-bottom:1px dashed #94a3b8" title="판매 페이지 열기">${v.product_name||''}</a>` : `<span>${v.product_name||''}</span>`; h += `<tr><td>${sev(v.severity)}</td><td><b>${link}</b></td><td style="font-family:monospace;font-size:12px;color:#64748b">${v.model_name||''}</td><td>${v.evidence_url?`<a href="${v.evidence_url}" target="_blank" style="color:#334155;text-decoration:none;border-bottom:1px dashed #cbd5e1">${v.seller_name}</a>`:v.seller_name}</td><td>${plat(v.platform)}</td><td style="color:#64748b">${won(v.map_price)}</td><td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626">-${v.deviation_pct}%</td><td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">${v.violation_type}</span></td><td style="font-size:11px;color:#64748b;white-space:nowrap">${(v.detected_at||'').slice(0,16)}</td><td style="white-space:nowrap"><button class="btn btn-xs" onclick="mapScreenshot(${v.id})" style="font-size:10px;padding:2px 6px" title="스크린샷 캡처">📸</button> <button class="btn btn-xs" onclick="mapWarningEmail(${v.id})" style="font-size:10px;padding:2px 6px" title="경고 메일 생성">📧</button> <button class="btn btn-xs" onclick="mapResolveVio(${v.id})" style="font-size:10px;padding:2px 6px">해결</button></td></tr>`; });
       h += '</tbody></table>';
       document.getElementById('map-violations-table').innerHTML = h;
     } catch(e) { console.error('위반 로드:', e); }
@@ -7504,6 +7504,31 @@ function reconcileNewMatch() {
   window.mapResolveVio = async function(id) {
     const note = prompt('해결 내용:'); if (note === null) return;
     try { await api.put(`/api/map/violations/${id}/resolve`, { resolution_note: note }); alert('해결 완료'); mapLoadViolations(); } catch(e) { alert('오류: '+e.message); }
+  };
+  window.mapScreenshot = async function(id) {
+    if (!confirm('이 위반 페이지의 스크린샷을 캡처하시겠습니까? (수 초 소요)')) return;
+    try {
+      const r = await api.post(`/api/map/screenshot/${id}`);
+      // 스크린샷을 새 창에 표시
+      const win = window.open('', '_blank', 'width=1300,height=950');
+      win.document.write(`<html><head><title>위반 증거 - ${r.model_name}</title></head><body style="margin:0;background:#111">
+        <div style="padding:12px;color:#fff;font-size:13px">📸 ${r.filename} | ${r.url}</div>
+        <img src="data:image/png;base64,${r.image_base64}" style="width:100%"></body></html>`);
+      alert('스크린샷 캡처 완료');
+    } catch(e) { alert('스크린샷 오류: '+e.message); }
+  };
+  window.mapWarningEmail = async function(id) {
+    try {
+      const r = await api.post(`/api/map/warning-email/generate/${id}`);
+      const emailTo = prompt(`경고 메일이 생성되었습니다.\n\n수신: ${r.seller} (${r.platform})\n제목: ${r.subject}\n\n발송할 이메일 주소를 입력하세요 (빈칸이면 저장만):`, '');
+      if (emailTo === null) return;
+      if (emailTo) {
+        const s = await api.put(`/api/map/warning-email/${r.id}/send?email_to=${encodeURIComponent(emailTo)}`);
+        alert(s.message);
+      } else {
+        alert('경고 메일이 초안으로 저장되었습니다. 나중에 발송할 수 있습니다.');
+      }
+    } catch(e) { alert('경고 메일 오류: '+e.message); }
   };
 
   // ── 제품·지도가 ──

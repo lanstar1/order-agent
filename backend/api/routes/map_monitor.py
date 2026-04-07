@@ -276,12 +276,20 @@ async def toggle_watch(product_id: int, watched: bool = True, interval_hours: in
     return {"message": f"상시감시 {'ON' if watched else 'OFF'}"}
 
 @router.put("/products/{product_id}/map-price")
-async def update_map_price(product_id: int, map_price: int = Query(...)):
+async def update_map_price(product_id: int, map_price: int = Query(...), reason: str = Query("")):
     conn = get_connection()
+    # 기존 가격 조회
+    old = conn.execute("SELECT map_price FROM map_products WHERE id=?", (product_id,)).fetchone()
+    old_price = old["map_price"] if old else 0
+    # 가격 업데이트
     conn.execute("UPDATE map_products SET map_price=?, updated_at=datetime('now','localtime') WHERE id=?",
                  (map_price, product_id))
+    # 변경 이력 기록
+    if old_price != map_price:
+        conn.execute("""INSERT INTO map_price_history (product_id, old_price, new_price, reason)
+            VALUES (?,?,?,?)""", (product_id, old_price, map_price, reason))
     conn.commit(); conn.close()
-    return {"message": f"지도가 → {map_price:,}원"}
+    return {"message": f"지도가 {old_price:,}원 → {map_price:,}원"}
 
 @router.put("/products/batch")
 async def batch_update_products(action: str = Query(...), ids: str = Query(...)):
@@ -502,3 +510,201 @@ async def scheduler_status():
         return get_scheduler_status()
     except Exception as e:
         return {"running": False, "error": str(e), "jobs": []}
+
+# ═══════════════════════════════════════════════════════
+# 10. 지도가 변경 이력 API
+# ═══════════════════════════════════════════════════════
+
+@router.get("/price-change-history/{product_id}")
+async def get_price_change_history(product_id: int):
+    """제품별 지도가 변경 이력"""
+    conn = get_connection()
+    rows = conn.execute("""SELECT h.*, p.model_name, p.product_name
+        FROM map_price_history h JOIN map_products p ON h.product_id=p.id
+        WHERE h.product_id=? ORDER BY h.changed_at DESC LIMIT 50""", (product_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@router.get("/price-change-history")
+async def get_all_price_changes(days: int = 30):
+    """전체 지도가 변경 이력"""
+    conn = get_connection()
+    cutoff = _days_ago(days)
+    rows = conn.execute("""SELECT h.*, p.model_name, p.product_name
+        FROM map_price_history h JOIN map_products p ON h.product_id=p.id
+        WHERE h.changed_at>? ORDER BY h.changed_at DESC LIMIT 100""", (cutoff,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ═══════════════════════════════════════════════════════
+# 11. 경고 메일 템플릿 API
+# ═══════════════════════════════════════════════════════
+
+@router.post("/warning-email/generate/{violation_id}")
+async def generate_warning_email(violation_id: int):
+    """위반 건에 대한 경고 메일 템플릿 생성"""
+    conn = get_connection()
+    v = conn.execute("""SELECT v.*, p.model_name, p.product_name, p.brand, p.map_price as current_map
+        FROM map_violations v JOIN map_products p ON v.product_id=p.id WHERE v.id=?""", (violation_id,)).fetchone()
+    if not v:
+        conn.close(); raise HTTPException(404, "위반 건 없음")
+    v = dict(v)
+
+    subject = f"[LANstar] 지도가 위반 경고 - {v['product_name']} ({v['model_name']})"
+    body = f"""안녕하세요, {v['seller_name']} 담당자님.
+
+귀사에서 판매 중인 LANstar 제품의 지도가(MAP) 위반이 확인되어 경고드립니다.
+
+■ 위반 상세
+  - 제품명: {v['product_name']}
+  - 모델명: {v['model_name']}
+  - 판매 플랫폼: {v['platform']}
+  - 지도가: {v['map_price']:,}원
+  - 판매가: {v['violated_price']:,}원
+  - 편차: -{v['deviation_pct']}%
+  - 위반 유형: {v['violation_type']}
+  - 탐지 일시: {v.get('detected_at','')}
+
+■ 요청 사항
+  지도가 정책에 따라 즉시 판매가를 {v['map_price']:,}원 이상으로 조정해 주시기 바랍니다.
+  지속적인 위반 시 거래 조건 변경 등 불이익이 있을 수 있습니다.
+
+■ 참고
+  본 메일은 LANstar 지도가 감시 시스템에서 자동 생성되었습니다.
+  문의사항은 영업 담당자에게 연락 부탁드립니다.
+
+감사합니다.
+LANstar Co., Ltd."""
+
+    # DB에 저장
+    cur = conn.execute("""INSERT INTO map_warning_emails
+        (violation_id, seller_name, platform, product_name, model_name, email_subject, email_body, status)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (violation_id, v['seller_name'], v['platform'], v['product_name'], v['model_name'],
+         subject, body, 'draft'))
+    email_id = cur.lastrowid
+    conn.commit(); conn.close()
+
+    return {"id": email_id, "subject": subject, "body": body, "seller": v['seller_name'], "platform": v['platform']}
+
+
+@router.get("/warning-emails")
+async def list_warning_emails(status: str = ""):
+    """경고 메일 목록"""
+    conn = get_connection()
+    sql = "SELECT * FROM map_warning_emails WHERE 1=1"
+    params = []
+    if status: sql += " AND status=?"; params.append(status)
+    sql += " ORDER BY created_at DESC LIMIT 50"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.put("/warning-email/{email_id}/send")
+async def send_warning_email(email_id: int, email_to: str = Query(...)):
+    """경고 메일 발송 (SMTP)"""
+    import smtplib, os
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    conn = get_connection()
+    em = conn.execute("SELECT * FROM map_warning_emails WHERE id=?", (email_id,)).fetchone()
+    if not em:
+        conn.close(); raise HTTPException(404, "메일 없음")
+    em = dict(em)
+
+    smtp_host = os.getenv("SMTP_HOST", "")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_pass = os.getenv("SMTP_PASS", "")
+
+    if not smtp_host or not smtp_user:
+        # SMTP 미설정 시 발송 없이 상태만 업데이트
+        conn.execute("UPDATE map_warning_emails SET email_to=?, status='ready' WHERE id=?", (email_to, email_id))
+        conn.commit(); conn.close()
+        return {"message": "SMTP 미설정. 메일 내용이 저장되었습니다. (발송하려면 SMTP 환경변수 설정 필요)", "status": "ready"}
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = smtp_user
+        msg['To'] = email_to
+        msg['Subject'] = em['email_subject']
+        msg.attach(MIMEText(em['email_body'], 'plain', 'utf-8'))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, email_to, msg.as_string())
+
+        from datetime import datetime, timezone, timedelta
+        KST = timezone(timedelta(hours=9))
+        now_kst = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("UPDATE map_warning_emails SET email_to=?, status='sent', sent_at=? WHERE id=?",
+                     (email_to, now_kst, email_id))
+        conn.commit(); conn.close()
+        return {"message": f"{email_to}로 경고 메일 발송 완료", "status": "sent"}
+    except Exception as e:
+        conn.execute("UPDATE map_warning_emails SET email_to=?, status='failed' WHERE id=?", (email_to, email_id))
+        conn.commit(); conn.close()
+        raise HTTPException(500, f"메일 발송 오류: {e}")
+
+
+# ═══════════════════════════════════════════════════════
+# 12. 위반 증거 스크린샷 API
+# ═══════════════════════════════════════════════════════
+
+@router.post("/screenshot/{violation_id}")
+async def capture_screenshot(violation_id: int):
+    """위반 페이지 스크린샷 캡처 (Playwright)"""
+    conn = get_connection()
+    v = conn.execute("""SELECT v.*, p.model_name FROM map_violations v
+        JOIN map_products p ON v.product_id=p.id WHERE v.id=?""", (violation_id,)).fetchone()
+    if not v:
+        conn.close(); raise HTTPException(404, "위반 건 없음")
+    v = dict(v)
+
+    url = v.get("evidence_url", "")
+    if not url:
+        conn.close(); raise HTTPException(400, "판매 URL이 없어 스크린샷 불가")
+
+    try:
+        from playwright.async_api import async_playwright
+        import os, base64
+        from datetime import datetime, timezone, timedelta
+        KST = timezone(timedelta(hours=9))
+        timestamp = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1280, "height": 900})
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)  # JS 렌더링 대기
+
+            # 스크린샷 바이너리
+            screenshot_bytes = await page.screenshot(full_page=False)
+            await browser.close()
+
+        # base64로 반환 (DB에 경로 저장 대신 즉시 반환)
+        b64 = base64.b64encode(screenshot_bytes).decode()
+
+        # DB에 스크린샷 경로 기록
+        fname = f"vio_{violation_id}_{timestamp}.png"
+        conn.execute("UPDATE map_violations SET evidence_screenshot=? WHERE id=?", (fname, violation_id))
+        conn.commit(); conn.close()
+
+        return {
+            "message": "스크린샷 캡처 완료",
+            "filename": fname,
+            "image_base64": b64,
+            "url": url,
+            "model_name": v["model_name"],
+        }
+    except ImportError:
+        conn.close()
+        raise HTTPException(500, "Playwright가 설치되지 않았습니다")
+    except Exception as e:
+        conn.close()
+        logger.error(f"스크린샷 오류: {e}")
+        raise HTTPException(500, f"스크린샷 캡처 오류: {e}")

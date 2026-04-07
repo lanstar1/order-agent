@@ -72,6 +72,7 @@ def _sql_to_pg(sql):
             _ALLOWED_TABLES.update({
                 'map_settings', 'map_products', 'map_sellers',
                 'map_price_records', 'map_violations', 'map_collection_logs',
+                'map_price_history', 'map_warning_emails',
             })
             if table.lower() not in _ALLOWED_TABLES:
                 logger.warning(f"[DB] PRAGMA table_info 거부: 미허용 테이블 '{table}'")
@@ -906,6 +907,37 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_map_vio_detected ON map_violations(detected_at);
         CREATE INDEX IF NOT EXISTS idx_map_vio_resolved ON map_violations(is_resolved);
     """)
+
+    # ── MAP 지도가 변경 이력
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS map_price_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        old_price INTEGER NOT NULL,
+        new_price INTEGER NOT NULL,
+        changed_by TEXT DEFAULT '',
+        reason TEXT DEFAULT '',
+        changed_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (product_id) REFERENCES map_products(id)
+    )""")
+
+    # ── MAP 경고 메일 이력
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS map_warning_emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        violation_id INTEGER,
+        seller_name TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        product_name TEXT DEFAULT '',
+        model_name TEXT DEFAULT '',
+        email_to TEXT DEFAULT '',
+        email_subject TEXT DEFAULT '',
+        email_body TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft',
+        sent_at TEXT DEFAULT NULL,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (violation_id) REFERENCES map_violations(id)
+    )""")
 
     conn.commit()
     conn.close()
