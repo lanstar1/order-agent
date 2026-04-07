@@ -24,6 +24,7 @@ from services.naver_datalab_service import (
     get_product_keywords,
     get_latest_trend,
     LANSTAR_CATEGORIES,
+    get_categories_from_db,
 )
 
 logger = logging.getLogger("naver_datalab_routes")
@@ -282,8 +283,84 @@ async def compare_products_trend(
 
 @router.get("/shopping/categories")
 async def get_category_list():
-    """사용 가능한 카테고리 코드 목록"""
-    return {"categories": LANSTAR_CATEGORIES}
+    """사용 가능한 카테고리 코드 목록 (DB 기반)"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM datalab_categories WHERE is_active=1 ORDER BY sort_order, name"
+    ).fetchall()
+    conn.close()
+    return {"categories": [dict(r) for r in rows]}
+
+
+class CategoryCreate(BaseModel):
+    name: str
+    code: str
+    sort_order: int = 0
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+@router.post("/shopping/categories")
+async def create_category(data: CategoryCreate):
+    """카테고리 추가"""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO datalab_categories (name, code, sort_order) VALUES (?,?,?)",
+            (data.name.strip(), data.code.strip(), data.sort_order)
+        )
+        conn.commit()
+        cat_id = cur.lastrowid
+        conn.close()
+        return {"id": cat_id, "message": f"카테고리 '{data.name}' 추가 완료"}
+    except Exception as e:
+        conn.close()
+        if "unique" in str(e).lower():
+            raise HTTPException(409, f"코드 '{data.code}'가 이미 존재합니다")
+        raise HTTPException(500, str(e))
+
+
+@router.put("/shopping/categories/{cat_id}")
+async def update_category(cat_id: int, data: CategoryUpdate):
+    """카테고리 수정"""
+    conn = get_connection()
+    ud = data.dict(exclude_unset=True)
+    if not ud:
+        conn.close()
+        raise HTTPException(400, "변경 항목 없음")
+    if "is_active" in ud and isinstance(ud["is_active"], bool):
+        ud["is_active"] = 1 if ud["is_active"] else 0
+    if "name" in ud:
+        ud["name"] = ud["name"].strip()
+    if "code" in ud:
+        ud["code"] = ud["code"].strip()
+    sets = [f"{k} = ?" for k in ud]
+    vals = list(ud.values())
+    try:
+        conn.execute(f"UPDATE datalab_categories SET {', '.join(sets)} WHERE id = ?", vals + [cat_id])
+        conn.commit()
+        conn.close()
+        return {"message": "수정 완료"}
+    except Exception as e:
+        conn.close()
+        if "unique" in str(e).lower():
+            raise HTTPException(409, "중복된 코드입니다")
+        raise HTTPException(500, str(e))
+
+
+@router.delete("/shopping/categories/{cat_id}")
+async def delete_category(cat_id: int):
+    """카테고리 삭제"""
+    conn = get_connection()
+    conn.execute("DELETE FROM datalab_categories WHERE id = ?", (cat_id,))
+    conn.commit()
+    conn.close()
+    return {"message": "삭제 완료"}
 
 
 class ShoppingTrendRequest(BaseModel):
@@ -359,7 +436,7 @@ async def analyze_single_product(
     keywords = [r["keyword"] for r in kw_rows]
     if not category_code:
         cat_hint = kw_rows[0]["category_hint"] if kw_rows else ""
-        category_code = LANSTAR_CATEGORIES.get(cat_hint, "")
+        category_code = get_categories_from_db().get(cat_hint, "")
 
     result = await analyze_product_trend(product, keywords, category_code, days)
 
@@ -425,9 +502,10 @@ async def _run_bulk_analysis(products: list, category_code: str, days: int):
     })
 
     try:
+        db_cats = get_categories_from_db()
         for i, p in enumerate(products):
             keywords = p.get("kw_list", "").split(",") if p.get("kw_list") else []
-            cat = category_code or LANSTAR_CATEGORIES.get(p.get("cat_hint", ""), "")
+            cat = category_code or db_cats.get(p.get("cat_hint", ""), "")
 
             datalab_progress.update({
                 "current_product": p["model_name"],

@@ -26,7 +26,7 @@ DATALAB_SHOPPING_GENDER_URL = "https://openapi.naver.com/v1/datalab/shopping/cat
 DATALAB_SHOPPING_AGE_URL = "https://openapi.naver.com/v1/datalab/shopping/category/age"
 DATALAB_SHOPPING_KEYWORD_URL = "https://openapi.naver.com/v1/datalab/shopping/category/keyword/age"
 
-# 랜스타 주요 카테고리 코드 (네이버 쇼핑)
+# 랜스타 주요 카테고리 코드 (네이버 쇼핑) - 기본값 (DB 미초기화 시 fallback)
 LANSTAR_CATEGORIES = {
     "네트워크장비": "50000832",     # 컴퓨터/주변기기 > 네트워크장비
     "케이블/젠더": "50000833",      # 컴퓨터/주변기기 > 케이블/젠더/컨버터
@@ -35,6 +35,22 @@ LANSTAR_CATEGORIES = {
     "컴퓨터부품": "50000803",       # 컴퓨터/주변기기 > 컴퓨터부품
     "사무기기": "50001332",         # 문구/오피스 > 사무기기
 }
+
+
+def get_categories_from_db() -> dict:
+    """DB에서 활성 카테고리 로드 (fallback: LANSTAR_CATEGORIES)"""
+    try:
+        from db.database import get_connection
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT name, code FROM datalab_categories WHERE is_active=1 ORDER BY sort_order"
+        ).fetchall()
+        conn.close()
+        if rows:
+            return {r["name"]: r["code"] for r in rows}
+    except Exception as e:
+        logger.warning(f"DB 카테고리 로드 실패, fallback 사용: {e}")
+    return LANSTAR_CATEGORIES
 
 
 def _get_naver_headers() -> dict:

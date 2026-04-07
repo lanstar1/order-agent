@@ -970,6 +970,32 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_datalab_tr_type ON datalab_trend_results(trend_type);
     """)
 
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS datalab_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        sort_order INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+    # 기본 카테고리 시드 (없을 때만)
+    _seed = cur_or_conn.execute("SELECT COUNT(*) as cnt FROM datalab_categories").fetchone()
+    if _seed and (_seed["cnt"] if isinstance(_seed, dict) else _seed[0]) == 0:
+        _defaults = [
+            ("네트워크장비", "50000832", 1),
+            ("케이블/젠더/컨버터", "50000833", 2),
+            ("PC주변기기", "50000830", 3),
+            ("모니터/모니터주변기기", "50000834", 4),
+            ("컴퓨터부품", "50000803", 5),
+            ("사무기기", "50001332", 6),
+        ]
+        cur_or_conn.executemany(
+            "INSERT INTO datalab_categories (name, code, sort_order) VALUES (?,?,?)",
+            _defaults
+        )
+
     conn.commit()
     conn.close()
     db_type = "PostgreSQL" if USE_PG else f"SQLite ({DB_PATH})"
