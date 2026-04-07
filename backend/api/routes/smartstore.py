@@ -559,3 +559,114 @@ async def delete_product_map(product_no: str):
     _save_product_map()
     logger.info(f"[SS] 매핑 삭제: {product_no} (was {erp_code})")
     return {"success": True, "deleted": product_no, "total": len(_product_map)}
+
+
+# ═══════════════════════════════════════════
+# Excel 업로드/다운로드 API
+# ═══════════════════════════════════════════
+
+@router.get("/product-map/export-excel")
+async def export_product_map_excel():
+    """현재 product_map 전체를 Excel 파일로 다운로드"""
+    import io
+    from fastapi.responses import StreamingResponse
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl 미설치. pip install openpyxl")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "상품매핑"
+
+    # 헤더
+    headers = ["상품번호", "ERP품목코드", "모델명(로젠송장용)"]
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    ws.column_dimensions["A"].width = 20
+    ws.column_dimensions["B"].width = 30
+    ws.column_dimensions["C"].width = 30
+
+    # 데이터
+    for row_idx, (prod_no, erp_code) in enumerate(_product_map.items(), start=2):
+        model = _model_map.get(prod_no, "")
+        ws.cell(row=row_idx, column=1, value=prod_no)
+        ws.cell(row=row_idx, column=2, value=erp_code)
+        ws.cell(row=row_idx, column=3, value=model)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    logger.info(f"[SS] Excel 내보내기: {len(_product_map)}건")
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=smartstore_product_map.xlsx"},
+    )
+
+
+@router.post("/product-map/import-excel")
+async def import_product_map_excel(file: bytes = Body(..., media_type="application/octet-stream")):
+    """Excel 파일 업로드로 product_map 전체 갱신 (기존 데이터 덮어쓰기)"""
+    import io
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl 미설치. pip install openpyxl")
+
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file), data_only=True)
+        ws = wb.active
+
+        # 헤더 행 찾기 (상품번호 컬럼 기준)
+        header_row = None
+        for r in range(1, min(5, ws.max_row + 1)):
+            val = str(ws.cell(r, 1).value or "")
+            if "상품번호" in val:
+                header_row = r
+                break
+        data_start = (header_row + 1) if header_row else 1
+
+        new_product_map = {}
+        new_model_map = {}
+        skipped = 0
+
+        for r in range(data_start, ws.max_row + 1):
+            prod_no = str(ws.cell(r, 1).value or "").strip()
+            erp_code = str(ws.cell(r, 2).value or "").strip()
+            model = str(ws.cell(r, 3).value or "").strip()
+
+            if not prod_no or not erp_code or prod_no == "None" or erp_code == "None":
+                skipped += 1
+                continue
+
+            new_product_map[prod_no] = erp_code
+            if model and model != "None":
+                new_model_map[prod_no] = model
+
+        if not new_product_map:
+            return {"success": False, "error": "유효한 데이터가 없습니다. 헤더: 상품번호|ERP품목코드|모델명"}
+
+        global _product_map, _model_map
+        _product_map = new_product_map
+        _model_map = new_model_map
+        _save_product_map()
+
+        logger.info(f"[SS] Excel 가져오기 완료: {len(_product_map)}건 (건너뜀 {skipped}건)")
+        return {
+            "success": True,
+            "imported": len(_product_map),
+            "skipped": skipped,
+            "message": f"{len(_product_map)}건 매핑 갱신 완료",
+        }
+
+    except Exception as e:
+        logger.error(f"[SS] Excel 가져오기 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"파일 파싱 오류: {e}")

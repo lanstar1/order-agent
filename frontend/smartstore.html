@@ -175,6 +175,11 @@
                 <input type="text" id="map-q" placeholder="검색 (상품번호, 품목코드, 모델명)" onkeyup="if(event.key==='Enter') searchMap()">
                 <button class="btn btn-blue btn-sm" onclick="searchMap()">검색</button>
                 <button class="btn btn-gray btn-sm" onclick="searchMap('')">전체</button>
+                <button class="btn btn-green btn-sm" onclick="exportMapExcel()">⬇ Excel 다운로드</button>
+                <label class="btn btn-orange btn-sm" style="cursor:pointer; margin:0;">
+                    ⬆ Excel 업로드
+                    <input type="file" id="map-excel-input" accept=".xlsx" style="display:none;" onchange="importMapExcel(this)">
+                </label>
             </div>
             <div class="map-add-row">
                 <input type="text" id="map-new-pno" placeholder="상품번호 (필수)">
@@ -773,6 +778,46 @@ async function deleteMap(productNo) {
             searchMap(document.getElementById('map-q').value);
         } else { mapMsg('err', r.error); }
     } catch(e) { mapMsg('err', e.message); }
+}
+
+async function exportMapExcel() {
+    mapMsg('ok', 'Excel 파일 생성 중...');
+    try {
+        const res = await fetch(B+'/api/smartstore/product-map/export-excel');
+        if(!res.ok) { mapMsg('err', 'Excel 다운로드 실패'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'smartstore_product_map.xlsx';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        mapMsg('ok', 'Excel 다운로드 완료');
+    } catch(e) { mapMsg('err', e.message); }
+}
+
+async function importMapExcel(input) {
+    if(!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    if(!confirm(`"${file.name}" 파일로 전체 매핑을 덮어씁니다. 계속하시겠습니까?`)) {
+        input.value = ''; return;
+    }
+    mapMsg('ok', 'Excel 업로드 중...');
+    try {
+        const buf = await file.arrayBuffer();
+        const res = await fetch(B+'/api/smartstore/product-map/import-excel', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/octet-stream'},
+            body: buf,
+        });
+        const r = await res.json();
+        if(r.success) {
+            mapMsg('ok', `✅ ${r.message} (건너뜀: ${r.skipped}건)`);
+            searchMap('');
+        } else {
+            mapMsg('err', r.error || r.detail || '업로드 실패');
+        }
+    } catch(e) { mapMsg('err', e.message); }
+    input.value = '';
 }
 
 function mapMsg(t, m) {
