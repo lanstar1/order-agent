@@ -415,7 +415,8 @@ async def logen_export_excel(
         ws.cell(row, 7,  fare_tp)     # G: 운임구분
         ws.cell(row, 8,  goods)       # H: 물품명 (모델명+수량)
         ws.cell(row, 9,  first_poid)  # I: 주문번호 → 반환파일 S열(index 18)로 매칭
-        ws.cell(row, 10, None)        # J: 제주운임구분 (빈칸)
+        jeju = "선착불" if "제주" in full_addr else None
+        ws.cell(row, 10, jeju)        # J: 제주운임구분 (제주 주소면 선착불 자동)
         ws.cell(row, 11, cust_msg)    # K: 배송메세지 (고객 요청사항)
         row += 1
 
