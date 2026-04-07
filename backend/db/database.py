@@ -983,18 +983,18 @@ def init_db():
     # 기본 카테고리 시드 (없을 때만)
     _seed = cur_or_conn.execute("SELECT COUNT(*) as cnt FROM datalab_categories").fetchone()
     if _seed and (_seed["cnt"] if isinstance(_seed, dict) else _seed[0]) == 0:
-        _defaults = [
+        for _name, _code, _sort in [
             ("네트워크장비", "50000832", 1),
             ("케이블/젠더/컨버터", "50000833", 2),
             ("PC주변기기", "50000830", 3),
             ("모니터/모니터주변기기", "50000834", 4),
             ("컴퓨터부품", "50000803", 5),
             ("사무기기", "50001332", 6),
-        ]
-        cur_or_conn.executemany(
-            "INSERT INTO datalab_categories (name, code, sort_order) VALUES (?,?,?)",
-            _defaults
-        )
+        ]:
+            cur_or_conn.execute(
+                "INSERT INTO datalab_categories (name, code, sort_order) VALUES (?,?,?)",
+                (_name, _code, _sort)
+            )
 
     conn.commit()
     conn.close()
