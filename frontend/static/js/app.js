@@ -7507,13 +7507,22 @@ function reconcileNewMatch() {
   };
 
   // ── 제품·지도가 ──
+  let _allMapProducts = []; // 자동완성용 캐시
+  let _searchTimer = null;
+
   window.mapLoadProducts = async function() {
     const q = (document.getElementById('map-prod-search')?.value || '').trim();
     try {
       const products = await api.get(`/api/map/products?search=${encodeURIComponent(q)}`);
+      if (!q) _allMapProducts = products; // 전체 목록 캐시
       const mp = (_mapSettings||{}).min_price || 5000;
-      if (!products.length) { document.getElementById('map-products-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">제품 없음. 엑셀 업로드 또는 제품 추가하세요.</p>'; return; }
-      let h = `<p style="font-size:12px;color:#64748b;margin:0 0 8px">ℹ️ 지도가 변경 후 Enter. ${won(mp)} 미만은 감시 제외.</p><table class="map-tbl"><thead><tr><th>모델명</th><th>제품명</th><th>브랜드</th><th>지도가</th><th>최저가</th><th>상태</th><th>상시감시</th><th></th></tr></thead><tbody>`;
+      if (!products.length) {
+        document.getElementById('map-products-table').innerHTML = q
+          ? `<p style="color:#94a3b8;padding:20px;text-align:center">'${q}' 검색 결과 없음</p>`
+          : '<p style="color:#94a3b8;padding:20px;text-align:center">제품 없음. 엑셀 업로드 또는 제품 추가하세요.</p>';
+        return;
+      }
+      let h = `<p style="font-size:12px;color:#64748b;margin:0 0 8px">ℹ️ 지도가 변경 후 Enter. ${won(mp)} 미만은 감시 제외. ${q ? `"${q}" 검색 결과: ${products.length}건` : `전체 ${products.length}건`}</p><table class="map-tbl"><thead><tr><th>모델명</th><th>제품명</th><th>브랜드</th><th>지도가</th><th>최저가</th><th>상태</th><th>상시감시</th><th></th></tr></thead><tbody>`;
       products.forEach(p => {
         const ex = p.map_price < mp;
         const st = ex ? '<span style="background:#f1f5f9;color:#94a3b8;padding:2px 6px;border-radius:4px;font-size:11px">제외</span>'
@@ -7525,6 +7534,71 @@ function reconcileNewMatch() {
       document.getElementById('map-products-table').innerHTML = h;
     } catch(e) { console.error('제품 로드:', e); }
   };
+
+  // 드롭다운 자동완성
+  window.mapSearchAutocomplete = function(q) {
+    clearTimeout(_searchTimer);
+    const dd = document.getElementById('map-search-dropdown');
+    if (!q || q.length < 1) { dd.style.display = 'none'; return; }
+    _searchTimer = setTimeout(() => {
+      const term = q.toUpperCase();
+      // 캐시된 목록에서 로컬 필터 (빠름)
+      let matches = _allMapProducts.filter(p =>
+        p.model_name.toUpperCase().includes(term) || p.product_name.toUpperCase().includes(term)
+      ).slice(0, 15);
+      if (!matches.length) {
+        // 캐시가 비어있거나 결과 없으면 API 호출
+        api.get(`/api/map/products?search=${encodeURIComponent(q)}`).then(results => {
+          _renderDropdown(results.slice(0, 15), q);
+        });
+        return;
+      }
+      _renderDropdown(matches, q);
+    }, 200);
+  };
+
+  function _renderDropdown(items, q) {
+    const dd = document.getElementById('map-search-dropdown');
+    if (!items.length) { dd.style.display = 'none'; return; }
+    const term = q.toUpperCase();
+    let h = '';
+    items.forEach(p => {
+      const mn = _highlight(p.model_name, term);
+      const pn = _highlight(p.product_name, term);
+      h += `<div onclick="mapSelectSearch('${p.model_name.replace(/'/g,"\\'")}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;display:flex;gap:8px;align-items:center" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
+        <span style="font-family:monospace;font-weight:600;color:#2563eb;min-width:120px">${mn}</span>
+        <span style="color:#334155;flex:1">${pn}</span>
+        <span style="color:#94a3b8;font-size:11px">${won(p.map_price)}</span>
+      </div>`;
+    });
+    dd.innerHTML = h;
+    dd.style.display = 'block';
+  }
+
+  function _highlight(text, term) {
+    if (!term) return text;
+    const idx = text.toUpperCase().indexOf(term);
+    if (idx < 0) return text;
+    return text.slice(0, idx) + '<b style="color:#2563eb;background:#eff6ff">' + text.slice(idx, idx + term.length) + '</b>' + text.slice(idx + term.length);
+  }
+
+  window.mapSelectSearch = function(modelName) {
+    document.getElementById('map-prod-search').value = modelName;
+    document.getElementById('map-search-dropdown').style.display = 'none';
+    mapLoadProducts();
+  };
+
+  window.mapHideDropdown = function() {
+    setTimeout(() => { document.getElementById('map-search-dropdown').style.display = 'none'; }, 200);
+  };
+
+  // 드롭다운 외부 클릭 시 닫기
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('#map-prod-search') && !e.target.closest('#map-search-dropdown')) {
+      const dd = document.getElementById('map-search-dropdown');
+      if (dd) dd.style.display = 'none';
+    }
+  });
   window.mapUpdatePrice = async function(id, v) { try { await api.put(`/api/map/products/${id}/map-price?map_price=${v}`); } catch(e) { alert('오류: '+e.message); } };
   window.mapToggleWatch = async function(id, on) { try { await api.put(`/api/map/products/${id}/watch?watched=${!!on}`); mapLoadProducts(); } catch(e) { alert('오류: '+e.message); } };
   window.mapDeleteProduct = async function(id) { if (!confirm('삭제하시겠습니까?')) return; try { await api.delete(`/api/map/products/${id}`); mapLoadProducts(); } catch(e) { alert('오류: '+e.message); } };

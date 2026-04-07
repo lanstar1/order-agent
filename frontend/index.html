@@ -987,8 +987,12 @@ C규격품 200개
 
       <!-- 제품·지도가 -->
       <div class="map-tab-content" id="map-tab-products">
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <input type="text" id="map-prod-search" placeholder="모델명 또는 제품명 검색..." oninput="mapLoadProducts()" style="flex:1;min-width:200px;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <div style="flex:1;min-width:200px;position:relative">
+            <input type="text" id="map-prod-search" placeholder="모델명 또는 제품명 검색..." oninput="mapSearchAutocomplete(this.value)" onkeydown="if(event.key==='Enter'){mapLoadProducts();mapHideDropdown()}" autocomplete="off" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box">
+            <div id="map-search-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:240px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-top:none;border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100"></div>
+          </div>
+          <button class="btn btn-sm" onclick="mapLoadProducts();mapHideDropdown()" style="padding:8px 16px">🔍 검색</button>
           <label style="padding:8px;cursor:pointer"><input type="file" id="map-excel-file" accept=".xlsx,.csv" onchange="mapUploadExcel()" style="display:none">📤 엑셀 업로드</label>
           <button class="btn btn-sm" onclick="mapShowAddProduct()">+ 제품추가</button>
         </div>
@@ -4163,7 +4167,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260407d"></script>
+<script src="/static/js/app.js?v=20260407e"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
