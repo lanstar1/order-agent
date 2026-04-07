@@ -427,19 +427,26 @@ function getStatus(order) {
 // ── 매칭 유형 분류 (백엔드 로직 미러링) ──
 function classifyMatchType(order) {
     const po = order.productOrder || {};
-    const option = (po.productOption || po.optionInfo || '').trim();
+    let option = (po.productOption || po.optionInfo || '').trim();
     const prodName = (po.productName || '').trim();
 
     if (option) {
-        // 자동추출 시도 (백엔드와 동일 로직)
+        // 배송방법 suffix 제거
+        if (option.includes(' / ')) option = option.split(' / ')[0].trim();
+
         const extracted = extractErpCodeFromOption(option);
-        if (extracted) return 'option';   // 옵션코드 자동추출
+        if (extracted) {
+            // 옵션 텍스트 자체가 코드 (패턴3) → 상품명과 동일한 코드, 메인으로 분류
+            if (option === extracted) return 'main';
+            // 괄호·콜론 등으로 추출된 경우 → 실제 옵션 분기
+            return 'option';
+        }
     }
 
-    // 추가상품 판별: 상품명 자체가 코드처럼 생긴 경우 (공백없고 하이픈 포함 등)
+    // 추가상품 판별: 상품명 자체가 코드처럼 생긴 경우
     if (/^[A-Za-z0-9][A-Za-z0-9\-\.]+$/.test(prodName) && prodName.length >= 4) return 'addon';
 
-    return 'main';  // 메인상품 (상품번호 기준)
+    return 'main';
 }
 
 function extractErpCodeFromOption(text) {
