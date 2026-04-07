@@ -330,11 +330,14 @@ async def excluded_export_excel(
     # 제외 키워드 포함 주문만 필터 (orderId 기준 그룹)
     excluded_oids: set = set()
     for o in selected_orders:
-        po = o.get("productOrder", {})
+        po = o.get("productOrder") or {}
         combined = ((po.get("productName", "") or "") + " " + (po.get("productOption", "") or "")).lower()
         if any(kw in combined for kw in EXCLUDE_KEYWORDS):
-            od = o.get("order", {})
-            excluded_oids.add(od.get("orderId", ""))
+            od = o.get("order") or {}
+            oid = od.get("orderId", "") or po.get("orderId", "")
+            if oid:
+                excluded_oids.add(oid)
+    logger.info(f"[SS] excluded-export-excel: 제외 주문 {len(excluded_oids)}개 orderId={excluded_oids}")
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -356,33 +359,36 @@ async def excluded_export_excel(
     seen: set = set()
     row = 2
     for o in selected_orders:
-        od = o.get("order", {})
-        po = o.get("productOrder", {})
-        oid = od.get("orderId", "")
-        if oid not in excluded_oids or oid in seen:
+        try:
+            od = o.get("order") or {}
+            po = o.get("productOrder") or {}
+            oid = od.get("orderId", "") or po.get("orderId", "")
+            if not oid or oid not in excluded_oids or oid in seen:
+                continue
+            seen.add(oid)
+            addr      = po.get("shippingAddress") or {}
+            rcv       = addr.get("name", "") or ""
+            tel       = addr.get("tel2", "") or addr.get("tel1", "") or ""
+            full_addr = ((addr.get("baseAddress", "") or "") + " " + (addr.get("detailedAddress", "") or "")).strip()
+            cust_msg  = (po.get("shippingMemo") or po.get("deliveryMemo") or
+                         po.get("deliveryMessage") or od.get("shippingMemo") or
+                         od.get("deliveryMemo") or "")
+
+            fee_type = str(po.get("shippingFeeType") or od.get("shippingFeeType") or "")
+            if "착불" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
+                delivery_type = "경동택배착불"
+            else:
+                delivery_type = "경동택배선불"
+
+            ws.cell(row, 1, f"{delivery_type} / 전표제외")
+            ws.cell(row, 2, rcv)
+            ws.cell(row, 3, tel)
+            ws.cell(row, 4, full_addr)
+            ws.cell(row, 5, cust_msg)
+            row += 1
+        except Exception as ex:
+            logger.error(f"[SS] excluded-export-excel 행 처리 오류: {ex}", exc_info=True)
             continue
-        seen.add(oid)
-        addr     = po.get("shippingAddress", {})
-        rcv      = addr.get("name", "")
-        tel      = addr.get("tel2", "") or addr.get("tel1", "")
-        full_addr = ((addr.get("baseAddress", "") or "") + " " + (addr.get("detailedAddress", "") or "")).strip()
-        cust_msg  = (po.get("shippingMemo", "") or po.get("deliveryMemo", "") or
-                     po.get("deliveryMessage", "") or od.get("shippingMemo", "") or
-                     od.get("deliveryMemo", "") or "")
-
-        fee_type  = str(po.get("shippingFeeType", "") or od.get("shippingFeeType", "") or "")
-        ship_fee  = float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0)
-        if "착불" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
-            delivery_type = "경동택배착불"
-        else:
-            delivery_type = "경동택배선불"
-
-        ws.cell(row, 1, f"{delivery_type} / 전표제외")
-        ws.cell(row, 2, rcv)
-        ws.cell(row, 3, tel)
-        ws.cell(row, 4, full_addr)
-        ws.cell(row, 5, cust_msg)
-        row += 1
 
     if row == 2:
         raise HTTPException(status_code=404, detail="제외 키워드(허브랙/서버랙/캐비넷) 주문이 없습니다.")
