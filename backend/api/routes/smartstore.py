@@ -313,6 +313,35 @@ async def send_erp_only(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/dispatch-manual")
+async def dispatch_manual(
+    body: dict = Body(...),
+):
+    """수기 송장번호로 네이버 발송처리.
+    body: { "items": [{"productOrderId": "...", "trackingNumber": "..."}, ...] }
+    """
+    from services.naver_client import naver_client
+    items = body.get("items", [])
+    if not items:
+        return {"success": False, "error": "송장 데이터가 없습니다."}
+
+    dispatch_list = [
+        {"productOrderId": it["productOrderId"], "deliveryCompanyCode": "LOGEN", "trackingNumber": it["trackingNumber"]}
+        for it in items if it.get("productOrderId") and it.get("trackingNumber")
+    ]
+    if not dispatch_list:
+        return {"success": False, "error": "유효한 송장번호가 없습니다."}
+
+    try:
+        result = await naver_client.dispatch_orders(dispatch_list)
+        result["dispatched_count"] = len(dispatch_list)
+        logger.info(f"[SS] 수기발송처리: {len(dispatch_list)}건, 결과={result}")
+        return {"success": True, **result}
+    except Exception as e:
+        logger.error(f"[SS] 수기발송처리 오류: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/register-logen")
 async def register_logen_only(
     warehouse: str = Query(..., pattern="^(gimpo|yongsan)$"),

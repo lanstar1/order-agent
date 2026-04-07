@@ -156,8 +156,8 @@
                 <button class="btn btn-sm btn-gray" onclick="deselectAll()">전체해제</button>
                 <span style="flex:1;"></span>
                 <button class="btn btn-blue" onclick="sendErp()" id="b-erp">📤 ERP 전송</button>
-                <button class="btn btn-red" onclick="regLogen('gimpo')" id="b-gp">📦 김포 로젠등록</button>
-                <button class="btn btn-orange" onclick="regLogen('yongsan')" id="b-ys">📦 용산 로젠등록</button>
+                <button class="btn btn-red" onclick="openTrackingModal('gimpo')" id="b-gp">🚚 김포 송장입력</button>
+                <button class="btn btn-orange" onclick="openTrackingModal('yongsan')" id="b-ys">🚚 용산 송장입력</button>
             </div>
 
             <div style="margin-top:12px;">
@@ -913,6 +913,118 @@ function mapMsg(t, m) {
 }
 
 setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});},1000);
+
+// ── 송장 수기 입력 모달 ──
+let _trackingWh = '';
+
+function openTrackingModal(wh) {
+    if(!_rawOrders || _checkedSet.size === 0){
+        ss('s-auto','warn','선택된 주문이 없습니다.');
+        document.getElementById('card-result').style.display = 'block';
+        return;
+    }
+    _trackingWh = wh;
+    const nm = wh === 'gimpo' ? '김포' : '용산';
+    const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
+
+    // orderId 기준으로 그룹화
+    const groups = {};
+    for(const o of selectedOrders){
+        const oid = getOrderId(o);
+        if(!groups[oid]) groups[oid] = o;
+    }
+
+    let rows = '';
+    for(const [oid, o] of Object.entries(groups)){
+        const po = o.productOrder || {};
+        const addr = po.shippingAddress || {};
+        const rcv = addr.name || '';
+        const tel = addr.tel1 || '';
+        const addrStr = ((addr.baseAddress||'') + ' ' + (addr.detailedAddress||'')).trim();
+        rows += `<tr>
+            <td class="mono" style="font-size:12px;">${oid}</td>
+            <td>${rcv}</td>
+            <td class="mono" style="font-size:12px;">${tel}</td>
+            <td style="font-size:11px;max-width:200px;">${addrStr}</td>
+            <td><input type="text" class="tn-input" data-oid="${oid}" placeholder="송장번호" style="width:140px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:13px;"></td>
+        </tr>`;
+    }
+
+    document.getElementById('modal-title').textContent = `${nm} 송장번호 입력`;
+    document.getElementById('modal-tbody').innerHTML = rows;
+    document.getElementById('tracking-modal').style.display = 'flex';
+}
+
+function closeTrackingModal(){
+    document.getElementById('tracking-modal').style.display = 'none';
+}
+
+async function submitTracking(){
+    const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
+    const inputs = document.querySelectorAll('.tn-input');
+    const oidToTn = {};
+    inputs.forEach(inp => { if(inp.value.trim()) oidToTn[inp.dataset.oid] = inp.value.trim(); });
+
+    if(Object.keys(oidToTn).length === 0){
+        alert('송장번호를 하나 이상 입력해주세요.');
+        return;
+    }
+
+    // productOrderId 목록 구성
+    const items = [];
+    for(const o of selectedOrders){
+        const oid = getOrderId(o);
+        const tn = oidToTn[oid];
+        if(tn) items.push({ productOrderId: getProductOrderId(o), trackingNumber: tn });
+    }
+
+    closeTrackingModal();
+    document.getElementById('card-result').style.display = 'block';
+    ss('s-auto','load',`발송처리 중... (${items.length}건)`);
+    log(`=== 수기 발송처리 (${items.length}건) ===`);
+
+    try{
+        const r = await(await fetch(B+'/api/smartstore/dispatch-manual',{
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ items })
+        })).json();
+
+        if(r.success){
+            ss('s-auto','ok',`발송처리 완료! ${r.dispatched_count||0}건`);
+            log('완료: 발송 '+r.dispatched+', 실패 '+r.failed);
+        } else {
+            ss('s-auto','err', r.error || '발송처리 실패');
+            log('실패: '+JSON.stringify(r));
+        }
+    }catch(e){ ss('s-auto','err',e.message); log('오류: '+e.message); }
+}
 </script>
+
+<!-- 송장 수기 입력 모달 -->
+<div id="tracking-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:860px;max-height:80vh;display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h2 id="modal-title" style="margin:0;font-size:18px;">송장번호 입력</h2>
+            <button onclick="closeTrackingModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;">✕</button>
+        </div>
+        <div style="overflow-y:auto;flex:1;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+                    <th style="padding:8px;text-align:left;">주문번호</th>
+                    <th style="padding:8px;text-align:left;">수령인</th>
+                    <th style="padding:8px;text-align:left;">연락처</th>
+                    <th style="padding:8px;text-align:left;">주소</th>
+                    <th style="padding:8px;text-align:left;">송장번호</th>
+                </tr></thead>
+                <tbody id="modal-tbody"></tbody>
+            </table>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button onclick="closeTrackingModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">취소</button>
+            <button onclick="submitTracking()" style="padding:8px 20px;border:none;border-radius:6px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;">발송처리</button>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
