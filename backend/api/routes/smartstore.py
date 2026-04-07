@@ -353,47 +353,70 @@ async def logen_export_excel(
     ws.column_dimensions["F"].width = 8
     ws.column_dimensions["G"].width = 10
     ws.column_dimensions["H"].width = 10
-    ws.column_dimensions["I"].width = 35
-    ws.column_dimensions["K"].width = 20
-    ws.column_dimensions["L"].width = 20
-    ws.column_dimensions["M"].width = 22
+    ws.column_dimensions["I"].width = 30
+    ws.column_dimensions["K"].width = 30
 
-    # orderId 기준으로 한 행씩 (같은 orderId는 첫 번째만)
-    seen = set()
-    row = 2
+    # orderId 기준으로 그룹화
+    groups: dict = {}
     for o in selected_orders:
         od = o.get("order", {})
         po = o.get("productOrder", {})
         oid = od.get("orderId", "")
-        poid = po.get("productOrderId", "")
-        addr = po.get("shippingAddress", {})
+        if not oid:
+            continue
+        if oid not in groups:
+            groups[oid] = {"od": od, "po": po, "items": []}
+        groups[oid]["items"].append(po)
+
+    row = 2
+    for oid, g in groups.items():
+        od = g["od"]
+        po = g["po"]   # 첫 번째 productOrder (수령인 정보용)
+        addr     = po.get("shippingAddress", {})
         rcv      = addr.get("name", "")
         tel_home = addr.get("tel1", "")
         tel_cell = addr.get("tel2", "") or addr.get("tel1", "")
         full_addr = ((addr.get("baseAddress","") or "") + " " + (addr.get("detailedAddress","") or "")).strip()
-        prod_nm  = po.get("productName", "")
-        option   = po.get("productOption", "")
-        goods    = (prod_nm + (" / " + option if option else ""))[:60]
-        qty      = int(po.get("quantity", 1) or 1)
         ship_fee = int(float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0))
-        fare_tp  = "010"  # 선불
+        fare_tp  = "010"
 
-        if oid and oid not in seen:
-            seen.add(oid)
-            ws.cell(row, 1,  rcv)
-            ws.cell(row, 2,  None)
-            ws.cell(row, 3,  full_addr)
-            ws.cell(row, 4,  tel_home)
-            ws.cell(row, 5,  tel_cell)
-            ws.cell(row, 6,  qty)
-            ws.cell(row, 7,  ship_fee)
-            ws.cell(row, 8,  fare_tp)
-            ws.cell(row, 9,  goods)
-            ws.cell(row, 10, None)
-            ws.cell(row, 11, poid)  # 배송메세지 → productOrderId (반환파일 매칭용)
-            ws.cell(row, 12, None)
-            ws.cell(row, 13, None)
-            row += 1
+        # 품목명: 모델명(or ERP코드) + 수량 요약
+        model_qty: dict = {}
+        total_qty = 0
+        first_poid = ""
+        cust_msg = ""
+        for item_po in g["items"]:
+            if not first_poid:
+                first_poid = item_po.get("productOrderId", "")
+                cust_msg = (item_po.get("deliveryMemo", "") or
+                            item_po.get("deliveryMessage", "") or
+                            od.get("deliveryMemo", "") or "")
+            product_id = str(item_po.get("productId", "") or item_po.get("productNo", "") or "")
+            # 모델명 우선, 없으면 ERP코드, 없으면 상품명
+            model = _model_map.get(product_id, "")
+            if not model:
+                model = _product_map.get(product_id, "") or item_po.get("productName", "")[:20]
+            qty = int(item_po.get("quantity", 1) or 1)
+            model_qty[model] = model_qty.get(model, 0) + qty
+            total_qty += qty
+
+        goods = ", ".join(f"{m} x{q}" for m, q in model_qty.items())[:50]
+
+        # 배송메시지: 고객 메시지 + productOrderId 숨김 삽입
+        delivery_msg = f"{cust_msg}||{first_poid}" if cust_msg else f"||{first_poid}"
+
+        ws.cell(row, 1,  rcv)
+        ws.cell(row, 2,  None)
+        ws.cell(row, 3,  full_addr)
+        ws.cell(row, 4,  tel_home)
+        ws.cell(row, 5,  tel_cell)
+        ws.cell(row, 6,  total_qty)
+        ws.cell(row, 7,  ship_fee)
+        ws.cell(row, 8,  fare_tp)
+        ws.cell(row, 9,  goods)
+        ws.cell(row, 10, None)
+        ws.cell(row, 11, delivery_msg)
+        row += 1
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
@@ -429,8 +452,12 @@ async def logen_dispatch_excel(
     for row in ws.iter_rows(min_row=4, values_only=True):
         if not any(row):
             continue
-        tracking = str(row[3] or "").strip()   # D열: 운송장번호
-        poid     = str(row[17] or "").strip()  # R열: 배송메시지(productOrderId)
+        tracking  = str(row[3] or "").strip()    # D열: 운송장번호
+        msg_raw   = str(row[17] or "").strip()  # R열: 배송메시지 (고객메시지||productOrderId)
+        # productOrderId 추출: "고객메시지||poid" 또는 "||poid" 형식
+        poid = ""
+        if "||" in msg_raw:
+            poid = msg_raw.split("||", 1)[1].strip()
         if not tracking or not poid or tracking == "None" or poid == "None":
             skipped.append(poid or str(row[6] or ""))
             continue
