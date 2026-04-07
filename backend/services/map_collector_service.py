@@ -282,7 +282,14 @@ async def run_price_collection(
         else:
             rows = conn.execute("SELECT * FROM map_products WHERE is_active=1 AND map_price>=?", (min_price,)).fetchall()
 
-        products = [dict(r) for r in rows]
+        all_products = [dict(r) for r in rows]
+
+        # 과부하 방지: 한 번에 최대 100개 제품만 수집 (Render 서버 보호)
+        MAX_PER_RUN = 100
+        products = all_products[:MAX_PER_RUN]
+        if len(all_products) > MAX_PER_RUN:
+            logger.info(f"MAP 수집 제한: 전체 {len(all_products)}개 중 {MAX_PER_RUN}개만 수집")
+
         total_tasks = len(products) * len(platforms)
         done_tasks = 0
         total_prices = total_violations = 0

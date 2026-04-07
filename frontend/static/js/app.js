@@ -7600,7 +7600,19 @@ function reconcileNewMatch() {
     const btn = document.getElementById('map-sched-'+t.replace(':',''));
     if (btn) { if (_scheduleSet.has(t)) { btn.style.background='#2563eb'; btn.style.color='#fff'; btn.style.borderColor='#2563eb'; btn.classList.remove('btn-outline'); } else { btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; btn.classList.add('btn-outline'); } }
   };
-  window.mapTogglePlat = function(p) { if (_platformSet.has(p)) _platformSet.delete(p); else _platformSet.add(p); mapLoadSettings(); };
+  window.mapTogglePlat = function(p) {
+    if (_platformSet.has(p)) _platformSet.delete(p); else _platformSet.add(p);
+    const colors = {'네이버 쇼핑':'#03c75a','쿠팡':'#e44332','G마켓':'#6db33f','옥션':'#ff6f00','11번가':'#ff5a2e'};
+    const c = colors[p] || '#6b7280';
+    const on = _platformSet.has(p);
+    const btn = document.getElementById('map-plat-'+p.replace(/\s/g,''));
+    if (btn) {
+      btn.style.border = on ? '2px solid '+c : '1px solid #e2e8f0';
+      btn.style.background = on ? c+'15' : '#fff';
+      btn.querySelector('span').style.background = on ? c : '#d1d5db';
+      btn.querySelectorAll('span')[1].style.color = on ? '#1e293b' : '#94a3b8';
+    }
+  };
   window.mapSaveSettings = async function() {
     const data = { min_price: parseInt(document.getElementById('map-set-minprice').value), tolerance_pct: parseFloat(document.getElementById('map-set-tolerance').value), watch_interval_hours: parseInt(document.getElementById('map-set-watchint').value) };
     if (_scheduleSet) data.schedules = [..._scheduleSet].sort();
