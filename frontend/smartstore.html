@@ -914,8 +914,9 @@ function mapMsg(t, m) {
 
 setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});},1000);
 
-// ── 송장 수기 입력 모달 ──
+// ── 로젠 송장처리 (다운로드 → 업로드) ──
 let _trackingWh = '';
+let _trackingOrders = [];
 
 function openTrackingModal(wh) {
     if(!_rawOrders || _checkedSet.size === 0){
@@ -924,34 +925,13 @@ function openTrackingModal(wh) {
         return;
     }
     _trackingWh = wh;
+    _trackingOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
     const nm = wh === 'gimpo' ? '김포' : '용산';
-    const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
-
-    // orderId 기준으로 그룹화
-    const groups = {};
-    for(const o of selectedOrders){
-        const oid = getOrderId(o);
-        if(!groups[oid]) groups[oid] = o;
-    }
-
-    let rows = '';
-    for(const [oid, o] of Object.entries(groups)){
-        const po = o.productOrder || {};
-        const addr = po.shippingAddress || {};
-        const rcv = addr.name || '';
-        const tel = addr.tel1 || '';
-        const addrStr = ((addr.baseAddress||'') + ' ' + (addr.detailedAddress||'')).trim();
-        rows += `<tr>
-            <td class="mono" style="font-size:12px;">${oid}</td>
-            <td>${rcv}</td>
-            <td class="mono" style="font-size:12px;">${tel}</td>
-            <td style="font-size:11px;max-width:200px;">${addrStr}</td>
-            <td><input type="text" class="tn-input" data-oid="${oid}" placeholder="송장번호" style="width:140px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:13px;"></td>
-        </tr>`;
-    }
-
-    document.getElementById('modal-title').textContent = `${nm} 송장번호 입력`;
-    document.getElementById('modal-tbody').innerHTML = rows;
+    const groupCnt = new Set(_trackingOrders.map(o => getOrderId(o))).size;
+    document.getElementById('modal-title').textContent = `${nm} 송장처리`;
+    document.getElementById('modal-order-cnt').textContent = `선택: ${_trackingOrders.length}건 (${groupCnt}그룹)`;
+    document.getElementById('tracking-upload-input').value = '';
+    document.getElementById('tracking-upload-name').textContent = '';
     document.getElementById('tracking-modal').style.display = 'flex';
 }
 
@@ -959,39 +939,53 @@ function closeTrackingModal(){
     document.getElementById('tracking-modal').style.display = 'none';
 }
 
-async function submitTracking(){
-    const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
-    const inputs = document.querySelectorAll('.tn-input');
-    const oidToTn = {};
-    inputs.forEach(inp => { if(inp.value.trim()) oidToTn[inp.dataset.oid] = inp.value.trim(); });
+async function downloadLogenFile(){
+    if(!_trackingOrders.length){ alert('선택된 주문이 없습니다.'); return; }
+    const btn = document.getElementById('btn-logen-dl');
+    btn.disabled = true; btn.textContent = '다운로드 중...';
+    try{
+        const res = await fetch(B+'/api/smartstore/logen-export-excel',{
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(_trackingOrders)
+        });
+        if(!res.ok){ alert('다운로드 실패'); return; }
+        const blob = await res.blob();
+        const cd = res.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);
+        const fname = m ? decodeURIComponent(m[1]) : 'logen.xlsx';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
+        URL.revokeObjectURL(url);
+        log('로젠 전송파일 다운로드: '+fname);
+    }catch(e){ alert('오류: '+e.message); }
+    finally{ btn.disabled=false; btn.textContent='① 로젠 전송파일 다운로드'; }
+}
 
-    if(Object.keys(oidToTn).length === 0){
-        alert('송장번호를 하나 이상 입력해주세요.');
-        return;
-    }
+function onUploadFileChange(input){
+    const f = input.files[0];
+    document.getElementById('tracking-upload-name').textContent = f ? f.name : '';
+}
 
-    // productOrderId 목록 구성
-    const items = [];
-    for(const o of selectedOrders){
-        const oid = getOrderId(o);
-        const tn = oidToTn[oid];
-        if(tn) items.push({ productOrderId: getProductOrderId(o), trackingNumber: tn });
-    }
+async function submitTrackingUpload(){
+    const input = document.getElementById('tracking-upload-input');
+    if(!input.files[0]){ alert('송장번호가 입력된 파일을 선택해주세요.'); return; }
+
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
 
     closeTrackingModal();
     document.getElementById('card-result').style.display = 'block';
-    ss('s-auto','load',`발송처리 중... (${items.length}건)`);
-    log(`=== 수기 발송처리 (${items.length}건) ===`);
+    ss('s-auto','load','송장 업로드 후 발송처리 중...');
+    log('=== 엑셀 발송처리 업로드 ===');
 
     try{
-        const r = await(await fetch(B+'/api/smartstore/dispatch-manual',{
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ items })
+        const r = await(await fetch(B+'/api/smartstore/logen-dispatch-excel',{
+            method:'POST', body: formData
         })).json();
 
         if(r.success){
-            ss('s-auto','ok',`발송처리 완료! ${r.dispatched_count||0}건`);
-            log('완료: 발송 '+r.dispatched+', 실패 '+r.failed);
+            ss('s-auto','ok',`발송처리 완료! ${r.dispatched_count||0}건 (건너뜀: ${r.skipped_count||0}건)`);
+            log(`완료: 발송 ${r.dispatched}, 실패 ${r.failed}, 건너뜀 ${r.skipped_count}`);
         } else {
             ss('s-auto','err', r.error || '발송처리 실패');
             log('실패: '+JSON.stringify(r));
@@ -1000,28 +994,34 @@ async function submitTracking(){
 }
 </script>
 
-<!-- 송장 수기 입력 모달 -->
+<!-- 로젠 송장처리 모달 -->
 <div id="tracking-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
-    <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:860px;max-height:80vh;display:flex;flex-direction:column;gap:16px;">
+    <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:520px;display:flex;flex-direction:column;gap:20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-            <h2 id="modal-title" style="margin:0;font-size:18px;">송장번호 입력</h2>
+            <h2 id="modal-title" style="margin:0;font-size:18px;">로젠 송장처리</h2>
             <button onclick="closeTrackingModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;">✕</button>
         </div>
-        <div style="overflow-y:auto;flex:1;">
-            <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
-                    <th style="padding:8px;text-align:left;">주문번호</th>
-                    <th style="padding:8px;text-align:left;">수령인</th>
-                    <th style="padding:8px;text-align:left;">연락처</th>
-                    <th style="padding:8px;text-align:left;">주소</th>
-                    <th style="padding:8px;text-align:left;">송장번호</th>
-                </tr></thead>
-                <tbody id="modal-tbody"></tbody>
-            </table>
+        <p id="modal-order-cnt" style="margin:0;font-size:13px;color:#64748b;"></p>
+
+        <!-- Step 1 -->
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:8px;">
+            <p style="margin:0;font-size:13px;color:#475569;">로젠 사이트에 전송할 주문정보 파일을 다운로드합니다.<br>파일의 <b>H열(송장번호)</b>에 송장번호를 입력한 뒤 저장하세요.</p>
+            <button id="btn-logen-dl" onclick="downloadLogenFile()" style="padding:10px;border:none;border-radius:6px;background:#1d4ed8;color:#fff;font-weight:600;cursor:pointer;font-size:14px;">① 로젠 전송파일 다운로드</button>
         </div>
-        <div style="display:flex;justify-content:flex-end;gap:10px;">
-            <button onclick="closeTrackingModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">취소</button>
-            <button onclick="submitTracking()" style="padding:8px 20px;border:none;border-radius:6px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;">발송처리</button>
+
+        <!-- Step 2 -->
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:8px;">
+            <p style="margin:0;font-size:13px;color:#475569;">송장번호를 입력한 파일을 업로드하면 네이버 발송처리가 진행됩니다.</p>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                <span style="padding:8px 14px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;font-size:13px;white-space:nowrap;">파일 선택</span>
+                <span id="tracking-upload-name" style="font-size:13px;color:#64748b;"></span>
+                <input id="tracking-upload-input" type="file" accept=".xlsx" onchange="onUploadFileChange(this)" style="display:none;">
+            </label>
+            <button onclick="submitTrackingUpload()" style="padding:10px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-weight:600;cursor:pointer;font-size:14px;">② 업로드 후 발송처리</button>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;">
+            <button onclick="closeTrackingModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">닫기</button>
         </div>
     </div>
 </div>

@@ -8,7 +8,7 @@ import asyncio
 import logging
 from typing import Optional
 from pathlib import Path
-from fastapi import APIRouter, Query, HTTPException, Body
+from fastapi import APIRouter, Query, HTTPException, Body, UploadFile, File
 
 from config import (
     SMARTSTORE_CUST_CODE, SMARTSTORE_EMP_CODE, SMARTSTORE_WH_CODE,
@@ -311,6 +311,122 @@ async def send_erp_only(
     except Exception as e:
         logger.error(f"[SS] ERP 전송 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/logen-export-excel")
+async def logen_export_excel(
+    selected_orders: list[dict] = Body(...),
+):
+    """선택 주문을 로젠 전송용 엑셀로 다운로드.
+    컬럼: 주문번호 | 상품주문번호 | 수령인 | 연락처 | 주소 | 상품명 | 수량
+    """
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from fastapi.responses import StreamingResponse
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "로젠전송"
+
+    headers = ["주문번호", "상품주문번호", "수령인", "연락처", "주소", "상품명(옵션)", "수량", "송장번호"]
+    hdr_fill = PatternFill("solid", fgColor="1F4E79")
+    hdr_font = Font(bold=True, color="FFFFFF")
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(1, ci, h)
+        c.fill = hdr_fill; c.font = hdr_font; c.alignment = Alignment(horizontal="center")
+
+    ws.column_dimensions["A"].width = 20
+    ws.column_dimensions["B"].width = 22
+    ws.column_dimensions["C"].width = 12
+    ws.column_dimensions["D"].width = 16
+    ws.column_dimensions["E"].width = 40
+    ws.column_dimensions["F"].width = 30
+    ws.column_dimensions["G"].width = 8
+    ws.column_dimensions["H"].width = 18
+
+    # orderId 기준으로 한 행씩 (같은 orderId는 첫 번째만)
+    seen = set()
+    row = 2
+    for o in selected_orders:
+        od = o.get("order", {})
+        po = o.get("productOrder", {})
+        oid = od.get("orderId", "")
+        poid = po.get("productOrderId", "")
+        addr = po.get("shippingAddress", {})
+        rcv  = addr.get("name", "")
+        tel  = addr.get("tel1", "") or addr.get("tel2", "")
+        full_addr = ((addr.get("baseAddress","") or "") + " " + (addr.get("detailedAddress","") or "")).strip()
+        prod_nm = po.get("productName", "")
+        option  = po.get("productOption", "")
+        goods   = (prod_nm + (" / " + option if option else ""))[:60]
+        qty     = po.get("quantity", 1)
+
+        if oid and oid not in seen:
+            seen.add(oid)
+            ws.cell(row, 1, oid)
+            ws.cell(row, 2, poid)
+            ws.cell(row, 3, rcv)
+            ws.cell(row, 4, tel)
+            ws.cell(row, 5, full_addr)
+            ws.cell(row, 6, goods)
+            ws.cell(row, 7, qty)
+            ws.cell(row, 8, "")   # 송장번호 빈칸
+            row += 1
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    filename = f"logen_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+    )
+
+
+@router.post("/logen-dispatch-excel")
+async def logen_dispatch_excel(
+    file: UploadFile = File(...),
+):
+    """송장번호 기입된 엑셀 업로드 → 네이버 발송처리.
+    H열(8번째)에 송장번호, A열(1번째)에 주문번호, B열(2번째)에 상품주문번호
+    """
+    import io
+    import openpyxl
+    from services.naver_client import naver_client
+
+    content = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    ws = wb.active
+
+    dispatch_list = []
+    skipped = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        oid      = str(row[0] or "").strip()
+        poid     = str(row[1] or "").strip()
+        tracking = str(row[7] or "").strip()  # H열
+        if not tracking or tracking == "None":
+            skipped.append(oid)
+            continue
+        if poid:
+            dispatch_list.append({
+                "productOrderId": poid,
+                "deliveryCompanyCode": "LOGEN",
+                "trackingNumber": tracking,
+            })
+
+    if not dispatch_list:
+        return {"success": False, "error": f"송장번호가 입력된 행이 없습니다. (빈 행: {len(skipped)}개)"}
+
+    try:
+        result = await naver_client.dispatch_orders(dispatch_list)
+        result["dispatched_count"] = len(dispatch_list)
+        result["skipped_count"] = len(skipped)
+        logger.info(f"[SS] 엑셀발송처리: {len(dispatch_list)}건, 결과={result}")
+        return {"success": True, **result}
+    except Exception as e:
+        logger.error(f"[SS] 엑셀발송처리 오류: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 @router.post("/dispatch-manual")
