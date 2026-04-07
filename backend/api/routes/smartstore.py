@@ -177,7 +177,12 @@ def _match_item_code(order: dict) -> Optional[str]:
 
 
 def _is_excluded(order: dict) -> bool:
-    combined = ((order.get("productName","") or "") + " " + (order.get("optionInfo","") or "")).lower()
+    # 중첩 구조(_rawOrders: {productOrder: {...}})와 평탄화 구조(그룹 내부 dict) 모두 지원
+    po = order.get("productOrder") or {}
+    name   = po.get("productName", "")   or order.get("productName", "")   or ""
+    option = po.get("productOption", "") or po.get("optionInfo", "") or \
+             order.get("optionInfo", "") or order.get("productOption", "") or ""
+    combined = (name + " " + option).lower()
     return any(kw in combined for kw in EXCLUDE_KEYWORDS)
 
 
