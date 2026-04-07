@@ -395,11 +395,12 @@ async def excluded_export_excel(
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
+    from urllib.parse import quote
     filename = f"경동택배전표_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
     )
 
 
