@@ -333,12 +333,11 @@ async def logen_export_excel(
     ws = wb.active
     ws.title = "엑셀파일첫행-제목있음"
 
-    # 로젠 표준 형식 (예제 파일 동일)
-    # A:수하인명 B:(빈칸) C:수하인주소 D:수하인전화번호 E:수하인핸드폰번호
-    # F:택배수량 G:택배운임 H:운임구분 I:품목명 J:(빈칸) K:배송메세지
-    # L:주문번호(매칭용) M:상품주문번호(매칭용)
-    headers = ["수하인명", None, "수하인주소", "수하인전화번호", "수하인핸드폰번호",
-               "택배수량", "택배운임", "운임구분", "품목명", None, "배송메세지"]
+    # 로젠 구시스템양식 (A타입) 실제 컬럼 순서
+    # A:수하인명 B:(선택안함) C:수하인주소1 D:수하인전화
+    # E:택배수량 F:택배운임 G:운임구분 H:물품명 I:주문번호(→반환파일 S열 매칭용)
+    headers = ["수하인명", None, "수하인주소1", "수하인전화",
+               "택배수량", "택배운임", "운임구분", "물품명", "주문번호"]
     hdr_fill = PatternFill("solid", fgColor="1F4E79")
     hdr_font = Font(bold=True, color="FFFFFF")
     for ci, h in enumerate(headers, 1):
@@ -347,14 +346,13 @@ async def logen_export_excel(
             c.fill = hdr_fill; c.font = hdr_font; c.alignment = Alignment(horizontal="center")
 
     ws.column_dimensions["A"].width = 14
-    ws.column_dimensions["C"].width = 45
+    ws.column_dimensions["C"].width = 50
     ws.column_dimensions["D"].width = 16
-    ws.column_dimensions["E"].width = 16
-    ws.column_dimensions["F"].width = 8
+    ws.column_dimensions["E"].width = 8
+    ws.column_dimensions["F"].width = 10
     ws.column_dimensions["G"].width = 10
-    ws.column_dimensions["H"].width = 10
-    ws.column_dimensions["I"].width = 30
-    ws.column_dimensions["K"].width = 30
+    ws.column_dimensions["H"].width = 30
+    ws.column_dimensions["I"].width = 22
 
     # orderId 기준으로 그룹화
     groups: dict = {}
@@ -404,20 +402,15 @@ async def logen_export_excel(
 
         goods = ", ".join(f"{m} x{q}" for m, q in model_qty.items())[:50]
 
-        # 배송메시지: 고객 메시지 + productOrderId 숨김 삽입
-        delivery_msg = f"{cust_msg}||{first_poid}" if cust_msg else f"||{first_poid}"
-
-        ws.cell(row, 1,  rcv)
-        ws.cell(row, 2,  None)
-        ws.cell(row, 3,  full_addr)
-        ws.cell(row, 4,  tel_home)
-        ws.cell(row, 5,  tel_cell)
-        ws.cell(row, 6,  total_qty)
-        ws.cell(row, 7,  ship_fee)
-        ws.cell(row, 8,  fare_tp)
-        ws.cell(row, 9,  goods)
-        ws.cell(row, 10, None)
-        ws.cell(row, 11, delivery_msg)
+        ws.cell(row, 1, rcv)          # A: 수하인명
+        ws.cell(row, 2, None)         # B: 선택안함
+        ws.cell(row, 3, full_addr)    # C: 수하인주소1
+        ws.cell(row, 4, tel_home or tel_cell)  # D: 수하인전화
+        ws.cell(row, 5, total_qty)    # E: 택배수량
+        ws.cell(row, 6, ship_fee)     # F: 택배운임
+        ws.cell(row, 7, fare_tp)      # G: 운임구분
+        ws.cell(row, 8, goods)        # H: 물품명 (모델명+수량)
+        ws.cell(row, 9, first_poid)   # I: 주문번호 → 반환파일 S열(index 18)로 매칭
         row += 1
 
     buf = io.BytesIO()
@@ -450,16 +443,12 @@ async def logen_dispatch_excel(
     # 로젠 반환 파일 구조:
     #   1행: 타이틀, 2행: 헤더, 3행: 서브헤더, 4행~: 데이터
     #   D열(index 3): 운송장번호
-    #   R열(index 17): 배송메시지 → 다운로드 시 삽입한 productOrderId
+    #   S열(index 18): 주문번호 → 다운로드 시 I열에 삽입한 productOrderId
     for row in ws.iter_rows(min_row=4, values_only=True):
         if not any(row):
             continue
-        tracking  = str(row[3] or "").strip()    # D열: 운송장번호
-        msg_raw   = str(row[17] or "").strip()  # R열: 배송메시지 (고객메시지||productOrderId)
-        # productOrderId 추출: "고객메시지||poid" 또는 "||poid" 형식
-        poid = ""
-        if "||" in msg_raw:
-            poid = msg_raw.split("||", 1)[1].strip()
+        tracking = str(row[3]  or "").strip()   # D열: 운송장번호
+        poid     = str(row[18] or "").strip()   # S열: 주문번호(=productOrderId)
         if not tracking or not poid or tracking == "None" or poid == "None":
             skipped.append(poid or str(row[6] or ""))
             continue
