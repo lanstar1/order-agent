@@ -420,13 +420,16 @@ async def excluded_send_erp(
                     "quantity": qty, "settlementAmount": settle,
                 })
 
-    # 배송비 라인 (경동택배 배송비)
+    # 배송비 라인 (경동택배 배송비) — 비고사항 동일하게 포함
+    # (모든 라인에 CHAR5가 있어야 Ecount가 마지막 라인으로 덮어쓰지 않음)
+    first_remark = erp_lines[0]["remark"] if erp_lines and erp_lines[0].get("remark") else ""
     delivery_by_fee: dict = defaultdict(int)
     for oid in order_groups:
         fee = order_shipping.get(oid, 0)
         delivery_by_fee[fee] += 1
     for fee_amount, count in delivery_by_fee.items():
-        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount)})
+        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount),
+                           "remark": first_remark})
 
     if not erp_lines:
         return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}

@@ -64,12 +64,7 @@ class ERPClientSS:
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
             if line.get("remark"):
-                # 이카운트 비고사항 필드명 후보 (문자형식5)
-                bulk["BIGO"]      = line["remark"]
-                bulk["REMARK"]    = line["remark"]
-                bulk["CHAR5"]     = line["remark"]
-                bulk["IO_REMARK"] = line["remark"]
-                bulk["NOTE"]      = line["remark"]
+                bulk["CHAR5"] = line["remark"]   # 비고사항 (이카운트 문자형식5)
             price = float(line.get("price", 0) or 0)
             if price > 0:
                 supply = round(price * qty, 2)
