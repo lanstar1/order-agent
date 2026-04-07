@@ -13,6 +13,7 @@ from fastapi import APIRouter, Query, HTTPException, Body
 from config import (
     SMARTSTORE_CUST_CODE, SMARTSTORE_EMP_CODE, SMARTSTORE_WH_CODE,
     SMARTSTORE_PRODUCT_MAP_PATH, SMARTSTORE_MODEL_MAP_PATH,
+    SMARTSTORE_OPTION_MAP_PATH, SMARTSTORE_ADDON_MAP_PATH,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,32 +23,46 @@ router = APIRouter(prefix="/api/smartstore", tags=["SmartStore"])
 MODEL_CODE_RE = re.compile(r"(LS[PNE]?-[\w\-]+|ZOT-[\w\-]+)", re.IGNORECASE)
 EXCLUDE_KEYWORDS = ["허브랙", "서버랙", "캐비넷"]
 
-# 상품매핑: 상품번호 → ERP 품목코드
+# 시트1: 메인상품 — 상품번호 → ERP품목코드 (옵션 없는 상품)
 _product_map: dict = {}
-# 모델명매핑: 상품번호 → 모델명 (로젠 송장용)
+# 시트2: 옵션상품 — 상품번호 → ERP품목코드 (자동추출 오버라이드)
+_option_override_map: dict = {}
+# 시트3: 추가상품 — 상품번호 → ERP품목코드
+_addon_map: dict = {}
+# 모델명: 상품번호 → 모델명 (로젠 송장용, 전 시트 공용)
 _model_map: dict = {}
 
 
+def _load_json(path) -> dict:
+    if path.exists():
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_json(path, data: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def _load_product_map():
-    global _product_map, _model_map
-    if SMARTSTORE_PRODUCT_MAP_PATH.exists():
-        with open(SMARTSTORE_PRODUCT_MAP_PATH, encoding="utf-8") as f:
-            _product_map = json.load(f)
-        logger.info(f"[SS] 상품매핑 {len(_product_map)}건 로드")
-    else:
-        logger.warning(f"[SS] 상품매핑 파일 없음: {SMARTSTORE_PRODUCT_MAP_PATH}")
-    if SMARTSTORE_MODEL_MAP_PATH.exists():
-        with open(SMARTSTORE_MODEL_MAP_PATH, encoding="utf-8") as f:
-            _model_map = json.load(f)
-        logger.info(f"[SS] 모델명매핑 {len(_model_map)}건 로드")
+    global _product_map, _option_override_map, _addon_map, _model_map
+    _product_map        = _load_json(SMARTSTORE_PRODUCT_MAP_PATH)
+    _option_override_map = _load_json(SMARTSTORE_OPTION_MAP_PATH)
+    _addon_map          = _load_json(SMARTSTORE_ADDON_MAP_PATH)
+    _model_map          = _load_json(SMARTSTORE_MODEL_MAP_PATH)
+    logger.info(
+        f"[SS] 매핑 로드 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} "
+        f"추가:{len(_addon_map)} 모델:{len(_model_map)}"
+    )
 
 
 def _save_product_map():
-    SMARTSTORE_PRODUCT_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(SMARTSTORE_PRODUCT_MAP_PATH, "w", encoding="utf-8") as f:
-        json.dump(_product_map, f, ensure_ascii=False, indent=2)
-    with open(SMARTSTORE_MODEL_MAP_PATH, "w", encoding="utf-8") as f:
-        json.dump(_model_map, f, ensure_ascii=False, indent=2)
+    _save_json(SMARTSTORE_PRODUCT_MAP_PATH, _product_map)
+    _save_json(SMARTSTORE_OPTION_MAP_PATH,  _option_override_map)
+    _save_json(SMARTSTORE_ADDON_MAP_PATH,   _addon_map)
+    _save_json(SMARTSTORE_MODEL_MAP_PATH,   _model_map)
 
 
 _load_product_map()
@@ -100,21 +115,37 @@ def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
 def _match_item_code(order: dict) -> Optional[str]:
     """
     ERP 품목코드 결정 우선순위:
-      1) 옵션 텍스트에서 코드 추출
-      2) 상품번호 → product_map fallback
+      1) 시트2 오버라이드 (옵션상품, 사용자 수동 지정)
+      2) 옵션 텍스트 자동 추출
+      3) 시트1 (메인상품, 상품번호 기준)
+      4) 시트3 (추가상품, 상품번호 기준)
     """
     option_text = (order.get("optionInfo", "") or "").strip()
+    product_no  = str(order.get("productNo", "") or order.get("productId", "") or "")
+
     if option_text:
+        # 1) 시트2 오버라이드
+        if product_no and product_no in _option_override_map:
+            code = _option_override_map[product_no]
+            logger.info(f"[SS] 옵션오버라이드(시트2): {product_no} → {code}")
+            return code
+        # 2) 자동 추출
         code = _extract_erp_code_from_option(option_text)
         if code:
-            logger.info(f"[SS] 옵션 매핑: '{option_text[:40]}' → {code}")
+            logger.info(f"[SS] 옵션자동추출: '{option_text[:40]}' → {code}")
             return code
 
-    product_no = str(order.get("productNo", "") or order.get("productId", "") or "")
+    # 3) 시트1 메인상품
     if product_no and product_no in _product_map:
-        matched = _product_map[product_no]
-        logger.info(f"[SS] 상품번호 매핑: {product_no} → {matched}")
-        return matched
+        code = _product_map[product_no]
+        logger.info(f"[SS] 메인상품(시트1): {product_no} → {code}")
+        return code
+
+    # 4) 시트3 추가상품
+    if product_no and product_no in _addon_map:
+        code = _addon_map[product_no]
+        logger.info(f"[SS] 추가상품(시트3): {product_no} → {code}")
+        return code
 
     seller_code = (order.get("sellerProductCode", "") or "").strip()
     logger.warning(
@@ -565,46 +596,87 @@ async def delete_product_map(product_no: str):
 # Excel 업로드/다운로드 API
 # ═══════════════════════════════════════════
 
+def _make_header(ws, headers: list, fill_color: str):
+    """공통 헤더 스타일 적용"""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = fill
+        cell.alignment = Alignment(horizontal="center")
+
+
+def _find_data_start(ws) -> int:
+    """헤더행(상품번호 포함) 다음 행 반환"""
+    for r in range(1, min(5, ws.max_row + 1)):
+        if "상품번호" in str(ws.cell(r, 1).value or ""):
+            return r + 1
+    return 2  # 헤더 없으면 2행부터
+
+
+def _read_sheet_2col(ws) -> tuple[dict, dict]:
+    """상품번호|ERP품목코드|모델명 시트 읽기 → (map, model_map)"""
+    data_start = _find_data_start(ws)
+    prod_map, model_map = {}, {}
+    for r in range(data_start, ws.max_row + 1):
+        pno  = str(ws.cell(r, 1).value or "").strip()
+        code = str(ws.cell(r, 2).value or "").strip()
+        mdl  = str(ws.cell(r, 3).value or "").strip()
+        if pno and code and pno != "None" and code != "None":
+            prod_map[pno] = code
+            if mdl and mdl != "None":
+                model_map[pno] = mdl
+    return prod_map, model_map
+
+
 @router.get("/product-map/export-excel")
 async def export_product_map_excel():
-    """현재 product_map 전체를 Excel 파일로 다운로드"""
+    """현재 매핑 전체를 3시트 Excel로 다운로드
+       시트1: 메인상품 / 시트2: 옵션상품(오버라이드) / 시트3: 추가상품
+    """
     import io
     from fastapi.responses import StreamingResponse
     try:
         import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment
     except ImportError:
-        raise HTTPException(status_code=500, detail="openpyxl 미설치. pip install openpyxl")
+        raise HTTPException(status_code=500, detail="openpyxl 미설치")
 
     wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "상품매핑"
 
-    # 헤더
-    headers = ["상품번호", "ERP품목코드", "모델명(로젠송장용)"]
-    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-    for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center")
+    # ── 시트1: 메인상품 ──────────────────────────
+    ws1 = wb.active
+    ws1.title = "1_메인상품"
+    _make_header(ws1, ["상품번호", "ERP품목코드", "모델명(로젠송장용)"], "1F4E79")
+    ws1.column_dimensions["A"].width = 20
+    ws1.column_dimensions["B"].width = 30
+    ws1.column_dimensions["C"].width = 30
+    for i, (pno, code) in enumerate(_product_map.items(), start=2):
+        ws1.cell(i, 1, pno); ws1.cell(i, 2, code); ws1.cell(i, 3, _model_map.get(pno, ""))
 
-    ws.column_dimensions["A"].width = 20
-    ws.column_dimensions["B"].width = 30
-    ws.column_dimensions["C"].width = 30
+    # ── 시트2: 옵션상품 ──────────────────────────
+    ws2 = wb.create_sheet("2_옵션상품")
+    _make_header(ws2, ["상품번호", "옵션텍스트(참고용)", "자동추출코드(참고용)", "ERP품목코드(비우면자동)", "모델명(로젠송장용)"], "375623")
+    ws2.column_dimensions["A"].width = 20
+    ws2.column_dimensions["B"].width = 45
+    ws2.column_dimensions["C"].width = 25
+    ws2.column_dimensions["D"].width = 30
+    ws2.column_dimensions["E"].width = 30
+    for i, (pno, code) in enumerate(_option_override_map.items(), start=2):
+        ws2.cell(i, 1, pno); ws2.cell(i, 4, code); ws2.cell(i, 5, _model_map.get(pno, ""))
 
-    # 데이터
-    for row_idx, (prod_no, erp_code) in enumerate(_product_map.items(), start=2):
-        model = _model_map.get(prod_no, "")
-        ws.cell(row=row_idx, column=1, value=prod_no)
-        ws.cell(row=row_idx, column=2, value=erp_code)
-        ws.cell(row=row_idx, column=3, value=model)
+    # ── 시트3: 추가상품 ──────────────────────────
+    ws3 = wb.create_sheet("3_추가상품")
+    _make_header(ws3, ["상품번호", "ERP품목코드", "모델명(로젠송장용)"], "7B3F00")
+    ws3.column_dimensions["A"].width = 20
+    ws3.column_dimensions["B"].width = 30
+    ws3.column_dimensions["C"].width = 30
+    for i, (pno, code) in enumerate(_addon_map.items(), start=2):
+        ws3.cell(i, 1, pno); ws3.cell(i, 2, code); ws3.cell(i, 3, _model_map.get(pno, ""))
 
     buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-
-    logger.info(f"[SS] Excel 내보내기: {len(_product_map)}건")
+    wb.save(buf); buf.seek(0)
+    logger.info(f"[SS] Excel 내보내기 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} 추가:{len(_addon_map)}")
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -614,57 +686,61 @@ async def export_product_map_excel():
 
 @router.post("/product-map/import-excel")
 async def import_product_map_excel(file: bytes = Body(..., media_type="application/octet-stream")):
-    """Excel 파일 업로드로 product_map 전체 갱신 (기존 데이터 덮어쓰기)"""
+    """3시트 Excel 업로드 → 전체 매핑 갱신
+       시트1: 메인상품 / 시트2: 옵션상품 / 시트3: 추가상품
+    """
     import io
     try:
         import openpyxl
     except ImportError:
-        raise HTTPException(status_code=500, detail="openpyxl 미설치. pip install openpyxl")
+        raise HTTPException(status_code=500, detail="openpyxl 미설치")
 
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file), data_only=True)
-        ws = wb.active
 
-        # 헤더 행 찾기 (상품번호 컬럼 기준)
-        header_row = None
-        for r in range(1, min(5, ws.max_row + 1)):
-            val = str(ws.cell(r, 1).value or "")
-            if "상품번호" in val:
-                header_row = r
-                break
-        data_start = (header_row + 1) if header_row else 1
+        new_product_map, new_model_map, new_option_map, new_addon_map = {}, {}, {}, {}
 
-        new_product_map = {}
-        new_model_map = {}
-        skipped = 0
+        # 시트1: 메인상품 (컬럼: 상품번호|ERP품목코드|모델명)
+        if len(wb.sheetnames) >= 1:
+            m, mdl = _read_sheet_2col(wb.worksheets[0])
+            new_product_map.update(m); new_model_map.update(mdl)
 
-        for r in range(data_start, ws.max_row + 1):
-            prod_no = str(ws.cell(r, 1).value or "").strip()
-            erp_code = str(ws.cell(r, 2).value or "").strip()
-            model = str(ws.cell(r, 3).value or "").strip()
+        # 시트2: 옵션상품 (컬럼: 상품번호|옵션텍스트|자동추출코드|ERP품목코드|모델명)
+        if len(wb.sheetnames) >= 2:
+            ws2 = wb.worksheets[1]
+            data_start = _find_data_start(ws2)
+            for r in range(data_start, ws2.max_row + 1):
+                pno  = str(ws2.cell(r, 1).value or "").strip()
+                code = str(ws2.cell(r, 4).value or "").strip()  # D열: ERP품목코드
+                mdl  = str(ws2.cell(r, 5).value or "").strip()  # E열: 모델명
+                if pno and code and pno != "None" and code != "None":
+                    new_option_map[pno] = code
+                    if mdl and mdl != "None":
+                        new_model_map[pno] = mdl
 
-            if not prod_no or not erp_code or prod_no == "None" or erp_code == "None":
-                skipped += 1
-                continue
+        # 시트3: 추가상품 (컬럼: 상품번호|ERP품목코드|모델명)
+        if len(wb.sheetnames) >= 3:
+            m, mdl = _read_sheet_2col(wb.worksheets[2])
+            new_addon_map.update(m); new_model_map.update(mdl)
 
-            new_product_map[prod_no] = erp_code
-            if model and model != "None":
-                new_model_map[prod_no] = model
+        total = len(new_product_map) + len(new_option_map) + len(new_addon_map)
+        if total == 0:
+            return {"success": False, "error": "유효한 데이터가 없습니다."}
 
-        if not new_product_map:
-            return {"success": False, "error": "유효한 데이터가 없습니다. 헤더: 상품번호|ERP품목코드|모델명"}
-
-        global _product_map, _model_map
-        _product_map = new_product_map
-        _model_map = new_model_map
+        global _product_map, _option_override_map, _addon_map, _model_map
+        _product_map         = new_product_map
+        _option_override_map = new_option_map
+        _addon_map           = new_addon_map
+        _model_map           = new_model_map
         _save_product_map()
 
-        logger.info(f"[SS] Excel 가져오기 완료: {len(_product_map)}건 (건너뜀 {skipped}건)")
+        logger.info(f"[SS] Excel 가져오기 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} 추가:{len(_addon_map)}")
         return {
             "success": True,
-            "imported": len(_product_map),
-            "skipped": skipped,
-            "message": f"{len(_product_map)}건 매핑 갱신 완료",
+            "sheet1_main": len(_product_map),
+            "sheet2_option": len(_option_override_map),
+            "sheet3_addon": len(_addon_map),
+            "message": f"메인 {len(_product_map)}건 / 옵션 {len(_option_override_map)}건 / 추가상품 {len(_addon_map)}건 갱신 완료",
         }
 
     except Exception as e:
