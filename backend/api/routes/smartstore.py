@@ -338,8 +338,7 @@ async def logen_export_excel(
     # F:택배수량 G:택배운임 H:운임구분 I:품목명 J:(빈칸) K:배송메세지
     # L:주문번호(매칭용) M:상품주문번호(매칭용)
     headers = ["수하인명", None, "수하인주소", "수하인전화번호", "수하인핸드폰번호",
-               "택배수량", "택배운임", "운임구분", "품목명", None, "배송메세지",
-               "주문번호(내부)", "상품주문번호(내부)"]
+               "택배수량", "택배운임", "운임구분", "품목명", None, "배송메세지"]
     hdr_fill = PatternFill("solid", fgColor="1F4E79")
     hdr_font = Font(bold=True, color="FFFFFF")
     for ci, h in enumerate(headers, 1):
@@ -391,9 +390,9 @@ async def logen_export_excel(
             ws.cell(row, 8,  fare_tp)
             ws.cell(row, 9,  goods)
             ws.cell(row, 10, None)
-            ws.cell(row, 11, "")   # 배송메세지
-            ws.cell(row, 12, oid)  # 주문번호(매칭용)
-            ws.cell(row, 13, poid) # 상품주문번호(매칭용)
+            ws.cell(row, 11, poid)  # 배송메세지 → productOrderId (반환파일 매칭용)
+            ws.cell(row, 12, None)
+            ws.cell(row, 13, None)
             row += 1
 
     buf = io.BytesIO()
@@ -423,29 +422,23 @@ async def logen_dispatch_excel(
 
     dispatch_list = []
     skipped = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    # 로젠 반환 파일 구조:
+    #   1행: 타이틀, 2행: 헤더, 3행: 서브헤더, 4행~: 데이터
+    #   D열(index 3): 운송장번호
+    #   R열(index 17): 배송메시지 → 다운로드 시 삽입한 productOrderId
+    for row in ws.iter_rows(min_row=4, values_only=True):
         if not any(row):
             continue
-        # 로젠 반환 파일: 매칭용 L(12)=주문번호, M(13)=상품주문번호
-        # 송장번호: 로젠이 추가하는 열 위치를 순서대로 탐색
-        poid = str(row[12] or "").strip() if len(row) > 12 else ""  # M열(내부)
-        # 송장번호 후보: N열(14), O열(15), P열(16) 순으로 탐색
-        tracking = ""
-        for col_idx in [13, 14, 15, 16]:
-            if len(row) > col_idx:
-                v = str(row[col_idx] or "").strip()
-                if v and v != "None" and v.isdigit() and len(v) >= 10:
-                    tracking = v
-                    break
-        if not tracking or tracking == "None":
-            skipped.append(poid or str(row[0] or ""))
+        tracking = str(row[3] or "").strip()   # D열: 운송장번호
+        poid     = str(row[17] or "").strip()  # R열: 배송메시지(productOrderId)
+        if not tracking or not poid or tracking == "None" or poid == "None":
+            skipped.append(poid or str(row[6] or ""))
             continue
-        if poid:
-            dispatch_list.append({
-                "productOrderId": poid,
-                "deliveryCompanyCode": "LOGEN",
-                "trackingNumber": tracking,
-            })
+        dispatch_list.append({
+            "productOrderId": poid,
+            "deliveryCompanyCode": "LOGEN",
+            "trackingNumber": tracking,
+        })
 
     if not dispatch_list:
         return {"success": False, "error": f"송장번호가 입력된 행이 없습니다. (빈 행: {len(skipped)}개)"}
