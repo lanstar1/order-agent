@@ -983,14 +983,16 @@ def init_db():
     )""")
 
     # level, parent_code 컬럼 마이그레이션 (기존 테이블에 없으면 추가)
-    try:
-        cur_or_conn.execute("SELECT level FROM datalab_categories LIMIT 1")
-    except Exception:
+    if USE_PG:
+        # PostgreSQL 9.6+ : ADD COLUMN IF NOT EXISTS (트랜잭션 안전)
+        cur_or_conn.execute("ALTER TABLE datalab_categories ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1")
+        cur_or_conn.execute("ALTER TABLE datalab_categories ADD COLUMN IF NOT EXISTS parent_code TEXT DEFAULT ''")
+    else:
         try:
+            cur_or_conn.execute("SELECT level FROM datalab_categories LIMIT 1")
+        except Exception:
             cur_or_conn.execute("ALTER TABLE datalab_categories ADD COLUMN level INTEGER DEFAULT 1")
             cur_or_conn.execute("ALTER TABLE datalab_categories ADD COLUMN parent_code TEXT DEFAULT ''")
-        except Exception:
-            pass
 
     # 전체 카테고리 시드 (102개 미만이면 삭제 후 재입력)
     _chk = cur_or_conn.execute("SELECT COUNT(*) as cnt FROM datalab_categories").fetchone()
