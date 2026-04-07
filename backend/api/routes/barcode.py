@@ -9,12 +9,14 @@ import shutil
 from datetime import datetime
 from urllib.parse import quote
 
+import httpx
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from services.barcode_service import (
     MASTER_PATH,
     fill_shortage_reasons,
+    get_ecount_session,
     load_master,
     parse_po_items,
     send_to_ecount,
@@ -110,6 +112,31 @@ async def download_po(
     except Exception as e:
         logger.error(f"[바코드] PO 다운로드 실패: {e}")
         return JSONResponse(status_code=400, content={"detail": str(e)})
+
+
+@router.post("/delete-slip")
+async def delete_slip(slip_no: str = Form(...)):
+    """이카운트 판매 전표 삭제"""
+    slip_no = slip_no.strip()
+    if not slip_no:
+        return JSONResponse(status_code=400, content={"detail": "전표번호를 입력하세요."})
+    try:
+        session_id, zone = await get_ecount_session()
+        url = (
+            f"https://oapi{zone.lower()}.ecount.com/OAPI/V2/Sale/SaveSaleDelete"
+            f"?SESSION_ID={session_id}"
+        )
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json={"SlipNo": slip_no})
+            data = resp.json()
+        logger.info(f"[바코드] 전표삭제 응답 (SlipNo={slip_no}): {data}")
+        if str(data.get("Status")) == "200":
+            return {"success": True, "slip_no": slip_no}
+        err = (data.get("Data") or {}).get("Error") or data.get("Message") or str(data)
+        return JSONResponse(status_code=400, content={"detail": f"삭제 실패: {err}"})
+    except Exception as e:
+        logger.error(f"[바코드] 전표삭제 오류 (SlipNo={slip_no}): {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": str(e)})
 
 
 @router.post("/send-to-ecount")

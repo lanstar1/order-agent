@@ -363,7 +363,7 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cur
     <div class="inv-table-wrap hidden" id="invTableWrap">
       <table class="inv-table">
         <thead>
-          <tr><th>전표순번</th><th>물류센터 - 발주번호</th><th>품목코드</th><th>전송수량</th><th>용산창고</th><th>통진창고</th></tr>
+          <tr><th>전표번호</th><th>물류센터 - 발주번호</th><th>품목코드</th><th>수량</th><th>용산</th><th>통진</th><th>삭제</th></tr>
         </thead>
         <tbody id="invTableBody"></tbody>
       </table>
@@ -657,11 +657,12 @@ function renderInvTable(items) {
   tbody.innerHTML = "";
   if (!items.length) { wrap.classList.add("hidden"); return; }
 
-  items.forEach(item => {
+  items.forEach((item, rowIdx) => {
     const tr = document.createElement("tr");
     const ss = item.stock_status || (item.low_stock ? "low_stock" : "ok");
     if (ss === "low_stock")  tr.classList.add("low-stock");
-    if (ss === "wh10_used")  tr.classList.add("wh10-has");  // 주황 스타일 재활용
+    if (ss === "wh10_used")  tr.classList.add("wh10-has");
+    tr.dataset.rowIdx = rowIdx;
 
     const bal10Html = item.bal_10 === null || item.bal_10 === undefined
       ? `<span style="color:var(--text3)">-</span>`
@@ -670,22 +671,60 @@ function renderInvTable(items) {
       ? `<span style="color:var(--text3)">-</span>`
       : `<span class="${item.bal_30 > 0 ? 'inv-qty-ok' : 'inv-qty-bad'}">${item.bal_30}</span>`;
 
-    // 사용된 창고 배지
-    const whBadge = ss === "wh10_used"
-      ? `<span style="font-size:10px;background:rgba(255,176,32,.2);color:var(--warning);padding:1px 6px;border-radius:4px;margin-left:4px">용산전환</span>`
-      : "";
+    // 창고/상태 배지
+    let statusBadge = "";
+    if (ss === "low_stock") {
+      statusBadge = `<span style="font-size:10px;background:rgba(220,53,69,.15);color:#dc3545;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:700">재고없음</span>`;
+    } else if (ss === "wh10_used") {
+      statusBadge = `<span style="font-size:10px;background:rgba(255,176,32,.2);color:var(--warning);padding:1px 6px;border-radius:4px;margin-left:4px">용산전환</span>`;
+    }
+
+    // 전표번호 셀: 실제 slip_no 있으면 표시, 없으면 대시
+    const slipNo = item.slip_no || "";
+    const slipCell = slipNo
+      ? `<span style="font-size:11px;font-family:'JetBrains Mono',monospace">${slipNo}</span>`
+      : `<span style="color:var(--text3);font-size:11px">-</span>`;
+
+    // 삭제 버튼: 전표가 생성된 행에만 표시
+    const delBtn = slipNo
+      ? `<button onclick="deleteSlip('${slipNo}', this)" style="font-size:11px;padding:2px 8px;border:1px solid #dc3545;background:transparent;color:#dc3545;border-radius:4px;cursor:pointer;white-space:nowrap" title="이카운트 전표 삭제">🗑 삭제</button>`
+      : `<span style="color:var(--text3);font-size:11px">전표없음</span>`;
 
     tr.innerHTML = `
-      <td>${item.upload_ser_no}</td>
-      <td style="text-align:left;white-space:nowrap">${item.remarks}${whBadge}</td>
+      <td style="font-size:11px">${slipCell}</td>
+      <td style="text-align:left;white-space:nowrap">${item.remarks}${statusBadge}</td>
       <td style="font-weight:600;font-family:'JetBrains Mono',monospace">${item.prod_cd}</td>
       <td>${item.qty}</td>
       <td>${bal10Html}</td>
       <td>${bal30Html}</td>
+      <td style="white-space:nowrap">${delBtn}</td>
     `;
     tbody.appendChild(tr);
   });
   wrap.classList.remove("hidden");
+}
+
+async function deleteSlip(slipNo, btn) {
+  if (!confirm(`전표번호 [${slipNo}] 를 이카운트에서 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return;
+  btn.disabled = true; btn.textContent = "삭제 중...";
+  try {
+    const fd = new FormData();
+    fd.append("slip_no", slipNo);
+    const res  = await fetch(`${API_BASE}/delete-slip`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "삭제 실패");
+    // 성공: 해당 행 시각적으로 취소선 표시
+    const tr = btn.closest("tr");
+    tr.style.opacity = "0.4";
+    tr.style.textDecoration = "line-through";
+    btn.textContent = "삭제됨";
+    btn.style.border = "1px solid #aaa"; btn.style.color = "#aaa";
+    elog(`🗑 전표 삭제 완료: ${slipNo}`, "o");
+  } catch(e) {
+    btn.disabled = false; btn.textContent = "🗑 삭제";
+    elog(`❌ 전표 삭제 실패 (${slipNo}): ${e.message}`, "e");
+    alert(`삭제 실패: ${e.message}`);
+  }
 }
 
 async function downloadPO() {

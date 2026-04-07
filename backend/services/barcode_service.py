@@ -445,6 +445,19 @@ async def send_to_ecount(
         if not rd.get("IsSuccess"):
             errors.append(rd.get("TotalError", ""))
 
+    # (WH_CD, UPLOAD_SER_NO) 조합 → slip_no 매핑
+    # Ecount SlipNos 순서 = bulk_list 내 고유 (wh, ser_no) 조합 순서
+    seen_wh_ser: list = []
+    for item in bulk_list:
+        bd = item["BulkDatas"]
+        key = (bd["WH_CD"], bd["UPLOAD_SER_NO"])
+        if key not in seen_wh_ser:
+            seen_wh_ser.append(key)
+    wh_ser_to_slip: dict = {}
+    for idx, key in enumerate(seen_wh_ser):
+        if idx < len(slip_nos):
+            wh_ser_to_slip[key] = slip_nos[idx]
+
     items_result = []
     for i, item in enumerate(bulk_list):
         bd = item["BulkDatas"]
@@ -467,8 +480,11 @@ async def send_to_ecount(
         else:
             stock_status = "low_stock"
 
+        slip_no = wh_ser_to_slip.get((used_wh, bd["UPLOAD_SER_NO"]), "")
+
         items_result.append({
             "upload_ser_no": bd["UPLOAD_SER_NO"],
+            "slip_no": slip_no,           # 실제 이카운트 전표번호
             "remarks": bd["U_MEMO5"],
             "prod_cd": prod_cd,
             "qty": bd["QTY"],
@@ -488,6 +504,7 @@ async def send_to_ecount(
         bal_30 = inv_30.get(prod_cd, None)
         items_result.append({
             "upload_ser_no": "-",
+            "slip_no": "",                 # 전표 미생성
             "remarks": f"{str(row['물류센터']).strip()} - {str(row['발주번호']).strip()}",
             "prod_cd": prod_cd,
             "qty": str(row[qty_col]).replace(",", "").strip(),
