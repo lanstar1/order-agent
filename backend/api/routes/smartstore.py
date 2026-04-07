@@ -8,7 +8,11 @@ import asyncio
 import logging
 from typing import Optional
 from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Query, HTTPException, Body, UploadFile, File
+
+KST = ZoneInfo("Asia/Seoul")
 
 from config import (
     SMARTSTORE_CUST_CODE, SMARTSTORE_EMP_CODE, SMARTSTORE_WH_CODE,
