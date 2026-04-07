@@ -370,7 +370,14 @@ async def excluded_export_excel(
                      po.get("deliveryMessage", "") or od.get("shippingMemo", "") or
                      od.get("deliveryMemo", "") or "")
 
-        ws.cell(row, 1, "경동택배(선불, 착불) / 전표제외")
+        fee_type  = str(po.get("shippingFeeType", "") or od.get("shippingFeeType", "") or "")
+        ship_fee  = float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0)
+        if "착불" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
+            delivery_type = "경동택배착불"
+        else:
+            delivery_type = "경동택배선불"
+
+        ws.cell(row, 1, f"{delivery_type} / 전표제외")
         ws.cell(row, 2, rcv)
         ws.cell(row, 3, tel)
         ws.cell(row, 4, full_addr)
