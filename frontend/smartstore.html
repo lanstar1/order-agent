@@ -959,15 +959,22 @@ async function sendExcludedErp(){
         document.getElementById('card-result').style.display = 'block';
         return;
     }
+    // 체크박스 선택 시 선택 주문만, 미선택 시 전체 주문 전송
+    const targetOrders = _checkedSet.size > 0
+        ? _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)))
+        : _rawOrders;
+    const groupSet = new Set(targetOrders.map(o => getOrderId(o)));
+    const scopeLabel = _checkedSet.size > 0 ? '선택' : '전체';
+    if(!confirm(`경동택배 ERP 전송\n\n${scopeLabel}: ${targetOrders.length}건 (${groupSet.size}그룹)\n\n경동택배 제외 주문만 필터하여 전송됩니다.`)) return;
     const btn = document.getElementById('b-exc');
     btn.disabled = true; btn.textContent = '전송 중...';
     document.getElementById('card-result').style.display = 'block';
-    ss('s-auto','load','경동택배 ERP 전송 중...');
-    log('=== 경동택배 ERP 전송 ===');
+    ss('s-auto','load',`경동택배 ERP 전송 중... (${targetOrders.length}건)`);
+    log(`=== 경동택배 ERP 전송 (${scopeLabel} ${targetOrders.length}건) ===`);
     try{
         const r = await(await fetch(B+'/api/smartstore/excluded-send-erp',{
             method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify(_rawOrders)
+            body: JSON.stringify(targetOrders)
         })).json();
         if(r.success){
             const msg = `경동택배 ERP 전송 완료! ${r.erp_matched||r.lines||0}건`;
