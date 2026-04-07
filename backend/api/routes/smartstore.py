@@ -109,6 +109,10 @@ def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
         if is_valid_code(after_colon):
             return after_colon
 
+    # 패턴 3: 옵션 텍스트 전체가 코드 (예: "LS-420HM", "LS-UHS2SR", "LS-WPCOP-C6")
+    if is_valid_code(text):
+        return text
+
     return None
 
 

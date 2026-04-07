@@ -459,6 +459,8 @@ function extractErpCodeFromOption(text) {
         const after = text.split(':').pop().trim();
         if (valid(after)) return after;
     }
+    // 패턴3: 옵션 텍스트 전체가 코드 (예: LS-420HM, LS-UHS2SR)
+    if (valid(text)) return text;
     return null;
 }
 
