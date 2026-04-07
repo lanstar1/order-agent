@@ -266,6 +266,9 @@ async def send_erp_only(
 
     for oid, group in order_groups.items():
         for o in group:
+            if _is_excluded(o):
+                logger.info(f"[SS] 제외 키워드 필터: {o.get('productName','')[:40]}")
+                continue
             code = _match_item_code(o)
             qty = int(o.get("quantity", 1) or 1)
             settle = float(o.get("settlementAmount", 0) or 0)
@@ -459,6 +462,9 @@ async def auto_register_logen(
 
         for oid, group in order_groups.items():
             for o in group:
+                if _is_excluded(o):
+                    logger.info(f"[SS] 제외 키워드 필터: {o.get('productName','')[:40]}")
+                    continue
                 code = _match_item_code(o)
                 qty = int(o.get("quantity", 1) or 1)
                 settle = float(o.get("settlementAmount", 0) or 0)
