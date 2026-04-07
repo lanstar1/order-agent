@@ -23,8 +23,8 @@ NAVER_SEARCH_URL = "https://openapi.naver.com/v1/search/shop.json"
 # ═══════════════════════════════════════════════════════
 
 async def collect_naver(product: dict) -> list:
-    cid = os.getenv("NAVER_CLIENT_ID", "")
-    csec = os.getenv("NAVER_CLIENT_SECRET", "")
+    cid = os.getenv("NAVER_SEARCH_ID", "")
+    csec = os.getenv("NAVER_SEARCH_SECRET", "")
     if not cid:
         logger.warning("네이버 API 키 미설정")
         return []
