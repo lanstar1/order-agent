@@ -97,12 +97,14 @@ def _ensure_rebate_tables():
 def _add_column_if_not_exists(conn, table_name: str, column_name: str, column_def: str):
     """컬럼이 없으면 추가."""
     try:
-        # SQLite와 PostgreSQL 모두 지원
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
         conn.commit()
     except Exception:
-        # 컬럼이 이미 있거나 다른 오류 - 무시
-        pass
+        # PostgreSQL: 실패 시 트랜잭션이 abort 상태 → rollback 필수
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 # 모듈 로드 시 테이블 확인
