@@ -346,6 +346,7 @@ async def excluded_send_erp(
     order_groups: dict = {}
     order_shipping: dict = {}
     order_feetype: dict = {}
+    order_addr: dict = {}    # orderId → 배송지 정보 (비고사항 합산용)
     for o in excluded_orders:
         od = o.get("order") or {}
         po = o.get("productOrder") or {}
@@ -359,6 +360,15 @@ async def excluded_send_erp(
             order_shipping[oid] = fee
             fee_type = str(po.get("shippingFeeType") or od.get("shippingFeeType") or "")
             order_feetype[oid] = fee_type
+            # 배송지 정보 수집
+            addr = po.get("shippingAddress") or {}
+            rcv       = addr.get("name", "") or ""
+            tel       = addr.get("tel2", "") or addr.get("tel1", "") or ""
+            full_addr = ((addr.get("baseAddress", "") or "") + " " + (addr.get("detailedAddress", "") or "")).strip()
+            cust_msg  = (po.get("shippingMemo") or po.get("deliveryMemo") or
+                         po.get("deliveryMessage") or od.get("shippingMemo") or
+                         od.get("deliveryMemo") or "")
+            order_addr[oid] = {"rcv": rcv, "tel": tel, "addr": full_addr, "msg": cust_msg}
         product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
         seller_code = po.get("sellerProductCode", "") or ""
         order_groups[oid].append({
@@ -379,9 +389,18 @@ async def excluded_send_erp(
         # 선불/착불 판단
         fee_type = order_feetype.get(oid, "")
         if "착불" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
-            remark = "경동택배착불 / 전표제외"
+            delivery_type = "경동택배착불"
         else:
-            remark = "경동택배선불 / 전표제외"
+            delivery_type = "경동택배선불"
+
+        # 비고사항: 경동택배선불/착불 / 전표제외 / 수령인 / 연락처 / 주소 / 배송메세지
+        ai = order_addr.get(oid, {})
+        parts = [f"{delivery_type} / 전표제외"]
+        if ai.get("rcv"):   parts.append(ai["rcv"])
+        if ai.get("tel"):   parts.append(ai["tel"])
+        if ai.get("addr"):  parts.append(ai["addr"])
+        if ai.get("msg"):   parts.append(ai["msg"])
+        remark = " / ".join(parts)
 
         for o in group:
             code = _match_item_code(o)
