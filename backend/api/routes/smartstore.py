@@ -317,6 +317,114 @@ async def send_erp_only(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/excluded-send-erp")
+async def excluded_send_erp(
+    selected_orders: list[dict] = Body(...),
+):
+    """제외 키워드 주문 → ERP 판매전표 전송 (비고사항에 경동택배선불/착불 자동 기입)"""
+    from services.erp_client_ss import ERPClientSS
+    from collections import defaultdict
+
+    if not selected_orders:
+        return {"success": False, "error": "선택된 주문이 없습니다."}
+
+    # 제외 키워드 포함 주문만 필터
+    excluded_orders = []
+    for o in selected_orders:
+        if _is_excluded(o):
+            excluded_orders.append(o)
+
+    if not excluded_orders:
+        return {"success": False, "error": "제외 키워드(허브랙/서버랙/캐비넷) 주문이 없습니다."}
+
+    # orderId 기준 그룹화
+    order_groups: dict = {}
+    order_shipping: dict = {}
+    order_feetype: dict = {}
+    for o in excluded_orders:
+        od = o.get("order") or {}
+        po = o.get("productOrder") or {}
+        oid = od.get("orderId", "") or po.get("orderId", "")
+        poid = po.get("productOrderId", "")
+        if not oid or not poid:
+            continue
+        if oid not in order_groups:
+            order_groups[oid] = []
+            fee = float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0)
+            order_shipping[oid] = fee
+            fee_type = str(po.get("shippingFeeType") or od.get("shippingFeeType") or "")
+            order_feetype[oid] = fee_type
+        product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
+        seller_code = po.get("sellerProductCode", "") or ""
+        order_groups[oid].append({
+            "orderId": oid, "productOrderId": poid,
+            "productName": po.get("productName", ""),
+            "productNo": product_id, "productId": product_id,
+            "sellerProductCode": seller_code,
+            "optionInfo": po.get("productOption", "") or seller_code,
+            "quantity": po.get("quantity", 1),
+            "settlementAmount": po.get("expectedSettlementAmount", 0) or po.get("totalPaymentAmount", 0),
+        })
+
+    DELIVERY_PROD_CD = "DEL-매출배002"
+    erp_lines = []
+    unmatched_items = []
+
+    for oid, group in order_groups.items():
+        # 선불/착불 판단
+        fee_type = order_feetype.get(oid, "")
+        if "착불" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
+            remark = "경동택배착불 / 전표제외"
+        else:
+            remark = "경동택배선불 / 전표제외"
+
+        for o in group:
+            code = _match_item_code(o)
+            qty = int(o.get("quantity", 1) or 1)
+            settle = float(o.get("settlementAmount", 0) or 0)
+            if code:
+                erp_lines.append({"prod_cd": code, "qty": qty,
+                                   "price": round(settle / qty, 2) if qty else 0,
+                                   "remark": remark})
+            else:
+                unmatched_items.append({
+                    "orderId": oid,
+                    "productOrderId": o.get("productOrderId", ""),
+                    "productNo": o.get("productNo", "") or o.get("productId", ""),
+                    "productName": o.get("productName", ""),
+                    "optionInfo": o.get("optionInfo", ""),
+                    "quantity": qty, "settlementAmount": settle,
+                })
+
+    # 배송비 라인 (경동택배 배송비)
+    delivery_by_fee: dict = defaultdict(int)
+    for oid in order_groups:
+        fee = order_shipping.get(oid, 0)
+        delivery_by_fee[fee] += 1
+    for fee_amount, count in delivery_by_fee.items():
+        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount)})
+
+    if not erp_lines:
+        return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
+
+    if not SMARTSTORE_CUST_CODE:
+        return {"success": False, "error": "SMARTSTORE_CUST_CODE 미설정"}
+
+    try:
+        erp = ERPClientSS()
+        await erp.ensure_session()
+        r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, SMARTSTORE_EMP_CODE)
+        r["lines"] = len(erp_lines)
+        r["erp_matched"] = len(erp_lines)
+        r["erp_unmatched"] = len(unmatched_items)
+        r["unmatched_items"] = unmatched_items
+        logger.info(f"[SS] 경동택배 ERP 전송: {len(erp_lines)}건, 미매칭: {len(unmatched_items)}건")
+        return r
+    except Exception as e:
+        logger.error(f"[SS] 경동택배 ERP 전송 오류: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/excluded-export-excel")
 async def excluded_export_excel(
     selected_orders: list[dict] = Body(...),

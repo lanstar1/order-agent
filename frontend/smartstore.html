@@ -158,7 +158,8 @@
                 <button class="btn btn-blue" onclick="sendErp()" id="b-erp">📤 ERP 전송</button>
                 <button class="btn btn-red" onclick="openTrackingModal('gimpo')" id="b-gp">🚚 김포 송장입력</button>
                 <button class="btn btn-orange" onclick="openTrackingModal('yongsan')" id="b-ys">🚚 용산 송장입력</button>
-                <button class="btn btn-gray" onclick="downloadExcludedExcel()" id="b-exc">📋 경동 전표</button>
+                <button class="btn btn-gray" onclick="sendExcludedErp()" id="b-exc">📋 경동 ERP전송</button>
+                <button class="btn btn-gray" onclick="downloadExcludedExcel()" id="b-exc-xl">📥 경동 엑셀</button>
             </div>
 
             <div style="margin-top:12px;">
@@ -951,14 +952,50 @@ function mapMsg(t, m) {
 
 setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});},1000);
 
-// ── 경동택배 전표 다운로드 ──
+// ── 경동택배 ERP 전송 ──
+async function sendExcludedErp(){
+    if(!_rawOrders || _rawOrders.length === 0){
+        ss('s-auto','warn','먼저 주문을 수집해주세요.');
+        document.getElementById('card-result').style.display = 'block';
+        return;
+    }
+    const btn = document.getElementById('b-exc');
+    btn.disabled = true; btn.textContent = '전송 중...';
+    document.getElementById('card-result').style.display = 'block';
+    ss('s-auto','load','경동택배 ERP 전송 중...');
+    log('=== 경동택배 ERP 전송 ===');
+    try{
+        const r = await(await fetch(B+'/api/smartstore/excluded-send-erp',{
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(_rawOrders)
+        })).json();
+        if(r.success){
+            const msg = `경동택배 ERP 전송 완료! ${r.erp_matched||r.lines||0}건`;
+            ss('s-auto','ok', msg);
+            log(msg);
+            if(r.unmatched_items && r.unmatched_items.length > 0){
+                log(`⚠ 미매칭 ${r.unmatched_items.length}건: ` + r.unmatched_items.map(u=>u.productName).join(', '));
+            }
+        } else {
+            const errMsg = typeof r.error === 'string' ? r.error : (r.error ? JSON.stringify(r.error) : (r.detail || 'ERP 전송 실패'));
+            ss('s-auto','err', errMsg);
+            log('오류: '+errMsg);
+        }
+    }catch(e){
+        ss('s-auto','err','오류: '+e.message);
+    }finally{
+        btn.disabled=false; btn.textContent='📋 경동 ERP전송';
+    }
+}
+
+// ── 경동택배 엑셀 다운로드 ──
 async function downloadExcludedExcel(){
     if(!_rawOrders || _rawOrders.length === 0){
         alert('먼저 주문을 수집해주세요.');
         return;
     }
     // 수집된 전체 주문 중 제외 키워드 포함 주문 전송
-    const btn = document.getElementById('b-exc');
+    const btn = document.getElementById('b-exc-xl');
     btn.disabled = true; btn.textContent = '다운로드 중...';
     try{
         const res = await fetch(B+'/api/smartstore/excluded-export-excel',{
@@ -978,9 +1015,9 @@ async function downloadExcludedExcel(){
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href=url; a.download=fname; a.click();
         URL.revokeObjectURL(url);
-        log('경동택배 전표 다운로드: '+fname);
+        log('경동택배 엑셀 다운로드: '+fname);
     }catch(e){ alert('오류: '+e.message); }
-    finally{ btn.disabled=false; btn.textContent='📋 경동 전표'; }
+    finally{ btn.disabled=false; btn.textContent='📥 경동 엑셀'; }
 }
 
 // ── 로젠 송장처리 (다운로드 → 업로드) ──

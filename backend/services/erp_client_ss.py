@@ -63,6 +63,8 @@ class ERPClientSS:
             }
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
+            if line.get("remark"):
+                bulk["REMARK"] = line["remark"]
             price = float(line.get("price", 0) or 0)
             if price > 0:
                 supply = round(price * qty, 2)
