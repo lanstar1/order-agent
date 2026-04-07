@@ -25,6 +25,10 @@ class SettingsUpdate(BaseModel):
     alert_kakao: Optional[bool] = None
     alert_nateon: Optional[bool] = None
     alert_email_address: Optional[str] = None
+    admin_password: Optional[str] = None  # 관리자 인증용
+
+import os
+MAP_ADMIN_PASSWORD = os.getenv("MAP_ADMIN_PASSWORD", "admin")
 
 class ProductCreate(BaseModel):
     model_name: str
@@ -73,11 +77,25 @@ async def get_settings():
             except: pass
     return result
 
+class PasswordCheck(BaseModel):
+    password: str
+
+@router.post("/settings/verify")
+async def verify_admin_password(data: PasswordCheck):
+    """관리자 비밀번호 확인"""
+    if data.password == MAP_ADMIN_PASSWORD:
+        return {"ok": True}
+    raise HTTPException(403, "비밀번호가 올바르지 않습니다")
+
 @router.put("/settings")
 async def update_settings(data: SettingsUpdate):
+    # 관리자 비밀번호 확인
+    if data.admin_password != MAP_ADMIN_PASSWORD:
+        raise HTTPException(403, "관리자 비밀번호가 올바르지 않습니다")
     conn = get_connection()
     sets, vals = [], []
     for k, v in data.dict(exclude_unset=True).items():
+        if k == 'admin_password': continue  # 비밀번호는 DB에 저장하지 않음
         if k in ['schedules', 'platforms'] and isinstance(v, list):
             sets.append(f"{k} = ?"); vals.append(json.dumps(v, ensure_ascii=False))
         elif isinstance(v, bool):

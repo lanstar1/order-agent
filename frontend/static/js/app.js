@@ -7439,8 +7439,19 @@ function reconcileNewMatch() {
     else if (tabId === 'products') mapLoadProducts();
     else if (tabId === 'watch') mapLoadWatch();
     else if (tabId === 'sellers') mapLoadSellers();
-    else if (tabId === 'settings') mapLoadSettings();
+    else if (tabId === 'settings') {
+      if (!_mapAdminAuth) {
+        const pw = prompt('관리자 비밀번호를 입력하세요:');
+        if (!pw) { switchMapTab('dashboard'); return; }
+        try {
+          const r = await api.post('/api/map/settings/verify', { password: pw });
+          if (r.ok) { _mapAdminAuth = pw; mapLoadSettings(); }
+          else { alert('비밀번호가 올바르지 않습니다.'); switchMapTab('dashboard'); }
+        } catch(e) { alert('비밀번호가 올바르지 않습니다.'); switchMapTab('dashboard'); }
+      } else { mapLoadSettings(); }
+    }
   };
+  let _mapAdminAuth = null;
 
   function sev(s) { return `<span class="map-sev map-sev-${s}">${s}</span>`; }
   function plat(p) { return `<span class="map-plat map-plat-${_platClass[p]||'naver'}">${p}</span>`; }
@@ -7759,7 +7770,8 @@ function reconcileNewMatch() {
     }
   };
   window.mapSaveSettings = async function() {
-    const data = { min_price: parseInt(document.getElementById('map-set-minprice').value), tolerance_pct: parseFloat(document.getElementById('map-set-tolerance').value), watch_interval_hours: parseInt(document.getElementById('map-set-watchint').value) };
+    if (!_mapAdminAuth) { alert('관리자 인증이 필요합니다.'); return; }
+    const data = { min_price: parseInt(document.getElementById('map-set-minprice').value), tolerance_pct: parseFloat(document.getElementById('map-set-tolerance').value), watch_interval_hours: parseInt(document.getElementById('map-set-watchint').value), admin_password: _mapAdminAuth };
     if (_scheduleSet) data.schedules = [..._scheduleSet].sort();
     if (_platformSet) data.platforms = [..._platformSet];
     try { const r = await api.put('/api/map/settings', data); _mapSettings = r; alert('설정 저장 완료'); mapLoadSettings(); } catch(e) { alert('오류: '+e.message); }
