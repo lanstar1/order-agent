@@ -64,7 +64,12 @@ class ERPClientSS:
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
             if line.get("remark"):
-                bulk["CHAR5"] = line["remark"]   # 비고사항 (이카운트 문자형식5)
+                # 이카운트 비고사항 필드명 후보 (문자형식5)
+                bulk["BIGO"]      = line["remark"]
+                bulk["REMARK"]    = line["remark"]
+                bulk["CHAR5"]     = line["remark"]
+                bulk["IO_REMARK"] = line["remark"]
+                bulk["NOTE"]      = line["remark"]
             price = float(line.get("price", 0) or 0)
             if price > 0:
                 supply = round(price * qty, 2)
@@ -73,6 +78,7 @@ class ERPClientSS:
             sale_list.append({"BulkDatas": bulk})
 
         payload = {"SaleList": sale_list}
+        logger.info(f"[ERP-SS] SaveSale payload 첫번째 BulkDatas: {sale_list[0]['BulkDatas'] if sale_list else {}}")
 
         for attempt in range(3):
             try:
