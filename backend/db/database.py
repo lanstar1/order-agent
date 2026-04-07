@@ -992,17 +992,11 @@ def init_db():
         except Exception:
             pass
 
-    # 전체 카테고리 시드 (level 없는 구형 데이터 → 삭제 후 재입력)
+    # 전체 카테고리 시드 (102개 미만이면 삭제 후 재입력)
     _chk = cur_or_conn.execute("SELECT COUNT(*) as cnt FROM datalab_categories").fetchone()
     _cnt = _chk["cnt"] if isinstance(_chk, dict) else _chk[0]
-    _need_seed = _cnt == 0
-    if not _need_seed and _cnt <= 10:
-        _lv = cur_or_conn.execute("SELECT level FROM datalab_categories LIMIT 1").fetchone()
-        if _lv and (_lv["level"] if isinstance(_lv, dict) else _lv[0]) is None:
-            cur_or_conn.execute("DELETE FROM datalab_categories")
-            _need_seed = True
-
-    if _need_seed:
+    if _cnt < 100:
+        cur_or_conn.execute("DELETE FROM datalab_categories")
         # (name, code, level, parent_code, sort_order)
         _cats = [
             # ── 대분류 ──
