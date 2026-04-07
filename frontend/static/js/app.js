@@ -7513,7 +7513,7 @@ function reconcileNewMatch() {
   window.mapLoadProducts = async function() {
     const q = (document.getElementById('map-prod-search')?.value || '').trim();
     try {
-      const products = await api.get(`/api/map/products?search=${encodeURIComponent(q)}`);
+      const products = await api.get(`/api/map/products?search=${encodeURIComponent(q)}&active_only=false`);
       if (!q) _allMapProducts = products; // 전체 목록 캐시
       const mp = (_mapSettings||{}).min_price || 5000;
       if (!products.length) {
@@ -7522,13 +7522,37 @@ function reconcileNewMatch() {
           : '<p style="color:#94a3b8;padding:20px;text-align:center">제품 없음. 엑셀 업로드 또는 제품 추가하세요.</p>';
         return;
       }
-      let h = `<p style="font-size:12px;color:#64748b;margin:0 0 8px">ℹ️ 지도가 변경 후 Enter. ${won(mp)} 미만은 감시 제외. ${q ? `"${q}" 검색 결과: ${products.length}건` : `전체 ${products.length}건`}</p><table class="map-tbl"><thead><tr><th>모델명</th><th>제품명</th><th>브랜드</th><th>지도가</th><th>최저가</th><th>상태</th><th>상시감시</th><th></th></tr></thead><tbody>`;
+      let h = `<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:#64748b">ℹ️ ${q ? `"${q}" ${products.length}건` : `전체 ${products.length}건`} | ${won(mp)} 미만 감시 제외</span>
+        <span style="flex:1"></span>
+        <span style="font-size:12px;color:#64748b;font-weight:600">일괄:</span>
+        <button class="btn btn-xs" onclick="mapBatch('monitor_on')" style="font-size:11px;padding:3px 10px;background:#eff6ff;color:#2563eb;border-color:#bfdbfe">감시 ON</button>
+        <button class="btn btn-xs" onclick="mapBatch('monitor_off')" style="font-size:11px;padding:3px 10px;background:#fef2f2;color:#dc2626;border-color:#fecaca">감시 OFF</button>
+        <button class="btn btn-xs" onclick="mapBatch('watch_on')" style="font-size:11px;padding:3px 10px;background:#faf5ff;color:#7c3aed;border-color:#e9d5ff">상시 ON</button>
+        <button class="btn btn-xs" onclick="mapBatch('watch_off')" style="font-size:11px;padding:3px 10px;background:#f1f5f9;color:#64748b;border-color:#d1d5db">상시 OFF</button>
+      </div>
+      <table class="map-tbl"><thead><tr>
+        <th style="width:30px"><input type="checkbox" id="map-chk-all" onchange="mapToggleAll(this.checked)"></th>
+        <th>모델명</th><th>제품명</th><th>지도가</th><th>최저가</th><th>상태</th><th>감시</th><th>상시감시</th><th></th>
+      </tr></thead><tbody>`;
       products.forEach(p => {
         const ex = p.map_price < mp;
-        const st = ex ? '<span style="background:#f1f5f9;color:#94a3b8;padding:2px 6px;border-radius:4px;font-size:11px">제외</span>'
+        const monOff = !p.is_active;
+        const st = monOff ? '<span style="background:#f1f5f9;color:#94a3b8;padding:2px 6px;border-radius:4px;font-size:11px">OFF</span>'
+          : ex ? '<span style="background:#f1f5f9;color:#94a3b8;padding:2px 6px;border-radius:4px;font-size:11px">금액제외</span>'
           : (p.active_violations > 0 ? '<span style="background:#fef2f2;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">위반</span>'
           : '<span style="background:#f0fdf4;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">정상</span>');
-        h += `<tr style="opacity:${ex?0.4:1}"><td style="font-family:monospace;font-weight:600">${p.model_name}</td><td>${p.product_name}</td><td style="color:#64748b">${p.brand}</td><td><input type="number" value="${p.map_price}" step="100" style="width:90px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;font-weight:600;text-align:right" onchange="mapUpdatePrice(${p.id},this.value)">원</td><td style="font-weight:700;color:${p.active_violations>0?'#dc2626':'#16a34a'}">${p.current_min_price?won(p.current_min_price):'-'}</td><td>${st}</td><td><button class="map-toggle ${p.is_watched?'on':'off'}" onclick="mapToggleWatch(${p.id},${p.is_watched?0:1})"><div class="knob"></div></button></td><td><button class="btn btn-xs" onclick="mapDeleteProduct(${p.id})" style="font-size:11px;padding:2px 6px;color:#dc2626">삭제</button></td></tr>`;
+        const dim = monOff || ex ? 0.4 : 1;
+        h += `<tr style="opacity:${dim}">
+          <td><input type="checkbox" class="map-chk" value="${p.id}"></td>
+          <td style="font-family:monospace;font-weight:600">${p.model_name}</td>
+          <td>${p.product_name}</td>
+          <td><input type="number" value="${p.map_price}" step="100" style="width:90px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;font-weight:600;text-align:right" onchange="mapUpdatePrice(${p.id},this.value)">원</td>
+          <td style="font-weight:700;color:${p.active_violations>0?'#dc2626':'#16a34a'}">${p.current_min_price?won(p.current_min_price):'-'}</td>
+          <td>${st}</td>
+          <td><button class="map-toggle ${p.is_active?'on':'off'}" onclick="mapToggleMonitor(${p.id},${p.is_active?0:1})" style="${p.is_active?'background:#2563eb':'background:#d1d5db'}"><div class="knob" style="left:${p.is_active?'20px':'2px'}"></div></button></td>
+          <td><button class="map-toggle ${p.is_watched?'on':'off'}" onclick="mapToggleWatch(${p.id},${p.is_watched?0:1})"><div class="knob"></div></button></td>
+          <td><button class="btn btn-xs" onclick="mapDeleteProduct(${p.id})" style="font-size:11px;padding:2px 6px;color:#dc2626">삭제</button></td></tr>`;
       });
       h += '</tbody></table>';
       document.getElementById('map-products-table').innerHTML = h;
@@ -7601,7 +7625,29 @@ function reconcileNewMatch() {
   });
   window.mapUpdatePrice = async function(id, v) { try { await api.put(`/api/map/products/${id}/map-price?map_price=${v}`); } catch(e) { alert('오류: '+e.message); } };
   window.mapToggleWatch = async function(id, on) { try { await api.put(`/api/map/products/${id}/watch?watched=${!!on}`); mapLoadProducts(); } catch(e) { alert('오류: '+e.message); } };
+  window.mapToggleMonitor = async function(id, on) {
+    try { await api.put(`/api/map/products/${id}`, { is_active: !!on }); mapLoadProducts(); } catch(e) { alert('오류: '+e.message); }
+  };
   window.mapDeleteProduct = async function(id) { if (!confirm('삭제하시겠습니까?')) return; try { await api.delete(`/api/map/products/${id}`); mapLoadProducts(); } catch(e) { alert('오류: '+e.message); } };
+  window.mapToggleAll = function(checked) {
+    document.querySelectorAll('.map-chk').forEach(c => c.checked = checked);
+  };
+  window.mapBatch = async function(action) {
+    const ids = [...document.querySelectorAll('.map-chk:checked')].map(c => parseInt(c.value));
+    if (!ids.length) { alert('제품을 선택해주세요 (체크박스)'); return; }
+    const labels = {monitor_on:'감시 ON',monitor_off:'감시 OFF',watch_on:'상시감시 ON',watch_off:'상시감시 OFF'};
+    if (!confirm(`선택한 ${ids.length}개 제품을 '${labels[action]}'(으)로 변경하시겠습니까?`)) return;
+    const body = { product_ids: ids };
+    if (action === 'monitor_on') body.is_active = true;
+    else if (action === 'monitor_off') body.is_active = false;
+    else if (action === 'watch_on') body.is_watched = true;
+    else if (action === 'watch_off') body.is_watched = false;
+    try {
+      const r = await api.put('/api/map/products/bulk', body);
+      alert(r.message);
+      mapLoadProducts();
+    } catch(e) { alert('오류: '+e.message); }
+  };
   window.mapShowAddProduct = function() {
     const mn = prompt('모델명:'); if (!mn) return;
     const pn = prompt('제품명:'); if (!pn) return;

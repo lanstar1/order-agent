@@ -181,12 +181,38 @@ async def update_product(product_id: int, data: ProductUpdate):
 @router.delete("/products/{product_id}")
 async def delete_product(product_id: int):
     conn = get_connection()
-    # 관련 가격/위반 기록도 삭제
     conn.execute("DELETE FROM map_violations WHERE product_id = ?", (product_id,))
     conn.execute("DELETE FROM map_price_records WHERE product_id = ?", (product_id,))
     conn.execute("DELETE FROM map_products WHERE id = ?", (product_id,))
     conn.commit(); conn.close()
     return {"message": "삭제 완료"}
+
+class BulkUpdate(BaseModel):
+    product_ids: List[int]
+    is_active: Optional[bool] = None
+    is_watched: Optional[bool] = None
+
+@router.put("/products/bulk")
+async def bulk_update_products(data: BulkUpdate):
+    """일괄 감시/상시감시 ON/OFF"""
+    if not data.product_ids:
+        raise HTTPException(400, "제품 ID가 없습니다")
+    conn = get_connection()
+    sets = []
+    vals = []
+    if data.is_active is not None:
+        sets.append("is_active = ?"); vals.append(1 if data.is_active else 0)
+    if data.is_watched is not None:
+        sets.append("is_watched = ?"); vals.append(1 if data.is_watched else 0)
+        if not data.is_watched:
+            sets.append("watch_interval_hours = NULL")
+    if not sets:
+        conn.close(); raise HTTPException(400, "변경 항목 없음")
+    sets.append("updated_at = datetime('now','localtime')")
+    placeholders = ",".join(["?"] * len(data.product_ids))
+    conn.execute(f"UPDATE map_products SET {', '.join(sets)} WHERE id IN ({placeholders})", vals + data.product_ids)
+    conn.commit(); conn.close()
+    return {"message": f"{len(data.product_ids)}개 제품 업데이트 완료"}
 
 @router.post("/products/upload")
 async def upload_products_excel(file: UploadFile = File(...)):
@@ -256,6 +282,28 @@ async def update_map_price(product_id: int, map_price: int = Query(...)):
                  (map_price, product_id))
     conn.commit(); conn.close()
     return {"message": f"지도가 → {map_price:,}원"}
+
+@router.put("/products/batch")
+async def batch_update_products(action: str = Query(...), ids: str = Query(...)):
+    """일괄 업데이트. action: monitor_on/monitor_off/watch_on/watch_off, ids: 쉼표 구분 ID"""
+    conn = get_connection()
+    id_list = [int(i) for i in ids.split(",") if i.strip()]
+    if not id_list:
+        conn.close(); raise HTTPException(400, "대상 ID가 없습니다")
+    placeholders = ",".join(["?"] * len(id_list))
+    if action == "monitor_on":
+        conn.execute(f"UPDATE map_products SET is_active=1, updated_at=datetime('now','localtime') WHERE id IN ({placeholders})", id_list)
+    elif action == "monitor_off":
+        conn.execute(f"UPDATE map_products SET is_active=0, updated_at=datetime('now','localtime') WHERE id IN ({placeholders})", id_list)
+    elif action == "watch_on":
+        conn.execute(f"UPDATE map_products SET is_watched=1, watch_interval_hours=2, updated_at=datetime('now','localtime') WHERE id IN ({placeholders})", id_list)
+    elif action == "watch_off":
+        conn.execute(f"UPDATE map_products SET is_watched=0, watch_interval_hours=NULL, updated_at=datetime('now','localtime') WHERE id IN ({placeholders})", id_list)
+    else:
+        conn.close(); raise HTTPException(400, f"알 수 없는 action: {action}")
+    conn.commit(); conn.close()
+    labels = {"monitor_on":"감시 ON","monitor_off":"감시 OFF","watch_on":"상시감시 ON","watch_off":"상시감시 OFF"}
+    return {"message": f"{len(id_list)}개 제품 {labels.get(action,action)} 완료"}
 
 
 # ═══════════════════════════════════════════════════════
