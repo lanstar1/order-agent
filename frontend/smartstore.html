@@ -501,10 +501,16 @@ function renderTbl(orders){
             <th>수령인</th>
         </tr></thead><tbody>`;
 
+    // 제외 키워드가 포함된 orderId 집합 (같은 주문번호 전체 주황색)
+    const excludedOrderIds = new Set();
+    for(const o of orders){
+        if(isExcluded(o)) excludedOrderIds.add(getOrderId(o));
+    }
+
     for(const o of orders){
         const poid = getProductOrderId(o);
         const checked = _checkedSet.has(poid);
-        const excluded = isExcluded(o);
+        const excluded = excludedOrderIds.has(getOrderId(o));
         const matchType = excluded ? 'excluded' : classifyMatchType(o);
         const rowClass = excluded ? 'row-excluded'
             : matchType === 'option' ? 'row-option'
