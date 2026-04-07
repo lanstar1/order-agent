@@ -64,16 +64,20 @@ class ERPClientSS:
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
             if line.get("remark"):
-                bulk["CHAR5"] = line["remark"]   # 비고사항 (이카운트 문자형식5)
+                bulk["CHAR5"] = line["remark"]   # BulkDatas 내부에도 포함
             price = float(line.get("price", 0) or 0)
             if price > 0:
                 supply = round(price * qty, 2)
                 bulk["PRICE"] = str(int(price)) if price == int(price) else str(price)
                 bulk["SUPPLY_AMT"] = str(int(supply)) if supply == int(supply) else str(supply)
-            sale_list.append({"BulkDatas": bulk})
+            # CHAR5를 BulkDatas 외부(SaleList 항목 레벨)에도 배치 시도
+            sale_item = {"BulkDatas": bulk}
+            if line.get("remark"):
+                sale_item["CHAR5"] = line["remark"]
+            sale_list.append(sale_item)
 
         payload = {"SaleList": sale_list}
-        logger.info(f"[ERP-SS] SaveSale payload 첫번째 BulkDatas: {sale_list[0]['BulkDatas'] if sale_list else {}}")
+        logger.info(f"[ERP-SS] SaveSale payload 첫번째 item: {sale_list[0] if sale_list else {}}")
 
         for attempt in range(3):
             try:
