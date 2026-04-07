@@ -61,9 +61,13 @@
         tr.row-addon td { background: #ede9fe !important; }           /* 추가상품: 보라색 */
         tr.row-addon:hover td { background: #ddd6fe !important; }
         tr.row-option.row-unchecked td, tr.row-addon.row-unchecked td { opacity: 0.4; }
+        tr.row-excluded td { background: #f1f5f9 !important; color: #94a3b8 !important; text-decoration: line-through; }
+        tr.row-excluded:hover td { background: #e2e8f0 !important; }
+        tr.row-excluded input[type="checkbox"] { opacity: 0.4; pointer-events: none; }
         .match-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; margin-left: 4px; }
         .match-tag-opt  { background: #fbbf24; color: #78350f; }     /* 옵션 */
         .match-tag-add  { background: #a78bfa; color: #4c1d95; }     /* 추가상품 */
+        .match-tag-exc  { background: #e2e8f0; color: #64748b; }     /* ERP제외 */
 
         .sel-bar { display: flex; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; flex-wrap: wrap; }
         .sel-bar .sel-info { font-size: 14px; font-weight: 600; color: #334155; }
@@ -424,6 +428,14 @@ function getStatus(order) {
     return m ? `<span class="badge ${m[1]}">${m[0]}</span>` : (st || '-');
 }
 
+// ── 제외 키워드 (백엔드 EXCLUDE_KEYWORDS 동기화) ──
+const EXCLUDE_KEYWORDS = ['허브랙', '서버랙', '캐비넷'];
+function isExcluded(order) {
+    const po = order.productOrder || {};
+    const combined = ((po.productName || '') + ' ' + (po.productOption || '')).toLowerCase();
+    return EXCLUDE_KEYWORDS.some(kw => combined.includes(kw));
+}
+
 // ── 매칭 유형 분류 (백엔드 로직 미러링) ──
 function classifyMatchType(order) {
     const po = order.productOrder || {};
@@ -493,9 +505,14 @@ function renderTbl(orders){
     for(const o of orders){
         const poid = getProductOrderId(o);
         const checked = _checkedSet.has(poid);
-        const matchType = classifyMatchType(o);
-        const rowClass = matchType === 'option' ? 'row-option' : matchType === 'addon' ? 'row-addon' : '';
-        const matchTag = matchType === 'option'
+        const excluded = isExcluded(o);
+        const matchType = excluded ? 'excluded' : classifyMatchType(o);
+        const rowClass = excluded ? 'row-excluded'
+            : matchType === 'option' ? 'row-option'
+            : matchType === 'addon' ? 'row-addon' : '';
+        const matchTag = excluded
+            ? '<span class="match-tag match-tag-exc">ERP제외</span>'
+            : matchType === 'option'
             ? '<span class="match-tag match-tag-opt">옵션</span>'
             : matchType === 'addon'
             ? '<span class="match-tag match-tag-add">추가상품</span>'
