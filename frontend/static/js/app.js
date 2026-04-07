@@ -7431,7 +7431,7 @@ function reconcileNewMatch() {
 
   window.initMapMonitor = async function() { await mapLoadDashboard(); };
 
-  window.switchMapTab = function(tabId) {
+  window.switchMapTab = async function(tabId) {
     document.querySelectorAll('.map-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.mapTab === tabId));
     document.querySelectorAll('.map-tab-content').forEach(c => c.classList.toggle('active', c.id === 'map-tab-'+tabId));
     if (tabId === 'dashboard') mapLoadDashboard();
