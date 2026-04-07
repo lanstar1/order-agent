@@ -400,15 +400,51 @@ function getReceiverName(order) {
 function getDeliveryMethod(order) {
     const po = order.productOrder || {};
     const method = po.expectedDeliveryMethod || '';
-    const map = {
-        'DELIVERY': '택배',
-        'QUICK_SVC': '퀵서비스',
-        'VISIT': '방문수령',
-        'VISIT_RECEIPT': '방문수령',
+
+    // 택배가 아닌 경우는 그냥 한글로 표기
+    const nonDeliveryMap = {
+        'QUICK_SVC':       '퀵서비스',
+        'VISIT':           '방문수령',
+        'VISIT_RECEIPT':   '방문수령',
         'DIRECT_DELIVERY': '직접전달',
-        'NOTHING': '배송없음',
+        'NOTHING':         '배송없음',
     };
-    return map[method] || method || '-';
+    if (nonDeliveryMap[method]) return nonDeliveryMap[method];
+
+    // 택배(DELIVERY)인 경우 택배사 + 선불/착불 표시
+    // ① 이미 발송된 경우: deliveryCompanyCode 사용
+    const carrierCodeMap = {
+        'LOGEN':    '로젠택배',
+        'KDEXP':    '경동택배',
+        'CJGLS':    'CJ대한통운',
+        'POST':     '우체국택배',
+        'HANJIN':   '한진택배',
+        'LOTTE':    '롯데택배',
+        'ILYANG':   '일양로지스',
+        'CHUNILPS': '천일택배',
+        'DAESIN':   '대신택배',
+        'HYUNDAI':  '현대택배',
+    };
+    let carrier = '';
+    const dispatchedCode = po.deliveryCompanyCode || '';
+    if (dispatchedCode) {
+        carrier = carrierCodeMap[dispatchedCode] || dispatchedCode;
+    } else {
+        // ② 미발송: 제외 키워드 → 경동택배, 아니면 로젠택배
+        carrier = isExcluded(order) ? '경동택배' : '로젠택배';
+    }
+
+    // 선불/착불/무료 표시
+    const feeType = po.shippingFeeType || '';
+    const feeMap = {
+        'FREE':             '<span style="color:#16a34a;font-size:0.8em">[무료]</span>',
+        'CONDITIONAL_FREE': '<span style="color:#16a34a;font-size:0.8em">[조건무료]</span>',
+        'CHARGED':          '<span style="color:#2563eb;font-size:0.8em">[선불]</span>',
+        'COLLECT':          '<span style="color:#dc2626;font-size:0.8em">[착불]</span>',
+    };
+    const feeBadge = feeMap[feeType] || '';
+
+    return `${carrier}${feeBadge ? ' ' + feeBadge : ''}`;
 }
 function getStatus(order) {
     const po = order.productOrder || {};
