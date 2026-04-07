@@ -22,6 +22,39 @@ NAVER_SEARCH_URL = "https://openapi.naver.com/v1/search/shop.json"
 # 네이버 쇼핑 API
 # ═══════════════════════════════════════════════════════
 
+import re
+
+def _model_match(model_name: str, text: str) -> bool:
+    """모델명 정확 매칭 (부분 매칭 방지)
+    
+    LS-HDMT-15M은 LS-HDMT-0.3M과 매칭되면 안 됨.
+    모델명 뒤에 다른 숫자/문자가 바로 붙어있으면 불일치 처리.
+    """
+    model = model_name.strip().upper()
+    text_up = text.upper()
+    
+    if model not in text_up:
+        return False
+    
+    # 모델명이 텍스트에서 어디에 있는지 확인
+    idx = text_up.find(model)
+    end_idx = idx + len(model)
+    
+    # 모델명 뒤에 오는 문자 확인 (숫자/하이픈/알파벳이면 다른 모델)
+    if end_idx < len(text_up):
+        next_char = text_up[end_idx]
+        if next_char.isalnum() or next_char == '-':
+            return False
+    
+    # 모델명 앞에 오는 문자 확인 (숫자/하이픈이면 다른 모델의 일부)
+    if idx > 0:
+        prev_char = text_up[idx - 1]
+        if prev_char.isalnum() or prev_char == '-':
+            return False
+    
+    return True
+
+
 async def collect_naver(product: dict) -> list:
     cid = os.getenv("NAVER_SEARCH_ID", "")
     csec = os.getenv("NAVER_SEARCH_SECRET", "")
@@ -29,7 +62,11 @@ async def collect_naver(product: dict) -> list:
         logger.warning("네이버 API 키 미설정")
         return []
 
-    query = product.get("search_keywords") or f"{product['brand']} {product['model_name']}"
+    # 모델명 기반 검색 (전체 제품명 대신 모델명 위주로 검색)
+    model = product["model_name"]
+    brand = product.get("brand", "LANstar")
+    query = f"{brand} {model}"
+    
     results = []
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -39,11 +76,15 @@ async def collect_naver(product: dict) -> list:
             resp.raise_for_status()
             for item in resp.json().get("items", []):
                 title = item.get("title", "").replace("<b>", "").replace("</b>", "")
-                if product["model_name"].upper() not in title.upper():
+                
+                # 정확한 모델명 매칭 (부분 매칭 방지)
+                if not _model_match(model, title):
                     continue
+                
                 lprice = int(item.get("lprice", 0))
                 if lprice <= 0:
                     continue
+                
                 results.append({
                     "product_id": product["id"], "platform": "네이버",
                     "seller_name": item.get("mallName", "알 수 없음"),
@@ -54,7 +95,7 @@ async def collect_naver(product: dict) -> list:
                 })
         await asyncio.sleep(0.2)
     except Exception as e:
-        logger.error(f"네이버 수집 오류 [{product['model_name']}]: {e}")
+        logger.error(f"네이버 수집 오류 [{model}]: {e}")
     return results
 
 
@@ -81,7 +122,7 @@ async def collect_coupang(product: dict) -> list:
                     price_el = item.select_one(".price-value")
                     if not name_el or not price_el: continue
                     name = name_el.get_text(strip=True)
-                    if product["model_name"].upper() not in name.upper(): continue
+                    if not _model_match(product["model_name"], name): continue
                     price = int(price_el.get_text(strip=True).replace(",", ""))
                     link = item.select_one("a.search-product-link")
                     purl = f"https://www.coupang.com{link['href']}" if link else ""
@@ -122,7 +163,7 @@ async def collect_gmarket(product: dict, platform: str = "G마켓") -> list:
                     price_el = item.select_one(".text__value")
                     if not name_el or not price_el: continue
                     name = name_el.get_text(strip=True)
-                    if product["model_name"].upper() not in name.upper(): continue
+                    if not _model_match(product["model_name"], name): continue
                     price = int(price_el.get_text(strip=True).replace(",", "").replace("원", ""))
                     link = item.select_one("a")
                     seller_el = item.select_one(".text__seller")
@@ -161,7 +202,7 @@ async def collect_11st(product: dict) -> list:
                     price_el = item.select_one(".price_detail .value")
                     if not name_el or not price_el: continue
                     name = name_el.get_text(strip=True)
-                    if product["model_name"].upper() not in name.upper(): continue
+                    if not _model_match(product["model_name"], name): continue
                     price = int(price_el.get_text(strip=True).replace(",", ""))
                     seller_el = item.select_one(".store a")
                     results.append({
@@ -192,13 +233,22 @@ def check_violation(product: dict, price: dict, global_tol: float = 5.0) -> Opti
     if eff >= min_allowed: return None
 
     dev = round((map_p - eff) / map_p * 100, 1)
-    if price.get("coupon_price") and price["coupon_price"] < min_allowed:
-        vtype = "쿠폰 할인"
-    elif price.get("point_reward", 0) > 0:
-        vtype = "적립금 과다"
+    
+    # 50% 이상 차이 → 오매칭(다른 제품) 가능성 높음 → 의심 처리
+    if dev >= 50:
+        vtype = "오매칭 의심"
+        sev = "LOW"  # 자동 위반 대신 낮은 심각도로 기록
+        logger.info(f"오매칭 의심: {product['model_name']} | {price['platform']} | "
+                     f"{price['seller_name']} | {eff:,}원 (지도가 {map_p:,}원, -{dev}%)")
     else:
-        vtype = "직접 인하"
-    sev = "CRITICAL" if dev >= 15 else "HIGH" if dev >= 10 else "MEDIUM" if dev >= 5 else "LOW"
+        if price.get("coupon_price") and price["coupon_price"] < min_allowed:
+            vtype = "쿠폰 할인"
+        elif price.get("point_reward", 0) > 0:
+            vtype = "적립금 과다"
+        else:
+            vtype = "직접 인하"
+        sev = "CRITICAL" if dev >= 15 else "HIGH" if dev >= 10 else "MEDIUM" if dev >= 5 else "LOW"
+    
     return {"product_id": product["id"], "platform": price["platform"],
             "seller_name": price["seller_name"], "violation_type": vtype,
             "severity": sev, "map_price": map_p, "violated_price": eff,
