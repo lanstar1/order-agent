@@ -388,8 +388,10 @@ async def logen_export_excel(
         for item_po in g["items"]:
             if not first_poid:
                 first_poid = item_po.get("productOrderId", "")
-                cust_msg = (item_po.get("deliveryMemo", "") or
+                cust_msg = (item_po.get("shippingMemo", "") or
+                            item_po.get("deliveryMemo", "") or
                             item_po.get("deliveryMessage", "") or
+                            od.get("shippingMemo", "") or
                             od.get("deliveryMemo", "") or "")
             product_id = str(item_po.get("productId", "") or item_po.get("productNo", "") or "")
             # 모델명 우선, 없으면 ERP코드, 없으면 상품명
