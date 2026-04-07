@@ -391,19 +391,24 @@ async def get_price_history(product_id: int, days: int = 7, platform: str = ""):
 
 
 # ═══════════════════════════════════════════════════════
-# 7. 수집 실행 API
+# 7. 수집 실행 API (백그라운드 + 진행률)
 # ═══════════════════════════════════════════════════════
 
 @router.post("/collect/run")
 async def run_collection_now():
-    """즉시 가격 수집 실행"""
-    from services.map_collector_service import run_price_collection
-    try:
-        result = await run_price_collection(collection_type="manual")
-        return result
-    except Exception as e:
-        logger.error(f"수집 오류: {e}", exc_info=True)
-        raise HTTPException(500, f"수집 오류: {e}")
+    """즉시 가격 수집 - 백그라운드 실행"""
+    from services.map_collector_service import start_collection_background, collection_progress
+    if collection_progress.get("running"):
+        return {"message": "이미 수집 중입니다", "status": "running", "progress": collection_progress}
+    import asyncio
+    asyncio.create_task(start_collection_background())
+    return {"message": "수집 시작됨", "status": "started"}
+
+@router.get("/collect/progress")
+async def get_collection_progress():
+    """수집 진행률 조회"""
+    from services.map_collector_service import collection_progress
+    return collection_progress
 
 @router.get("/collect/status")
 async def get_collection_status():

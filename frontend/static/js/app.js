@@ -7608,13 +7608,37 @@ function reconcileNewMatch() {
     try { const r = await api.put('/api/map/settings', data); _mapSettings = r; alert('설정 저장 완료'); mapLoadSettings(); } catch(e) { alert('오류: '+e.message); }
   };
 
-  // ── 즉시 수집 ──
+  // ── 즉시 수집 (백그라운드 + 진행률 폴링) ──
+  let _pollTimer = null;
   window.mapRunCollect = async function() {
     const btn = document.getElementById('map-collect-btn');
-    btn.disabled = true; btn.textContent = '⏳ 수집 중...';
-    try { const r = await api.post('/api/map/collect/run'); alert(r.message); mapLoadDashboard(); } catch(e) { alert('수집 오류: '+e.message); }
-    btn.disabled = false; btn.textContent = '▶ 즉시 수집';
+    btn.disabled = true; btn.textContent = '⏳ 시작 중...';
+    try {
+      const r = await api.post('/api/map/collect/run');
+      if (r.status === 'running') btn.textContent = '⏳ 이미 수집 중...';
+      _startProgressPoll();
+    } catch(e) { alert('수집 시작 오류: '+e.message); btn.disabled = false; btn.textContent = '▶ 즉시 수집'; }
   };
+  function _startProgressPoll() {
+    const btn = document.getElementById('map-collect-btn');
+    const st = document.getElementById('map-status-text');
+    if (_pollTimer) clearInterval(_pollTimer);
+    _pollTimer = setInterval(async () => {
+      try {
+        const p = await api.get('/api/map/collect/progress');
+        btn.textContent = `⏳ ${p.percent||0}% 수집 중...`;
+        st.textContent = p.running
+          ? `수집 중 ${p.percent}% | ${p.current_platform} → ${p.current_product} | 가격 ${p.prices_collected}건 · 위반 ${p.violations_found}건 · 오류 ${p.errors_count}건`
+          : (p.message || '수집 완료');
+        if (!p.running) {
+          clearInterval(_pollTimer); _pollTimer = null;
+          btn.disabled = false; btn.textContent = '▶ 즉시 수집';
+          if (p.percent >= 100 && p.message) alert(p.message);
+          mapLoadDashboard();
+        }
+      } catch(e) { console.error('폴링 오류:', e); }
+    }, 2000);
+  }
 
   console.log('MAP Monitor 모듈 로드 완료');
 })();

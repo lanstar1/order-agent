@@ -217,23 +217,56 @@ COLLECTORS = {
     "11번가": collect_11st,
 }
 
+# ═══════════════════════════════════════════════════════
+# 진행률 추적 (인메모리)
+# ═══════════════════════════════════════════════════════
+collection_progress = {
+    "running": False,
+    "percent": 0,
+    "current_product": "",
+    "current_platform": "",
+    "products_total": 0,
+    "products_done": 0,
+    "prices_collected": 0,
+    "violations_found": 0,
+    "errors_count": 0,
+    "message": "",
+}
+
+def _now_kst() -> str:
+    from datetime import timezone, timedelta
+    KST = timezone(timedelta(hours=9))
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+async def start_collection_background():
+    """백그라운드에서 수집 실행 (asyncio.create_task용)"""
+    try:
+        await run_price_collection(collection_type="manual")
+    except Exception as e:
+        logger.error(f"백그라운드 수집 오류: {e}", exc_info=True)
+        collection_progress["running"] = False
+        collection_progress["message"] = f"오류: {e}"
+
 
 async def run_price_collection(
     platforms: list = None,
     product_ids: list = None,
     collection_type: str = "manual"
 ) -> dict:
-    conn = get_connection()
+    global collection_progress
+    collection_progress.update({"running": True, "percent": 0, "current_product": "", "current_platform": "",
+        "products_total": 0, "products_done": 0, "prices_collected": 0, "violations_found": 0,
+        "errors_count": 0, "message": "초기화 중..."})
 
-    # 수집 로그 시작
+    conn = get_connection()
     cur = conn.execute(
-        "INSERT INTO map_collection_logs (collection_type, status) VALUES (?, 'running')",
-        (collection_type,))
+        "INSERT INTO map_collection_logs (collection_type, status, started_at) VALUES (?, 'running', ?)",
+        (collection_type, _now_kst()))
     log_id = cur.lastrowid
     conn.commit()
 
     try:
-        # 설정 로드
         s = conn.execute("SELECT * FROM map_settings WHERE id=1").fetchone()
         s = dict(s) if s else {}
         min_price = s.get("min_price", 5000)
@@ -243,103 +276,109 @@ async def run_price_collection(
             plat_str = s.get("platforms", '["네이버 쇼핑"]')
             platforms = json.loads(plat_str) if isinstance(plat_str, str) else plat_str
 
-        # 제품 로드
         if product_ids:
             placeholders = ",".join(["?"] * len(product_ids))
-            rows = conn.execute(
-                f"SELECT * FROM map_products WHERE id IN ({placeholders}) AND is_active=1",
-                product_ids).fetchall()
+            rows = conn.execute(f"SELECT * FROM map_products WHERE id IN ({placeholders}) AND is_active=1", product_ids).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM map_products WHERE is_active=1 AND map_price>=?",
-                (min_price,)).fetchall()
+            rows = conn.execute("SELECT * FROM map_products WHERE is_active=1 AND map_price>=?", (min_price,)).fetchall()
 
         products = [dict(r) for r in rows]
+        total_tasks = len(products) * len(platforms)
+        done_tasks = 0
         total_prices = total_violations = 0
         errors = []
 
+        collection_progress.update({"products_total": len(products), "message": f"{len(products)}개 제품 × {len(platforms)}개 플랫폼 수집 시작"})
         logger.info(f"MAP 수집 시작: {len(products)}개 제품 × {len(platforms)}개 플랫폼")
 
-        for product in products:
+        for pi, product in enumerate(products):
             for pname in platforms:
                 collector = COLLECTORS.get(pname)
-                if not collector: continue
+                if not collector:
+                    done_tasks += 1
+                    continue
+
+                collection_progress.update({
+                    "current_product": product["model_name"],
+                    "current_platform": pname,
+                    "percent": int(done_tasks / max(total_tasks, 1) * 100),
+                    "products_done": pi,
+                })
+
                 try:
                     price_results = await collector(product)
                     for pd in price_results:
-                        # 셀러 upsert
-                        existing = conn.execute(
-                            "SELECT id FROM map_sellers WHERE seller_name=? AND platform=?",
+                        existing = conn.execute("SELECT id FROM map_sellers WHERE seller_name=? AND platform=?",
                             (pd["seller_name"], pd["platform"])).fetchone()
                         if existing:
                             seller_id = existing["id"]
                         else:
-                            c = conn.execute(
-                                "INSERT INTO map_sellers (seller_name, platform) VALUES (?,?)",
+                            c = conn.execute("INSERT INTO map_sellers (seller_name, platform) VALUES (?,?)",
                                 (pd["seller_name"], pd["platform"]))
                             seller_id = c.lastrowid
 
-                        # 가격 기록 저장
                         c = conn.execute("""INSERT INTO map_price_records
                             (product_id, seller_id, platform, seller_name, product_url,
                              display_price, sale_price, coupon_name, coupon_discount,
-                             coupon_price, point_reward, effective_price, free_shipping)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             coupon_price, point_reward, effective_price, free_shipping, collected_at)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (pd["product_id"], seller_id, pd["platform"], pd["seller_name"],
                              pd.get("product_url",""), pd["display_price"], pd.get("sale_price"),
                              pd.get("coupon_name",""), pd.get("coupon_discount",0),
                              pd.get("coupon_price"), pd.get("point_reward",0),
-                             pd["effective_price"], pd.get("free_shipping",0)))
+                             pd["effective_price"], pd.get("free_shipping",0), _now_kst()))
                         record_id = c.lastrowid
                         total_prices += 1
 
-                        # 위반 체크
                         vio = check_violation(product, pd, global_tol)
                         if vio:
                             conn.execute("""INSERT INTO map_violations
                                 (price_record_id, product_id, seller_id, platform, seller_name,
-                                 violation_type, severity, map_price, violated_price, deviation_pct, evidence_url)
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                 violation_type, severity, map_price, violated_price, deviation_pct, evidence_url, detected_at)
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                                 (record_id, vio["product_id"], seller_id,
                                  vio["platform"], vio["seller_name"], vio["violation_type"],
                                  vio["severity"], vio["map_price"], vio["violated_price"],
-                                 vio["deviation_pct"], vio.get("evidence_url","")))
+                                 vio["deviation_pct"], vio.get("evidence_url",""), _now_kst()))
                             total_violations += 1
-
-                            # 셀러 위반 카운트
                             conn.execute("""UPDATE map_sellers SET total_violations=total_violations+1,
-                                last_violation_at=datetime('now','localtime'),
-                                risk_level=CASE WHEN total_violations+1>=10 THEN 'high'
+                                last_violation_at=?, risk_level=CASE WHEN total_violations+1>=10 THEN 'high'
                                     WHEN total_violations+1>=5 THEN 'medium' ELSE 'low' END
-                                WHERE id=?""", (seller_id,))
-
+                                WHERE id=?""", (_now_kst(), seller_id))
                             conn.execute("UPDATE map_price_records SET is_violation=1 WHERE id=?", (record_id,))
-
                             logger.warning(f"🚨 위반: {product['model_name']} | {vio['platform']} | "
-                                f"{vio['seller_name']} | {vio['violated_price']:,}원 (지도가 {vio['map_price']:,}원 -{vio['deviation_pct']}%)")
+                                f"{vio['seller_name']} | {vio['violated_price']:,}원 -{vio['deviation_pct']}%")
 
                 except Exception as e:
                     err = f"{pname}/{product['model_name']}: {e}"
                     errors.append(err)
-                    logger.error(f"수집 오류: {err}")
+                    collection_progress["errors_count"] += 1
 
-        # 로그 완료
+                done_tasks += 1
+                collection_progress.update({"prices_collected": total_prices, "violations_found": total_violations,
+                    "percent": int(done_tasks / max(total_tasks, 1) * 100)})
+
+            # 매 10개 제품마다 중간 커밋
+            if (pi + 1) % 10 == 0:
+                conn.commit()
+
         conn.execute("""UPDATE map_collection_logs SET
             platforms_searched=?, products_checked=?, prices_collected=?,
-            violations_found=?, errors=?, finished_at=datetime('now','localtime'), status='completed'
-            WHERE id=?""",
+            violations_found=?, errors=?, finished_at=?, status='completed' WHERE id=?""",
             (json.dumps(platforms, ensure_ascii=False), len(products),
-             total_prices, total_violations, json.dumps(errors[:50], ensure_ascii=False), log_id))
-        conn.commit()
-        conn.close()
+             total_prices, total_violations, json.dumps(errors[:50], ensure_ascii=False), _now_kst(), log_id))
+        conn.commit(); conn.close()
 
         msg = f"수집 완료: {len(products)}개 제품, {total_prices}건 가격, {total_violations}건 위반"
         logger.info(msg)
+        collection_progress.update({"running": False, "percent": 100, "message": msg,
+            "products_done": len(products), "current_product": "", "current_platform": ""})
         return {"message": msg, "products_checked": len(products),
                 "prices_collected": total_prices, "violations_found": total_violations, "errors": errors[:10]}
 
     except Exception as e:
-        conn.execute("UPDATE map_collection_logs SET status='error', errors=?, finished_at=datetime('now','localtime') WHERE id=?",
-                     (str(e), log_id))
+        conn.execute("UPDATE map_collection_logs SET status='error', errors=?, finished_at=? WHERE id=?",
+                     (str(e), _now_kst(), log_id))
         conn.commit(); conn.close()
+        collection_progress.update({"running": False, "message": f"오류: {e}"})
         raise
