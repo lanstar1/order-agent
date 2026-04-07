@@ -410,7 +410,7 @@ async def logen_export_excel(
         ws.cell(row, 2,  full_addr)   # B: 수하인주소1
         ws.cell(row, 3,  tel_home)    # C: 수하인전화
         ws.cell(row, 4,  tel_cell)    # D: 수하인휴대폰
-        ws.cell(row, 5,  total_qty)   # E: 택배수량
+        ws.cell(row, 5,  1)            # E: 택배수량 (박스 수량, 항상 1)
         ws.cell(row, 6,  ship_fee)    # F: 택배운임
         ws.cell(row, 7,  fare_tp)     # G: 운임구분
         ws.cell(row, 8,  goods)       # H: 물품명 (모델명+수량)
