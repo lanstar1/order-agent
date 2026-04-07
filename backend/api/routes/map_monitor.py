@@ -207,7 +207,7 @@ async def upload_products_excel(file: UploadFile = File(...)):
                 if r[0]:
                     rows.append(dict(zip(headers, r)))
         col_map = {'모델명':'mn','model':'mn','model_name':'mn',
-                   '품명':'pn','제품명':'pn','product_name':'pn','name':'pn',
+                   '품명':'pn','품목명':'pn','제품명':'pn','product_name':'pn','name':'pn',
                    '브랜드':'br','brand':'br',
                    '제품특징':'ft','특징':'ft','features':'ft',
                    '지도가':'mp','가격':'mp','price':'mp','map_price':'mp'}
