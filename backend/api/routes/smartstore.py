@@ -236,6 +236,7 @@ async def send_erp_only(
     order_groups = {}
     unmatched_items = []
 
+    order_shipping: dict = {}   # orderId → 배송비 금액
     for o in selected_orders:
         od = o.get("order", {})
         po = o.get("productOrder", {})
@@ -245,6 +246,9 @@ async def send_erp_only(
             continue
         if oid not in order_groups:
             order_groups[oid] = []
+            # 배송비: productOrder.shippingFee 우선, 없으면 order.shippingFee
+            fee = float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0)
+            order_shipping[oid] = fee
         product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
         seller_code = po.get("sellerProductCode", "") or ""
         order_groups[oid].append({
@@ -277,9 +281,14 @@ async def send_erp_only(
                     "quantity": qty, "settlementAmount": settle,
                 })
 
-    delivery_count = len(order_groups)
-    if delivery_count > 0:
-        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": delivery_count, "price": 0})
+    # 배송비: 금액별로 묶어서 (같은 금액 → 수량 합산, 다른 금액 → 별도 라인)
+    from collections import defaultdict
+    delivery_by_fee: dict = defaultdict(int)
+    for oid in order_groups:
+        fee = order_shipping.get(oid, 0)
+        delivery_by_fee[fee] += 1
+    for fee_amount, count in delivery_by_fee.items():
+        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount)})
 
     if not erp_lines:
         return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
@@ -412,6 +421,7 @@ async def auto_register_logen(
         order_groups = {}
         all_po_ids = []
 
+        order_shipping: dict = {}   # orderId → 배송비 금액
         for o in selected_orders:
             od = o.get("order", {})
             po = o.get("productOrder", {})
@@ -422,6 +432,8 @@ async def auto_register_logen(
             all_po_ids.append(poid)
             if oid not in order_groups:
                 order_groups[oid] = []
+                fee = float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0)
+                order_shipping[oid] = fee
             product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
             seller_code = po.get("sellerProductCode", "") or ""
             order_groups[oid].append({
@@ -464,9 +476,14 @@ async def auto_register_logen(
                         "rcvName": o.get("rcvName", ""),
                     })
 
-        delivery_count = len(order_groups)
-        if delivery_count > 0:
-            erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": delivery_count, "price": 0})
+        # 배송비: 금액별로 묶어서 (같은 금액 → 수량 합산, 다른 금액 → 별도 라인)
+        from collections import defaultdict
+        delivery_by_fee: dict = defaultdict(int)
+        for oid in order_groups:
+            fee = order_shipping.get(oid, 0)
+            delivery_by_fee[fee] += 1
+        for fee_amount, count in delivery_by_fee.items():
+            erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount)})
 
         sender = get_sender(warehouse)
         ilogen_orders = []
