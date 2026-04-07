@@ -275,9 +275,7 @@ async def send_erp_only(
 
     for oid, group in order_groups.items():
         for o in group:
-            if _is_excluded(o):
-                logger.info(f"[SS] 제외 키워드 필터: {o.get('productName','')[:40]}")
-                continue
+            # 직접 선택해서 ERP 전송하는 경우 제외 키워드 무시 (사용자 명시적 선택 우선)
             code = _match_item_code(o)
             qty = int(o.get("quantity", 1) or 1)
             settle = float(o.get("settlementAmount", 0) or 0)
