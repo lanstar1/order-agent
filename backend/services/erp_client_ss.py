@@ -115,7 +115,8 @@ class ERPClientSS:
                     url = f"https://oapi{zone}.ecount.com/OAPI/V2/Sale/SaveSale?SESSION_ID={self._session_id}"
                     continue
                 logger.error(f"[ERP-SS] SaveSale 실패: Status={data.get('Status')}")
-                return {"success": False, "error": data}
+                err_msg = f"ERP 오류 (Status {data.get('Status')}): {data.get('Message') or data.get('Error') or str(data)}"
+                return {"success": False, "error": err_msg}
             except Exception as e:
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
