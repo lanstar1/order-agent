@@ -965,7 +965,12 @@ async function downloadExcludedExcel(){
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify(_rawOrders)
         });
-        if(!res.ok){ const e=await res.json().catch(()=>{}); alert(e?.error||'다운로드 실패'); return; }
+        if(!res.ok){
+            const txt = await res.text().catch(()=>'');
+            let msg = `다운로드 실패 (HTTP ${res.status})`;
+            try { const e = JSON.parse(txt); msg = e?.detail || e?.error || msg; } catch(_){}
+            alert(msg); return;
+        }
         const blob = await res.blob();
         const cd = res.headers.get('Content-Disposition') || '';
         const m = cd.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);

@@ -385,7 +385,7 @@ async def excluded_export_excel(
         row += 1
 
     if row == 2:
-        return {"success": False, "error": "제외 키워드 주문이 없습니다."}
+        raise HTTPException(status_code=404, detail="제외 키워드(허브랙/서버랙/캐비넷) 주문이 없습니다.")
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
