@@ -53,14 +53,74 @@ def _save_product_map():
 _load_product_map()
 
 
+def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
+    """
+    옵션 텍스트에서 ERP 품목코드 추출.
+    우선순위:
+      1) 마지막 (코드) — 정상/비정상 괄호 모두 처리
+      2) 콜론 뒤 코드
+    유효 코드 기준: 영문·숫자로 시작, 공백 없음
+    """
+    if not option_text:
+        return None
+
+    text = option_text.strip()
+
+    # '/ 배송방법:' 이후 제거 (예: "LS-750HS / 배송방법: 경동택배 (원하는 배송지 도착)")
+    if " / " in text:
+        text = text.split(" / ")[0].strip()
+
+    def is_valid_code(s: str) -> bool:
+        # 영문·숫자 시작, 공백 없음, 최소 3자 이상 (단일 문자 오탐 방지)
+        return bool(s and " " not in s and len(s) >= 3 and re.match(r"[A-Za-z0-9]", s))
+
+    # 패턴 1: 마지막 (코드) — 닫힌 괄호
+    m = re.search(r"\(([^()]*(?:\([^)]*\))[^()]*|[^()]+)\)\s*$", text)
+    if m:
+        candidate = m.group(1).strip()
+        if is_valid_code(candidate):
+            return candidate
+
+    # 패턴 1-b: 닫히지 않은 괄호 (예: (LS-ADOOR(B) )
+    m2 = re.search(r"\(([A-Za-z0-9][A-Za-z0-9\-\(\)\.]*)\s*$", text)
+    if m2:
+        candidate = m2.group(1).strip()
+        if is_valid_code(candidate):
+            return candidate
+
+    # 패턴 2: 콜론 뒤 코드
+    if ":" in text:
+        after_colon = text.rsplit(":", 1)[1].strip()
+        if is_valid_code(after_colon):
+            return after_colon
+
+    return None
+
+
 def _match_item_code(order: dict) -> Optional[str]:
+    """
+    ERP 품목코드 결정 우선순위:
+      1) 옵션 텍스트에서 코드 추출
+      2) 상품번호 → product_map fallback
+    """
+    option_text = (order.get("optionInfo", "") or "").strip()
+    if option_text:
+        code = _extract_erp_code_from_option(option_text)
+        if code:
+            logger.info(f"[SS] 옵션 매핑: '{option_text[:40]}' → {code}")
+            return code
+
     product_no = str(order.get("productNo", "") or order.get("productId", "") or "")
     if product_no and product_no in _product_map:
         matched = _product_map[product_no]
-        logger.info(f"[SS] 매핑 성공: 상품번호 {product_no} → ERP코드 {matched}")
+        logger.info(f"[SS] 상품번호 매핑: {product_no} → {matched}")
         return matched
+
     seller_code = (order.get("sellerProductCode", "") or "").strip()
-    logger.warning(f"[SS] 매칭 실패: productNo={product_no}, sellerCode={seller_code}, name={order.get('productName','')[:40]}")
+    logger.warning(
+        f"[SS] 매칭 실패: productNo={product_no}, option='{option_text[:30]}', "
+        f"sellerCode={seller_code}, name={order.get('productName','')[:40]}"
+    )
     return None
 
 
