@@ -317,6 +317,79 @@ async def send_erp_only(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/excluded-export-excel")
+async def excluded_export_excel(
+    selected_orders: list[dict] = Body(...),
+):
+    """제외 키워드 주문 → 경동택배 전표용 엑셀 다운로드"""
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from fastapi.responses import StreamingResponse
+
+    # 제외 키워드 포함 주문만 필터 (orderId 기준 그룹)
+    excluded_oids: set = set()
+    for o in selected_orders:
+        po = o.get("productOrder", {})
+        combined = ((po.get("productName", "") or "") + " " + (po.get("productOption", "") or "")).lower()
+        if any(kw in combined for kw in EXCLUDE_KEYWORDS):
+            od = o.get("order", {})
+            excluded_oids.add(od.get("orderId", ""))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "경동택배전표"
+
+    headers = ["비고사항", "수령인", "연락처", "주소", "배송메세지"]
+    hdr_fill = PatternFill("solid", fgColor="C00000")
+    hdr_font = Font(bold=True, color="FFFFFF")
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(1, ci, h)
+        c.fill = hdr_fill; c.font = hdr_font; c.alignment = Alignment(horizontal="center")
+
+    ws.column_dimensions["A"].width = 35
+    ws.column_dimensions["B"].width = 12
+    ws.column_dimensions["C"].width = 16
+    ws.column_dimensions["D"].width = 50
+    ws.column_dimensions["E"].width = 25
+
+    seen: set = set()
+    row = 2
+    for o in selected_orders:
+        od = o.get("order", {})
+        po = o.get("productOrder", {})
+        oid = od.get("orderId", "")
+        if oid not in excluded_oids or oid in seen:
+            continue
+        seen.add(oid)
+        addr     = po.get("shippingAddress", {})
+        rcv      = addr.get("name", "")
+        tel      = addr.get("tel2", "") or addr.get("tel1", "")
+        full_addr = ((addr.get("baseAddress", "") or "") + " " + (addr.get("detailedAddress", "") or "")).strip()
+        cust_msg  = (po.get("shippingMemo", "") or po.get("deliveryMemo", "") or
+                     po.get("deliveryMessage", "") or od.get("shippingMemo", "") or
+                     od.get("deliveryMemo", "") or "")
+
+        ws.cell(row, 1, "경동택배(선불, 착불) / 전표제외")
+        ws.cell(row, 2, rcv)
+        ws.cell(row, 3, tel)
+        ws.cell(row, 4, full_addr)
+        ws.cell(row, 5, cust_msg)
+        row += 1
+
+    if row == 2:
+        return {"success": False, "error": "제외 키워드 주문이 없습니다."}
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    filename = f"경동택배전표_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+    )
+
+
 @router.post("/logen-export-excel")
 async def logen_export_excel(
     selected_orders: list[dict] = Body(...),
