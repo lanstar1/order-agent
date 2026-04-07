@@ -97,11 +97,9 @@ _ensure_tables()
 
 # sheet_tab 컬럼 마이그레이션 (기존 DB 호환, SQLite/PG 모두 지원)
 def _migrate_sheet_tab():
+    from db.database import safe_add_column
     conn = get_connection()
-    if not column_exists(conn, 'price_data', 'sheet_tab'):
-        conn.execute("ALTER TABLE price_data ADD COLUMN sheet_tab TEXT DEFAULT ''")
-        conn.commit()
-        logger.info("[Materials] price_data.sheet_tab 컬럼 추가 완료")
+    safe_add_column(conn, 'price_data', 'sheet_tab', "TEXT DEFAULT ''")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_price_data_tab ON price_data(source_id, sheet_tab)")
     conn.commit()
     conn.close()
@@ -110,11 +108,9 @@ _migrate_sheet_tab()
 
 # row_colors 컬럼 마이그레이션 (기존 DB 호환, SQLite/PG 모두 지원)
 def _migrate_row_colors():
+    from db.database import safe_add_column
     conn = get_connection()
-    if not column_exists(conn, 'price_data', 'row_colors'):
-        conn.execute("ALTER TABLE price_data ADD COLUMN row_colors TEXT DEFAULT ''")
-        conn.commit()
-        logger.info("[Materials] price_data.row_colors 컬럼 추가 완료")
+    safe_add_column(conn, 'price_data', 'row_colors', "TEXT DEFAULT ''")
     conn.close()
 
 _migrate_row_colors()

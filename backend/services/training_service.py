@@ -71,14 +71,9 @@ def _ensure_training_tables():
     """)
 
     # 기존 테이블에 이미지 컬럼이 없으면 추가 (마이그레이션, SQLite/PG 모두 지원)
-    try:
-        if not column_exists(conn, 'po_training_pairs', 'raw_po_image'):
-            conn.execute("ALTER TABLE po_training_pairs ADD COLUMN raw_po_image BLOB DEFAULT NULL")
-            conn.execute("ALTER TABLE po_training_pairs ADD COLUMN raw_po_image_type TEXT DEFAULT ''")
-            conn.commit()
-            logger.info("[Training] 마이그레이션: raw_po_image, raw_po_image_type 컬럼 추가")
-    except Exception as e:
-        logger.warning(f"[Training] 마이그레이션 확인 중 오류 (무시): {e}")
+    from db.database import safe_add_column
+    safe_add_column(conn, 'po_training_pairs', 'raw_po_image', "BLOB DEFAULT NULL")
+    safe_add_column(conn, 'po_training_pairs', 'raw_po_image_type', "TEXT DEFAULT ''")
 
     # ── 대량 학습 테이블 ──
     conn.executescript("""

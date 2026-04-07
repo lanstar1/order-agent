@@ -261,6 +261,23 @@ def column_exists(conn, table_name, column_name):
         return column_name in cols
 
 
+def safe_add_column(conn, table_name, column_name, column_def):
+    """ALTER TABLE ADD COLUMN 안전 실행 (SQLite/PostgreSQL 호환)
+
+    PostgreSQL에서 ALTER TABLE 실패 시 트랜잭션이 abort 상태가 되므로
+    반드시 rollback 후 다음 작업을 수행해야 한다.
+    """
+    try:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+        conn.commit()
+        logger.info(f"[DB] {table_name}.{column_name} 컬럼 추가 완료")
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
 # ─── 연결 함수 ──────────────────────────────────
 def get_connection():
     """데이터베이스 연결 반환 (PG 또는 SQLite 자동 선택)"""
@@ -532,56 +549,21 @@ def init_db():
 
 
     # ── CS 마이그레이션: drive_file_id 컬럼 추가 ──
-    if not column_exists(conn, 'cs_files', 'drive_file_id'):
-        try:
-            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN drive_file_id TEXT DEFAULT ''")
-            logger.info("[DB] cs_files.drive_file_id 컬럼 추가")
-        except Exception as e:
-            logger.debug(f"[DB] cs_files.drive_file_id 추가 스킵: {e}")
+    safe_add_column(conn, 'cs_files', 'drive_file_id', "TEXT DEFAULT ''")
 
     # ── CS 마이그레이션: file_data (바이너리) + mime_type 컬럼 추가 ──
-    if not column_exists(conn, 'cs_files', 'file_data'):
-        try:
-            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN file_data BLOB")
-            logger.info("[DB] cs_files.file_data 컬럼 추가")
-        except Exception as e:
-            logger.debug(f"[DB] cs_files.file_data 추가 스킵: {e}")
-    if not column_exists(conn, 'cs_files', 'mime_type'):
-        try:
-            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN mime_type TEXT DEFAULT ''")
-            logger.info("[DB] cs_files.mime_type 컬럼 추가")
-        except Exception as e:
-            logger.debug(f"[DB] cs_files.mime_type 추가 스킵: {e}")
+    safe_add_column(conn, 'cs_files', 'file_data', "BLOB")
+    safe_add_column(conn, 'cs_files', 'mime_type', "TEXT DEFAULT ''")
 
     # ── CS 마이그레이션: disk_filename 컬럼 추가 (대용량 파일 디스크 저장용) ──
-    if not column_exists(conn, 'cs_files', 'disk_filename'):
-        try:
-            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN disk_filename TEXT DEFAULT ''")
-            logger.info("[DB] cs_files.disk_filename 컬럼 추가")
-        except Exception as e:
-            logger.debug(f"[DB] cs_files.disk_filename 추가 스킵: {e}")
+    safe_add_column(conn, 'cs_files', 'disk_filename', "TEXT DEFAULT ''")
 
     # ── AICC 마이그레이션: image_id 컬럼 추가 ──
-    if not column_exists(conn, 'aicc_messages', 'image_id'):
-        try:
-            cur_or_conn.execute("ALTER TABLE aicc_messages ADD COLUMN image_id TEXT DEFAULT ''")
-            logger.info("[DB] aicc_messages.image_id 컬럼 추가")
-        except Exception:
-            pass
+    safe_add_column(conn, 'aicc_messages', 'image_id', "TEXT DEFAULT ''")
 
     # ── AICC 마이그레이션: channel, source 컬럼 추가 ──
-    if not column_exists(conn, 'aicc_sessions', 'channel'):
-        try:
-            cur_or_conn.execute("ALTER TABLE aicc_sessions ADD COLUMN channel TEXT DEFAULT 'shop'")
-            logger.info("[DB] aicc_sessions.channel 컬럼 추가")
-        except Exception:
-            pass
-    if not column_exists(conn, 'aicc_sessions', 'source'):
-        try:
-            cur_or_conn.execute("ALTER TABLE aicc_sessions ADD COLUMN source TEXT DEFAULT ''")
-            logger.info("[DB] aicc_sessions.source 컬럼 추가")
-        except Exception:
-            pass
+    safe_add_column(conn, 'aicc_sessions', 'channel', "TEXT DEFAULT 'shop'")
+    safe_add_column(conn, 'aicc_sessions', 'source', "TEXT DEFAULT ''")
 
     # ── 판매에이전트: 업로드 파일 + 분석 작업 ──
     _sa_init_tables(conn, cur_or_conn)

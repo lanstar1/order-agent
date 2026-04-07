@@ -83,13 +83,14 @@ def _ensure_rebate_tables():
         conn.commit()
 
         # Add missing columns to existing tables
-        _add_column_if_not_exists(conn, "rebate_runs", "approved_by", "TEXT")
-        _add_column_if_not_exists(conn, "rebate_runs", "approved_at", "TIMESTAMP")
-        _add_column_if_not_exists(conn, "rebate_runs", "approval_status", "TEXT DEFAULT 'pending'")
-        _add_column_if_not_exists(conn, "rebate_runs", "approval_note", "TEXT")
-        _add_column_if_not_exists(conn, "rebate_details", "returns_amount", "INTEGER DEFAULT 0")
-        _add_column_if_not_exists(conn, "rebate_runs", "executed_by", "TEXT")
-        _add_column_if_not_exists(conn, "rebate_runs", "executed_by_name", "TEXT")
+        from db.database import safe_add_column
+        safe_add_column(conn, "rebate_runs", "approved_by", "TEXT")
+        safe_add_column(conn, "rebate_runs", "approved_at", "TIMESTAMP")
+        safe_add_column(conn, "rebate_runs", "approval_status", "TEXT DEFAULT 'pending'")
+        safe_add_column(conn, "rebate_runs", "approval_note", "TEXT")
+        safe_add_column(conn, "rebate_details", "returns_amount", "INTEGER DEFAULT 0")
+        safe_add_column(conn, "rebate_runs", "executed_by", "TEXT")
+        safe_add_column(conn, "rebate_runs", "executed_by_name", "TEXT")
     finally:
         conn.close()
 

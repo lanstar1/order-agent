@@ -130,17 +130,21 @@ def init_super_agent_tables(conn):
     # ── 마이그레이션: result_json 컬럼 추가 ──
     try:
         cur.execute("ALTER TABLE super_agent_jobs ADD COLUMN result_json TEXT DEFAULT '{}'")
+        conn.commit()
         logger.info("[SuperAgent] result_json 컬럼 추가")
     except Exception:
-        pass  # 이미 존재
+        try: conn.rollback()
+        except Exception: pass
 
     # ── 마이그레이션: artifact_path, artifact_name 컬럼 추가 ──
     for col in ["artifact_path", "artifact_name"]:
         try:
             cur.execute(f"ALTER TABLE super_agent_jobs ADD COLUMN {col} TEXT DEFAULT ''")
+            conn.commit()
             logger.info(f"[SuperAgent] {col} 컬럼 추가")
         except Exception:
-            pass
+            try: conn.rollback()
+            except Exception: pass
 
     # ── created_by 인덱스 추가 ──
     try:
