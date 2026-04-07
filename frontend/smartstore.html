@@ -55,6 +55,15 @@
         .badge-ready { background: #fef3c7; color: #92400e; }
         .badge-ship { background: #d1fae5; color: #065f46; }
         .badge-done { background: #e2e8f0; color: #475569; }
+        /* 매칭 유형 행 색상 */
+        tr.row-option td { background: #fef9c3 !important; }          /* 옵션코드: 노란색 */
+        tr.row-option:hover td { background: #fef08a !important; }
+        tr.row-addon td { background: #ede9fe !important; }           /* 추가상품: 보라색 */
+        tr.row-addon:hover td { background: #ddd6fe !important; }
+        tr.row-option.row-unchecked td, tr.row-addon.row-unchecked td { opacity: 0.4; }
+        .match-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; margin-left: 4px; }
+        .match-tag-opt  { background: #fbbf24; color: #78350f; }     /* 옵션 */
+        .match-tag-add  { background: #a78bfa; color: #4c1d95; }     /* 추가상품 */
 
         .sel-bar { display: flex; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; flex-wrap: wrap; }
         .sel-bar .sel-info { font-size: 14px; font-weight: 600; color: #334155; }
@@ -415,6 +424,44 @@ function getStatus(order) {
     return m ? `<span class="badge ${m[1]}">${m[0]}</span>` : (st || '-');
 }
 
+// ── 매칭 유형 분류 (백엔드 로직 미러링) ──
+function classifyMatchType(order) {
+    const po = order.productOrder || {};
+    const option = (po.productOption || po.optionInfo || '').trim();
+    const prodName = (po.productName || '').trim();
+
+    if (option) {
+        // 자동추출 시도 (백엔드와 동일 로직)
+        const extracted = extractErpCodeFromOption(option);
+        if (extracted) return 'option';   // 옵션코드 자동추출
+    }
+
+    // 추가상품 판별: 상품명 자체가 코드처럼 생긴 경우 (공백없고 하이픈 포함 등)
+    if (/^[A-Za-z0-9][A-Za-z0-9\-\.]+$/.test(prodName) && prodName.length >= 4) return 'addon';
+
+    return 'main';  // 메인상품 (상품번호 기준)
+}
+
+function extractErpCodeFromOption(text) {
+    if (!text) return null;
+    if (text.includes(' / ')) text = text.split(' / ')[0].trim();
+
+    function valid(s) { return s && !s.includes(' ') && s.length >= 3 && /^[A-Za-z0-9]/.test(s); }
+
+    // 패턴1: 닫힌 괄호
+    let m = text.match(/\(([^()]*(?:\([^)]*\))[^()]*|[^()]+)\)\s*$/);
+    if (m && valid(m[1].trim())) return m[1].trim();
+    // 패턴1-b: 닫히지 않은 괄호
+    m = text.match(/\(([A-Za-z0-9][A-Za-z0-9\-\(\)\.]*)\s*$/);
+    if (m && valid(m[1].trim())) return m[1].trim();
+    // 패턴2: 콜론 뒤
+    if (text.includes(':')) {
+        const after = text.split(':').pop().trim();
+        if (valid(after)) return after;
+    }
+    return null;
+}
+
 // ── 테이블 렌더링 ──
 function renderTbl(orders){
     const w = document.getElementById('tbl-wrap');
@@ -437,11 +484,18 @@ function renderTbl(orders){
     for(const o of orders){
         const poid = getProductOrderId(o);
         const checked = _checkedSet.has(poid);
-        h += `<tr data-poid="${poid}" class="${checked ? '' : 'row-unchecked'}">
+        const matchType = classifyMatchType(o);
+        const rowClass = matchType === 'option' ? 'row-option' : matchType === 'addon' ? 'row-addon' : '';
+        const matchTag = matchType === 'option'
+            ? '<span class="match-tag match-tag-opt">옵션</span>'
+            : matchType === 'addon'
+            ? '<span class="match-tag match-tag-add">추가상품</span>'
+            : '';
+        h += `<tr data-poid="${poid}" class="${rowClass}${checked ? '' : ' row-unchecked'}">
             <td style="text-align:center;"><input type="checkbox" class="row-cb" ${checked?'checked':''} onchange="toggleCheck('${poid}',this)"></td>
             <td class="mono">${getOrderId(o)}</td>
             <td class="mono">${poid}</td>
-            <td>${getProductName(o)}</td>
+            <td>${getProductName(o)}${matchTag}</td>
             <td>${getOptionText(o)}</td>
             <td style="text-align:center">${getQuantity(o)}</td>
             <td style="text-align:right">${Number(getPayment(o)).toLocaleString()}원</td>
