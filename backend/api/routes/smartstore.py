@@ -31,6 +31,8 @@ _option_override_map: dict = {}
 _addon_map: dict = {}
 # 모델명: 상품번호 → 모델명 (로젠 송장용, 전 시트 공용)
 _model_map: dict = {}
+# 역방향: 모델명 → ERP품목코드 (옵션 텍스트에서 모델명 추출 시 ERP코드로 변환)
+_model_to_erp_map: dict = {}
 
 
 def _load_json(path) -> dict:
@@ -47,14 +49,24 @@ def _save_json(path, data: dict):
 
 
 def _load_product_map():
-    global _product_map, _option_override_map, _addon_map, _model_map
+    global _product_map, _option_override_map, _addon_map, _model_map, _model_to_erp_map
     _product_map        = _load_json(SMARTSTORE_PRODUCT_MAP_PATH)
     _option_override_map = _load_json(SMARTSTORE_OPTION_MAP_PATH)
     _addon_map          = _load_json(SMARTSTORE_ADDON_MAP_PATH)
     _model_map          = _load_json(SMARTSTORE_MODEL_MAP_PATH)
+    # 역방향 맵 빌드: 모델명 → ERP품목코드 (전 시트 포함)
+    _model_to_erp_map = {}
+    for pno, model in _model_map.items():
+        if model:
+            if pno in _product_map:
+                _model_to_erp_map[model] = _product_map[pno]
+            elif pno in _option_override_map:
+                _model_to_erp_map[model] = _option_override_map[pno]
+            elif pno in _addon_map:
+                _model_to_erp_map[model] = _addon_map[pno]
     logger.info(
         f"[SS] 매핑 로드 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} "
-        f"추가:{len(_addon_map)} 모델:{len(_model_map)}"
+        f"추가:{len(_addon_map)} 모델역방향:{len(_model_to_erp_map)}"
     )
 
 
@@ -133,11 +145,12 @@ def _match_item_code(order: dict) -> Optional[str]:
             code = _option_override_map[product_no]
             logger.info(f"[SS] 옵션오버라이드(시트2): {product_no} → {code}")
             return code
-        # 2) 자동 추출
+        # 2) 자동 추출 (모델명 추출 시 역방향 맵으로 ERP품목코드 변환)
         code = _extract_erp_code_from_option(option_text)
         if code:
-            logger.info(f"[SS] 옵션자동추출: '{option_text[:40]}' → {code}")
-            return code
+            erp_code = _model_to_erp_map.get(code, code)
+            logger.info(f"[SS] 옵션자동추출: '{option_text[:40]}' → 모델:{code} → ERP:{erp_code}")
+            return erp_code
 
     # 3) 시트1 메인상품
     if product_no and product_no in _product_map:
@@ -731,12 +744,13 @@ async def import_product_map_excel(file: bytes = Body(..., media_type="applicati
         if total == 0:
             return {"success": False, "error": "유효한 데이터가 없습니다."}
 
-        global _product_map, _option_override_map, _addon_map, _model_map
+        global _product_map, _option_override_map, _addon_map, _model_map, _model_to_erp_map
         _product_map         = new_product_map
         _option_override_map = new_option_map
         _addon_map           = new_addon_map
         _model_map           = new_model_map
         _save_product_map()
+        _load_product_map()   # 역방향 맵 재빌드
 
         logger.info(f"[SS] Excel 가져오기 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} 추가:{len(_addon_map)}")
         return {
