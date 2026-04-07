@@ -331,23 +331,33 @@ async def logen_export_excel(
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "로젠전송"
+    ws.title = "엑셀파일첫행-제목있음"
 
-    headers = ["주문번호", "상품주문번호", "수령인", "연락처", "주소", "상품명(옵션)", "수량", "송장번호"]
+    # 로젠 표준 형식 (예제 파일 동일)
+    # A:수하인명 B:(빈칸) C:수하인주소 D:수하인전화번호 E:수하인핸드폰번호
+    # F:택배수량 G:택배운임 H:운임구분 I:품목명 J:(빈칸) K:배송메세지
+    # L:주문번호(매칭용) M:상품주문번호(매칭용)
+    headers = ["수하인명", None, "수하인주소", "수하인전화번호", "수하인핸드폰번호",
+               "택배수량", "택배운임", "운임구분", "품목명", None, "배송메세지",
+               "주문번호(내부)", "상품주문번호(내부)"]
     hdr_fill = PatternFill("solid", fgColor="1F4E79")
     hdr_font = Font(bold=True, color="FFFFFF")
     for ci, h in enumerate(headers, 1):
-        c = ws.cell(1, ci, h)
-        c.fill = hdr_fill; c.font = hdr_font; c.alignment = Alignment(horizontal="center")
+        if h:
+            c = ws.cell(1, ci, h)
+            c.fill = hdr_fill; c.font = hdr_font; c.alignment = Alignment(horizontal="center")
 
-    ws.column_dimensions["A"].width = 20
-    ws.column_dimensions["B"].width = 22
-    ws.column_dimensions["C"].width = 12
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["C"].width = 45
     ws.column_dimensions["D"].width = 16
-    ws.column_dimensions["E"].width = 40
-    ws.column_dimensions["F"].width = 30
-    ws.column_dimensions["G"].width = 8
-    ws.column_dimensions["H"].width = 18
+    ws.column_dimensions["E"].width = 16
+    ws.column_dimensions["F"].width = 8
+    ws.column_dimensions["G"].width = 10
+    ws.column_dimensions["H"].width = 10
+    ws.column_dimensions["I"].width = 35
+    ws.column_dimensions["K"].width = 20
+    ws.column_dimensions["L"].width = 20
+    ws.column_dimensions["M"].width = 22
 
     # orderId 기준으로 한 행씩 (같은 orderId는 첫 번째만)
     seen = set()
@@ -358,24 +368,32 @@ async def logen_export_excel(
         oid = od.get("orderId", "")
         poid = po.get("productOrderId", "")
         addr = po.get("shippingAddress", {})
-        rcv  = addr.get("name", "")
-        tel  = addr.get("tel1", "") or addr.get("tel2", "")
+        rcv      = addr.get("name", "")
+        tel_home = addr.get("tel1", "")
+        tel_cell = addr.get("tel2", "") or addr.get("tel1", "")
         full_addr = ((addr.get("baseAddress","") or "") + " " + (addr.get("detailedAddress","") or "")).strip()
-        prod_nm = po.get("productName", "")
-        option  = po.get("productOption", "")
-        goods   = (prod_nm + (" / " + option if option else ""))[:60]
-        qty     = po.get("quantity", 1)
+        prod_nm  = po.get("productName", "")
+        option   = po.get("productOption", "")
+        goods    = (prod_nm + (" / " + option if option else ""))[:60]
+        qty      = int(po.get("quantity", 1) or 1)
+        ship_fee = int(float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0))
+        fare_tp  = "010"  # 선불
 
         if oid and oid not in seen:
             seen.add(oid)
-            ws.cell(row, 1, oid)
-            ws.cell(row, 2, poid)
-            ws.cell(row, 3, rcv)
-            ws.cell(row, 4, tel)
-            ws.cell(row, 5, full_addr)
-            ws.cell(row, 6, goods)
-            ws.cell(row, 7, qty)
-            ws.cell(row, 8, "")   # 송장번호 빈칸
+            ws.cell(row, 1,  rcv)
+            ws.cell(row, 2,  None)
+            ws.cell(row, 3,  full_addr)
+            ws.cell(row, 4,  tel_home)
+            ws.cell(row, 5,  tel_cell)
+            ws.cell(row, 6,  qty)
+            ws.cell(row, 7,  ship_fee)
+            ws.cell(row, 8,  fare_tp)
+            ws.cell(row, 9,  goods)
+            ws.cell(row, 10, None)
+            ws.cell(row, 11, "")   # 배송메세지
+            ws.cell(row, 12, oid)  # 주문번호(매칭용)
+            ws.cell(row, 13, poid) # 상품주문번호(매칭용)
             row += 1
 
     buf = io.BytesIO()
@@ -406,11 +424,21 @@ async def logen_dispatch_excel(
     dispatch_list = []
     skipped = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        oid      = str(row[0] or "").strip()
-        poid     = str(row[1] or "").strip()
-        tracking = str(row[7] or "").strip()  # H열
+        if not any(row):
+            continue
+        # 로젠 반환 파일: 매칭용 L(12)=주문번호, M(13)=상품주문번호
+        # 송장번호: 로젠이 추가하는 열 위치를 순서대로 탐색
+        poid = str(row[12] or "").strip() if len(row) > 12 else ""  # M열(내부)
+        # 송장번호 후보: N열(14), O열(15), P열(16) 순으로 탐색
+        tracking = ""
+        for col_idx in [13, 14, 15, 16]:
+            if len(row) > col_idx:
+                v = str(row[col_idx] or "").strip()
+                if v and v != "None" and v.isdigit() and len(v) >= 10:
+                    tracking = v
+                    break
         if not tracking or tracking == "None":
-            skipped.append(oid)
+            skipped.append(poid or str(row[0] or ""))
             continue
         if poid:
             dispatch_list.append({
