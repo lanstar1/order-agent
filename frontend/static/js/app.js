@@ -7427,12 +7427,9 @@ function reconcileNewMatch() {
 // ═══════════════════════════════════════════════════════════
 (function() {
   let _mapSettings = null;
-  let _mapProducts = [];
   const _platClass = {'네이버':'naver','쿠팡':'coupang','G마켓':'gmarket','옥션':'auction','11번가':'11st'};
 
-  window.initMapMonitor = async function() {
-    await mapLoadDashboard();
-  };
+  window.initMapMonitor = async function() { await mapLoadDashboard(); };
 
   window.switchMapTab = function(tabId) {
     document.querySelectorAll('.map-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.mapTab === tabId));
@@ -7445,328 +7442,177 @@ function reconcileNewMatch() {
     else if (tabId === 'settings') mapLoadSettings();
   };
 
-  function sevBadge(s) { return `<span class="map-sev map-sev-${s}">${s}</span>`; }
-  function platBadge(p) { return `<span class="map-plat map-plat-${_platClass[p]||'naver'}">${p}</span>`; }
-  function pct(map, sold) { return map > 0 ? ((map - sold) / map * 100).toFixed(1) : 0; }
+  function sev(s) { return `<span class="map-sev map-sev-${s}">${s}</span>`; }
+  function plat(p) { return `<span class="map-plat map-plat-${_platClass[p]||'naver'}">${p}</span>`; }
   function won(n) { return (n||0).toLocaleString() + '원'; }
 
-  // ── 대시보드 ──────────────────────────
+  // ── 대시보드 ──
   async function mapLoadDashboard() {
     try {
-      const d = await api('/api/map/dashboard');
+      const d = await api.get('/api/map/dashboard');
       _mapSettings = d.settings_summary;
       document.getElementById('map-status-text').textContent =
-        `감시 중: ${d.monitored_count}개 제품 · 하루 ${(d.settings_summary.schedules||[]).length}회 수집 · 상시감시 ${d.watch_count}개`;
-      // 통계 카드
+        `감시 중: ${d.monitored_count}개 제품 · 하루 ${(d.settings_summary.schedules||[]).length}회 · 상시감시 ${d.watch_count}개`;
       const vs = d.violation_stats || {};
       document.getElementById('map-stats-cards').innerHTML = `
         <div class="map-stat-card"><div class="label">📦 감시 제품</div><div class="value">${d.monitored_count}</div><div class="sub">${won(d.settings_summary.min_price)} 이상</div></div>
-        <div class="map-stat-card"><div class="label">🚨 위반 발견</div><div class="value" style="color:#dc2626">${vs.total||0}</div><div class="sub">최근 7일</div></div>
+        <div class="map-stat-card"><div class="label">🚨 위반</div><div class="value" style="color:#dc2626">${vs.total||0}</div><div class="sub">최근 7일</div></div>
         <div class="map-stat-card"><div class="label">🔴 긴급</div><div class="value" style="color:#dc2626">${vs.critical||0}</div><div class="sub">CRITICAL</div></div>
-        <div class="map-stat-card"><div class="label">👁 상시감시</div><div class="value" style="color:#7c3aed">${d.watch_count}</div><div class="sub">${d.settings_summary.watch_interval_hours||2}시간 간격</div></div>`;
-      // 최근 위반
+        <div class="map-stat-card"><div class="label">👁 상시감시</div><div class="value" style="color:#7c3aed">${d.watch_count}</div><div class="sub">${d.settings_summary.watch_interval_hours||2}h 간격</div></div>`;
       const rv = d.recent_violations || [];
-      if (rv.length === 0) {
-        document.getElementById('map-recent-violations').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">최근 위반 내역이 없습니다</p>';
-      } else {
+      if (!rv.length) { document.getElementById('map-recent-violations').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">최근 위반 없음</p>'; }
+      else {
         let h = '<table class="map-tbl"><thead><tr><th>심각도</th><th>제품</th><th>셀러</th><th>플랫폼</th><th>지도가</th><th>판매가</th><th>편차</th><th>유형</th><th>탐지</th></tr></thead><tbody>';
-        rv.forEach(v => {
-          h += `<tr><td>${sevBadge(v.severity)}</td><td><b>${v.product_name||''}</b><br><span style="font-size:11px;color:#94a3b8">${v.model_name||''}</span></td>
-            <td>${v.seller_name}</td><td>${platBadge(v.platform)}</td><td style="color:#64748b">${won(v.map_price)}</td>
-            <td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626">-${v.deviation_pct}%</td>
-            <td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">${v.violation_type}</span></td>
-            <td style="font-size:11px;color:#64748b">${(v.detected_at||'').slice(0,16)}</td></tr>`;
-        });
+        rv.forEach(v => { h += `<tr><td>${sev(v.severity)}</td><td><b>${v.product_name||''}</b><br><span style="font-size:11px;color:#94a3b8">${v.model_name||''}</span></td><td>${v.seller_name}</td><td>${plat(v.platform)}</td><td style="color:#64748b">${won(v.map_price)}</td><td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626">-${v.deviation_pct}%</td><td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">${v.violation_type}</span></td><td style="font-size:11px;color:#64748b">${(v.detected_at||'').slice(0,16)}</td></tr>`; });
         h += '</tbody></table>';
         document.getElementById('map-recent-violations').innerHTML = h;
       }
-      // Top 셀러
       const ts = d.top_sellers || [];
-      if (ts.length === 0) {
-        document.getElementById('map-top-sellers').innerHTML = '<p style="color:#94a3b8">위반 이력 없음</p>';
-      } else {
+      if (!ts.length) { document.getElementById('map-top-sellers').innerHTML = '<p style="color:#94a3b8">위반 이력 없음</p>'; }
+      else {
         let h = '';
-        ts.forEach((s,i) => {
-          h += `<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f1f5f9">
-            <span style="width:22px;height:22px;border-radius:50%;background:${i<2?'#fef2f2':'#f8fafc'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${i<2?'#dc2626':'#64748b'}">${i+1}</span>
-            <div style="flex:1"><b style="font-size:13px">${s.seller_name}</b> <span style="font-size:11px;color:#94a3b8">${s.platform}</span></div>
-            <span style="font-weight:700;color:${s.cnt>=5?'#dc2626':'#f59e0b'};font-size:13px">${s.cnt}건</span></div>`;
-        });
+        ts.forEach((s,i) => { h += `<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f1f5f9"><span style="width:22px;height:22px;border-radius:50%;background:${i<2?'#fef2f2':'#f8fafc'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${i<2?'#dc2626':'#64748b'}">${i+1}</span><div style="flex:1"><b style="font-size:13px">${s.seller_name}</b> <span style="font-size:11px;color:#94a3b8">${s.platform}</span></div><span style="font-weight:700;color:${s.cnt>=5?'#dc2626':'#f59e0b'};font-size:13px">${s.cnt}건</span></div>`; });
         document.getElementById('map-top-sellers').innerHTML = h;
       }
-      // 요약
       const lc = d.last_collection;
-      document.getElementById('map-summary').innerHTML = `
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">전체 제품</span><b>${d.total_products}개</b></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">감시 대상</span><b style="color:#2563eb">${d.monitored_count}개</b></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">상시감시</span><b style="color:#7c3aed">${d.watch_count}개</b></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">수집 횟수</span><b>하루 ${(d.settings_summary.schedules||[]).length}회</b></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">감시 쇼핑몰</span><b>${(d.settings_summary.platforms||[]).length}개</b></div>
-          <div style="height:1px;background:#e2e8f0"></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">마지막 수집</span>
-            <span style="font-size:12px;color:${lc?'#16a34a':'#94a3b8'};font-weight:600">${lc?(lc.finished_at||lc.started_at||'').slice(0,16)+' ✓':'미실행'}</span></div>
-        </div>`;
-    } catch(e) { console.error('MAP 대시보드 오류:', e); }
+      document.getElementById('map-summary').innerHTML = `<div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">전체 제품</span><b>${d.total_products}개</b></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">감시 대상</span><b style="color:#2563eb">${d.monitored_count}개</b></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">상시감시</span><b style="color:#7c3aed">${d.watch_count}개</b></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">수집 횟수</span><b>하루 ${(d.settings_summary.schedules||[]).length}회</b></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">쇼핑몰</span><b>${(d.settings_summary.platforms||[]).length}개</b></div>
+        <div style="height:1px;background:#e2e8f0"></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">마지막 수집</span><span style="font-size:12px;color:${lc?'#16a34a':'#94a3b8'};font-weight:600">${lc?(lc.finished_at||lc.started_at||'').slice(0,16)+' ✓':'미실행'}</span></div></div>`;
+    } catch(e) { console.error('MAP 대시보드:', e); }
   }
 
-  // ── 위반현황 ──────────────────────────
+  // ── 위반현황 ──
   window.mapLoadViolations = async function() {
-    const sev = document.getElementById('map-vio-severity').value;
-    const plat = document.getElementById('map-vio-platform').value;
-    const days = document.getElementById('map-vio-days').value;
+    const sv = document.getElementById('map-vio-severity').value;
+    const pl = document.getElementById('map-vio-platform').value;
+    const dy = document.getElementById('map-vio-days').value;
     try {
-      const d = await api(`/api/map/violations?severity=${sev}&platform=${plat}&days=${days}&limit=50`);
+      const d = await api.get(`/api/map/violations?severity=${sv}&platform=${pl}&days=${dy}&limit=50`);
       const vios = d.violations || [];
-      if (vios.length === 0) {
-        document.getElementById('map-violations-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">위반 내역이 없습니다</p>';
-        return;
-      }
-      let h = `<table class="map-tbl"><thead><tr><th>심각도</th><th>제품</th><th>모델명</th><th>셀러</th><th>플랫폼</th><th>지도가</th><th>판매가</th><th>편차</th><th>유형</th><th>탐지</th><th>조치</th></tr></thead><tbody>`;
-      vios.forEach(v => {
-        h += `<tr><td>${sevBadge(v.severity)}</td><td><b>${v.product_name||''}</b></td><td style="font-family:monospace;font-size:12px;color:#64748b">${v.model_name||''}</td>
-          <td>${v.seller_name}</td><td>${platBadge(v.platform)}</td><td style="color:#64748b">${won(v.map_price)}</td>
-          <td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626;font-weight:600">-${v.deviation_pct}%</td>
-          <td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">${v.violation_type}</span></td>
-          <td style="font-size:11px;color:#64748b;white-space:nowrap">${(v.detected_at||'').slice(0,16)}</td>
-          <td>${v.evidence_url?`<a href="${v.evidence_url}" target="_blank" style="font-size:11px">🔗</a>`:''} 
-          <button class="btn btn-xs" onclick="mapResolveVio(${v.id})" style="font-size:11px;padding:2px 8px">해결</button></td></tr>`;
-      });
+      if (!vios.length) { document.getElementById('map-violations-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">위반 없음</p>'; return; }
+      let h = '<table class="map-tbl"><thead><tr><th>심각도</th><th>제품</th><th>모델</th><th>셀러</th><th>플랫폼</th><th>지도가</th><th>판매가</th><th>편차</th><th>유형</th><th>탐지</th><th>조치</th></tr></thead><tbody>';
+      vios.forEach(v => { h += `<tr><td>${sev(v.severity)}</td><td><b>${v.product_name||''}</b></td><td style="font-family:monospace;font-size:12px;color:#64748b">${v.model_name||''}</td><td>${v.seller_name}</td><td>${plat(v.platform)}</td><td style="color:#64748b">${won(v.map_price)}</td><td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626">-${v.deviation_pct}%</td><td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">${v.violation_type}</span></td><td style="font-size:11px;color:#64748b;white-space:nowrap">${(v.detected_at||'').slice(0,16)}</td><td>${v.evidence_url?`<a href="${v.evidence_url}" target="_blank" style="font-size:11px">🔗</a> `:''}<button class="btn btn-xs" onclick="mapResolveVio(${v.id})" style="font-size:11px;padding:2px 8px">해결</button></td></tr>`; });
       h += '</tbody></table>';
       document.getElementById('map-violations-table').innerHTML = h;
-    } catch(e) { console.error('위반 로드 오류:', e); }
+    } catch(e) { console.error('위반 로드:', e); }
   };
-
   window.mapResolveVio = async function(id) {
-    const note = prompt('해결 내용을 입력하세요:');
-    if (note === null) return;
-    try {
-      await api(`/api/map/violations/${id}/resolve`, { method: 'PUT', body: JSON.stringify({ resolution_note: note }), headers: {'Content-Type':'application/json'} });
-      alert('해결 처리 완료');
-      mapLoadViolations();
-    } catch(e) { alert('오류: ' + e.message); }
+    const note = prompt('해결 내용:'); if (note === null) return;
+    try { await api.put(`/api/map/violations/${id}/resolve`, { resolution_note: note }); alert('해결 완료'); mapLoadViolations(); } catch(e) { alert('오류: '+e.message); }
   };
 
-  // ── 제품·지도가 ──────────────────────────
+  // ── 제품·지도가 ──
   window.mapLoadProducts = async function() {
-    const search = (document.getElementById('map-prod-search')?.value || '').trim();
+    const q = (document.getElementById('map-prod-search')?.value || '').trim();
     try {
-      const products = await api(`/api/map/products?search=${encodeURIComponent(search)}`);
-      _mapProducts = products;
-      const settings = _mapSettings || { min_price: 5000 };
-      if (products.length === 0) {
-        document.getElementById('map-products-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">등록된 제품이 없습니다. 엑셀 업로드 또는 제품 추가를 해주세요.</p>';
-        return;
-      }
-      let h = `<p style="font-size:12px;color:#64748b;margin:0 0 8px">ℹ️ 지도가를 변경하려면 금액을 직접 수정 후 Enter를 누르세요. ${won(settings.min_price)} 미만은 감시 제외됩니다.</p>
-        <table class="map-tbl"><thead><tr><th>모델명</th><th>제품명</th><th>브랜드</th><th>지도가</th><th>현재 최저가</th><th>상태</th><th>상시감시</th><th></th></tr></thead><tbody>`;
+      const products = await api.get(`/api/map/products?search=${encodeURIComponent(q)}`);
+      const mp = (_mapSettings||{}).min_price || 5000;
+      if (!products.length) { document.getElementById('map-products-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">제품 없음. 엑셀 업로드 또는 제품 추가하세요.</p>'; return; }
+      let h = `<p style="font-size:12px;color:#64748b;margin:0 0 8px">ℹ️ 지도가 변경 후 Enter. ${won(mp)} 미만은 감시 제외.</p><table class="map-tbl"><thead><tr><th>모델명</th><th>제품명</th><th>브랜드</th><th>지도가</th><th>최저가</th><th>상태</th><th>상시감시</th><th></th></tr></thead><tbody>`;
       products.forEach(p => {
-        const excluded = p.map_price < settings.min_price;
-        const status = excluded ? '<span style="background:#f1f5f9;color:#94a3b8;padding:2px 6px;border-radius:4px;font-size:11px">제외</span>'
+        const ex = p.map_price < mp;
+        const st = ex ? '<span style="background:#f1f5f9;color:#94a3b8;padding:2px 6px;border-radius:4px;font-size:11px">제외</span>'
           : (p.active_violations > 0 ? '<span style="background:#fef2f2;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">위반</span>'
           : '<span style="background:#f0fdf4;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">정상</span>');
-        h += `<tr style="opacity:${excluded?0.4:1}">
-          <td style="font-family:monospace;font-weight:600;color:#334155">${p.model_name}</td>
-          <td>${p.product_name}</td><td style="color:#64748b">${p.brand}</td>
-          <td><input type="number" value="${p.map_price}" step="100" style="width:90px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;font-weight:600;text-align:right"
-            onchange="mapUpdatePrice(${p.id},this.value)">원</td>
-          <td style="font-weight:700;color:${p.active_violations>0?'#dc2626':'#16a34a'}">${p.current_min_price?won(p.current_min_price):'-'}</td>
-          <td>${status}</td>
-          <td><button class="map-toggle ${p.is_watched?'on':'off'}" onclick="mapToggleWatch(${p.id},${p.is_watched?0:1})"><div class="knob"></div></button></td>
-          <td><button class="btn btn-xs" onclick="mapDeleteProduct(${p.id})" style="font-size:11px;padding:2px 6px;color:#dc2626">삭제</button></td></tr>`;
+        h += `<tr style="opacity:${ex?0.4:1}"><td style="font-family:monospace;font-weight:600">${p.model_name}</td><td>${p.product_name}</td><td style="color:#64748b">${p.brand}</td><td><input type="number" value="${p.map_price}" step="100" style="width:90px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;font-weight:600;text-align:right" onchange="mapUpdatePrice(${p.id},this.value)">원</td><td style="font-weight:700;color:${p.active_violations>0?'#dc2626':'#16a34a'}">${p.current_min_price?won(p.current_min_price):'-'}</td><td>${st}</td><td><button class="map-toggle ${p.is_watched?'on':'off'}" onclick="mapToggleWatch(${p.id},${p.is_watched?0:1})"><div class="knob"></div></button></td><td><button class="btn btn-xs" onclick="mapDeleteProduct(${p.id})" style="font-size:11px;padding:2px 6px;color:#dc2626">삭제</button></td></tr>`;
       });
       h += '</tbody></table>';
       document.getElementById('map-products-table').innerHTML = h;
-    } catch(e) { console.error('제품 로드 오류:', e); }
+    } catch(e) { console.error('제품 로드:', e); }
   };
-
-  window.mapUpdatePrice = async function(id, price) {
-    try {
-      await api(`/api/map/products/${id}/map-price?map_price=${price}`, { method: 'PUT' });
-    } catch(e) { alert('가격 변경 오류: ' + e.message); }
-  };
-
-  window.mapToggleWatch = async function(id, on) {
-    try {
-      await api(`/api/map/products/${id}/watch?watched=${!!on}`, { method: 'PUT' });
-      mapLoadProducts();
-    } catch(e) { alert('오류: ' + e.message); }
-  };
-
-  window.mapDeleteProduct = async function(id) {
-    if (!confirm('이 제품을 삭제하시겠습니까?')) return;
-    try {
-      await api(`/api/map/products/${id}`, { method: 'DELETE' });
-      mapLoadProducts();
-    } catch(e) { alert('삭제 오류: ' + e.message); }
-  };
-
+  window.mapUpdatePrice = async function(id, v) { try { await api.put(`/api/map/products/${id}/map-price?map_price=${v}`); } catch(e) { alert('오류: '+e.message); } };
+  window.mapToggleWatch = async function(id, on) { try { await api.put(`/api/map/products/${id}/watch?watched=${!!on}`); mapLoadProducts(); } catch(e) { alert('오류: '+e.message); } };
+  window.mapDeleteProduct = async function(id) { if (!confirm('삭제하시겠습니까?')) return; try { await api.delete(`/api/map/products/${id}`); mapLoadProducts(); } catch(e) { alert('오류: '+e.message); } };
   window.mapShowAddProduct = function() {
     const mn = prompt('모델명:'); if (!mn) return;
     const pn = prompt('제품명:'); if (!pn) return;
     const mp = prompt('지도가 (원):', '0'); if (!mp) return;
     const br = prompt('브랜드:', 'LANstar') || 'LANstar';
-    api('/api/map/products', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({model_name:mn, product_name:pn, map_price:parseInt(mp), brand:br})
-    }).then(() => { alert('등록 완료'); mapLoadProducts(); }).catch(e => alert('오류: '+e.message));
+    api.post('/api/map/products', {model_name:mn, product_name:pn, map_price:parseInt(mp), brand:br})
+      .then(() => { alert('등록 완료'); mapLoadProducts(); }).catch(e => alert('오류: '+e.message));
   };
-
   window.mapUploadExcel = async function() {
-    const file = document.getElementById('map-excel-file').files[0];
-    if (!file) return;
+    const file = document.getElementById('map-excel-file').files[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try {
-      const r = await api('/api/map/products/upload', { method: 'POST', body: fd });
-      alert(r.message + (r.errors?.length ? '\n오류: ' + r.errors.join('\n') : ''));
-      mapLoadProducts();
-    } catch(e) { alert('업로드 오류: ' + e.message); }
+    try { const r = await api.postForm('/api/map/products/upload', fd); alert(r.message); mapLoadProducts(); } catch(e) { alert('업로드 오류: '+e.message); }
     document.getElementById('map-excel-file').value = '';
   };
 
-  // ── 상시감시 ──────────────────────────
+  // ── 상시감시 ──
   async function mapLoadWatch() {
     try {
-      const products = await api('/api/map/products?watched_only=true');
-      if (products.length === 0) {
-        document.getElementById('map-watch-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">상시 감시 중인 제품이 없습니다. \'제품·지도가\' 탭에서 상시감시를 켜주세요.</p>';
-        return;
-      }
-      let h = `<table class="map-tbl"><thead><tr><th>모델명</th><th>제품명</th><th>지도가</th><th>현재 최저가</th><th>상태</th><th>해제</th></tr></thead><tbody>`;
-      products.forEach(p => {
-        h += `<tr><td style="font-family:monospace;font-weight:600;color:#7c3aed">${p.model_name}</td>
-          <td>${p.product_name}</td><td style="color:#64748b">${won(p.map_price)}</td>
-          <td style="font-weight:700;color:${p.active_violations>0?'#dc2626':'#16a34a'}">${p.current_min_price?won(p.current_min_price):'-'}</td>
-          <td>${p.active_violations>0?'<span style="background:#fef2f2;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">위반 중</span>'
-          :'<span style="background:#f0fdf4;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">정상</span>'}</td>
-          <td><button class="btn btn-xs" onclick="mapToggleWatch(${p.id},0)" style="font-size:11px;padding:2px 8px;color:#dc2626;border-color:#fecaca;background:#fef2f2">해제</button></td></tr>`;
-      });
+      const products = await api.get('/api/map/products?watched_only=true');
+      if (!products.length) { document.getElementById('map-watch-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">상시 감시 제품 없음. \'제품·지도가\' 탭에서 켜세요.</p>'; return; }
+      let h = '<table class="map-tbl"><thead><tr><th>모델명</th><th>제품명</th><th>지도가</th><th>최저가</th><th>상태</th><th>해제</th></tr></thead><tbody>';
+      products.forEach(p => { h += `<tr><td style="font-family:monospace;font-weight:600;color:#7c3aed">${p.model_name}</td><td>${p.product_name}</td><td style="color:#64748b">${won(p.map_price)}</td><td style="font-weight:700;color:${p.active_violations>0?'#dc2626':'#16a34a'}">${p.current_min_price?won(p.current_min_price):'-'}</td><td>${p.active_violations>0?'<span style="background:#fef2f2;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">위반</span>':'<span style="background:#f0fdf4;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">정상</span>'}</td><td><button class="btn btn-xs" onclick="mapToggleWatch(${p.id},0)" style="font-size:11px;padding:2px 8px;color:#dc2626;border-color:#fecaca;background:#fef2f2">해제</button></td></tr>`; });
       h += '</tbody></table>';
       document.getElementById('map-watch-table').innerHTML = h;
-    } catch(e) { console.error('상시감시 로드 오류:', e); }
+    } catch(e) { console.error('상시감시:', e); }
   }
 
-  // ── 셀러관리 ──────────────────────────
+  // ── 셀러관리 ──
   async function mapLoadSellers() {
     try {
-      const sellers = await api('/api/map/sellers');
-      if (sellers.length === 0) {
-        document.getElementById('map-sellers-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">등록된 셀러가 없습니다. 가격 수집 후 자동으로 등록됩니다.</p>';
-        return;
-      }
-      let h = `<table class="map-tbl"><thead><tr><th>위험도</th><th>셀러명</th><th>플랫폼</th><th>총 위반</th><th>최근 30일</th><th>마지막 위반</th></tr></thead><tbody>`;
-      sellers.forEach(s => {
-        const rc = s.risk_level==='high'?'#dc2626':s.risk_level==='medium'?'#f59e0b':'#16a34a';
-        const rl = s.risk_level==='high'?'높음':s.risk_level==='medium'?'보통':'낮음';
-        h += `<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${rc};margin-right:6px"></span><span style="font-size:12px;font-weight:600;color:${rc}">${rl}</span></td>
-          <td style="font-weight:600">${s.seller_name}</td><td>${platBadge(s.platform)}</td>
-          <td style="font-weight:700;color:${s.total_violations>5?'#dc2626':'#334155'}">${s.total_violations}건</td>
-          <td>${s.recent_violations||0}건</td>
-          <td style="font-size:12px;color:#64748b">${s.last_violation_at?(s.last_violation_at).slice(0,10):'-'}</td></tr>`;
-      });
+      const sellers = await api.get('/api/map/sellers');
+      if (!sellers.length) { document.getElementById('map-sellers-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">셀러 없음. 수집 후 자동 등록됩니다.</p>'; return; }
+      let h = '<table class="map-tbl"><thead><tr><th>위험도</th><th>셀러명</th><th>플랫폼</th><th>총 위반</th><th>최근 30일</th><th>마지막 위반</th></tr></thead><tbody>';
+      sellers.forEach(s => { const rc = s.risk_level==='high'?'#dc2626':s.risk_level==='medium'?'#f59e0b':'#16a34a'; const rl = s.risk_level==='high'?'높음':s.risk_level==='medium'?'보통':'낮음'; h += `<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${rc};margin-right:6px"></span><span style="font-size:12px;font-weight:600;color:${rc}">${rl}</span></td><td style="font-weight:600">${s.seller_name}</td><td>${plat(s.platform)}</td><td style="font-weight:700;color:${s.total_violations>5?'#dc2626':'#334155'}">${s.total_violations}건</td><td>${s.recent_violations||0}건</td><td style="font-size:12px;color:#64748b">${s.last_violation_at?(s.last_violation_at).slice(0,10):'-'}</td></tr>`; });
       h += '</tbody></table>';
       document.getElementById('map-sellers-table').innerHTML = h;
-    } catch(e) { console.error('셀러 로드 오류:', e); }
+    } catch(e) { console.error('셀러:', e); }
   }
 
-  // ── 설정 ──────────────────────────
+  // ── 설정 ──
+  let _scheduleSet, _platformSet;
   async function mapLoadSettings() {
     try {
-      const s = await api('/api/map/settings');
+      const s = await api.get('/api/map/settings');
       _mapSettings = s;
       const schedules = s.schedules || [];
       const platforms = s.platforms || [];
+      _scheduleSet = new Set(schedules);
+      _platformSet = new Set(platforms);
       const allTimes = ['00:00','03:00','06:00','09:00','12:00','15:00','18:00','21:00'];
-      const allPlats = [
-        {name:'네이버 쇼핑', color:'#03c75a', method:'API'},
-        {name:'쿠팡', color:'#e44332', method:'크롤링'},
-        {name:'G마켓', color:'#6db33f', method:'크롤링'},
-        {name:'옥션', color:'#ff6f00', method:'크롤링'},
-        {name:'11번가', color:'#ff5a2e', method:'크롤링'},
-      ];
-      let h = '';
-      // 기본 감시 설정
-      h += `<div class="map-settings-section"><div class="hdr">⚙️ 기본 감시 설정</div><div class="body">
-        <div style="margin-bottom:20px"><label style="font-size:13px;font-weight:600;color:#334155;display:block;margin-bottom:6px">최소 감시 금액</label>
-          <input type="number" id="map-set-minprice" value="${s.min_price||5000}" step="1000" style="width:150px;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:15px;font-weight:600">
-          <span style="font-size:13px;color:#64748b;margin-left:6px">원 이상 제품만 감시</span></div>
-        <div style="margin-bottom:20px"><label style="font-size:13px;font-weight:600;color:#334155;display:block;margin-bottom:6px">기본 허용 편차 (%)</label>
-          <input type="number" id="map-set-tolerance" value="${s.tolerance_pct||5}" min="0" max="30" step="1" style="width:80px;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:15px;font-weight:600">
-          <span style="font-size:13px;color:#64748b;margin-left:6px">% (지도가 대비 이 범위 내는 허용)</span></div>
-        <div style="margin-bottom:20px"><label style="font-size:13px;font-weight:600;color:#334155;display:block;margin-bottom:6px">정기 감시 스케줄</label>
-          <div style="display:flex;flex-wrap:wrap;gap:8px" id="map-schedule-btns">
-            ${allTimes.map(t => `<button class="btn btn-sm ${schedules.includes(t)?'':'btn-outline'}" onclick="mapToggleSchedule('${t}')" data-time="${t}" style="${schedules.includes(t)?'background:#2563eb;color:#fff;border-color:#2563eb':''}">${t}</button>`).join('')}
-          </div>
-          <p style="font-size:11px;color:#94a3b8;margin-top:6px">현재: 하루 ${schedules.length}회 (${schedules.join(', ')})</p></div>
-        <div><label style="font-size:13px;font-weight:600;color:#334155;display:block;margin-bottom:6px">상시감시 간격</label>
-          <select id="map-set-watchinterval" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-weight:600">
-            ${[1,2,3,4].map(h => `<option value="${h}" ${s.watch_interval_hours==h?'selected':''}>${h}시간</option>`).join('')}
-          </select></div>
-      </div></div>`;
-      // 쇼핑몰
-      h += `<div class="map-settings-section"><div class="hdr">🏪 감시 대상 쇼핑몰</div><div class="body">
-        <div style="display:flex;flex-wrap:wrap;gap:10px">
-          ${allPlats.map(p => {
-            const on = platforms.includes(p.name);
-            return `<button onclick="mapTogglePlatform('${p.name}')" data-plat="${p.name}" style="display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:8px;cursor:pointer;border:${on?'2px solid '+p.color:'1px solid #e2e8f0'};background:${on?p.color+'15':'#fff'}">
-              <span style="width:8px;height:8px;border-radius:50%;background:${on?p.color:'#d1d5db'}"></span>
-              <span style="font-weight:600;color:${on?'#1e293b':'#94a3b8'};font-size:13px">${p.name}</span>
-              <span style="font-size:10px;color:#94a3b8;background:#f1f5f9;padding:1px 5px;border-radius:3px">${p.method}</span></button>`;
-          }).join('')}
-        </div></div></div>`;
-      // 저장 버튼
+      const allPlats = [{n:'네이버 쇼핑',c:'#03c75a',m:'API'},{n:'쿠팡',c:'#e44332',m:'크롤링'},{n:'G마켓',c:'#6db33f',m:'크롤링'},{n:'옥션',c:'#ff6f00',m:'크롤링'},{n:'11번가',c:'#ff5a2e',m:'크롤링'}];
+      let h = `<div class="map-settings-section"><div class="hdr">⚙️ 기본 감시 설정</div><div class="body">
+        <div style="margin-bottom:20px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">최소 감시 금액</label><input type="number" id="map-set-minprice" value="${s.min_price||5000}" step="1000" style="width:150px;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:15px;font-weight:600"> <span style="font-size:13px;color:#64748b">원 이상</span></div>
+        <div style="margin-bottom:20px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">허용 편차 (%)</label><input type="number" id="map-set-tolerance" value="${s.tolerance_pct||5}" min="0" max="30" style="width:80px;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:15px;font-weight:600"> <span style="font-size:13px;color:#64748b">%</span></div>
+        <div style="margin-bottom:20px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">정기 감시 스케줄</label><div style="display:flex;flex-wrap:wrap;gap:8px">`;
+      allTimes.forEach(t => { const on = _scheduleSet.has(t); h += `<button class="btn btn-sm ${on?'':'btn-outline'}" onclick="mapToggleSched('${t}')" id="map-sched-${t.replace(':','')}" style="${on?'background:#2563eb;color:#fff;border-color:#2563eb':''}">${t}</button>`; });
+      h += `</div><p style="font-size:11px;color:#94a3b8;margin-top:6px">하루 ${schedules.length}회</p></div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">상시감시 간격</label><select id="map-set-watchint" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-weight:600">`;
+      [1,2,3,4].forEach(h2 => { h += `<option value="${h2}" ${s.watch_interval_hours==h2?'selected':''}>${h2}시간</option>`; });
+      h += `</select></div></div></div>`;
+      h += `<div class="map-settings-section"><div class="hdr">🏪 감시 대상 쇼핑몰</div><div class="body"><div style="display:flex;flex-wrap:wrap;gap:10px">`;
+      allPlats.forEach(p => { const on = _platformSet.has(p.n); h += `<button onclick="mapTogglePlat('${p.n}')" id="map-plat-${p.n.replace(/\s/g,'')}" style="display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:8px;cursor:pointer;border:${on?'2px solid '+p.c:'1px solid #e2e8f0'};background:${on?p.c+'15':'#fff'}"><span style="width:8px;height:8px;border-radius:50%;background:${on?p.c:'#d1d5db'}"></span><span style="font-weight:600;color:${on?'#1e293b':'#94a3b8'};font-size:13px">${p.n}</span><span style="font-size:10px;color:#94a3b8;background:#f1f5f9;padding:1px 5px;border-radius:3px">${p.m}</span></button>`; });
+      h += `</div></div></div>`;
       h += `<div style="text-align:right;margin-top:8px"><button class="btn" onclick="mapSaveSettings()" style="padding:10px 32px">💾 설정 저장</button></div>`;
       document.getElementById('map-settings-panel').innerHTML = h;
-    } catch(e) { console.error('설정 로드 오류:', e); }
+    } catch(e) { console.error('설정 로드:', e); }
   }
-
-  // 설정 내부 상태 (토글용)
-  let _scheduleSet = new Set();
-  let _platformSet = new Set();
-
-  window.mapToggleSchedule = function(t) {
-    const s = _mapSettings?.schedules || [];
-    _scheduleSet = _scheduleSet.size ? _scheduleSet : new Set(s);
+  window.mapToggleSched = function(t) {
     if (_scheduleSet.has(t)) _scheduleSet.delete(t); else _scheduleSet.add(t);
-    const btn = document.querySelector(`[data-time="${t}"]`);
-    if (btn) {
-      if (_scheduleSet.has(t)) { btn.style.background='#2563eb'; btn.style.color='#fff'; btn.style.borderColor='#2563eb'; btn.classList.remove('btn-outline'); }
-      else { btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; btn.classList.add('btn-outline'); }
-    }
+    const btn = document.getElementById('map-sched-'+t.replace(':',''));
+    if (btn) { if (_scheduleSet.has(t)) { btn.style.background='#2563eb'; btn.style.color='#fff'; btn.style.borderColor='#2563eb'; btn.classList.remove('btn-outline'); } else { btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; btn.classList.add('btn-outline'); } }
   };
-  window.mapTogglePlatform = function(p) {
-    const s = _mapSettings?.platforms || [];
-    _platformSet = _platformSet.size ? _platformSet : new Set(s);
-    if (_platformSet.has(p)) _platformSet.delete(p); else _platformSet.add(p);
-    mapLoadSettings(); // 간단하게 전체 리렌더
-  };
-
+  window.mapTogglePlat = function(p) { if (_platformSet.has(p)) _platformSet.delete(p); else _platformSet.add(p); mapLoadSettings(); };
   window.mapSaveSettings = async function() {
-    const data = {
-      min_price: parseInt(document.getElementById('map-set-minprice').value),
-      tolerance_pct: parseFloat(document.getElementById('map-set-tolerance').value),
-      watch_interval_hours: parseInt(document.getElementById('map-set-watchinterval').value),
-    };
-    if (_scheduleSet.size) data.schedules = [..._scheduleSet].sort();
-    if (_platformSet.size) data.platforms = [..._platformSet];
-    try {
-      const r = await api('/api/map/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
-      _mapSettings = r;
-      _scheduleSet = new Set(r.schedules || []);
-      _platformSet = new Set(r.platforms || []);
-      alert('설정이 저장되었습니다');
-      mapLoadSettings();
-    } catch(e) { alert('설정 저장 오류: ' + e.message); }
+    const data = { min_price: parseInt(document.getElementById('map-set-minprice').value), tolerance_pct: parseFloat(document.getElementById('map-set-tolerance').value), watch_interval_hours: parseInt(document.getElementById('map-set-watchint').value) };
+    if (_scheduleSet) data.schedules = [..._scheduleSet].sort();
+    if (_platformSet) data.platforms = [..._platformSet];
+    try { const r = await api.put('/api/map/settings', data); _mapSettings = r; alert('설정 저장 완료'); mapLoadSettings(); } catch(e) { alert('오류: '+e.message); }
   };
 
-  // ── 즉시 수집 ──────────────────────────
+  // ── 즉시 수집 ──
   window.mapRunCollect = async function() {
     const btn = document.getElementById('map-collect-btn');
     btn.disabled = true; btn.textContent = '⏳ 수집 중...';
-    try {
-      const r = await api('/api/map/collect/run', { method: 'POST' });
-      alert(r.message);
-      mapLoadDashboard();
-    } catch(e) { alert('수집 오류: ' + e.message); }
+    try { const r = await api.post('/api/map/collect/run'); alert(r.message); mapLoadDashboard(); } catch(e) { alert('수집 오류: '+e.message); }
     btn.disabled = false; btn.textContent = '▶ 즉시 수집';
   };
 
