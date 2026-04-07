@@ -334,11 +334,11 @@ async def run_price_collection(
 
         all_products = [dict(r) for r in rows]
 
-        # 과부하 방지: 한 번에 최대 100개 제품만 수집 (Render 서버 보호)
-        MAX_PER_RUN = 100
+        # 과부하 방지: 플랫폼 수에 따라 제한 (총 요청 1000건 이내)
+        MAX_PER_RUN = max(100, 1000 // max(len(platforms), 1))
         products = all_products[:MAX_PER_RUN]
         if len(all_products) > MAX_PER_RUN:
-            logger.info(f"MAP 수집 제한: 전체 {len(all_products)}개 중 {MAX_PER_RUN}개만 수집")
+            logger.info(f"MAP 수집 제한: 전체 {len(all_products)}개 중 {MAX_PER_RUN}개만 수집 ({len(platforms)}개 플랫폼)")
 
         total_tasks = len(products) * len(platforms)
         done_tasks = 0
