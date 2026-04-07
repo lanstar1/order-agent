@@ -333,11 +333,13 @@ async def logen_export_excel(
     ws = wb.active
     ws.title = "엑셀파일첫행-제목있음"
 
-    # 로젠 구시스템양식 (A타입) 실제 컬럼 순서
-    # A:수하인명 B:(선택안함) C:수하인주소1 D:수하인전화
+    # 로젠 구시스템양식 (A타입) - 사용자 설정 컬럼 순서
+    # A:수하인명 B:수하인주소1 C:수하인전화 D:수하인휴대폰
     # E:택배수량 F:택배운임 G:운임구분 H:물품명 I:주문번호(→반환파일 S열 매칭용)
-    headers = ["수하인명", None, "수하인주소1", "수하인전화",
-               "택배수량", "택배운임", "운임구분", "물품명", "주문번호"]
+    # J:제주운임구분 K:배송메세지
+    headers = ["수하인명", "수하인주소1", "수하인전화", "수하인휴대폰",
+               "택배수량", "택배운임", "운임구분", "물품명", "주문번호",
+               None, "배송메세지"]
     hdr_fill = PatternFill("solid", fgColor="1F4E79")
     hdr_font = Font(bold=True, color="FFFFFF")
     for ci, h in enumerate(headers, 1):
@@ -346,13 +348,15 @@ async def logen_export_excel(
             c.fill = hdr_fill; c.font = hdr_font; c.alignment = Alignment(horizontal="center")
 
     ws.column_dimensions["A"].width = 14
-    ws.column_dimensions["C"].width = 50
+    ws.column_dimensions["B"].width = 50
+    ws.column_dimensions["C"].width = 16
     ws.column_dimensions["D"].width = 16
     ws.column_dimensions["E"].width = 8
     ws.column_dimensions["F"].width = 10
     ws.column_dimensions["G"].width = 10
     ws.column_dimensions["H"].width = 30
     ws.column_dimensions["I"].width = 22
+    ws.column_dimensions["K"].width = 25
 
     # orderId 기준으로 그룹화
     groups: dict = {}
@@ -402,15 +406,17 @@ async def logen_export_excel(
 
         goods = ", ".join(f"{m} x{q}" for m, q in model_qty.items())[:50]
 
-        ws.cell(row, 1, rcv)          # A: 수하인명
-        ws.cell(row, 2, None)         # B: 선택안함
-        ws.cell(row, 3, full_addr)    # C: 수하인주소1
-        ws.cell(row, 4, tel_home or tel_cell)  # D: 수하인전화
-        ws.cell(row, 5, total_qty)    # E: 택배수량
-        ws.cell(row, 6, ship_fee)     # F: 택배운임
-        ws.cell(row, 7, fare_tp)      # G: 운임구분
-        ws.cell(row, 8, goods)        # H: 물품명 (모델명+수량)
-        ws.cell(row, 9, first_poid)   # I: 주문번호 → 반환파일 S열(index 18)로 매칭
+        ws.cell(row, 1,  rcv)         # A: 수하인명
+        ws.cell(row, 2,  full_addr)   # B: 수하인주소1
+        ws.cell(row, 3,  tel_home)    # C: 수하인전화
+        ws.cell(row, 4,  tel_cell)    # D: 수하인휴대폰
+        ws.cell(row, 5,  total_qty)   # E: 택배수량
+        ws.cell(row, 6,  ship_fee)    # F: 택배운임
+        ws.cell(row, 7,  fare_tp)     # G: 운임구분
+        ws.cell(row, 8,  goods)       # H: 물품명 (모델명+수량)
+        ws.cell(row, 9,  first_poid)  # I: 주문번호 → 반환파일 S열(index 18)로 매칭
+        ws.cell(row, 10, None)        # J: 제주운임구분 (빈칸)
+        ws.cell(row, 11, cust_msg)    # K: 배송메세지 (고객 요청사항)
         row += 1
 
     buf = io.BytesIO()
