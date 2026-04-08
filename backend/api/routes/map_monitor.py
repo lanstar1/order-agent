@@ -461,18 +461,24 @@ async def violations_by_product(product_id: int, days: int = 7):
 async def cleanup_duplicate_violations():
     """기존 누적된 중복 위반 정리 — 같은 제품+셀러에 대해 최신 1건만 남기고 삭제"""
     conn = get_connection()
-    # 먼저 중복 건수 확인
-    before = conn.execute("SELECT COUNT(*) as c FROM map_violations WHERE is_resolved=0").fetchone()["c"]
-    # 각 product_id+seller_name 조합에서 최신 id만 남기고 삭제
-    conn.execute("""DELETE FROM map_violations WHERE is_resolved = 0 AND id NOT IN (
-        SELECT MAX(id) FROM map_violations WHERE is_resolved = 0
-        GROUP BY product_id, seller_name
-    )""")
-    conn.commit()
-    after = conn.execute("SELECT COUNT(*) as c FROM map_violations WHERE is_resolved=0").fetchone()["c"]
-    conn.close()
-    deleted = before - after
-    return {"message": f"중복 위반 {deleted}건 정리 완료. {before}건 → {after}건"}
+    try:
+        before = conn.execute("SELECT COUNT(*) as c FROM map_violations WHERE is_resolved=0").fetchone()["c"]
+        # 1단계: 유지할 ID 조회 (각 product_id+seller_name 조합의 최신 id)
+        keep_rows = conn.execute("""SELECT MAX(id) as keep_id FROM map_violations
+            WHERE is_resolved = 0 GROUP BY product_id, seller_name""").fetchall()
+        keep_ids = [r["keep_id"] for r in keep_rows if r["keep_id"]]
+        if keep_ids:
+            # 2단계: 유지 대상이 아닌 미해결 위반 삭제
+            placeholders = ",".join(["?"] * len(keep_ids))
+            conn.execute(f"DELETE FROM map_violations WHERE is_resolved = 0 AND id NOT IN ({placeholders})", keep_ids)
+        conn.commit()
+        after = conn.execute("SELECT COUNT(*) as c FROM map_violations WHERE is_resolved=0").fetchone()["c"]
+        conn.close()
+        return {"message": f"중복 위반 {before - after}건 정리 완료. {before}건 → {after}건"}
+    except Exception as e:
+        conn.close()
+        logger.error(f"cleanup 오류: {e}")
+        raise HTTPException(500, f"정리 오류: {e}")
 
 
 # ═══════════════════════════════════════════════════════
