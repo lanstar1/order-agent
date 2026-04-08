@@ -936,21 +936,21 @@ C규격품 200개
       <div class="inv-tab-content" id="inv-tab-planning" style="display:none">
         <!-- 요약 카드 -->
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
-          <div style="flex:1;min-width:120px;padding:16px;background:#FEF2F2;border-radius:12px;border-left:4px solid #DC2626;text-align:center">
+          <div onclick="ipCardFilter('urgent')" style="flex:1;min-width:120px;padding:16px;background:#FEF2F2;border-radius:12px;border-left:4px solid #DC2626;text-align:center;cursor:pointer" title="긴급발주만 보기">
             <div style="font-size:24px;font-weight:700;color:#DC2626" id="ip-cnt-urgent">0</div>
             <div style="font-size:13px;color:#991B1B">긴급발주</div>
           </div>
-          <div style="flex:1;min-width:120px;padding:16px;background:#FFFBEB;border-radius:12px;border-left:4px solid #D97706;text-align:center">
+          <div onclick="ipCardFilter('warning')" style="flex:1;min-width:120px;padding:16px;background:#FFFBEB;border-radius:12px;border-left:4px solid #D97706;text-align:center;cursor:pointer" title="발주검토만 보기">
             <div style="font-size:24px;font-weight:700;color:#D97706" id="ip-cnt-warning">0</div>
             <div style="font-size:13px;color:#92400E">발주검토</div>
           </div>
-          <div style="flex:1;min-width:120px;padding:16px;background:#ECFDF5;border-radius:12px;border-left:4px solid #059669;text-align:center">
+          <div onclick="ipCardFilter('ordered')" style="flex:1;min-width:120px;padding:16px;background:#ECFDF5;border-radius:12px;border-left:4px solid #059669;text-align:center;cursor:pointer" title="발주완료만 보기">
             <div style="font-size:24px;font-weight:700;color:#059669" id="ip-cnt-ordered">0</div>
             <div style="font-size:13px;color:#065F46">발주완료</div>
           </div>
-          <div style="flex:1;min-width:120px;padding:16px;background:#F8FAFC;border-radius:12px;border-left:4px solid #64748B;text-align:center">
+          <div onclick="ipCardFilter('')" style="flex:1;min-width:120px;padding:16px;background:#F8FAFC;border-radius:12px;border-left:4px solid #64748B;text-align:center;cursor:pointer" title="전체 보기">
             <div style="font-size:24px;font-weight:700;color:#64748B" id="ip-cnt-safe">0</div>
-            <div style="font-size:13px;color:#475569">여유</div>
+            <div style="font-size:13px;color:#475569">여유+전체</div>
           </div>
         </div>
         <!-- 액션 바 -->
@@ -1020,6 +1020,16 @@ C규격품 200개
               <div style="flex:1">
                 <label style="font-size:13px;font-weight:600">안전재고 (일)</label>
                 <input type="number" id="ip-add-safety" value="10" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;margin-bottom:12px">
+              <div style="flex:1">
+                <label style="font-size:13px;font-weight:600">MOQ (최소발주)</label>
+                <input type="number" id="ip-add-moq" value="0" placeholder="0=제한없음" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+              </div>
+              <div style="flex:1">
+                <label style="font-size:13px;font-weight:600">공급처 그룹</label>
+                <input type="text" id="ip-add-supplier" placeholder="예: 중국A, 국내" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
               </div>
             </div>
             <div id="ip-add-selected" style="display:none;padding:12px;background:#F0F9FF;border-radius:8px;margin-bottom:12px"></div>
@@ -5072,7 +5082,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260408c"></script>
+<script src="/static/js/app.js?v=20260408d"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

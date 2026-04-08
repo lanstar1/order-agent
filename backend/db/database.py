@@ -747,10 +747,23 @@ def init_db():
         prod_name           TEXT DEFAULT '',
         lead_time_days      INTEGER DEFAULT 40,
         safety_stock_days   INTEGER DEFAULT 10,
+        moq                 INTEGER DEFAULT 0,
+        supplier_group      TEXT DEFAULT '',
         is_active           INTEGER DEFAULT 1,
         created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
     )""")
+
+    # MOQ, supplier_group 컬럼 마이그레이션 (기존 테이블용)
+    for _col, _type, _default in [
+        ("moq", "INTEGER", "0"),
+        ("supplier_group", "TEXT", "''"),
+    ]:
+        try:
+            cur_or_conn.execute(f"ALTER TABLE inventory_planning_targets ADD COLUMN {_col} {_type} DEFAULT {_default}")
+            conn.commit()
+        except Exception:
+            pass
 
     # ── ERP 캐시 (매입정산용 구매/판매현황 영속 캐시) ──
     cur_or_conn.execute("""

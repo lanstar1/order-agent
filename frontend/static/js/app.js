@@ -5231,6 +5231,12 @@ function ipRenderSummary(s) {
   if (el('ip-cnt-safe')) el('ip-cnt-safe').textContent = (s.safe || 0) + (s.no_sales || 0);
 }
 
+function ipCardFilter(status) {
+  const sel = document.getElementById('ip-status-filter');
+  if (sel) { sel.value = status; }
+  ipFilterTable();
+}
+
 function ipSort(key) {
   if (_ipSortKey === key) { _ipSortAsc = !_ipSortAsc; } else { _ipSortKey = key; _ipSortAsc = true; }
   if (_ipData) ipRenderTable(_ipData.items);
@@ -5285,7 +5291,7 @@ function ipRenderTable(items) {
     const stockout = i.days_until_stockout >= 9999 ? '-' : `${Math.round(i.days_until_stockout)}일`;
     const stockoutStyle = i.days_until_stockout <= i.lead_time_days ? 'color:#DC2626;font-weight:700' : '';
     const orderInfo = i.has_pending_order
-      ? `<span style="color:#059669;font-size:11px" title="${(i.pending_orders||[]).map(o=>o.order_no+' '+o.qty+'개').join(', ')}">✅ ${i.pending_orders[0]?.order_no||'발주됨'}</span>`
+      ? `<span style="color:#059669;font-size:11px" title="${(i.pending_orders||[]).map(o=>o.order_no+' '+o.qty+'개').join(', ')}">✅ ${i.pending_orders[0]?.order_date||''} ${(i.pending_orders[0]?.qty||0).toLocaleString()}개</span>`
       : (i.need_order ? '<span style="color:#DC2626;font-size:11px">❌ 미발주</span>' : '<span style="color:#94a3b8;font-size:11px">여유</span>');
 
     return `<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="ipShowDetail(${i.id})">
@@ -5378,6 +5384,8 @@ async function ipAddTarget() {
       prod_name: _ipSelected.prod_name || '',
       lead_time_days: parseInt(document.getElementById('ip-add-leadtime').value) || 40,
       safety_stock_days: parseInt(document.getElementById('ip-add-safety').value) || 10,
+      moq: parseInt(document.getElementById('ip-add-moq').value) || 0,
+      supplier_group: (document.getElementById('ip-add-supplier').value || '').trim(),
     });
     ipCloseAddModal();
     toast('품목이 등록되었습니다.', 'success');

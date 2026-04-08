@@ -35,10 +35,14 @@ class TargetAdd(BaseModel):
     prod_name: str = ""
     lead_time_days: int = 40
     safety_stock_days: int = 10
+    moq: int = 0
+    supplier_group: str = ""
 
 class TargetUpdate(BaseModel):
     lead_time_days: Optional[int] = None
     safety_stock_days: Optional[int] = None
+    moq: Optional[int] = None
+    supplier_group: Optional[str] = None
     is_active: Optional[int] = None
 
 class BulkAddRequest(BaseModel):
@@ -93,7 +97,8 @@ async def add_target(body: TargetAdd):
     conn = get_connection()
     try:
         add_planning_target(conn, body.prod_cd, body.model_name, body.prod_name,
-                           body.lead_time_days, body.safety_stock_days)
+                           body.lead_time_days, body.safety_stock_days,
+                           body.moq, body.supplier_group)
         return {"status": "ok", "prod_cd": body.prod_cd}
     finally:
         conn.close()

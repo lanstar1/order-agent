@@ -23,7 +23,7 @@ def get_planning_targets(conn, active_only=True) -> list:
     where = "WHERE is_active = 1" if active_only else ""
     rows = conn.execute(f"""
         SELECT id, prod_cd, model_name, prod_name, lead_time_days,
-               safety_stock_days, is_active, created_at
+               safety_stock_days, moq, supplier_group, is_active, created_at
         FROM inventory_planning_targets {where}
         ORDER BY model_name ASC
     """).fetchall()
@@ -31,22 +31,26 @@ def get_planning_targets(conn, active_only=True) -> list:
 
 
 def add_planning_target(conn, prod_cd: str, model_name: str, prod_name: str,
-                        lead_time_days: int = 40, safety_stock_days: int = 10):
+                        lead_time_days: int = 40, safety_stock_days: int = 10,
+                        moq: int = 0, supplier_group: str = ""):
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("""
         INSERT INTO inventory_planning_targets
-            (prod_cd, model_name, prod_name, lead_time_days, safety_stock_days, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (prod_cd, model_name, prod_name, lead_time_days, safety_stock_days,
+             moq, supplier_group, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(prod_cd) DO UPDATE SET
             model_name=excluded.model_name, prod_name=excluded.prod_name,
             lead_time_days=excluded.lead_time_days, safety_stock_days=excluded.safety_stock_days,
+            moq=excluded.moq, supplier_group=excluded.supplier_group,
             is_active=1, updated_at=excluded.updated_at
-    """, (prod_cd, model_name, prod_name, lead_time_days, safety_stock_days, now, now))
+    """, (prod_cd, model_name, prod_name, lead_time_days, safety_stock_days,
+          moq, supplier_group, now, now))
     conn.commit()
 
 
 def update_planning_target(conn, target_id: int, **kwargs):
-    allowed = {"lead_time_days", "safety_stock_days", "is_active"}
+    allowed = {"lead_time_days", "safety_stock_days", "moq", "supplier_group", "is_active"}
     updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
     if not updates:
         return
@@ -269,11 +273,21 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
     # 7. 권장 발주 수량
     #    - 90일(3개월) 평균 기반으로 계산 → 단기 급등에 의한 과잉발주 방지
     #    - 90일 데이터 부족 시 30일 → 7일 순으로 fallback
+    #    - MOQ 이상으로 올림
     recommended_qty = 0
+    moq = target.get("moq", 0) or 0
     avg_for_order = velocity["avg_90d"] or velocity["avg_30d"] or velocity["avg_7d"]
     if need_order and avg_for_order > 0:
         required = avg_for_order * (lead_time + safety_days)
-        recommended_qty = max(0, round(required - current_stock))
+        raw_qty = max(0, round(required - current_stock))
+        # MOQ 적용: MOQ보다 작으면 MOQ로 올림
+        if moq > 0 and raw_qty > 0:
+            recommended_qty = max(raw_qty, moq)
+            # MOQ 단위로 올림 (예: MOQ=100, raw=230 → 300)
+            if recommended_qty > moq:
+                recommended_qty = ((recommended_qty + moq - 1) // moq) * moq
+        else:
+            recommended_qty = raw_qty
 
     # 8. 권장 발주일 (소진일 - 리드타임)
     order_deadline = ""
@@ -300,6 +314,8 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
         "days_until_stockout": days_until_stockout,
         "lead_time_days": lead_time,
         "safety_stock_days": safety_days,
+        "moq": moq,
+        "supplier_group": target.get("supplier_group", ""),
         "status": status,
         "status_label": status_label,
         "need_order": need_order,
