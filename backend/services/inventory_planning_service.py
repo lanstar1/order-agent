@@ -139,10 +139,13 @@ def calc_sales_velocity(daily_sales: list) -> dict:
                 "max_daily": 0, "total_days": 0, "selling_days": 0, "total_sold_30d": 0}
 
     sales_only = [d["sales"] for d in daily_sales]
-    recent_7 = sales_only[-7:] if len(sales_only) >= 7 else sales_only
-    recent_30 = sales_only[-30:] if len(sales_only) >= 30 else sales_only
-    recent_90 = sales_only[-90:] if len(sales_only) >= 90 else sales_only
-    recent_180 = sales_only  # 전체 (최대 180일)
+    total_days = len(sales_only)
+
+    # 해당 기간의 데이터가 충분하지 않으면 0 반환 (프론트에서 "-" 표시)
+    recent_7 = sales_only[-7:] if total_days >= 5 else []
+    recent_30 = sales_only[-30:] if total_days >= 14 else []
+    recent_90 = sales_only[-90:] if total_days >= 45 else []
+    recent_180 = sales_only if total_days >= 90 else []
 
     return {
         "avg_7d": round(sum(recent_7) / len(recent_7), 1) if recent_7 else 0,

@@ -5321,10 +5321,10 @@ function ipRenderTable(items) {
       <td style="padding:8px;font-weight:600;font-size:12px">${i.model_name||i.prod_cd}</td>
       <td style="padding:8px;font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.prod_name}">${i.prod_name||'-'}</td>
       <td style="padding:8px;text-align:right;font-weight:600">${(i.current_stock||0).toLocaleString()}</td>
-      <td style="padding:8px;text-align:right">${i.avg_daily_7d||0}</td>
-      <td style="padding:8px;text-align:right">${i.avg_daily_30d||0}</td>
-      <td style="padding:8px;text-align:right">${i.avg_daily_90d||0}</td>
-      <td style="padding:8px;text-align:right">${i.avg_daily_180d||0}</td>
+      <td style="padding:8px;text-align:right">${i.avg_daily_7d ? i.avg_daily_7d : '<span style="color:#cbd5e1">-</span>'}</td>
+      <td style="padding:8px;text-align:right">${i.avg_daily_30d ? i.avg_daily_30d : '<span style="color:#cbd5e1">-</span>'}</td>
+      <td style="padding:8px;text-align:right">${i.avg_daily_90d ? i.avg_daily_90d : '<span style="color:#cbd5e1">-</span>'}</td>
+      <td style="padding:8px;text-align:right">${i.avg_daily_180d ? i.avg_daily_180d : '<span style="color:#cbd5e1">-</span>'}</td>
       <td style="padding:8px;text-align:right;${stockoutStyle}">${stockout}</td>
       <td style="padding:8px;text-align:right;font-weight:600;${i.recommended_qty>0?'color:#DC2626':''}">${i.recommended_qty>0?i.recommended_qty.toLocaleString():'-'}</td>
       <td style="padding:8px;font-size:12px;${i.need_order?'color:#DC2626;font-weight:600':''}">${i.order_deadline||'-'}</td>
