@@ -278,43 +278,92 @@ async def scan_nam_shipping():
 
 @router.post("/shipping/scan-all")
 async def scan_all_shipping():
-    """모든 메일소스 통합 스캔"""
-    results = {"sources": []}
+    """모든 메일소스 통합 스캔 (SSE 스트리밍 진행률)"""
+    import json as _json
+    from fastapi.responses import StreamingResponse
 
-    # 1. BOR 메일 (Ecount)
-    try:
-        from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
-        if MAIL_USER and MAIL_PASSWORD:
-            from services.shipping_mail_service import scan_shipping_emails, save_shipping_info
-            bor_results = scan_shipping_emails(
-                MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
-            conn = get_connection()
-            try:
-                save_shipping_info(conn, bor_results)
-            finally:
-                conn.close()
-            results["sources"].append({"name": "BOR (Ecount)", "count": len(bor_results)})
-    except Exception as e:
-        results["sources"].append({"name": "BOR (Ecount)", "error": str(e)})
+    async def generate():
+        def send(msg, pct=0, step=""):
+            return f"data: {_json.dumps({'msg': msg, 'pct': pct, 'step': step}, ensure_ascii=False)}\n\n"
 
-    # 2. NAM 메일 (Naver)
-    try:
-        from config import MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER
-        if MAIL2_USER and MAIL2_PASSWORD:
-            from services.shipping_mail_service import scan_nam_shipping_emails, save_nam_shipping_info
-            nam_results = scan_nam_shipping_emails(
-                MAIL2_IMAP_SERVER, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER, MAIL2_IMAP_PORT, days_back=180)
-            conn = get_connection()
-            try:
-                save_nam_shipping_info(conn, nam_results)
-            finally:
-                conn.close()
-            results["sources"].append({"name": "NAM (Naver)", "count": len(nam_results)})
-    except Exception as e:
-        results["sources"].append({"name": "NAM (Naver)", "error": str(e)})
+        yield send("🔄 선적 메일 통합 스캔 시작...", 0, "start")
 
-    results["status"] = "ok"
-    return results
+        # 1. BOR 선적메일 (Ecount)
+        yield send("📧 [1/4] Ecount 메일 접속 중...", 5, "bor_connect")
+        try:
+            from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+            if MAIL_USER and MAIL_PASSWORD:
+                from services.shipping_mail_service import scan_shipping_emails, save_shipping_info
+                yield send("📧 [1/4] BOR 선적 메일 검색 중...", 10, "bor_scan")
+                bor_results = scan_shipping_emails(
+                    MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
+                yield send(f"📧 [1/4] BOR 선적: {len(bor_results)}건 발견 → DB 저장 중...", 20, "bor_save")
+                conn = get_connection()
+                try:
+                    save_shipping_info(conn, bor_results)
+                finally:
+                    conn.close()
+                yield send(f"✅ [1/4] BOR 선적 완료: {len(bor_results)}건", 25, "bor_done")
+            else:
+                yield send("⏭️ [1/4] Ecount 메일 미설정 → 스킵", 25, "bor_skip")
+        except Exception as e:
+            yield send(f"⚠️ [1/4] BOR 스캔 오류: {str(e)[:100]}", 25, "bor_error")
+
+        # 2. NAM 선적메일 (Naver)
+        yield send("📧 [2/4] Naver 메일 접속 중...", 30, "nam_connect")
+        try:
+            from config import MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER
+            if MAIL2_USER and MAIL2_PASSWORD:
+                from services.shipping_mail_service import scan_nam_shipping_emails, save_nam_shipping_info, write_nam_orders_to_sheet
+                yield send("📧 [2/4] NAM 거래처 메일 검색 중 (전체 폴더)...", 35, "nam_scan")
+                nam_results = scan_nam_shipping_emails(
+                    MAIL2_IMAP_SERVER, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER, MAIL2_IMAP_PORT, days_back=180)
+                yield send(f"📧 [2/4] NAM: {len(nam_results)}건 발견 → DB + 구글시트 저장 중...", 45, "nam_save")
+                conn = get_connection()
+                try:
+                    save_nam_shipping_info(conn, nam_results)
+                finally:
+                    conn.close()
+                try:
+                    write_nam_orders_to_sheet(nam_results)
+                except Exception:
+                    pass
+                yield send(f"✅ [2/4] NAM 선적 완료: {len(nam_results)}건", 50, "nam_done")
+            else:
+                yield send("⏭️ [2/4] Naver 메일 미설정 → 스킵", 50, "nam_skip")
+        except Exception as e:
+            yield send(f"⚠️ [2/4] NAM 스캔 오류: {str(e)[:100]}", 50, "nam_error")
+
+        # 3. BOR 오더리스트 최신화
+        yield send("📋 [3/4] BOR 오더리스트 최신화 중...", 55, "orderlist")
+        try:
+            from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+            if MAIL_USER and MAIL_PASSWORD:
+                from services.shipping_mail_service import scan_bor_orderlist_emails, sync_bor_orderlist_to_sheet
+                yield send("📋 [3/4] REST 파일 검색 중...", 60, "orderlist_scan")
+                ol_results = scan_bor_orderlist_emails(
+                    MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
+                if ol_results:
+                    yield send(f"📋 [3/4] REST 파일 발견 → 구글시트 덮어쓰기 중...", 70, "orderlist_write")
+                    sync_bor_orderlist_to_sheet([ol_results[0]])
+                    yield send(f"✅ [3/4] 오더리스트 최신화 완료: {ol_results[0]['filename']}", 75, "orderlist_done")
+                else:
+                    yield send("⏭️ [3/4] REST 파일 없음 → 스킵", 75, "orderlist_skip")
+        except Exception as e:
+            yield send(f"⚠️ [3/4] 오더리스트 오류: {str(e)[:100]}", 75, "orderlist_error")
+
+        # 4. DB 오더리스트 동기화
+        yield send("🔄 [4/4] 오더리스트 DB 동기화 중...", 80, "db_sync")
+        try:
+            from services.orderlist_service import sync_orderlist
+            sync_orderlist()
+            yield send("✅ [4/4] DB 동기화 완료", 95, "db_done")
+        except Exception as e:
+            yield send(f"⚠️ [4/4] DB 동기화 오류: {str(e)[:80]}", 95, "db_error")
+
+        yield send("🎉 전체 스캔 완료!", 100, "done")
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/orderlist/sync-bor")

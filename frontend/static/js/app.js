@@ -5486,19 +5486,64 @@ function ipCloseDetailModal() {
 }
 
 async function ipScanShippingMails() {
-  if (!confirm('BOR(Ecount) + NAM(Naver) 메일서버를 모두 스캔합니다. 1~2분 소요될 수 있습니다.')) return;
-  toast('📧 선적 메일 통합 스캔 중...', 'info');
+  if (!confirm('선적메일 스캔 + 오더리스트 최신화를 통합 실행합니다.')) return;
+
+  // 로그 패널 표시
+  let logPanel = document.getElementById('ip-log-panel');
+  if (!logPanel) {
+    logPanel = document.createElement('div');
+    logPanel.id = 'ip-log-panel';
+    logPanel.style.cssText = 'position:fixed;bottom:20px;right:20px;width:420px;max-height:350px;background:#1e293b;color:#e2e8f0;border-radius:12px;padding:16px;font-family:monospace;font-size:12px;z-index:1000;box-shadow:0 8px 30px rgba(0,0,0,0.3);overflow-y:auto';
+    document.body.appendChild(logPanel);
+  }
+  logPanel.style.display = 'block';
+  logPanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#60a5fa">📧 통합 스캔 로그</b><button onclick="this.parentElement.parentElement.style.display=\'none\'" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px">✕</button></div><div id="ip-log-progress" style="background:#334155;border-radius:6px;height:6px;margin-bottom:10px;overflow:hidden"><div id="ip-log-bar" style="height:100%;background:#3b82f6;width:0%;transition:width 0.3s"></div></div><div id="ip-log-lines"></div>';
+
+  const logLines = document.getElementById('ip-log-lines');
+  const logBar = document.getElementById('ip-log-bar');
+
+  function addLog(msg, isError) {
+    const line = document.createElement('div');
+    line.style.cssText = `padding:3px 0;border-bottom:1px solid #334155;color:${isError ? '#f87171' : '#e2e8f0'}`;
+    line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+    logLines.appendChild(line);
+    logPanel.scrollTop = logPanel.scrollHeight;
+  }
+
   try {
-    const data = await api.post('/api/inventory-planning/shipping/scan-all', {});
-    if (data.status === 'ok') {
-      const summary = (data.sources||[]).map(s => `${s.name}: ${s.count||0}건${s.error?' (오류)':''}`).join(', ');
-      toast(`✅ 스캔 완료 — ${summary}`, 'success');
-      ipRefreshAnalysis();
-    } else {
-      toast('스캔 실패', 'error');
+    const resp = await fetch('/api/inventory-planning/shipping/scan-all', {
+      method: 'POST',
+      headers: api._headers ? api._headers() : {'Content-Type': 'application/json'},
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, {stream: true});
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.substring(6));
+            addLog(data.msg, data.step?.includes('error'));
+            if (logBar && data.pct !== undefined) logBar.style.width = data.pct + '%';
+            if (data.step === 'done') {
+              logBar.style.background = '#22c55e';
+              setTimeout(() => ipRefreshAnalysis(), 500);
+            }
+          } catch (e) {}
+        }
+      }
     }
   } catch (err) {
-    toast('선적 메일 스캔 실패: ' + (err.message || err), 'error');
+    addLog('❌ 스캔 실패: ' + (err.message || err), true);
   }
 }
 
