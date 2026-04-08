@@ -306,6 +306,14 @@ async def send_erp_only(
     if not SMARTSTORE_CUST_CODE:
         return {"success": False, "error": "SMARTSTORE_CUST_CODE 미설정"}
 
+    # 발주확인 대상 productOrderId 수집
+    all_po_ids = []
+    for o in selected_orders:
+        po = o.get("productOrder", {})
+        poid = po.get("productOrderId", "")
+        if poid:
+            all_po_ids.append(poid)
+
     try:
         erp = ERPClientSS()
         await erp.ensure_session()
@@ -314,6 +322,14 @@ async def send_erp_only(
         r["erp_matched"] = len(erp_lines) - (1 if delivery_count > 0 else 0)
         r["erp_unmatched"] = len(unmatched_items)
         r["unmatched_items"] = unmatched_items
+
+        # ERP 전송 성공 시 네이버 발주확인 처리 → "신규주문(발주 후)"로 이동
+        if r.get("success") and all_po_ids:
+            from services.naver_client import naver_client
+            confirm_result = await naver_client.confirm_orders(all_po_ids)
+            r["confirm"] = confirm_result
+            logger.info(f"[SS] 발주확인: {confirm_result.get('confirmed', 0)}건")
+
         return r
     except Exception as e:
         logger.error(f"[SS] ERP 전송 오류: {e}", exc_info=True)
@@ -435,6 +451,14 @@ async def excluded_send_erp(
     if not SMARTSTORE_CUST_CODE:
         return {"success": False, "error": "SMARTSTORE_CUST_CODE 미설정"}
 
+    # 발주확인 대상 productOrderId 수집
+    all_po_ids = []
+    for o in excluded_orders:
+        po = o.get("productOrder") or {}
+        poid = po.get("productOrderId", "")
+        if poid:
+            all_po_ids.append(poid)
+
     try:
         erp = ERPClientSS()
         await erp.ensure_session()
@@ -444,6 +468,14 @@ async def excluded_send_erp(
         r["erp_unmatched"] = len(unmatched_items)
         r["unmatched_items"] = unmatched_items
         logger.info(f"[SS] 경동택배 ERP 전송: {len(erp_lines)}건, 미매칭: {len(unmatched_items)}건")
+
+        # ERP 전송 성공 시 네이버 발주확인 처리 → "신규주문(발주 후)"로 이동
+        if r.get("success") and all_po_ids:
+            from services.naver_client import naver_client
+            confirm_result = await naver_client.confirm_orders(all_po_ids)
+            r["confirm"] = confirm_result
+            logger.info(f"[SS] 경동 발주확인: {confirm_result.get('confirmed', 0)}건")
+
         return r
     except Exception as e:
         logger.error(f"[SS] 경동택배 ERP 전송 오류: {e}", exc_info=True)
