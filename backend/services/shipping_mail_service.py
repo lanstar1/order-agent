@@ -296,53 +296,53 @@ def get_shipping_info_map(conn) -> dict:
 def _build_shipping_entry(conn, model: str, bor: str, ship_date: str, arr_date: str,
                           today: str, today_fmt: str) -> dict:
     """
-    선적 정보 엔트리 생성 + 2차 검증 (입고예정일 경과 시 재고 증가 확인)
+    선적 정보 엔트리 생성 + 2차 검증 (선적일 이후 재고 증가 확인)
 
-    - 입고예정일 미도래 → status="shipping" (선적 중)
-    - 입고예정일 경과 + 재고 증가 확인 → None (이미 입고 → 표시 안함)
+    - 선적일 이후 재고가 오더 수량만큼 증가 → None (이미 입고 → 표시 안함)
+    - 입고예정일 미도래 + 재고 미증가 → status="shipping" (선적 중)
     - 입고예정일 경과 + 재고 미증가 → status="delayed" (입고 지연)
     """
-    if not arr_date:
+    if not ship_date and not arr_date:
         return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "shipping"}
 
-    if arr_date >= today:
-        # 아직 입고예정일 전
-        return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "shipping"}
+    # 2차 검증: 선적일 이후 재고 증가 여부 확인 (항상 실행)
+    check_from = ship_date or arr_date
+    if check_from:
+        try:
+            from_dt = datetime.strptime(check_from, "%Y-%m-%d")
+            check_start = (from_dt - timedelta(days=3)).strftime("%Y%m%d")
+            check_end = datetime.now(KST).strftime("%Y%m%d")
 
-    # 입고예정일이 지남 → 재고 스냅샷으로 실제 입고 여부 확인
-    # 입고예정일 전후 7일간의 재고 변화를 확인 (재고가 늘었으면 입고됨)
-    try:
-        arr_dt = datetime.strptime(arr_date, "%Y-%m-%d")
-        check_before = (arr_dt - timedelta(days=3)).strftime("%Y%m%d")
-        check_after = (arr_dt + timedelta(days=7)).strftime("%Y%m%d")
+            target_row = conn.execute(
+                "SELECT prod_cd FROM inventory_planning_targets WHERE UPPER(model_name) = ?",
+                (model,)
+            ).fetchone()
 
-        # 해당 모델의 품목코드 찾기 (planning_targets에서)
-        target_row = conn.execute(
-            "SELECT prod_cd FROM inventory_planning_targets WHERE UPPER(model_name) = ?",
-            (model,)
-        ).fetchone()
+            if target_row:
+                prod_cd = target_row[0]
+                snapshots = conn.execute("""
+                    SELECT snapshot_date, bal_qty FROM inventory_snapshots
+                    WHERE prod_cd = ? AND snapshot_date BETWEEN ? AND ?
+                    ORDER BY snapshot_date ASC
+                """, (prod_cd, check_start, check_end)).fetchall()
 
-        if target_row:
-            prod_cd = target_row[0]
-            # 입고예정일 전후 스냅샷 조회
-            snapshots = conn.execute("""
-                SELECT snapshot_date, bal_qty FROM inventory_snapshots
-                WHERE prod_cd = ? AND snapshot_date BETWEEN ? AND ?
-                ORDER BY snapshot_date ASC
-            """, (prod_cd, check_before, check_after)).fetchall()
+                if len(snapshots) >= 2:
+                    # 선적일 직전 재고 vs 이후 최대 재고 비교
+                    early_qty = snapshots[0][1]  # 선적 전 재고
+                    max_qty = max(s[1] for s in snapshots)
+                    increase = max_qty - early_qty
 
-            if len(snapshots) >= 2:
-                min_qty = min(s[1] for s in snapshots)
-                max_qty = max(s[1] for s in snapshots)
-                # 재고가 의미있게 증가했으면 입고 확인 (10개 이상 또는 20% 이상 증가)
-                if max_qty > min_qty and (max_qty - min_qty >= 10 or
-                                          (min_qty > 0 and (max_qty - min_qty) / min_qty >= 0.2)):
-                    return None  # 입고 확인됨 → 표시 안함
-    except Exception:
-        pass
+                    # 재고가 의미있게 증가했으면 입고 확인
+                    if increase >= 10 or (early_qty > 0 and increase / early_qty >= 0.2):
+                        return None  # 입고 확인됨 → 표시 안함
+        except Exception:
+            pass
 
-    # 입고예정일 지났는데 재고 증가 미확인 → 입고 지연
-    return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "delayed"}
+    # 재고 미증가 → 상태 판별
+    if arr_date and arr_date < today:
+        return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "delayed"}
+
+    return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "shipping"}
 
 
 def get_all_shipping_info(conn) -> list:
