@@ -563,11 +563,23 @@ def _parse_nam_excel(file_data: bytes, filename: str) -> list:
 
 
 def _parse_date_value(val) -> str:
-    """다양한 날짜 형식을 YYYY-MM-DD로 변환"""
+    """다양한 날짜 형식을 YYYY-MM-DD로 변환 (엑셀 시리얼 숫자 포함)"""
     if not val:
         return ""
     if isinstance(val, datetime):
         return val.strftime("%Y-%m-%d")
+
+    # 엑셀 날짜 시리얼 숫자 (40000~60000 범위 = 2009~2064년)
+    if isinstance(val, (int, float)):
+        num = int(val)
+        if 40000 <= num <= 60000:
+            try:
+                d = datetime(1899, 12, 30) + timedelta(days=num)
+                return d.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        return ""
+
     s = str(val).strip()
     # "출고완료" 등 텍스트 포함 시 날짜 부분만 추출
     date_match = re.search(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2})', s)
