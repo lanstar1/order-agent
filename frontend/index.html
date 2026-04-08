@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LANstar Agent</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/css/style.css?v=20260408a">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260408b">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
   <style>
     /* CS/RMA 파이프라인 탭 */
@@ -1008,18 +1008,44 @@ C규격품 200개
             </table>
           </div>
         </div>
-        <!-- 품목 등록 모달 -->
+        <!-- 관리품목 추가 모달 -->
         <div id="ip-add-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:999;justify-content:center;align-items:center">
           <div style="background:white;border-radius:12px;padding:24px;width:90%;max-width:500px;max-height:80vh;overflow-y:auto">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-              <h3 style="margin:0">품목 등록</h3>
+              <h3 style="margin:0">관리품목 추가</h3>
               <button onclick="ipCloseAddModal()" style="background:none;border:none;font-size:20px;cursor:pointer">&times;</button>
             </div>
-            <div style="margin-bottom:12px">
-              <label style="font-size:13px;font-weight:600">품목 검색</label>
-              <input type="text" id="ip-add-search" placeholder="품목코드, 모델명, 품명으로 검색" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box" oninput="ipSearchProducts(this.value)">
-              <div id="ip-search-results" style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;margin-top:4px;display:none"></div>
+            <!-- 탭 -->
+            <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:0">
+              <button id="ip-tab-search" onclick="ipSwitchAddTab('search')" style="padding:8px 16px;border:none;border-bottom:2px solid #2563eb;background:none;font-weight:600;color:#2563eb;cursor:pointer;margin-bottom:-2px">ERP 검색</button>
+              <button id="ip-tab-manual" onclick="ipSwitchAddTab('manual')" style="padding:8px 16px;border:none;border-bottom:2px solid transparent;background:none;color:#64748b;cursor:pointer;margin-bottom:-2px">신규 직접 입력</button>
             </div>
+            <!-- ERP 검색 탭 -->
+            <div id="ip-add-search-tab">
+              <div style="margin-bottom:12px">
+                <label style="font-size:13px;font-weight:600">품목 검색</label>
+                <input type="text" id="ip-add-search" placeholder="품목코드, 모델명, 품명으로 검색" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box" oninput="ipSearchProducts(this.value)">
+                <div id="ip-search-results" style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;margin-top:4px;display:none"></div>
+              </div>
+              <div id="ip-add-selected" style="display:none;padding:12px;background:#F0F9FF;border-radius:8px;margin-bottom:12px"></div>
+            </div>
+            <!-- 신규 직접 입력 탭 -->
+            <div id="ip-add-manual-tab" style="display:none">
+              <div style="margin-bottom:12px">
+                <label style="font-size:13px;font-weight:600">모델명 <span style="color:#dc2626">*</span></label>
+                <input type="text" id="ip-manual-model" placeholder="예: LS-1000H" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+              </div>
+              <div style="margin-bottom:12px">
+                <label style="font-size:13px;font-weight:600">품목코드 (ERP) <span style="color:#dc2626">*</span></label>
+                <input type="text" id="ip-manual-prodcd" placeholder="예: CAB-랜자재001" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+                <div style="font-size:11px;color:#94a3b8;margin-top:4px">ERP 재고조회에 사용되는 품목코드</div>
+              </div>
+              <div style="margin-bottom:12px">
+                <label style="font-size:13px;font-weight:600">품목명</label>
+                <input type="text" id="ip-manual-prodname" placeholder="예: [LANstar] UTP 랜케이블" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+              </div>
+            </div>
+            <!-- 공통 필드 -->
             <div style="display:flex;gap:12px;margin-bottom:12px">
               <div style="flex:1">
                 <label style="font-size:13px;font-weight:600">리드타임 (일)</label>
@@ -1037,11 +1063,10 @@ C규격품 200개
               </div>
               <div style="flex:1">
                 <label style="font-size:13px;font-weight:600">공급처 그룹</label>
-                <input type="text" id="ip-add-supplier" placeholder="예: 중국A, 국내" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+                <input type="text" id="ip-add-supplier" placeholder="예: BOR, NAM" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
               </div>
             </div>
-            <div id="ip-add-selected" style="display:none;padding:12px;background:#F0F9FF;border-radius:8px;margin-bottom:12px"></div>
-            <button id="ip-add-btn" onclick="ipAddTarget()" disabled style="width:100%;padding:10px;background:#2563eb;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;opacity:0.5">품목 등록</button>
+            <button id="ip-add-btn" onclick="ipAddTarget()" disabled style="width:100%;padding:10px;background:#2563eb;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;opacity:0.5">관리품목 추가</button>
           </div>
         </div>
         <!-- 상세 모달 -->
@@ -5090,7 +5115,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260408m"></script>
+<script src="/static/js/app.js?v=20260408n"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

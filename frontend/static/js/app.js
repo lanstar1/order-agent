@@ -5344,9 +5344,12 @@ function ipFilterTable() {
   if (_ipData) ipRenderTable(_ipData.items);
 }
 
-// ── 품목 등록 모달 ──
+// ── 관리품목 추가 모달 ──
+let _ipAddMode = 'search'; // 'search' or 'manual'
+
 function ipShowAddModal() {
   _ipSelected = null;
+  _ipAddMode = 'search';
   document.getElementById('ip-add-search').value = '';
   document.getElementById('ip-search-results').style.display = 'none';
   document.getElementById('ip-add-selected').style.display = 'none';
@@ -5354,7 +5357,31 @@ function ipShowAddModal() {
   document.getElementById('ip-add-btn').style.opacity = '0.5';
   document.getElementById('ip-add-leadtime').value = '40';
   document.getElementById('ip-add-safety').value = '10';
+  if (document.getElementById('ip-add-moq')) document.getElementById('ip-add-moq').value = '0';
+  if (document.getElementById('ip-add-supplier')) document.getElementById('ip-add-supplier').value = '';
+  if (document.getElementById('ip-manual-model')) document.getElementById('ip-manual-model').value = '';
+  if (document.getElementById('ip-manual-prodcd')) document.getElementById('ip-manual-prodcd').value = '';
+  if (document.getElementById('ip-manual-prodname')) document.getElementById('ip-manual-prodname').value = '';
+  ipSwitchAddTab('search');
   document.getElementById('ip-add-modal').style.display = 'flex';
+}
+
+function ipSwitchAddTab(mode) {
+  _ipAddMode = mode;
+  document.getElementById('ip-add-search-tab').style.display = mode === 'search' ? 'block' : 'none';
+  document.getElementById('ip-add-manual-tab').style.display = mode === 'manual' ? 'block' : 'none';
+  document.getElementById('ip-tab-search').style.borderBottomColor = mode === 'search' ? '#2563eb' : 'transparent';
+  document.getElementById('ip-tab-search').style.color = mode === 'search' ? '#2563eb' : '#64748b';
+  document.getElementById('ip-tab-manual').style.borderBottomColor = mode === 'manual' ? '#2563eb' : 'transparent';
+  document.getElementById('ip-tab-manual').style.color = mode === 'manual' ? '#2563eb' : '#64748b';
+  // 신규 입력 탭은 필수 필드 입력 시 버튼 활성화
+  if (mode === 'manual') {
+    document.getElementById('ip-add-btn').disabled = false;
+    document.getElementById('ip-add-btn').style.opacity = '1';
+  } else {
+    document.getElementById('ip-add-btn').disabled = !_ipSelected;
+    document.getElementById('ip-add-btn').style.opacity = _ipSelected ? '1' : '0.5';
+  }
 }
 
 function ipCloseAddModal() {
@@ -5400,12 +5427,28 @@ function ipSelectProduct(p) {
 }
 
 async function ipAddTarget() {
-  if (!_ipSelected) return;
+  let prod_cd, model_name, prod_name;
+
+  if (_ipAddMode === 'manual') {
+    model_name = (document.getElementById('ip-manual-model').value || '').trim();
+    prod_cd = (document.getElementById('ip-manual-prodcd').value || '').trim();
+    prod_name = (document.getElementById('ip-manual-prodname').value || '').trim();
+    if (!model_name || !prod_cd) {
+      toast('모델명과 품목코드는 필수입니다', 'error');
+      return;
+    }
+  } else {
+    if (!_ipSelected) return;
+    prod_cd = _ipSelected.prod_cd;
+    model_name = _ipSelected.model_name || '';
+    prod_name = _ipSelected.prod_name || '';
+  }
+
   try {
     await api.post('/api/inventory-planning/targets', {
-      prod_cd: _ipSelected.prod_cd,
-      model_name: _ipSelected.model_name || '',
-      prod_name: _ipSelected.prod_name || '',
+      prod_cd,
+      model_name,
+      prod_name,
       lead_time_days: parseInt(document.getElementById('ip-add-leadtime').value) || 40,
       safety_stock_days: parseInt(document.getElementById('ip-add-safety').value) || 10,
       moq: parseInt(document.getElementById('ip-add-moq').value) || 0,

@@ -1157,3 +1157,12 @@ table.map-tbl th[style*="cursor:pointer"]:hover { background: #e2e8f0; }
   .rc-edit-grid { grid-template-columns: 1fr 1fr; }
 }
 
+
+/* 온라인관리품목 테이블 반응형 */
+#ip-table-body td, #ip-table-body th {
+  white-space: nowrap;
+  min-width: 60px;
+}
+#ip-table-body td:nth-child(2) { min-width: 120px; } /* 모델명 */
+#ip-table-body td:nth-child(3) { min-width: 150px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; } /* 품목명 */
+.ip-table-wrap { overflow-x: auto; }
