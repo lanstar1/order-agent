@@ -203,7 +203,11 @@ def parse_po_items(contents: bytes) -> list[dict]:
 # ──────────────────────────────────────────────
 # PO 파일 다운로드 (납품부족사유 반영)
 # ──────────────────────────────────────────────
-def fill_shortage_reasons(contents: bytes, shortage_reasons: dict) -> io.BytesIO:
+def fill_shortage_reasons(
+    contents: bytes,
+    shortage_reasons: dict,
+    partial_quantities: dict = None,   # {orig_idx(int): partial_qty(int)}
+) -> io.BytesIO:
     """납품부족사유를 채워서 엑셀 반환"""
     df = pd.read_excel(io.BytesIO(contents), dtype=str).fillna("")
     df.columns = df.columns.str.strip()
@@ -215,8 +219,12 @@ def fill_shortage_reasons(contents: bytes, shortage_reasons: dict) -> io.BytesIO
         idx = int(idx_str)
         if idx < len(df):
             df.at[idx, "납품부족사유"] = reason
+            # 부분출고: 확정수량을 실제 ERP 전송 수량으로 설정
+            if partial_quantities and idx in partial_quantities:
+                if "확정수량" in df.columns:
+                    df.at[idx, "확정수량"] = str(partial_quantities[idx])
             # 단종·품절·인상 사유인 경우 확정수량(I열) → 0
-            if any(kw in reason for kw in ZERO_QTY_KEYWORDS):
+            elif any(kw in reason for kw in ZERO_QTY_KEYWORDS):
                 if "확정수량" in df.columns:
                     df.at[idx, "확정수량"] = "0"
 
@@ -332,21 +340,66 @@ async def send_to_ecount(
         rows_10 = []       # 용산(10) 전환
         rows_no_stock = [] # 둘 다 재고 없음 → 전표 제외
 
+        # 순번별 수량 차감 추적 (원본 inv_30/inv_10은 표시용으로 보존)
+        rem_30: dict = dict(inv_30)  # 통진 남은 재고 (처리하면서 차감)
+        rem_10: dict = dict(inv_10)  # 용산 남은 재고 (처리하면서 차감)
+
+        # 부분출고: orig_idx → 실제 ERP 전송 수량 (원래 발주수량보다 적을 때만)
+        partial_qtys: dict = {}
+        # 원래 발주수량 보존 (items_result 표시용)
+        orig_qtys: dict = {}
+
         for _, row in valid.iterrows():
             prod_cd = str(row["_품목코드"]).strip()
-            has_30 = inv_30.get(prod_cd, 0) > 0
-            has_10 = inv_10.get(prod_cd, 0) > 0
             bc_val = str(row.get("상품바코드", "")).strip()
-            cd_val = prod_cd
-            is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
+            is_label = bc_val in needs_label or (prod_cd and prod_cd in needs_label)
+            orig_idx = int(row["_orig_idx"])
 
-            if inv_checked and not has_30 and not has_10:
-                # 둘 다 재고 없음 → 전표 제외 (low_stock 처리만)
-                rows_no_stock.append((row, int(row["_orig_idx"]), is_label))
-            elif inv_checked and not has_30 and has_10:
-                rows_10.append((row, int(row["_orig_idx"]), is_label))
+            # 발주 수량
+            try:
+                order_qty = float(
+                    str(row.get(qty_col, "0") or "0").replace(",", "").strip()
+                )
+            except Exception:
+                order_qty = 0.0
+            orig_qtys[orig_idx] = order_qty
+
+            if not inv_checked:
+                # 재고 조회 실패 → 기본창고(통진)로 처리
+                rows_30.append((row, orig_idx, is_label))
+                continue
+
+            stock_30 = rem_30.get(prod_cd, 0.0)
+            stock_10 = rem_10.get(prod_cd, 0.0)
+
+            if order_qty > 0 and stock_30 >= order_qty:
+                # 통진 재고 충분 → 통진 전표, 수량 차감
+                rows_30.append((row, orig_idx, is_label))
+                rem_30[prod_cd] = stock_30 - order_qty
+                logger.debug(f"[바코드] {prod_cd} 통진 배정: {order_qty} (잔여 {rem_30[prod_cd]})")
+            elif order_qty > 0 and stock_10 >= order_qty:
+                # 통진 부족 → 용산 재고 충분 → 용산 전표, 수량 차감
+                rows_10.append((row, orig_idx, is_label))
+                rem_10[prod_cd] = stock_10 - order_qty
+                logger.info(f"[바코드] {prod_cd} 통진부족({stock_30}<{order_qty}) → 용산 전환 (잔여 {rem_10[prod_cd]})")
+            elif order_qty > 0 and stock_30 > 0:
+                # 통진 소량 재고 → 있는 만큼만 부분출고
+                partial_qty = int(stock_30)
+                partial_qtys[orig_idx] = partial_qty
+                rows_30.append((row, orig_idx, is_label))
+                rem_30[prod_cd] = 0.0
+                logger.info(f"[바코드] {prod_cd} 통진 부분출고: {partial_qty}/{int(order_qty)} (통진잔여→0)")
+            elif order_qty > 0 and stock_10 > 0:
+                # 용산 소량 재고 → 있는 만큼만 부분출고
+                partial_qty = int(stock_10)
+                partial_qtys[orig_idx] = partial_qty
+                rows_10.append((row, orig_idx, is_label))
+                rem_10[prod_cd] = 0.0
+                logger.info(f"[바코드] {prod_cd} 용산 부분출고: {partial_qty}/{int(order_qty)} (용산잔여→0)")
             else:
-                rows_30.append((row, int(row["_orig_idx"]), is_label))
+                # 둘 다 0 → 전표 제외
+                rows_no_stock.append((row, orig_idx, is_label))
+                logger.info(f"[바코드] {prod_cd} 재고없음(통진:{stock_30}, 용산:{stock_10}) → 전표제외")
 
         # ⑦ 통진 그룹 순번 할당 → 용산 그룹 순번 이어서 할당
         def assign_ser_nos(rows):
@@ -387,12 +440,30 @@ async def send_to_ecount(
         def build_entry(row, orig_idx, is_label, wh_cd, doc_to_ser):
             doc_no = str(row["발주번호"]).strip()
             warehouse = str(row["물류센터"]).strip()
-            qty_str = str(row[qty_col]).replace(",", "").strip()
+            orig_qty_str = str(row[qty_col]).replace(",", "").strip()
             supply_str = str(row.get("총발주 매입금", "")).replace(",", "").strip()
-            try:
-                price_val = round(float(supply_str) / float(qty_str)) if supply_str and qty_str and float(qty_str) != 0 else 0
-            except Exception:
-                price_val = 0
+
+            # 부분출고 여부: partial_qtys에 있으면 해당 수량으로 덮어씀
+            if orig_idx in partial_qtys:
+                actual_qty = partial_qtys[orig_idx]
+                qty_str = str(actual_qty)
+                # 단가 = 총매입금 / 원래수량, 실제공급가 = 단가 × 실제수량
+                try:
+                    orig_qty_f = float(orig_qty_str) if orig_qty_str else 0.0
+                    supply_f = float(supply_str.replace(",", "")) if supply_str else 0.0
+                    price_val = round(supply_f / orig_qty_f) if orig_qty_f > 0 else 0
+                    actual_supply = price_val * actual_qty
+                except Exception:
+                    price_val = 0
+                    actual_supply = 0
+                supply_str = str(int(actual_supply))
+            else:
+                qty_str = orig_qty_str
+                try:
+                    price_val = round(float(supply_str) / float(qty_str)) if supply_str and qty_str and float(qty_str) != 0 else 0
+                except Exception:
+                    price_val = 0
+
             return {"BulkDatas": {
                 "UPLOAD_SER_NO": doc_to_ser[doc_no],
                 "IO_DATE": today,
@@ -445,6 +516,19 @@ async def send_to_ecount(
         if not rd.get("IsSuccess"):
             errors.append(rd.get("TotalError", ""))
 
+    # (WH_CD, UPLOAD_SER_NO) 조합 → slip_no 매핑
+    # Ecount SlipNos 순서 = bulk_list 내 고유 (wh, ser_no) 조합 순서
+    seen_wh_ser: list = []
+    for item in bulk_list:
+        bd = item["BulkDatas"]
+        key = (bd["WH_CD"], bd["UPLOAD_SER_NO"])
+        if key not in seen_wh_ser:
+            seen_wh_ser.append(key)
+    wh_ser_to_slip: dict = {}
+    for idx, key in enumerate(seen_wh_ser):
+        if idx < len(slip_nos):
+            wh_ser_to_slip[key] = slip_nos[idx]
+
     items_result = []
     for i, item in enumerate(bulk_list):
         bd = item["BulkDatas"]
@@ -455,28 +539,39 @@ async def send_to_ecount(
 
         has_30 = bal_30 is not None and bal_30 > 0
         has_10 = bal_10 is not None and bal_10 > 0
+        is_partial = orig_indices[i] in partial_qtys
 
-        # 재고 상태:
-        # - 통진(30) 있음 → ok (통진 전표)
-        # - 통진(30) 없고 용산(10) 있음 → wh10_used (용산으로 자동 전환됨)
-        # - 둘 다 없음 → low_stock (납품부족사유 자동 입력 대상)
-        if has_30:
+        # 재고 상태 (partial 우선 체크)
+        if is_partial:
+            stock_status = "partial"   # 소량 재고로 부분출고
+        elif has_30 and used_wh == BARCODE_WH_CD:
             stock_status = "ok"
-        elif has_10:
-            stock_status = "wh10_used"  # 용산으로 전표 전환됨
+        elif has_10 and used_wh == "10":
+            stock_status = "wh10_used"
+        elif has_30:
+            stock_status = "ok"
         else:
             stock_status = "low_stock"
 
+        slip_no = wh_ser_to_slip.get((used_wh, bd["UPLOAD_SER_NO"]), "")
+        # 차감 후 잔여 재고
+        rem_30_after = rem_30.get(prod_cd, None)
+        rem_10_after = rem_10.get(prod_cd, None)
+
         items_result.append({
             "upload_ser_no": bd["UPLOAD_SER_NO"],
+            "slip_no": slip_no,
             "remarks": bd["U_MEMO5"],
             "prod_cd": prod_cd,
-            "qty": bd["QTY"],
+            "qty": bd["QTY"],                                          # 실제 전송 수량
+            "orig_qty": str(int(orig_qtys.get(orig_indices[i], 0))),  # 원래 발주수량
             "bal_10": round(bal_10) if bal_10 is not None else None,
             "bal_30": round(bal_30) if bal_30 is not None else None,
+            "rem_10": round(rem_10_after) if rem_10_after is not None else None,
+            "rem_30": round(rem_30_after) if rem_30_after is not None else None,
             "stock_status": stock_status,
-            "used_wh": used_wh,           # 실제 전표 창고 (10=용산, 30=통진)
-            "low_stock": stock_status == "low_stock",  # 하위호환
+            "used_wh": used_wh,
+            "low_stock": stock_status in ("low_stock", "partial"),  # 하위호환
             "orig_idx": orig_indices[i],
             "needs_label": label_flags[i],
         })
@@ -488,6 +583,7 @@ async def send_to_ecount(
         bal_30 = inv_30.get(prod_cd, None)
         items_result.append({
             "upload_ser_no": "-",
+            "slip_no": "",                 # 전표 미생성
             "remarks": f"{str(row['물류센터']).strip()} - {str(row['발주번호']).strip()}",
             "prod_cd": prod_cd,
             "qty": str(row[qty_col]).replace(",", "").strip(),
@@ -503,6 +599,7 @@ async def send_to_ecount(
     # 바코드 부착 필요 항목 별도 추출
     label_items = [it for it in items_result if it.get("needs_label")]
 
+    partial_cnt = len(partial_qtys)
     return {
         "status": status,
         "total": len(bulk_list),
@@ -513,6 +610,8 @@ async def send_to_ecount(
         "unmatched": unmatched,
         "excluded": excluded_cnt,
         "no_stock": len(rows_no_stock),
+        "partial": partial_cnt,                                      # 부분출고 건수
+        "partial_quantities": {str(k): v for k, v in partial_qtys.items()},  # {orig_idx: partial_qty}
         "items_result": items_result,
         "label_items": label_items,
         "inv_checked": inv_checked,
