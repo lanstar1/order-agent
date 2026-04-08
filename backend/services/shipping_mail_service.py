@@ -94,11 +94,23 @@ def scan_shipping_emails(
 
         for uid in all_uids:
             try:
-                status, msg_data = mail.fetch(uid, "(RFC822)")
-                if status != "OK":
+                # Ecount IMAP 호환: 여러 FETCH 형식 시도
+                msg_data = None
+                for fetch_cmd in ["(RFC822)", "RFC822", "(BODY[])"]:
+                    try:
+                        status, msg_data = mail.fetch(uid, fetch_cmd)
+                        if status == "OK" and msg_data and msg_data[0]:
+                            break
+                    except Exception:
+                        continue
+                if not msg_data or not msg_data[0]:
                     continue
 
-                msg = email.message_from_bytes(msg_data[0][1])
+                raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else msg_data[0]
+                if not isinstance(raw, bytes):
+                    continue
+
+                msg = email.message_from_bytes(raw)
                 subject = _decode_header_value(msg.get("Subject", ""))
                 date_str = msg.get("Date", "")
                 email_dt = _parse_email_date(date_str)
@@ -816,11 +828,23 @@ def scan_bor_orderlist_emails(
 
         for uid in sorted(all_uids, reverse=True):  # 최신 먼저
             try:
-                status, msg_data = mail.fetch(uid, "(RFC822)")
-                if status != "OK":
+                # Ecount IMAP 호환: 여러 FETCH 형식 시도
+                msg_data = None
+                for fetch_cmd in ["(RFC822)", "RFC822", "(BODY[])"]:
+                    try:
+                        status, msg_data = mail.fetch(uid, fetch_cmd)
+                        if status == "OK" and msg_data and msg_data[0]:
+                            break
+                    except Exception:
+                        continue
+                if not msg_data or not msg_data[0]:
                     continue
 
-                msg = email.message_from_bytes(msg_data[0][1])
+                raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else msg_data[0]
+                if not isinstance(raw, bytes):
+                    continue
+
+                msg = email.message_from_bytes(raw)
 
                 # Python에서 발신자 필터 (Ecount IMAP 검색 미지원)
                 msg_from = _decode_header_value(msg.get("From", "")).lower()
