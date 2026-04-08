@@ -469,11 +469,15 @@ async def cleanup_duplicate_violations():
         keep_ids = [r["keep_id"] for r in keep_rows if r["keep_id"]]
         if keep_ids:
             placeholders = ",".join(["?"] * len(keep_ids))
-            # 2단계: 삭제 대상의 경고 메일 먼저 삭제 (외래키 참조)
-            conn.execute(f"""DELETE FROM map_warning_emails WHERE violation_id IS NOT NULL
-                AND violation_id NOT IN ({placeholders})""", keep_ids)
-            # 3단계: 중복 위반 삭제
-            conn.execute(f"DELETE FROM map_violations WHERE is_resolved = 0 AND id NOT IN ({placeholders})", keep_ids)
+            # 2단계: 삭제 대상 위반 ID 조회
+            del_rows = conn.execute(f"SELECT id FROM map_violations WHERE is_resolved = 0 AND id NOT IN ({placeholders})", keep_ids).fetchall()
+            del_ids = [r["id"] for r in del_rows]
+            if del_ids:
+                dp = ",".join(["?"] * len(del_ids))
+                # 3단계: 관련 경고 메일 먼저 삭제 (FK 제약)
+                conn.execute(f"DELETE FROM map_warning_emails WHERE violation_id IN ({dp})", del_ids)
+                # 4단계: 중복 위반 삭제
+                conn.execute(f"DELETE FROM map_violations WHERE id IN ({dp})", del_ids)
         conn.commit()
         after = conn.execute("SELECT COUNT(*) as c FROM map_violations WHERE is_resolved=0").fetchone()["c"]
         conn.close()
