@@ -83,10 +83,14 @@ def scan_shipping_emails(
         # 날짜 범위 설정
         since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
 
-        # Ecount: UID 기반 SEARCH/FETCH 필수 (일반 search는 8개만 반환)
-        status, data = mail.uid("search", None, "ALL")
+        # Ecount: UID 기반 SEARCH (SINCE 조건으로 최근 메일만)
+        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+        try:
+            status, data = mail.uid("search", None, f"(SINCE {since_date})")
+        except Exception:
+            status, data = mail.uid("search", None, "ALL")
         all_uids = data[0].split() if status == "OK" and data[0] else []
-        logger.info(f"[선적메일] INBOX UID 전체 {len(all_uids)}건")
+        logger.info(f"[선적메일] INBOX UID {len(all_uids)}건 (SINCE {since_date})")
 
         shipping_keywords = ["shipping", "final", "list"]
         cutoff = datetime.now(KST) - timedelta(days=days_back)
@@ -840,10 +844,14 @@ def scan_bor_orderlist_emails(
         mail.login(imap_user, imap_password)
         mail.select("INBOX", readonly=True)
 
-        # Ecount: UID 기반 SEARCH/FETCH 필수
-        status, data = mail.uid("search", None, "ALL")
+        # Ecount: UID 기반 SEARCH (SINCE 조건으로 최근 메일만)
+        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+        try:
+            status, data = mail.uid("search", None, f"(SINCE {since_date})")
+        except Exception:
+            status, data = mail.uid("search", None, "ALL")
         all_uids = data[0].split() if status == "OK" and data[0] else []
-        logger.info(f"[BOR오더] INBOX UID 전체 {len(all_uids)}건, 발신자: {sender_filter}")
+        logger.info(f"[BOR오더] INBOX UID {len(all_uids)}건 (SINCE {since_date}), 발신자: {sender_filter}")
 
         cutoff = datetime.now(KST) - timedelta(days=days_back)
 
