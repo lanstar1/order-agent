@@ -1,3 +1,4 @@
+import re
 """
 적정재고 관리 서비스 (온라인관리품목)
 - inventory_snapshots 일별 차이 → 판매량 자동 계산
@@ -200,9 +201,35 @@ def get_all_pending_orders_map(conn) -> dict:
             order_map[model] = []
         order_map[model].append({
             "sheet_tab": r[1], "order_no": r[2],
-            "order_date": r[3], "qty": r[4], "unit": r[5],
+            "order_date": _normalize_date(r[3]), "qty": r[4], "unit": r[5],
         })
     return order_map
+
+
+def _normalize_date(val) -> str:
+    """다양한 날짜 포맷을 YYYY-MM-DD로 통일"""
+    if not val:
+        return ""
+    s = str(val).strip()
+    # 이미 YYYY-MM-DD
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
+        return s
+    # "January 20, 2026" / "March 30, 2026" 등 영문
+    try:
+        from datetime import datetime
+        for fmt in ["%B %d, %Y", "%b %d, %Y", "%B %d,%Y", "%Y/%m/%d", "%m/%d/%Y", "%d/%m/%Y"]:
+            try:
+                dt = datetime.strptime(s, fmt)
+                return dt.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+    except Exception:
+        pass
+    # YYYY/MM/DD
+    m = re.search(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    return s
 
 
 # ─── 핵심: 적정재고 분석 ───────────────────────────────

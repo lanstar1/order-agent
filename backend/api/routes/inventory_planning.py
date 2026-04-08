@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -249,7 +249,7 @@ async def scan_nam_shipping():
             imap_password=MAIL2_PASSWORD,
             sender_filter=MAIL2_SENDER_FILTER,
             imap_port=MAIL2_IMAP_PORT,
-            days_back=180,
+            days_back=90,
         )
 
         # DB 저장 (orderlist_items + shipping_mail_info)
@@ -348,7 +348,7 @@ async def scan_all_shipping():
                 from services.shipping_mail_service import scan_nam_shipping_emails, save_nam_shipping_info, write_nam_orders_to_sheet
                 yield send("📧 [3/5] NAM 메일 검색 중 (전체 폴더)...", 50, "nam_scan")
                 nam_results = scan_nam_shipping_emails(
-                    MAIL2_IMAP_SERVER, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER, MAIL2_IMAP_PORT, days_back=180)
+                    MAIL2_IMAP_SERVER, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER, MAIL2_IMAP_PORT, days_back=90)
                 yield send(f"📧 [3/5] NAM: {len(nam_results)}건 → DB + 구글시트...", 60, "nam_save")
                 conn = get_connection()
                 try:
@@ -633,3 +633,101 @@ async def cleanup_shipping_data():
         return {"status": "ok", "remaining": count, "message": "선적 정보 전체 삭제 완료. 통합 스캔을 실행하면 최신 데이터만 다시 수집됩니다."}
     finally:
         conn.close()
+
+
+# ─── 스케줄러 API ────────────────────────────────────────
+
+@router.get("/scheduler/status")
+async def get_scheduler():
+    from services.shipping_mail_service import get_scheduler_status
+    return get_scheduler_status()
+
+@router.post("/scheduler/set")
+async def set_scheduler(request: Request):
+    body = await request.json()
+    enabled = body.get("enabled", False)
+    hour = body.get("hour", 8)
+    minute = body.get("minute", 0)
+
+    from services.shipping_mail_service import setup_scan_scheduler, stop_scan_scheduler
+    if enabled:
+        setup_scan_scheduler(hour, minute)
+        return {"status": "ok", "message": f"매일 {hour:02d}:{minute:02d} KST 자동 스캔 설정"}
+    else:
+        stop_scan_scheduler()
+        return {"status": "ok", "message": "자동 스캔 중지"}
+
+
+# ─── 엑셀 내보내기 API ───────────────────────────────────
+
+@router.get("/export/excel")
+async def export_excel():
+    """긴급발주/발주검토 품목을 엑셀로 내보내기"""
+    from fastapi.responses import Response
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    import io
+
+    conn = get_connection()
+    try:
+        result = analyze_all_targets(conn)
+    finally:
+        conn.close()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "적정재고 분석"
+
+    # 헤더
+    headers = ["상태", "모델명", "품목명", "현재고", "7일 일평균", "30일 일평균",
+               "소진예상", "권장수량", "발주기한", "오더", "선적일", "입고예정"]
+    header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    for c, h in enumerate(headers, 1):
+        cell = ws.cell(1, c, h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    # 데이터 (긴급발주 + 발주검토 우선)
+    urgent_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+    items = sorted(result["items"], key=lambda x: x.get("days_until_stockout", 999))
+
+    for r, item in enumerate(items, 2):
+        status = item.get("status_label", "")
+        ws.cell(r, 1, status)
+        ws.cell(r, 2, item.get("model_name", ""))
+        ws.cell(r, 3, item.get("prod_name", ""))
+        ws.cell(r, 4, item.get("current_stock", 0))
+        ws.cell(r, 5, item.get("avg_daily_7d", 0))
+        ws.cell(r, 6, item.get("avg_daily_30d", 0))
+        ws.cell(r, 7, f"{item.get('days_until_stockout', '-')}일" if item.get('days_until_stockout') else "-")
+        ws.cell(r, 8, item.get("recommended_qty", 0))
+        ws.cell(r, 9, item.get("order_deadline", ""))
+        order_info = item.get("order_info", "")
+        if isinstance(order_info, dict):
+            order_info = f"{order_info.get('order_date','')} {order_info.get('qty','')}개"
+        ws.cell(r, 10, str(order_info) if order_info else "미발주")
+        ws.cell(r, 11, item.get("shipping_date", ""))
+        ws.cell(r, 12, item.get("arrival_date", ""))
+
+        if "긴급" in status:
+            for c in range(1, 13):
+                ws.cell(r, c).fill = urgent_fill
+
+    # 열 너비
+    widths = [10, 20, 25, 10, 10, 10, 10, 10, 12, 20, 12, 12]
+    for c, w in enumerate(widths, 1):
+        ws.column_dimensions[chr(64 + c)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    from datetime import datetime as dt
+    fname = f"inventory_planning_{dt.now().strftime('%Y%m%d')}.xlsx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )

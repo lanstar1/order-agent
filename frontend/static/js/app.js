@@ -5570,18 +5570,60 @@ async function ipScanShippingMails() {
 }
 
 async function ipSyncBorOrderlist() {
-  if (!confirm('BOR 거래처 메일에서 최신 REST 파일을 찾아 구글시트 오더리스트를 덮어씁니다.')) return;
-  toast('📋 BOR 오더리스트 최신화 중...', 'info');
+  // 통합 스캔에 포함되어 별도 사용 안함
+}
+
+function ipExportExcel() {
+  window.open('/api/inventory-planning/export/excel', '_blank');
+}
+
+async function ipShowSchedulerModal() {
   try {
-    const data = await api.post('/api/inventory-planning/orderlist/sync-bor', {});
-    if (data.status === 'ok') {
-      toast(`✅ 오더리스트 최신화 완료 (${data.filename || ''})`, 'success');
-      ipRefreshAnalysis();
-    } else {
-      toast(data.message || '최신화 실패', 'warning');
-    }
+    const status = await api.get('/api/inventory-planning/scheduler/status');
+    const enabled = status.enabled;
+    const hour = status.hour || 8;
+    const minute = status.minute || 0;
+
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:12px;padding:24px;width:360px;box-shadow:0 8px 30px rgba(0,0,0,0.2)">
+        <h3 style="margin:0 0 16px">⏰ 자동 스캔 설정</h3>
+        <div style="margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="sched-enabled" ${enabled?'checked':''} style="width:18px;height:18px">
+            <span>매일 자동 스캔 활성화</span>
+          </label>
+        </div>
+        <div style="margin-bottom:16px;display:flex;align-items:center;gap:8px">
+          <span>시간 (KST):</span>
+          <input type="number" id="sched-hour" value="${hour}" min="0" max="23" style="width:60px;padding:6px;border:1px solid #e2e8f0;border-radius:6px">
+          <span>:</span>
+          <input type="number" id="sched-minute" value="${minute}" min="0" max="59" style="width:60px;padding:6px;border:1px solid #e2e8f0;border-radius:6px">
+        </div>
+        <p style="font-size:12px;color:#64748b;margin-bottom:16px">BOR 오더리스트 + 선적 + NAM 오더를 매일 자동으로 스캔합니다.</p>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="this.closest('div[style]').parentElement.remove()" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:pointer">취소</button>
+          <button onclick="ipSaveScheduler()" style="padding:8px 16px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer">저장</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
   } catch (err) {
-    toast('오더리스트 최신화 실패: ' + (err.message || err), 'error');
+    toast('스케줄러 설정 로드 실패', 'error');
+  }
+}
+
+async function ipSaveScheduler() {
+  const enabled = document.getElementById('sched-enabled').checked;
+  const hour = parseInt(document.getElementById('sched-hour').value) || 8;
+  const minute = parseInt(document.getElementById('sched-minute').value) || 0;
+  try {
+    const data = await api.post('/api/inventory-planning/scheduler/set', {enabled, hour, minute});
+    toast(data.message || '설정 완료', 'success');
+    document.querySelector('div[style*="position:fixed"][style*="z-index:1000"]')?.remove();
+  } catch (err) {
+    toast('설정 실패: ' + (err.message || err), 'error');
   }
 }
 

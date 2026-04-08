@@ -1105,3 +1105,114 @@ def get_last_scan_info(conn) -> dict:
                 "email_dates": row[2],
             }
     return result
+
+
+# ═══════════════════════════════════════════════════════════
+#  스케줄러: 자동 통합 스캔
+# ═══════════════════════════════════════════════════════════
+
+_scan_scheduler = None
+
+def setup_scan_scheduler(hour: int = 8, minute: int = 0):
+    """매일 지정 시간에 통합 스캔 실행"""
+    global _scan_scheduler
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    if _scan_scheduler:
+        _scan_scheduler.shutdown(wait=False)
+
+    _scan_scheduler = BackgroundScheduler(timezone="Asia/Seoul")
+    _scan_scheduler.add_job(
+        _run_scheduled_scan,
+        "cron", hour=hour, minute=minute,
+        id="daily_scan", replace_existing=True,
+    )
+    _scan_scheduler.start()
+    logger.info(f"[스케줄러] 매일 {hour:02d}:{minute:02d} KST 자동 스캔 설정")
+
+
+def stop_scan_scheduler():
+    global _scan_scheduler
+    if _scan_scheduler:
+        _scan_scheduler.shutdown(wait=False)
+        _scan_scheduler = None
+        logger.info("[스케줄러] 자동 스캔 중지")
+
+
+def get_scheduler_status() -> dict:
+    global _scan_scheduler
+    if not _scan_scheduler or not _scan_scheduler.running:
+        return {"enabled": False, "hour": 8, "minute": 0}
+    jobs = _scan_scheduler.get_jobs()
+    if jobs:
+        trigger = jobs[0].trigger
+        # cron trigger에서 hour/minute 추출
+        h = trigger.fields[5]  # hour
+        m = trigger.fields[6]  # minute
+        return {"enabled": True, "hour": int(str(h)), "minute": int(str(m))}
+    return {"enabled": False, "hour": 8, "minute": 0}
+
+
+def _run_scheduled_scan():
+    """스케줄러에서 호출되는 통합 스캔"""
+    logger.info("[스케줄러] 자동 통합 스캔 시작")
+    try:
+        from config import (MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD,
+                           MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER)
+        from db.database import get_connection
+
+        # 1. BOR 오더리스트
+        if MAIL_USER and MAIL_PASSWORD:
+            try:
+                ol = scan_bor_orderlist_emails(MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
+                if ol:
+                    sync_bor_orderlist_to_sheet([ol[0]])
+            except Exception as e:
+                logger.error(f"[스케줄러] BOR 오더리스트 오류: {e}")
+
+            # 2. BOR 선적
+            try:
+                bor = scan_shipping_emails(MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
+                conn = get_connection()
+                try:
+                    save_shipping_info(conn, bor)
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.error(f"[스케줄러] BOR 선적 오류: {e}")
+
+        # 3. NAM
+        if MAIL2_USER and MAIL2_PASSWORD:
+            try:
+                nam = scan_nam_shipping_emails(MAIL2_IMAP_SERVER, MAIL2_USER, MAIL2_PASSWORD,
+                                               MAIL2_SENDER_FILTER, MAIL2_IMAP_PORT, days_back=90)
+                conn = get_connection()
+                try:
+                    save_nam_shipping_info(conn, nam)
+                finally:
+                    conn.close()
+                write_nam_orders_to_sheet(nam)
+            except Exception as e:
+                logger.error(f"[스케줄러] NAM 오류: {e}")
+
+        # 4. DB 동기화
+        try:
+            from services.orderlist_service import sync_orderlist
+            sync_orderlist()
+        except Exception as e:
+            logger.error(f"[스케줄러] DB 동기화 오류: {e}")
+
+        # 5. 이력 저장
+        try:
+            conn = get_connection()
+            try:
+                save_scan_log(conn, "shipping_scan", "스케줄러 자동 스캔", "")
+                save_scan_log(conn, "orderlist_sync", "스케줄러 자동 동기화", "")
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+        logger.info("[스케줄러] 자동 통합 스캔 완료")
+    except Exception as e:
+        logger.error(f"[스케줄러] 통합 스캔 실패: {e}")

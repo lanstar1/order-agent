@@ -417,6 +417,14 @@ async def startup():
     except Exception as e:
         logger.warning(f"리베이트 테이블 초기화 실패 (서비스는 계속): {e}")
 
+    # 통합 스캔 스케줄러 (매일 오전 8시 KST)
+    try:
+        from services.shipping_mail_service import setup_scan_scheduler
+        setup_scan_scheduler(hour=8, minute=0)
+        logger.info("통합 스캔 스케줄러 시작 (08:00 KST)")
+    except Exception as e:
+        logger.warning(f"스케줄러 시작 실패: {e}")
+
     # 매입정산 ERP 캐시 복원 (DB → 메모리)
     try:
         from api.routes.purchase_reconciliation import restore_cache_from_db
