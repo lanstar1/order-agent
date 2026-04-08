@@ -337,51 +337,20 @@ def get_shipping_info_map(conn) -> dict:
 def _build_shipping_entry(conn, model: str, bor: str, ship_date: str, arr_date: str,
                           today: str, today_fmt: str) -> dict:
     """
-    선적 정보 엔트리 생성 + 2차 검증 (선적일 이후 재고 증가 확인)
-
-    - 선적일 이후 재고가 오더 수량만큼 증가 → None (이미 입고 → 표시 안함)
-    - 입고예정일 미도래 + 재고 미증가 → status="shipping" (선적 중)
-    - 입고예정일 경과 + 재고 미증가 → status="delayed" (입고 지연)
+    선적 정보 표시 여부 판단 (단순 규칙)
+    - 선적일이 7일 이상 지남 → 이미 입고됨 → None (표시 안함)
+    - 선적일이 7일 이내 → 선적 중 표시
     """
-    if not ship_date and not arr_date:
-        return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "shipping"}
+    if not ship_date:
+        return None
 
-    # 2차 검증: 선적일 이후 재고 증가 여부 확인 (항상 실행)
-    check_from = ship_date or arr_date
-    if check_from:
-        try:
-            from_dt = datetime.strptime(check_from, "%Y-%m-%d")
-            check_start = (from_dt - timedelta(days=3)).strftime("%Y%m%d")
-            check_end = datetime.now(KST).strftime("%Y%m%d")
-
-            target_row = conn.execute(
-                "SELECT prod_cd FROM inventory_planning_targets WHERE UPPER(model_name) = ?",
-                (model,)
-            ).fetchone()
-
-            if target_row:
-                prod_cd = target_row[0]
-                snapshots = conn.execute("""
-                    SELECT snapshot_date, bal_qty FROM inventory_snapshots
-                    WHERE prod_cd = ? AND snapshot_date BETWEEN ? AND ?
-                    ORDER BY snapshot_date ASC
-                """, (prod_cd, check_start, check_end)).fetchall()
-
-                if len(snapshots) >= 2:
-                    # 선적일 직전 재고 vs 이후 최대 재고 비교
-                    early_qty = snapshots[0][1]  # 선적 전 재고
-                    max_qty = max(s[1] for s in snapshots)
-                    increase = max_qty - early_qty
-
-                    # 재고가 의미있게 증가했으면 입고 확인
-                    if increase >= 10 or (early_qty > 0 and increase / early_qty >= 0.2):
-                        return None  # 입고 확인됨 → 표시 안함
-        except Exception:
-            pass
-
-    # 재고 미증가 → 상태 판별
-    if arr_date and arr_date < today:
-        return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "delayed"}
+    try:
+        ship_dt = datetime.strptime(ship_date, "%Y-%m-%d")
+        days_since_ship = (datetime.now(KST).replace(tzinfo=None) - ship_dt).days
+        if days_since_ship > 7:
+            return None  # 선적 후 7일 이상 → 입고 완료로 간주
+    except Exception:
+        pass
 
     return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "shipping"}
 
