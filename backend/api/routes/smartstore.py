@@ -1301,18 +1301,23 @@ async def fetch_options_excel(body: dict = Body(...)):
 
 
 @router.get("/product-map/debug-option/{product_no}")
-async def debug_channel_product(product_no: str):
+async def debug_channel_product(product_no: str, naver_no: str = ""):
     """채널상품 API 응답 구조 확인용 (디버그)"""
     from services.naver_client import naver_client
     headers = await naver_client._headers()
     import httpx
     from config import NAVER_COMMERCE_URL
-    
-    # 여러 엔드포인트 시도
+
     endpoints = [
         f"{NAVER_COMMERCE_URL}/external/v1/channel-products/{product_no}",
-        f"{NAVER_COMMERCE_URL}/external/v2/channel-products/{product_no}",
+        f"{NAVER_COMMERCE_URL}/external/v1/channel-products?channelProductNos={product_no}",
+        f"{NAVER_COMMERCE_URL}/external/v1/seller/channel-products/{product_no}",
     ]
+    if naver_no:
+        endpoints += [
+            f"{NAVER_COMMERCE_URL}/external/v1/channel-products/{naver_no}",
+            f"{NAVER_COMMERCE_URL}/external/v1/channel-products?channelProductNos={naver_no}",
+        ]
     results = {}
     async with httpx.AsyncClient(timeout=15) as client:
         for url in endpoints:
