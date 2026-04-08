@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Query, HTTPException, Body, UploadFile, File
+from pydantic import BaseModel
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -286,11 +287,17 @@ async def fetch_orders(
         return {"success": False, "error": str(e), "orders": []}
 
 
+class SendErpRequest(BaseModel):
+    orders: list[dict]
+    emp_cd: str = ""
+
 @router.post("/send-erp")
 async def send_erp_only(
-    selected_orders: list[dict] = Body(...),
+    req: SendErpRequest,
 ):
     """ERP 판매전표만 전송 (로젠 미포함)"""
+    selected_orders = req.orders
+    _emp_cd = req.emp_cd or SMARTSTORE_EMP_CODE
     from services.erp_client_ss import ERPClientSS
 
     if not selected_orders:
@@ -371,7 +378,7 @@ async def send_erp_only(
     try:
         erp = ERPClientSS()
         await erp.ensure_session()
-        r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, SMARTSTORE_EMP_CODE)
+        r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, _emp_cd)
         delivery_count = len(delivery_by_fee)
         r["lines"] = len(erp_lines)
         r["erp_matched"] = len(erp_lines) - delivery_count
@@ -391,11 +398,17 @@ async def send_erp_only(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ExcludedSendErpRequest(BaseModel):
+    orders: list[dict]
+    emp_cd: str = ""
+
 @router.post("/excluded-send-erp")
 async def excluded_send_erp(
-    selected_orders: list[dict] = Body(...),
+    req: ExcludedSendErpRequest,
 ):
     """제외 키워드 주문 → ERP 판매전표 전송 (비고사항에 경동택배선불/착불 자동 기입)"""
+    selected_orders = req.orders
+    _emp_cd = req.emp_cd or SMARTSTORE_EMP_CODE
     from services.erp_client_ss import ERPClientSS
     from collections import defaultdict
 
@@ -517,7 +530,7 @@ async def excluded_send_erp(
     try:
         erp = ERPClientSS()
         await erp.ensure_session()
-        r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, SMARTSTORE_EMP_CODE)
+        r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, _emp_cd)
         r["lines"] = len(erp_lines)
         r["erp_matched"] = len(erp_lines)
         r["erp_unmatched"] = len(unmatched_items)
@@ -908,11 +921,17 @@ async def register_logen_only(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class AutoRegisterLogenRequest(BaseModel):
+    orders: list[dict]
+    emp_cd: str = ""
+
 @router.post("/auto-register-logen")
 async def auto_register_logen(
     warehouse: str = Query(..., pattern="^(gimpo|yongsan)$"),
-    selected_orders: list[dict] = Body(...),
+    req: AutoRegisterLogenRequest = Body(...),
 ):
+    selected_orders = req.orders
+    _emp_cd = req.emp_cd or SMARTSTORE_EMP_CODE
     from services.naver_client import naver_client
     from services.ilogen_client import register_orders, get_sender
     from services.erp_client_ss import ERPClientSS
@@ -1014,7 +1033,7 @@ async def auto_register_logen(
                 return {"success": False, "lines": len(erp_lines), "error": "SMARTSTORE_CUST_CODE 미설정"}
             erp = ERPClientSS()
             await erp.ensure_session()
-            r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, SMARTSTORE_EMP_CODE)
+            r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, _emp_cd)
             r["lines"] = len(erp_lines)
             r["sent_prod_codes"] = [l["prod_cd"] for l in erp_lines]
             return r

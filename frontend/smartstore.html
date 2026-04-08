@@ -155,6 +155,12 @@
                 <button class="btn btn-sm btn-gray" onclick="selectAll()">전체선택</button>
                 <button class="btn btn-sm btn-gray" onclick="deselectAll()">전체해제</button>
                 <span style="flex:1;"></span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <label style="font-size:12px;font-weight:600;color:#475569;white-space:nowrap;">담당자</label>
+                    <select id="sel-emp" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff;color:#1e293b;min-width:100px;">
+                        <option value="">-- 선택 --</option>
+                    </select>
+                </div>
                 <button class="btn btn-blue" onclick="sendErp()" id="b-erp">📤 ERP 전송</button>
                 <button class="btn btn-red" onclick="openTrackingModal('gimpo')" id="b-gp">🚚 김포 송장입력</button>
                 <button class="btn btn-orange" onclick="openTrackingModal('yongsan')" id="b-ys">🚚 용산 송장입력</button>
@@ -221,6 +227,24 @@
 const B = '';
 let _rawOrders = null;   // API 응답 원본 배열
 let _checkedSet = new Set();  // 체크된 상품주문번호(productOrderId) Set
+
+// ── 담당자 목록 로드 ──
+(async function loadEmployees(){
+    try {
+        const r = await(await fetch(B+'/api/auth/employees')).json();
+        const sel = document.getElementById('sel-emp');
+        (r.employees || []).forEach(emp => {
+            const opt = document.createElement('option');
+            opt.value = emp.emp_cd;
+            opt.textContent = emp.name;
+            sel.appendChild(opt);
+        });
+    } catch(e) { console.warn('담당자 목록 로드 실패', e); }
+})();
+
+function getSelectedEmpCd() {
+    return document.getElementById('sel-emp')?.value || '';
+}
 
 // 날짜 기본값
 (function initDates(){
@@ -606,7 +630,7 @@ async function sendErp(){
         const r = await(await fetch(B+'/api/smartstore/send-erp', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(selectedOrders),
+            body: JSON.stringify({ orders: selectedOrders, emp_cd: getSelectedEmpCd() }),
         })).json();
 
         if(r.success){
@@ -768,7 +792,7 @@ async function autoReg(wh){
         const r = await(await fetch(B+'/api/smartstore/auto-register-logen?warehouse='+wh, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(selectedOrders),
+            body: JSON.stringify({ orders: selectedOrders, emp_cd: getSelectedEmpCd() }),
         })).json();
 
         if(r.success){
@@ -1019,7 +1043,7 @@ async function sendExcludedErp(){
     try{
         const r = await(await fetch(B+'/api/smartstore/excluded-send-erp',{
             method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify(targetOrders)
+            body: JSON.stringify({ orders: targetOrders, emp_cd: getSelectedEmpCd() })
         })).json();
         if(r.success){
             const msg = `경동택배 ERP 전송 완료! ${r.erp_matched||r.lines||0}건`;
