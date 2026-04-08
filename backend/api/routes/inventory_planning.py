@@ -357,3 +357,113 @@ async def sync_bor_orderlist():
         }
     except Exception as e:
         raise HTTPException(500, f"BOR 오더리스트 동기화 실패: {str(e)}")
+
+
+@router.get("/shipping/debug-mail")
+async def debug_mail_connection():
+    """메일 서버 디버그 — 폴더 목록 + 검색 테스트"""
+    import imaplib
+    results = {}
+
+    # 1. Ecount 메일
+    try:
+        from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+        if MAIL_USER and MAIL_PASSWORD:
+            mail = imaplib.IMAP4_SSL(MAIL_IMAP_SERVER, MAIL_IMAP_PORT)
+            mail.login(MAIL_USER, MAIL_PASSWORD)
+
+            # 폴더 목록
+            status, folders = mail.list()
+            folder_names = []
+            for f in (folders or []):
+                try:
+                    folder_names.append(f.decode("utf-8", errors="replace"))
+                except:
+                    folder_names.append(str(f))
+
+            # INBOX 검색 테스트
+            mail.select("INBOX", readonly=True)
+            tests = {}
+
+            # 전체 메일 수
+            status, data = mail.search(None, "ALL")
+            total = len(data[0].split()) if data[0] else 0
+            tests["total_inbox"] = total
+
+            # 최근 30일
+            from datetime import datetime, timedelta
+            since = (datetime.now() - timedelta(days=30)).strftime("%d-%b-%Y")
+            status, data = mail.search(None, f"(SINCE {since})")
+            tests["last_30d"] = len(data[0].split()) if data[0] else 0
+
+            # shipping 키워드
+            for kw in ["shipping", "final", "BOR"]:
+                try:
+                    status, data = mail.search(None, f'(SUBJECT "{kw}")')
+                    tests[f"subject_{kw}"] = len(data[0].split()) if data[0] else 0
+                except Exception as e:
+                    tests[f"subject_{kw}"] = f"error: {e}"
+
+            # FROM bor-cable
+            try:
+                status, data = mail.search(None, '(FROM "guzhiyi@bor-cable.com")')
+                tests["from_bor"] = len(data[0].split()) if data[0] else 0
+            except Exception as e:
+                tests["from_bor"] = f"error: {e}"
+
+            # FROM bor-cable (90일)
+            try:
+                status, data = mail.search(None, f'(SINCE {since} FROM "guzhiyi")')
+                tests["from_guzhiyi_30d"] = len(data[0].split()) if data[0] else 0
+            except Exception as e:
+                tests["from_guzhiyi_30d"] = f"error: {e}"
+
+            mail.logout()
+            results["ecount"] = {"folders": folder_names[:20], "tests": tests}
+    except Exception as e:
+        results["ecount"] = {"error": str(e)}
+
+    # 2. Naver 메일
+    try:
+        from config import MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD
+        if MAIL2_USER and MAIL2_PASSWORD:
+            mail = imaplib.IMAP4_SSL(MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT)
+            mail.login(MAIL2_USER, MAIL2_PASSWORD)
+
+            status, folders = mail.list()
+            folder_names = []
+            for f in (folders or []):
+                try:
+                    folder_names.append(f.decode("utf-8", errors="replace"))
+                except:
+                    folder_names.append(str(f))
+
+            mail.select("INBOX", readonly=True)
+            tests = {}
+
+            status, data = mail.search(None, "ALL")
+            tests["total_inbox"] = len(data[0].split()) if data[0] else 0
+
+            since = (datetime.now() - timedelta(days=180)).strftime("%d-%b-%Y")
+            status, data = mail.search(None, f"(SINCE {since})")
+            tests["last_180d"] = len(data[0].split()) if data[0] else 0
+
+            # FROM 163.com
+            try:
+                status, data = mail.search(None, '(FROM "13428934642@163.com")')
+                tests["from_163"] = len(data[0].split()) if data[0] else 0
+            except Exception as e:
+                tests["from_163"] = f"error: {e}"
+
+            try:
+                status, data = mail.search(None, '(FROM "163.com")')
+                tests["from_163_domain"] = len(data[0].split()) if data[0] else 0
+            except Exception as e:
+                tests["from_163_domain"] = f"error: {e}"
+
+            mail.logout()
+            results["naver"] = {"folders": folder_names[:20], "tests": tests}
+    except Exception as e:
+        results["naver"] = {"error": str(e)}
+
+    return results
