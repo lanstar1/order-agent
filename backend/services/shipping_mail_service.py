@@ -986,52 +986,61 @@ def scan_bor_orderlist_emails(
     return results
 
 
-def _parse_bor_rest_excel(file_data: bytes, filename: str) -> list:
-    """BOR REST 엑셀을 구글시트에 쓸 수 있는 2D 배열로 변환"""
-    rows = []
+def _parse_bor_rest_excel(file_data: bytes, filename: str) -> dict:
+    """BOR REST 엑셀의 모든 시트를 {탭이름: 2D배열} 딕셔너리로 변환"""
+    sheets = {}
     try:
         if filename.lower().endswith(".xlsx"):
             import openpyxl
             wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
-            sh = wb.active
-            for r in range(1, sh.max_row + 1):
-                row = []
-                for c in range(1, sh.max_column + 1):
-                    val = sh.cell(r, c).value
-                    if val is None:
-                        row.append("")
-                    elif isinstance(val, datetime):
-                        row.append(val.strftime("%Y-%m-%d"))
-                    elif isinstance(val, (int, float)):
-                        if val == int(val):
-                            row.append(int(val))
+            for sheet_name in wb.sheetnames:
+                sh = wb[sheet_name]
+                rows = []
+                for r in range(1, sh.max_row + 1):
+                    row = []
+                    for c in range(1, sh.max_column + 1):
+                        val = sh.cell(r, c).value
+                        if val is None:
+                            row.append("")
+                        elif isinstance(val, datetime):
+                            row.append(val.strftime("%Y-%m-%d"))
+                        elif isinstance(val, (int, float)):
+                            if val == int(val):
+                                row.append(int(val))
+                            else:
+                                row.append(round(val, 4))
                         else:
-                            row.append(round(val, 4))
-                    else:
-                        row.append(str(val))
-                rows.append(row)
+                            row.append(str(val))
+                    rows.append(row)
+                if rows:
+                    sheets[sheet_name] = rows
+                    logger.info(f"[BOR오더] 시트 '{sheet_name}': {len(rows)}행")
         elif filename.lower().endswith(".xls"):
             import xlrd
             wb = xlrd.open_workbook(file_contents=file_data)
-            sh = wb.sheet_by_index(0)
-            for r in range(sh.nrows):
-                row = []
-                for c in range(sh.ncols):
-                    val = sh.cell_value(r, c)
-                    if isinstance(val, float) and val == int(val):
-                        val = int(val)
-                    row.append(val if val else "")
-                rows.append(row)
+            for idx in range(wb.nsheets):
+                sh = wb.sheet_by_index(idx)
+                sheet_name = sh.name
+                rows = []
+                for r in range(sh.nrows):
+                    row = []
+                    for c in range(sh.ncols):
+                        val = sh.cell_value(r, c)
+                        if isinstance(val, float) and val == int(val):
+                            val = int(val)
+                        row.append(val if val else "")
+                    rows.append(row)
+                if rows:
+                    sheets[sheet_name] = rows
     except Exception as e:
         logger.error(f"[BOR오더] 엑셀 파싱 실패 ({filename}): {e}")
-    return rows
+    return sheets
 
 
 def sync_bor_orderlist_to_sheet(scan_results: list) -> dict:
     """
-    BOR REST 엑셀 내용을 구글시트 오더리스트에 덮어쓰기
-    파일명에서 BOR 번호 → 해당 탭에 덮어쓰기
-    탭이 없으면 새로 생성
+    BOR REST 엑셀의 모든 시트를 구글시트 오더리스트의 각 탭에 덮어쓰기
+    엑셀 시트명 → 구글시트 탭명 1:1 매핑 (없으면 새로 생성)
     """
     if not scan_results:
         return {"status": "no_data"}
@@ -1048,50 +1057,48 @@ def sync_bor_orderlist_to_sheet(scan_results: list) -> dict:
             filename = item["filename"]
             file_data = item["file_data"]
 
-            # 탭 이름 결정: BOR 번호 기반 또는 연도
-            bor = item.get("bor_number", "")
-            # 기존 탭에서 BOR 번호로 시작하는 탭 찾기
-            target_tab = None
-            for tab in existing_tabs:
-                if bor and bor in tab.upper():
-                    target_tab = tab
-                    break
+            # 엑셀의 모든 시트를 파싱 → {시트명: 2D배열}
+            sheets_dict = _parse_bor_rest_excel(file_data, filename)
+            if not sheets_dict:
+                continue
 
-            # 기존 연도별 탭에 덮어쓰기 (2026, 2025 등)
-            if not target_tab:
-                year = item["email_date"][:4]
+            # 각 엑셀 시트를 구글시트의 해당 탭에 덮어쓰기
+            for sheet_name, rows in sheets_dict.items():
+                if not rows:
+                    continue
+
+                # 구글시트에서 매칭되는 탭 찾기
+                target_tab = None
                 for tab in existing_tabs:
-                    if tab.strip() == year:
+                    if tab.strip().lower() == sheet_name.strip().lower():
                         target_tab = tab
                         break
 
-            if not target_tab:
-                target_tab = f"BOR-{item['email_date'][:4]}"
-                if target_tab not in existing_tabs:
-                    _sheets_api_request("POST", f"{base_url}:batchUpdate", {
-                        "requests": [{"addSheet": {"properties": {"title": target_tab}}}]
-                    })
-                    existing_tabs.append(target_tab)
+                # 없으면 새 탭 생성
+                if not target_tab:
+                    target_tab = sheet_name
+                    try:
+                        _sheets_api_request("POST", f"{base_url}:batchUpdate", {
+                            "requests": [{"addSheet": {"properties": {"title": target_tab}}}]
+                        })
+                        existing_tabs.append(target_tab)
+                    except Exception:
+                        pass
 
-            # 엑셀 → 2D 배열
-            rows = _parse_bor_rest_excel(file_data, filename)
-            if not rows:
-                continue
+                # 기존 데이터 클리어 후 덮어쓰기
+                try:
+                    _sheets_api_request("POST",
+                        f"{base_url}/values/'{target_tab}'!A1:Z1000:clear", {})
+                except Exception:
+                    pass
 
-            # 기존 데이터 클리어 후 덮어쓰기
-            try:
-                _sheets_api_request("POST",
-                    f"{base_url}/values/'{target_tab}'!A1:Z1000:clear", {})
-            except Exception:
-                pass
+                _sheets_api_request("PUT",
+                    f"{base_url}/values/'{target_tab}'!A1?valueInputOption=USER_ENTERED",
+                    {"values": rows}
+                )
 
-            _sheets_api_request("PUT",
-                f"{base_url}/values/'{target_tab}'!A1?valueInputOption=USER_ENTERED",
-                {"values": rows}
-            )
-
-            synced_tabs.append({"tab": target_tab, "rows": len(rows), "file": filename})
-            logger.info(f"[BOR오더] '{target_tab}' 탭 덮어쓰기 완료 ({len(rows)}행)")
+                synced_tabs.append({"tab": target_tab, "rows": len(rows), "sheet_name": sheet_name})
+                logger.info(f"[BOR오더] 엑셀 '{sheet_name}' → 구글시트 '{target_tab}' 탭 ({len(rows)}행)")
 
         return {"status": "ok", "tabs": synced_tabs}
 

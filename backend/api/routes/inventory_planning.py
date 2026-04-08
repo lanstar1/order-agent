@@ -620,3 +620,16 @@ async def debug_fetch_emails():
         results["naver_error"] = str(e)
 
     return results
+
+
+@router.post("/shipping/cleanup")
+async def cleanup_shipping_data():
+    """선적 정보 DB 전체 정리 (이전 캐시 삭제)"""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM shipping_mail_info")
+        conn.commit()
+        count = conn.execute("SELECT COUNT(*) FROM shipping_mail_info").fetchone()[0]
+        return {"status": "ok", "remaining": count, "message": "선적 정보 전체 삭제 완료. 통합 스캔을 실행하면 최신 데이터만 다시 수집됩니다."}
+    finally:
+        conn.close()
