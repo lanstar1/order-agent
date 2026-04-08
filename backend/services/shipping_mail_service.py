@@ -963,3 +963,34 @@ def sync_bor_orderlist_to_sheet(scan_results: list) -> dict:
     except Exception as e:
         logger.error(f"[BOR오더] 구글시트 동기화 실패: {e}")
         return {"status": "error", "error": str(e)}
+
+
+# ─── 스캔 이력 저장/조회 ────────────────────────────────
+
+def save_scan_log(conn, scan_type: str, result_summary: str, email_dates: str = ""):
+    """스캔/최신화 실행 이력 저장"""
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("""
+        INSERT INTO shipping_scan_log (scan_type, executed_at, result_summary, email_dates)
+        VALUES (?, ?, ?, ?)
+    """, (scan_type, now, result_summary, email_dates))
+    conn.commit()
+
+
+def get_last_scan_info(conn) -> dict:
+    """마지막 스캔/최신화 정보 조회"""
+    result = {}
+    for scan_type in ["shipping_scan", "orderlist_sync"]:
+        row = conn.execute("""
+            SELECT executed_at, result_summary, email_dates
+            FROM shipping_scan_log
+            WHERE scan_type = ?
+            ORDER BY executed_at DESC LIMIT 1
+        """, (scan_type,)).fetchone()
+        if row:
+            result[scan_type] = {
+                "executed_at": row[0],
+                "result_summary": row[1],
+                "email_dates": row[2],
+            }
+    return result

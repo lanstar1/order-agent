@@ -5218,8 +5218,30 @@ async function ipRefreshAnalysis() {
     _ipData = await api.get('/api/inventory-planning/analysis');
     ipRenderSummary(_ipData.summary);
     ipRenderTable(_ipData.items);
+    ipRenderScanInfo(_ipData.last_scan);
   } catch (err) {
     if (tbody) tbody.innerHTML = `<tr><td colspan="15" style="padding:20px;text-align:center;color:#dc2626">분석 실패: ${err.message||err}</td></tr>`;
+  }
+}
+
+function ipRenderScanInfo(scanInfo) {
+  const el = document.getElementById('ip-scan-info');
+  if (!el || !scanInfo) return;
+  const parts = [];
+  if (scanInfo.shipping_scan) {
+    parts.push(`📧 <b>선적스캔</b>: ${scanInfo.shipping_scan.executed_at || '-'} KST`);
+    if (scanInfo.shipping_scan.email_dates) parts.push(`(메일: ${scanInfo.shipping_scan.email_dates})`);
+  }
+  if (scanInfo.orderlist_sync) {
+    parts.push(`📋 <b>오더리스트</b>: ${scanInfo.orderlist_sync.executed_at || '-'} KST`);
+    if (scanInfo.orderlist_sync.email_dates) parts.push(`(메일: ${scanInfo.orderlist_sync.email_dates})`);
+  }
+  if (parts.length > 0) {
+    el.innerHTML = parts.join(' &nbsp;│&nbsp; ');
+    el.style.display = 'block';
+  } else {
+    el.innerHTML = '📧 선적스캔: 아직 실행 안 됨 &nbsp;│&nbsp; 📋 오더리스트: 아직 실행 안 됨';
+    el.style.display = 'block';
   }
 }
 

@@ -57,9 +57,16 @@ async def get_analysis():
     conn = get_connection()
     try:
         result = analyze_all_targets(conn)
-        # daily_sales는 상세 조회에서만 반환 (목록에서는 제외)
         for item in result["items"]:
             item.pop("daily_sales", None)
+
+        # 마지막 스캔/최신화 정보 포함
+        try:
+            from services.shipping_mail_service import get_last_scan_info
+            result["last_scan"] = get_last_scan_info(conn)
+        except Exception:
+            result["last_scan"] = {}
+
         return result
     finally:
         conn.close()
@@ -283,6 +290,8 @@ async def scan_all_shipping():
     from fastapi.responses import StreamingResponse
 
     async def generate():
+        _scan_email_dates = {"shipping": "", "orderlist": ""}
+
         def send(msg, pct=0, step=""):
             return f"data: {_json.dumps({'msg': msg, 'pct': pct, 'step': step}, ensure_ascii=False)}\n\n"
 
@@ -304,6 +313,8 @@ async def scan_all_shipping():
                 finally:
                     conn.close()
                 yield send(f"✅ [1/4] BOR 선적 완료: {len(bor_results)}건", 25, "bor_done")
+                if bor_results:
+                    _scan_email_dates["shipping"] = bor_results[0].get("email_date", "")
             else:
                 yield send("⏭️ [1/4] Ecount 메일 미설정 → 스킵", 25, "bor_skip")
         except Exception as e:
@@ -347,6 +358,7 @@ async def scan_all_shipping():
                     yield send(f"📋 [3/4] REST 파일 발견 → 구글시트 덮어쓰기 중...", 70, "orderlist_write")
                     sync_bor_orderlist_to_sheet([ol_results[0]])
                     yield send(f"✅ [3/4] 오더리스트 최신화 완료: {ol_results[0]['filename']}", 75, "orderlist_done")
+                    _scan_email_dates["orderlist"] = ol_results[0].get("email_date", "")
                 else:
                     yield send("⏭️ [3/4] REST 파일 없음 → 스킵", 75, "orderlist_skip")
         except Exception as e:
@@ -362,6 +374,18 @@ async def scan_all_shipping():
             yield send(f"⚠️ [4/4] DB 동기화 오류: {str(e)[:80]}", 95, "db_error")
 
         yield send("🎉 전체 스캔 완료!", 100, "done")
+
+        # 스캔 이력 저장
+        try:
+            from services.shipping_mail_service import save_scan_log
+            conn = get_connection()
+            try:
+                save_scan_log(conn, "shipping_scan", "통합 스캔 완료", _scan_email_dates.get("shipping", ""))
+                save_scan_log(conn, "orderlist_sync", "오더리스트 동기화 완료", _scan_email_dates.get("orderlist", ""))
+            finally:
+                conn.close()
+        except Exception:
+            pass
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

@@ -787,6 +787,15 @@ def init_db():
         updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
     )""")
 
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS shipping_scan_log (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        scan_type       TEXT NOT NULL,
+        executed_at     TEXT NOT NULL,
+        result_summary  TEXT DEFAULT '',
+        email_dates     TEXT DEFAULT ''
+    )""")
+
     # ── ERP 캐시 (매입정산용 구매/판매현황 영속 캐시) ──
     cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS erp_cache (
