@@ -252,12 +252,15 @@ def save_shipping_info(conn, shipping_data: list):
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
     # 최신 BOR 1개만 저장하므로, 이전 BOR 선적 레코드 전부 삭제
-    # (NAM/PI 레코드는 유지 — bor_number가 LAN-PI로 시작)
-    conn.execute("""
-        DELETE FROM shipping_mail_info
-        WHERE bor_number NOT LIKE 'LAN-PI%'
-        AND bor_number NOT LIKE 'LAN-PI%\\_%' ESCAPE '\\'
-    """)
+    # (NAM/PI 레코드는 유지)
+    try:
+        conn.execute("DELETE FROM shipping_mail_info WHERE bor_number LIKE 'BOR%'")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     logger.info("[선적메일] 이전 BOR 선적 레코드 정리 완료")
 
     saved = 0
@@ -641,8 +644,15 @@ def save_nam_shipping_info(conn, scan_results: list):
     """NAM 거래처 선적 정보를 shipping_mail_info + orderlist_items 테이블에 저장"""
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
-    # 이전 NAM 선적 레코드 전부 삭제 후 새로 등록 (최신 스캔 결과만 유지)
-    conn.execute("DELETE FROM shipping_mail_info WHERE bor_number LIKE 'LAN-PI%'")
+    # 이전 NAM 선적 레코드 정리 후 새로 등록
+    try:
+        conn.execute("DELETE FROM shipping_mail_info WHERE bor_number LIKE 'LAN-PI%'")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
     saved = 0
 
