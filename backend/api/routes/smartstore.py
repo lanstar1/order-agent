@@ -151,11 +151,12 @@ def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
     if is_valid_code(text):
         return text
 
-    # 패턴 4: LS/LSP/LSN/LST/ZOT 로 시작하는 코드가 텍스트 내 포함
-    # (예: "1. LS-U61MH", "0.5M LS-HF7005", "케이블세트 (LS-HD2KVM set)")
-    m4 = re.search(r'\b((?:LS[PNTG]?|ZOT)[A-Za-z0-9][A-Za-z0-9\-\.]*)', text, re.IGNORECASE)
+    # 패턴 4: LS/LSP/LSN/ZOT 로 시작하는 코드가 텍스트 내 포함
+    # (예: "1. LS-U61MH", "0.5M LS-HF7005", "모니터 4개 연결(LS-UCHD4) 리퍼제품")
+    # LS- 형식처럼 접두어 다음에 하이픈이 오는 경우도 포함
+    m4 = re.search(r'\b((?:LS[PNT]?|ZOT)[A-Za-z0-9\-\.]{2,})', text, re.IGNORECASE)
     if m4:
-        candidate = m4.group(1)
+        candidate = m4.group(1).rstrip('-.')
         if is_valid_code(candidate) and len(candidate) >= 4:
             return candidate
 
