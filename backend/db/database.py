@@ -24,6 +24,16 @@ USE_PG = bool(DATABASE_URL)
 if USE_PG:
     import psycopg2
     import psycopg2.extras
+    from psycopg2 import pool as _pg_pool
+    _pg_connection_pool = None
+
+def _get_pg_pool():
+    global _pg_connection_pool
+    if _pg_connection_pool is None:
+        _pg_connection_pool = _pg_pool.ThreadedConnectionPool(
+            minconn=1, maxconn=8, dsn=DATABASE_URL
+        )
+    return _pg_connection_pool
 
 
 # ─── SQL 변환 유틸 (SQLite → PostgreSQL) ───────────────
@@ -154,8 +164,9 @@ class _PgCursorWrapper:
 class _PgConnectionWrapper:
     """SQLite connection 호환 인터페이스를 제공하는 PostgreSQL connection 래퍼"""
 
-    def __init__(self, conn):
+    def __init__(self, conn, pool=None):
         self._conn = conn
+        self._pool = pool  # 반납할 풀 참조
 
     def execute(self, sql, params=None):
         pg_sql = _sql_to_pg(sql)
@@ -225,7 +236,16 @@ class _PgConnectionWrapper:
         self._conn.rollback()
 
     def close(self):
-        self._conn.close()
+        if self._pool:
+            try:
+                self._pool.putconn(self._conn)
+            except Exception:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+        else:
+            self._conn.close()
 
     def cursor(self):
         return self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -260,8 +280,9 @@ def column_exists(conn, table_name, column_name):
 def get_connection():
     """데이터베이스 연결 반환 (PG 또는 SQLite 자동 선택)"""
     if USE_PG:
-        conn = psycopg2.connect(DATABASE_URL)
-        return _PgConnectionWrapper(conn)
+        pg_pool = _get_pg_pool()
+        conn = pg_pool.getconn()
+        return _PgConnectionWrapper(conn, pool=pg_pool)
     else:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(DB_PATH))
