@@ -1,11 +1,13 @@
 """
 재고 변동 모니터링 서비스
-- 매일 평일 오전 9시(KST) ERP 재고현황 API 호출
+- 매일 평일 오전 11시(KST) ERP 재고현황 API 호출
 - 전일 스냅샷과 비교하여 재고 감소 품목 감지
 - 알림 조건: 단가×감소수량 ≥ 50만원 OR 감소수량 ≥ 100개
 - 예외: 키워드 필터에 해당하는 저가 소모품 → 수량 기준만 제외, 금액 기준은 여전히 적용
+- 중복 방지: 같은 날짜 재실행 시 기존 알림 삭제 후 최신 결과만 유지
 """
 
+import asyncio
 import csv
 import logging
 import os
@@ -18,6 +20,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 logger = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
+
+# 동시 실행 방지 락
+_monitor_lock = asyncio.Lock()
 
 
 # ─── 품목 마스터 로딩 ───────────────────────────────────────────
@@ -204,7 +209,15 @@ def _is_excluded(prod_name: str, keywords: list) -> bool:
 # ─── 알림 이력 저장 ────────────────────────────────────────────
 
 def save_alert_history(conn, alerts: list, check_date: str):
-    """알림 이력을 DB에 저장"""
+    """알림 이력을 DB에 저장 (같은 날짜 기존 레코드 삭제 후 최신 데이터만 유지)"""
+    # 같은 날짜의 기존 알림 삭제 → 중복 방지 (수동실행+자동실행 겹침 대비)
+    deleted = conn.execute(
+        "DELETE FROM inventory_alert_history WHERE check_date = ?", (check_date,)
+    )
+    deleted_count = deleted.rowcount if hasattr(deleted, 'rowcount') else 0
+    if deleted_count > 0:
+        logger.info(f"[재고모니터] 기존 알림 이력 삭제: {check_date}, {deleted_count}건 (중복 방지)")
+
     now_str = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     for alert in alerts:
         conn.execute(
@@ -281,94 +294,103 @@ async def run_inventory_monitor(telegram_service=None) -> dict:
     1. 오늘 재고 조회 → 스냅샷 저장
     2. 어제(평일 기준) 스냅샷과 비교
     3. 알림 대상 추출 → 텔레그램 발송
+
+    동시 실행 방지: 스케줄러와 수동 실행이 겹치지 않도록 asyncio.Lock 사용
+    중복 방지: 같은 날짜 재실행 시 기존 알림 삭제 후 최신 결과만 유지
     """
-    from db.database import get_connection
+    # 동시 실행 방지
+    if _monitor_lock.locked():
+        logger.warning("[재고모니터] 이미 실행 중 → 스킵")
+        return {"status": "skipped", "alerts_count": 0, "message": "이미 재고 모니터링이 실행 중입니다. 잠시 후 다시 시도해주세요."}
 
-    now = datetime.now(KST)
-    today = now.strftime("%Y%m%d")
+    async with _monitor_lock:
+        from db.database import get_connection
 
-    # 전 영업일 계산 (월요일이면 금요일)
-    if now.weekday() == 0:  # 월요일
-        prev_date = (now - timedelta(days=3)).strftime("%Y%m%d")
-    else:
-        prev_date = (now - timedelta(days=1)).strftime("%Y%m%d")
+        now = datetime.now(KST)
+        today = now.strftime("%Y%m%d")
 
-    try:
-        # 1. ERP에서 오늘 재고 조회
-        logger.info(f"[재고모니터] 금일({today}) 재고 조회 시작...")
-        curr_inventory = await fetch_inventory_from_erp(today)
+        # 전 영업일 계산 (월요일이면 금요일)
+        if now.weekday() == 0:  # 월요일
+            prev_date = (now - timedelta(days=3)).strftime("%Y%m%d")
+        else:
+            prev_date = (now - timedelta(days=1)).strftime("%Y%m%d")
 
-        # 2. 스냅샷 저장 및 전일 스냅샷 조회
-        conn = get_connection()
         try:
-            save_snapshot(conn, curr_inventory, today)
-            prev_snapshot = get_snapshot(conn, prev_date)
+            # 1. ERP에서 오늘 재고 조회
+            logger.info(f"[재고모니터] 금일({today}) 재고 조회 시작...")
+            curr_inventory = await fetch_inventory_from_erp(today)
 
-            if not prev_snapshot:
-                # DB에 전일 스냅샷이 없으면 ERP API로 전일 재고 직접 조회
-                logger.info(f"[재고모니터] 전일({prev_date}) 스냅샷 없음 → ERP API로 전일 재고 조회...")
-                prev_inventory = await fetch_inventory_from_erp(prev_date)
-                if prev_inventory:
-                    save_snapshot(conn, prev_inventory, prev_date)
-                    prev_snapshot = {item["PROD_CD"]: item["BAL_QTY"] for item in prev_inventory}
-                    logger.info(f"[재고모니터] 전일 스냅샷 ERP 조회 및 저장 완료: {len(prev_snapshot)}개 품목")
-                else:
-                    msg = f"전일({prev_date}) ERP 재고 데이터도 없습니다. 내일부터 비교가 시작됩니다."
-                    logger.warning(msg)
-                    return {"status": "no_prev", "alerts_count": 0, "message": msg}
-
-            # 3. 설정 로딩
-            settings = get_alert_settings(conn)
-            if not settings.get("enabled", True):
-                return {"status": "disabled", "alerts_count": 0, "message": "알림이 비활성화 상태입니다."}
-
-            exclude_keywords = get_exclude_keywords(conn)
-            products_master = load_products_master()
-
-            # 4. 비교
-            curr_snapshot = {item["PROD_CD"]: item["BAL_QTY"] for item in curr_inventory}
-            alerts = compare_inventory(
-                prev_snapshot=prev_snapshot,
-                curr_snapshot=curr_snapshot,
-                products_master=products_master,
-                exclude_keywords=exclude_keywords,
-                threshold_amount=settings["threshold_amount"],
-                threshold_qty=settings["threshold_qty"],
-            )
-
-            # 5. 알림 이력 저장
-            save_alert_history(conn, alerts, today)
-
-        finally:
-            conn.close()
-
-        # 6. 텔레그램 발송
-        if alerts and telegram_service:
-            message = format_telegram_message(alerts, today, prev_date)
-            await telegram_service.send_message(message)
-            logger.info(f"[재고모니터] 텔레그램 발송 완료: {len(alerts)}건")
-
-        result_msg = f"재고 모니터링 완료: {today} (비교: {prev_date}), 알림 {len(alerts)}건"
-        logger.info(f"[재고모니터] {result_msg}")
-
-        return {
-            "status": "ok",
-            "alerts_count": len(alerts),
-            "alerts": alerts,
-            "message": result_msg,
-        }
-
-    except Exception as e:
-        error_msg = f"재고 모니터링 실패: {str(e)}"
-        logger.error(f"[재고모니터] {error_msg}", exc_info=True)
-
-        if telegram_service:
+            # 2. 스냅샷 저장 및 전일 스냅샷 조회
+            conn = get_connection()
             try:
-                await telegram_service.send_message(f"⚠️ 재고 모니터링 오류\n{error_msg}")
-            except Exception:
-                pass
+                save_snapshot(conn, curr_inventory, today)
+                prev_snapshot = get_snapshot(conn, prev_date)
 
-        return {"status": "error", "alerts_count": 0, "message": error_msg}
+                if not prev_snapshot:
+                    # DB에 전일 스냅샷이 없으면 ERP API로 전일 재고 직접 조회
+                    logger.info(f"[재고모니터] 전일({prev_date}) 스냅샷 없음 → ERP API로 전일 재고 조회...")
+                    prev_inventory = await fetch_inventory_from_erp(prev_date)
+                    if prev_inventory:
+                        save_snapshot(conn, prev_inventory, prev_date)
+                        prev_snapshot = {item["PROD_CD"]: item["BAL_QTY"] for item in prev_inventory}
+                        logger.info(f"[재고모니터] 전일 스냅샷 ERP 조회 및 저장 완료: {len(prev_snapshot)}개 품목")
+                    else:
+                        msg = f"전일({prev_date}) ERP 재고 데이터도 없습니다. 내일부터 비교가 시작됩니다."
+                        logger.warning(msg)
+                        return {"status": "no_prev", "alerts_count": 0, "message": msg}
+
+                # 3. 설정 로딩
+                settings = get_alert_settings(conn)
+                if not settings.get("enabled", True):
+                    return {"status": "disabled", "alerts_count": 0, "message": "알림이 비활성화 상태입니다."}
+
+                exclude_keywords = get_exclude_keywords(conn)
+                products_master = load_products_master()
+
+                # 4. 비교
+                curr_snapshot = {item["PROD_CD"]: item["BAL_QTY"] for item in curr_inventory}
+                alerts = compare_inventory(
+                    prev_snapshot=prev_snapshot,
+                    curr_snapshot=curr_snapshot,
+                    products_master=products_master,
+                    exclude_keywords=exclude_keywords,
+                    threshold_amount=settings["threshold_amount"],
+                    threshold_qty=settings["threshold_qty"],
+                )
+
+                # 5. 알림 이력 저장 (같은 날짜 기존 기록 삭제 후 저장 → 중복 방지)
+                save_alert_history(conn, alerts, today)
+
+            finally:
+                conn.close()
+
+            # 6. 텔레그램 발송
+            if alerts and telegram_service:
+                message = format_telegram_message(alerts, today, prev_date)
+                await telegram_service.send_message(message)
+                logger.info(f"[재고모니터] 텔레그램 발송 완료: {len(alerts)}건")
+
+            result_msg = f"재고 모니터링 완료: {today} (비교: {prev_date}), 알림 {len(alerts)}건"
+            logger.info(f"[재고모니터] {result_msg}")
+
+            return {
+                "status": "ok",
+                "alerts_count": len(alerts),
+                "alerts": alerts,
+                "message": result_msg,
+            }
+
+        except Exception as e:
+            error_msg = f"재고 모니터링 실패: {str(e)}"
+            logger.error(f"[재고모니터] {error_msg}", exc_info=True)
+
+            if telegram_service:
+                try:
+                    await telegram_service.send_message(f"⚠️ 재고 모니터링 오류\n{error_msg}")
+                except Exception:
+                    pass
+
+            return {"status": "error", "alerts_count": 0, "message": error_msg}
 
 
 # ─── 텔레그램 메시지 포맷팅 ────────────────────────────────────

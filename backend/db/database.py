@@ -784,6 +784,28 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_inv_alert_date ON inventory_alert_history(check_date);
     """)
 
+    # ── 재고 알림 중복 데이터 정리 (같은 날짜+품목코드 중 최신 1건만 유지) ──
+    try:
+        if USE_PG:
+            cur_or_conn.execute("""
+                DELETE FROM inventory_alert_history
+                WHERE id NOT IN (
+                    SELECT MAX(id) FROM inventory_alert_history
+                    GROUP BY check_date, prod_cd
+                )
+            """)
+        else:
+            cur_or_conn.execute("""
+                DELETE FROM inventory_alert_history
+                WHERE rowid NOT IN (
+                    SELECT MAX(rowid) FROM inventory_alert_history
+                    GROUP BY check_date, prod_cd
+                )
+            """)
+        conn.commit()
+    except Exception as _dedup_err:
+        logger.debug(f"재고 알림 중복 정리: {_dedup_err}")
+
     # ── MAP 감시 테이블 ────────────────────────────────
     cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS map_settings (
