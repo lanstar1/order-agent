@@ -241,10 +241,11 @@ def get_shipping_info_map(conn) -> dict:
     선적 정보를 모델명 기준으로 매핑
     BOR: 전체 모델이 같은 선적일
     NAM: 모델별로 다른 선적일 가능 (개별 레코드 우선)
-    입고예정일이 오늘 이전인 제품은 이미 입고된 것이므로 제외
-    Returns: {"LS-1000H": {"bor": "BOR-2601001", "shipping_date": "2026-03-15", "arrival_date": "2026-03-23"}}
+    입고예정일이 오늘 이전인 제품은 재고 스냅샷으로 실제 입고 여부 2차 검증
+    Returns: {"LS-1000H": {"bor": "...", "shipping_date": "...", "arrival_date": "...", "status": "shipping|arrived|delayed"}}
     """
     today = datetime.now(KST).strftime("%Y-%m-%d")
+    today_fmt = today.replace("-", "")  # YYYYMMDD
 
     rows = conn.execute("""
         SELECT bor_number, shipping_date, arrival_date, models
@@ -259,31 +260,80 @@ def get_shipping_info_map(conn) -> dict:
         arr_date = r[2] or ""
         models_str = r[3] or ""
 
-        # 입고예정일이 지났으면 이미 입고됨 → 표시 불필요
+        # 입고예정일이 지났으면 → 재고 스냅샷으로 실제 입고 여부 확인
         if arr_date and arr_date < today:
-            continue
+            # 해당 모델들의 입고 검증은 개별 모델 처리 시 수행
+            pass
 
         # 개별 모델 레코드 (NAM: "LAN-PI20260304_LS-BDCH" 형태)
         if "_" in bor and models_str and "," not in models_str:
             m = models_str.strip().upper()
             if m and m not in model_map and ship_date:
-                model_map[m] = {
-                    "bor_number": bor.split("_")[0],
-                    "shipping_date": ship_date,
-                    "arrival_date": arr_date,
-                }
+                entry = _build_shipping_entry(conn, m, bor.split("_")[0], ship_date, arr_date, today, today_fmt)
+                if entry:
+                    model_map[m] = entry
             continue
 
         # BOR/PI 단위 레코드 → 소속 모델에 일괄 적용
         for m in models_str.split(","):
             m = m.strip().upper()
             if m and m not in model_map:
-                model_map[m] = {
-                    "bor_number": bor,
-                    "shipping_date": ship_date,
-                    "arrival_date": arr_date,
-                }
+                entry = _build_shipping_entry(conn, m, bor, ship_date, arr_date, today, today_fmt)
+                if entry:
+                    model_map[m] = entry
     return model_map
+
+
+def _build_shipping_entry(conn, model: str, bor: str, ship_date: str, arr_date: str,
+                          today: str, today_fmt: str) -> dict:
+    """
+    선적 정보 엔트리 생성 + 2차 검증 (입고예정일 경과 시 재고 증가 확인)
+
+    - 입고예정일 미도래 → status="shipping" (선적 중)
+    - 입고예정일 경과 + 재고 증가 확인 → None (이미 입고 → 표시 안함)
+    - 입고예정일 경과 + 재고 미증가 → status="delayed" (입고 지연)
+    """
+    if not arr_date:
+        return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "shipping"}
+
+    if arr_date >= today:
+        # 아직 입고예정일 전
+        return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "shipping"}
+
+    # 입고예정일이 지남 → 재고 스냅샷으로 실제 입고 여부 확인
+    # 입고예정일 전후 7일간의 재고 변화를 확인 (재고가 늘었으면 입고됨)
+    try:
+        arr_dt = datetime.strptime(arr_date, "%Y-%m-%d")
+        check_before = (arr_dt - timedelta(days=3)).strftime("%Y%m%d")
+        check_after = (arr_dt + timedelta(days=7)).strftime("%Y%m%d")
+
+        # 해당 모델의 품목코드 찾기 (planning_targets에서)
+        target_row = conn.execute(
+            "SELECT prod_cd FROM inventory_planning_targets WHERE UPPER(model_name) = ?",
+            (model,)
+        ).fetchone()
+
+        if target_row:
+            prod_cd = target_row[0]
+            # 입고예정일 전후 스냅샷 조회
+            snapshots = conn.execute("""
+                SELECT snapshot_date, bal_qty FROM inventory_snapshots
+                WHERE prod_cd = ? AND snapshot_date BETWEEN ? AND ?
+                ORDER BY snapshot_date ASC
+            """, (prod_cd, check_before, check_after)).fetchall()
+
+            if len(snapshots) >= 2:
+                min_qty = min(s[1] for s in snapshots)
+                max_qty = max(s[1] for s in snapshots)
+                # 재고가 의미있게 증가했으면 입고 확인 (10개 이상 또는 20% 이상 증가)
+                if max_qty > min_qty and (max_qty - min_qty >= 10 or
+                                          (min_qty > 0 and (max_qty - min_qty) / min_qty >= 0.2)):
+                    return None  # 입고 확인됨 → 표시 안함
+    except Exception:
+        pass
+
+    # 입고예정일 지났는데 재고 증가 미확인 → 입고 지연
+    return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "delayed"}
 
 
 def get_all_shipping_info(conn) -> list:

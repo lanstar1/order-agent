@@ -5307,8 +5307,8 @@ function ipRenderTable(items) {
       <td style="padding:8px;text-align:right;font-weight:600;${i.recommended_qty>0?'color:#DC2626':''}">${i.recommended_qty>0?i.recommended_qty.toLocaleString():'-'}</td>
       <td style="padding:8px;font-size:12px;${i.need_order?'color:#DC2626;font-weight:600':''}">${i.order_deadline||'-'}</td>
       <td style="padding:8px">${orderInfo}</td>
-      <td style="padding:8px;font-size:11px;${i.shipping_date?'color:#7c3aed':''}">${i.shipping_date||'-'}</td>
-      <td style="padding:8px;font-size:11px;font-weight:${i.arrival_date?'600':'400'};${i.arrival_date?'color:#059669':''}">${i.arrival_date||'-'}</td>
+      <td style="padding:8px;font-size:11px;${i.shipping_date?(i.shipping_status==='delayed'?'color:#dc2626':'color:#7c3aed'):''}">${i.shipping_date ? (i.shipping_status==='delayed'?'⚠️'+i.shipping_date:i.shipping_date) : '-'}</td>
+      <td style="padding:8px;font-size:11px;font-weight:${i.arrival_date?'600':'400'};${i.arrival_date?(i.shipping_status==='delayed'?'color:#dc2626':'color:#059669'):''}">${i.arrival_date ? (i.shipping_status==='delayed'?'⚠️지연 '+i.arrival_date:i.arrival_date) : '-'}</td>
       <td style="padding:8px"><button onclick="event.stopPropagation();ipDeleteTarget(${i.id},'${i.model_name}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:12px">삭제</button></td>
     </tr>`;
   }).join('');

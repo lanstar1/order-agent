@@ -355,6 +355,7 @@ def analyze_all_targets(conn) -> dict:
         analysis["shipping_date"] = ship_info.get("shipping_date", "")
         analysis["arrival_date"] = ship_info.get("arrival_date", "")
         analysis["shipping_bor"] = ship_info.get("bor_number", "")
+        analysis["shipping_status"] = ship_info.get("status", "")  # shipping / delayed
 
         results.append(analysis)
         summary["total"] += 1
