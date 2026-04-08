@@ -321,8 +321,8 @@ async def send_erp_only(
             continue
         if oid not in order_groups:
             order_groups[oid] = []
-            # 배송비: productOrder.shippingFee 우선, 없으면 order.shippingFee
-            fee = float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0)
+            # 배송비: productOrder.deliveryFeeAmount
+            fee = float(po.get("deliveryFeeAmount", 0) or 0)
             order_shipping[oid] = fee
         product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
         seller_code = po.get("sellerProductCode", "") or ""
@@ -443,7 +443,7 @@ async def excluded_send_erp(
             continue
         if oid not in order_groups:
             order_groups[oid] = []
-            fee = float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0)
+            fee = float(po.get("deliveryFeeAmount", 0) or 0)
             order_shipping[oid] = fee
             fee_type = str(po.get("shippingFeeType") or od.get("shippingFeeType") or "")
             order_feetype[oid] = fee_type
@@ -704,7 +704,7 @@ async def logen_export_excel(
         tel_home = addr.get("tel1", "")
         tel_cell = addr.get("tel2", "") or addr.get("tel1", "")
         full_addr = ((addr.get("baseAddress","") or "") + " " + (addr.get("detailedAddress","") or "")).strip()
-        ship_fee = int(float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0))
+        ship_fee = int(float(po.get("deliveryFeeAmount", 0) or 0))
         fare_tp  = "010"
 
         # 품목명: 모델명(or ERP코드) + 수량 요약
@@ -961,7 +961,7 @@ async def auto_register_logen(
             all_po_ids.append(poid)
             if oid not in order_groups:
                 order_groups[oid] = []
-                fee = float(po.get("shippingFee", 0) or od.get("shippingFee", 0) or 0)
+                fee = float(po.get("deliveryFeeAmount", 0) or 0)
                 order_shipping[oid] = fee
             product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
             seller_code = po.get("sellerProductCode", "") or ""
