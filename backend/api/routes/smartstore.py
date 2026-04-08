@@ -190,6 +190,11 @@ def _match_item_code(order: dict) -> Optional[str]:
             code = _option_text_map[opt_key]
             logger.info(f"[SS] 옵션텍스트직접매핑: '{option_text[:40]}' → {code}")
             return code
+        # 2a-2) 추가상품맵에서도 optionInfo로 검색 (추가상품이 productOption으로 넘어오는 경우)
+        if product_no and opt_key in _addon_text_map:
+            code = _addon_text_map[opt_key]
+            logger.info(f"[SS] 추가상품텍스트(optionInfo경유): '{option_text[:40]}' → {code}")
+            return code
         # 2b) 자동 추출 → 코드별칭맵 → 모델역방향맵
         code = _extract_erp_code_from_option(option_text)
         if code:
