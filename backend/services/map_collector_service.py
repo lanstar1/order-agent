@@ -392,18 +392,33 @@ async def run_price_collection(
 
                         vio = check_violation(product, pd, global_tol)
                         if vio:
-                            conn.execute("""INSERT INTO map_violations
-                                (price_record_id, product_id, seller_id, platform, seller_name,
-                                 violation_type, severity, map_price, violated_price, deviation_pct, evidence_url, detected_at)
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                                (record_id, vio["product_id"], seller_id,
-                                 vio["platform"], vio["seller_name"], vio["violation_type"],
-                                 vio["severity"], vio["map_price"], vio["violated_price"],
-                                 vio["deviation_pct"], vio.get("evidence_url",""), _now_kst()))
+                            # 같은 제품+셀러의 미해결 위반이 있으면 갱신, 없으면 신규
+                            existing_vio = conn.execute(
+                                """SELECT id FROM map_violations
+                                WHERE product_id=? AND seller_name=? AND is_resolved=0""",
+                                (vio["product_id"], vio["seller_name"])).fetchone()
+                            if existing_vio:
+                                conn.execute("""UPDATE map_violations SET
+                                    price_record_id=?, violation_type=?, severity=?,
+                                    map_price=?, violated_price=?, deviation_pct=?,
+                                    evidence_url=?, detected_at=?
+                                    WHERE id=?""",
+                                    (record_id, vio["violation_type"], vio["severity"],
+                                     vio["map_price"], vio["violated_price"], vio["deviation_pct"],
+                                     vio.get("evidence_url",""), _now_kst(), existing_vio["id"]))
+                            else:
+                                conn.execute("""INSERT INTO map_violations
+                                    (price_record_id, product_id, seller_id, platform, seller_name,
+                                     violation_type, severity, map_price, violated_price, deviation_pct, evidence_url, detected_at)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                    (record_id, vio["product_id"], seller_id,
+                                     vio["platform"], vio["seller_name"], vio["violation_type"],
+                                     vio["severity"], vio["map_price"], vio["violated_price"],
+                                     vio["deviation_pct"], vio.get("evidence_url",""), _now_kst()))
                             total_violations += 1
-                            conn.execute("""UPDATE map_sellers SET total_violations=total_violations+1,
-                                last_violation_at=?, risk_level=CASE WHEN total_violations+1>=10 THEN 'high'
-                                    WHEN total_violations+1>=5 THEN 'medium' ELSE 'low' END
+                            conn.execute("""UPDATE map_sellers SET
+                                last_violation_at=?, risk_level=CASE WHEN total_violations>=10 THEN 'high'
+                                    WHEN total_violations>=5 THEN 'medium' ELSE 'low' END
                                 WHERE id=?""", (_now_kst(), seller_id))
                             conn.execute("UPDATE map_price_records SET is_violation=1 WHERE id=?", (record_id,))
                             logger.warning(f"🚨 위반: {product['model_name']} | {vio['platform']} | "
