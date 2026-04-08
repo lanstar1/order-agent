@@ -67,6 +67,7 @@ def _sql_to_pg(sql):
             _ALLOWED_TABLES.update({
                 'inventory_snapshots', 'inventory_alert_history',
                 'inventory_exclude_keywords', 'inventory_alert_settings',
+                'inventory_planning_targets',
             })
             # MAP 감시 테이블 추가
             _ALLOWED_TABLES.update({
@@ -736,6 +737,20 @@ def init_db():
         cur_or_conn.execute(
             "INSERT OR IGNORE INTO inventory_alert_settings (key, value) VALUES (?, ?)", (_k, _v)
         )
+
+    # ── 적정재고 관리품목 (온라인관리품목) ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS inventory_planning_targets (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        prod_cd             TEXT NOT NULL UNIQUE,
+        model_name          TEXT DEFAULT '',
+        prod_name           TEXT DEFAULT '',
+        lead_time_days      INTEGER DEFAULT 40,
+        safety_stock_days   INTEGER DEFAULT 10,
+        is_active           INTEGER DEFAULT 1,
+        created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
 
     # ── ERP 캐시 (매입정산용 구매/판매현황 영속 캐시) ──
     cur_or_conn.execute("""

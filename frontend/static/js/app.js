@@ -5027,6 +5027,23 @@ async function initInventoryMonitor() {
     loadAlertHistory(),
     loadExcludeKeywords(),
   ]);
+  // 온라인관리품목 탭이 보이면 분석도 로딩
+  const planTab = document.getElementById('inv-tab-planning');
+  if (planTab && planTab.style.display !== 'none') ipRefreshAnalysis();
+}
+
+function switchInvTab(tab) {
+  document.querySelectorAll('.inv-tab-btn').forEach(b => {
+    b.style.borderBottomColor = 'transparent';
+    b.style.color = '#64748b';
+    b.style.fontWeight = '400';
+  });
+  const btn = document.querySelector(`.inv-tab-btn[data-inv-tab="${tab}"]`);
+  if (btn) { btn.style.borderBottomColor = '#2563eb'; btn.style.color = '#2563eb'; btn.style.fontWeight = '600'; }
+  document.querySelectorAll('.inv-tab-content').forEach(c => c.style.display = 'none');
+  const content = document.getElementById(`inv-tab-${tab}`);
+  if (content) content.style.display = 'block';
+  if (tab === 'planning' && !_ipData) ipRefreshAnalysis();
 }
 
 async function runMonitorNow() {
@@ -5182,6 +5199,255 @@ async function removeKeyword(keyword) {
     await api.delete(`/api/inventory-monitor/keywords/${encodeURIComponent(keyword)}`);
     loadExcludeKeywords();
   } catch (err) { toast('키워드 삭제 실패: ' + (err.message || err), 'error'); }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  적정재고 — 온라인관리품목 (Inventory Planning)
+// ═══════════════════════════════════════════════════════════
+
+let _ipData = null;
+let _ipSelected = null; // 등록 모달에서 선택된 품목
+
+async function ipRefreshAnalysis() {
+  const tbody = document.getElementById('ip-table-body');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="12" style="padding:30px;text-align:center;color:#94a3b8">⏳ 분석 중...</td></tr>';
+  try {
+    _ipData = await api.get('/api/inventory-planning/analysis');
+    ipRenderSummary(_ipData.summary);
+    ipRenderTable(_ipData.items);
+  } catch (err) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="12" style="padding:20px;text-align:center;color:#dc2626">분석 실패: ${err.message||err}</td></tr>`;
+  }
+}
+
+function ipRenderSummary(s) {
+  const el = id => document.getElementById(id);
+  if (el('ip-cnt-urgent')) el('ip-cnt-urgent').textContent = s.urgent || 0;
+  if (el('ip-cnt-warning')) el('ip-cnt-warning').textContent = s.warning || 0;
+  if (el('ip-cnt-ordered')) el('ip-cnt-ordered').textContent = s.ordered || 0;
+  if (el('ip-cnt-safe')) el('ip-cnt-safe').textContent = (s.safe || 0) + (s.no_sales || 0);
+}
+
+function ipRenderTable(items) {
+  const tbody = document.getElementById('ip-table-body');
+  if (!tbody) return;
+  if (!items || items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12" style="padding:30px;text-align:center;color:#94a3b8">등록된 관리품목이 없습니다. [+ 품목 등록] 버튼으로 추가하세요.</td></tr>';
+    return;
+  }
+
+  const statusBadge = (s, label) => {
+    const colors = {
+      urgent: 'background:#FEF2F2;color:#DC2626;border:1px solid #FECACA',
+      warning: 'background:#FFFBEB;color:#D97706;border:1px solid #FDE68A',
+      ordered: 'background:#ECFDF5;color:#059669;border:1px solid #A7F3D0',
+      safe: 'background:#F8FAFC;color:#64748B;border:1px solid #E2E8F0',
+      no_sales: 'background:#F8FAFC;color:#94A3B8;border:1px solid #E2E8F0',
+    };
+    return `<span style="padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;white-space:nowrap;${colors[s]||colors.safe}">${label}</span>`;
+  };
+
+  const filter = (document.getElementById('ip-status-filter')||{}).value || '';
+  const search = ((document.getElementById('ip-search')||{}).value || '').toUpperCase();
+
+  let filtered = items;
+  if (filter) filtered = filtered.filter(i => i.status === filter);
+  if (search) filtered = filtered.filter(i =>
+    (i.model_name||'').toUpperCase().includes(search) ||
+    (i.prod_name||'').toUpperCase().includes(search) ||
+    (i.prod_cd||'').toUpperCase().includes(search)
+  );
+
+  tbody.innerHTML = filtered.map(i => {
+    const stockout = i.days_until_stockout >= 9999 ? '-' : `${Math.round(i.days_until_stockout)}일`;
+    const stockoutStyle = i.days_until_stockout <= i.lead_time_days ? 'color:#DC2626;font-weight:700' : '';
+    const orderInfo = i.has_pending_order
+      ? `<span style="color:#059669;font-size:11px" title="${(i.pending_orders||[]).map(o=>o.order_no+' '+o.qty+'개').join(', ')}">✅ ${i.pending_orders[0]?.order_no||'발주됨'}</span>`
+      : (i.need_order ? '<span style="color:#DC2626;font-size:11px">❌ 미발주</span>' : '<span style="color:#94a3b8;font-size:11px">-</span>');
+
+    return `<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="ipShowDetail(${i.id})">
+      <td style="padding:8px">${statusBadge(i.status, i.status_label)}</td>
+      <td style="padding:8px;font-weight:600;font-size:12px">${i.model_name||i.prod_cd}</td>
+      <td style="padding:8px;font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.prod_name}">${i.prod_name||'-'}</td>
+      <td style="padding:8px;text-align:right;font-weight:600">${(i.current_stock||0).toLocaleString()}</td>
+      <td style="padding:8px;text-align:right">${i.avg_daily_7d||0}</td>
+      <td style="padding:8px;text-align:right">${i.avg_daily_30d||0}</td>
+      <td style="padding:8px;text-align:right;${stockoutStyle}">${stockout}</td>
+      <td style="padding:8px;text-align:right;color:#64748b">${i.lead_time_days}일</td>
+      <td style="padding:8px;text-align:right;font-weight:600;${i.recommended_qty>0?'color:#DC2626':''}">${i.recommended_qty>0?i.recommended_qty.toLocaleString():'-'}</td>
+      <td style="padding:8px;font-size:12px;${i.need_order?'color:#DC2626;font-weight:600':''}">${i.order_deadline||'-'}</td>
+      <td style="padding:8px">${orderInfo}</td>
+      <td style="padding:8px"><button onclick="event.stopPropagation();ipDeleteTarget(${i.id},'${i.model_name}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:12px">삭제</button></td>
+    </tr>`;
+  }).join('');
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12" style="padding:20px;text-align:center;color:#94a3b8">해당하는 품목이 없습니다.</td></tr>';
+  }
+}
+
+function ipFilterTable() {
+  if (_ipData) ipRenderTable(_ipData.items);
+}
+
+// ── 품목 등록 모달 ──
+function ipShowAddModal() {
+  _ipSelected = null;
+  document.getElementById('ip-add-search').value = '';
+  document.getElementById('ip-search-results').style.display = 'none';
+  document.getElementById('ip-add-selected').style.display = 'none';
+  document.getElementById('ip-add-btn').disabled = true;
+  document.getElementById('ip-add-btn').style.opacity = '0.5';
+  document.getElementById('ip-add-leadtime').value = '40';
+  document.getElementById('ip-add-safety').value = '10';
+  document.getElementById('ip-add-modal').style.display = 'flex';
+}
+
+function ipCloseAddModal() {
+  document.getElementById('ip-add-modal').style.display = 'none';
+}
+
+let _ipSearchTimer = null;
+function ipSearchProducts(q) {
+  clearTimeout(_ipSearchTimer);
+  const resultsDiv = document.getElementById('ip-search-results');
+  if (!q || q.length < 2) { resultsDiv.style.display = 'none'; return; }
+  _ipSearchTimer = setTimeout(async () => {
+    try {
+      const data = await api.get(`/api/inventory-planning/search?q=${encodeURIComponent(q)}`);
+      if (!data.items || data.items.length === 0) {
+        resultsDiv.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px">검색 결과 없음</div>';
+      } else {
+        resultsDiv.innerHTML = data.items.map(p => `
+          <div onclick="ipSelectProduct(${JSON.stringify(p).replace(/"/g,'&quot;')})"
+               style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;hover:background:#f8fafc"
+               onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
+            <b>${p.model_name||p.prod_cd}</b>
+            <span style="color:#64748b;margin-left:8px">${p.prod_name||''}</span>
+            <span style="color:#94a3b8;margin-left:8px;font-size:11px">${p.prod_cd}</span>
+          </div>
+        `).join('');
+      }
+      resultsDiv.style.display = 'block';
+    } catch (e) { resultsDiv.style.display = 'none'; }
+  }, 300);
+}
+
+function ipSelectProduct(p) {
+  _ipSelected = p;
+  document.getElementById('ip-search-results').style.display = 'none';
+  document.getElementById('ip-add-selected').style.display = 'block';
+  document.getElementById('ip-add-selected').innerHTML = `
+    <div style="font-weight:600">${p.model_name||p.prod_cd}</div>
+    <div style="font-size:12px;color:#64748b">${p.prod_name||''} | ${p.prod_cd}</div>
+  `;
+  document.getElementById('ip-add-btn').disabled = false;
+  document.getElementById('ip-add-btn').style.opacity = '1';
+}
+
+async function ipAddTarget() {
+  if (!_ipSelected) return;
+  try {
+    await api.post('/api/inventory-planning/targets', {
+      prod_cd: _ipSelected.prod_cd,
+      model_name: _ipSelected.model_name || '',
+      prod_name: _ipSelected.prod_name || '',
+      lead_time_days: parseInt(document.getElementById('ip-add-leadtime').value) || 40,
+      safety_stock_days: parseInt(document.getElementById('ip-add-safety').value) || 10,
+    });
+    ipCloseAddModal();
+    toast('품목이 등록되었습니다.', 'success');
+    ipRefreshAnalysis();
+  } catch (err) { toast('등록 실패: ' + (err.message||err), 'error'); }
+}
+
+async function ipDeleteTarget(id, name) {
+  if (!confirm(`"${name}" 품목을 관리 목록에서 제거하시겠습니까?`)) return;
+  try {
+    await api.delete(`/api/inventory-planning/targets/${id}`);
+    toast('삭제 완료', 'success');
+    ipRefreshAnalysis();
+  } catch (err) { toast('삭제 실패: ' + (err.message||err), 'error'); }
+}
+
+// ── 상세 모달 ──
+async function ipShowDetail(targetId) {
+  document.getElementById('ip-detail-modal').style.display = 'flex';
+  document.getElementById('ip-detail-content').innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8">⏳ 로딩 중...</div>';
+  try {
+    const d = await api.get(`/api/inventory-planning/analysis/${targetId}`);
+    document.getElementById('ip-detail-title').textContent = `${d.model_name||d.prod_cd} 상세 분석`;
+
+    const statusColors = {urgent:'#DC2626',warning:'#D97706',ordered:'#059669',safe:'#64748B',no_sales:'#94A3B8'};
+
+    // 일별 판매 차트 (간이 바 차트)
+    const sales = d.daily_sales || [];
+    const maxSale = Math.max(...sales.map(s => s.sales), 1);
+    const chartHtml = sales.length > 0 ? `
+      <div style="margin:16px 0">
+        <h4 style="margin:0 0 8px;font-size:14px">📊 최근 ${sales.length}일 판매 추이</h4>
+        <div style="display:flex;align-items:flex-end;gap:2px;height:100px;border-bottom:1px solid #e2e8f0;padding-bottom:4px">
+          ${sales.map(s => {
+            const h = Math.max(2, (s.sales / maxSale) * 90);
+            const col = s.sales > d.avg_daily_30d * 2 ? '#DC2626' : (s.sales > 0 ? '#3B82F6' : '#E2E8F0');
+            const dt = s.date; const label = dt.substring(4,6)+'/'+dt.substring(6);
+            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:0" title="${label}: ${s.sales}개 판매 (재고:${Math.round(s.stock)})">
+              <div style="width:100%;max-width:14px;height:${h}px;background:${col};border-radius:2px 2px 0 0"></div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-top:2px">
+          <span>${sales[0]?.date?.substring(4,6)+'/'+sales[0]?.date?.substring(6)||''}</span>
+          <span>${sales[sales.length-1]?.date?.substring(4,6)+'/'+sales[sales.length-1]?.date?.substring(6)||''}</span>
+        </div>
+      </div>` : '';
+
+    // 오더 정보
+    const ordersHtml = d.pending_orders?.length > 0 ? `
+      <div style="margin-top:16px">
+        <h4 style="margin:0 0 8px;font-size:14px">📋 오더리스트</h4>
+        ${d.pending_orders.map(o => `
+          <div style="padding:8px;background:#ECFDF5;border-radius:6px;margin-bottom:4px;font-size:13px">
+            <b>${o.order_no||'N/A'}</b> | ${o.order_date||'-'} | ${o.qty||0} ${o.unit||'PCS'} | 탭: ${o.sheet_tab||''}
+          </div>`).join('')}
+      </div>` : '';
+
+    document.getElementById('ip-detail-content').innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+        <div style="flex:1;min-width:200px;padding:12px;background:#f8fafc;border-radius:8px">
+          <div style="font-size:12px;color:#64748b">상태</div>
+          <div style="font-size:18px;font-weight:700;color:${statusColors[d.status]||'#64748b'}">${d.status_label}</div>
+        </div>
+        <div style="flex:1;min-width:200px;padding:12px;background:#f8fafc;border-radius:8px">
+          <div style="font-size:12px;color:#64748b">현재고</div>
+          <div style="font-size:18px;font-weight:700">${(d.current_stock||0).toLocaleString()}개</div>
+        </div>
+        <div style="flex:1;min-width:200px;padding:12px;background:#f8fafc;border-radius:8px">
+          <div style="font-size:12px;color:#64748b">소진 예상</div>
+          <div style="font-size:18px;font-weight:700;color:${d.days_until_stockout<=d.lead_time_days?'#DC2626':'inherit'}">${d.days_until_stockout>=9999?'판매없음':Math.round(d.days_until_stockout)+'일'}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;margin-bottom:16px">
+        <div>일평균 판매 (7일): <b>${d.avg_daily_7d}</b>개</div>
+        <div>일평균 판매 (30일): <b>${d.avg_daily_30d}</b>개</div>
+        <div>30일 총 판매: <b>${(d.total_sold_30d||0).toLocaleString()}</b>개</div>
+        <div>판매일수: <b>${d.selling_days||0}</b>일 / ${d.daily_sales?.length||0}일</div>
+        <div>리드타임: <b>${d.lead_time_days}일</b></div>
+        <div>안전재고: <b>${d.safety_stock_days}일</b></div>
+        <div>권장 발주수량: <b style="color:${d.recommended_qty>0?'#DC2626':'inherit'}">${d.recommended_qty>0?d.recommended_qty.toLocaleString()+'개':'발주 불필요'}</b></div>
+        <div>발주 기한: <b style="color:${d.need_order?'#DC2626':'inherit'}">${d.order_deadline||'-'}</b></div>
+      </div>
+      ${chartHtml}
+      ${ordersHtml}
+    `;
+  } catch (err) {
+    document.getElementById('ip-detail-content').innerHTML = `<div style="color:#dc2626">로딩 실패: ${err.message||err}</div>`;
+  }
+}
+
+function ipCloseDetailModal() {
+  document.getElementById('ip-detail-modal').style.display = 'none';
 }
 
 
