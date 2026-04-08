@@ -1235,3 +1235,66 @@ async def import_product_map_excel(file: bytes = Body(..., media_type="applicati
     except Exception as e:
         logger.error(f"[SS] Excel 가져오기 오류: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"파일 파싱 오류: {e}")
+
+
+@router.post("/product-map/fetch-options-excel")
+async def fetch_options_excel(body: dict = Body(...)):
+    """상품번호 목록으로 네이버 API 조회 → 옵션/추가상품 매핑 작업용 Excel 다운로드"""
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    from fastapi.responses import StreamingResponse
+    from services.naver_client import naver_client
+
+    product_nos = body.get("productNos", [])
+    if not product_nos:
+        raise HTTPException(status_code=400, detail="productNos 필요")
+
+    items = await naver_client.fetch_products_with_options(product_nos)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "옵션_추가상품_매핑"
+
+    hdr_fill = PatternFill("solid", fgColor="1F4E79")
+    hdr_font = Font(bold=True, color="FFFFFF", name="Arial", size=10)
+    yel_fill = PatternFill("solid", fgColor="FFF2CC")
+    data_font = Font(name="Arial", size=10)
+
+    cols = ["구분", "상품번호", "상품명", "옵션텍스트", "판매자코드(참고)", "재고", "ERP품목코드(입력)", "모델명(입력)"]
+    for ci, col in enumerate(cols, 1):
+        c = ws.cell(1, ci, col)
+        c.fill = hdr_fill; c.font = hdr_font
+        c.alignment = Alignment(horizontal="center")
+
+    widths = [10, 18, 40, 40, 20, 8, 25, 20]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    for ri, item in enumerate(items, 2):
+        # 현재 매핑 여부 확인
+        pno = item["productNo"]
+        existing_erp = _product_map.get(pno, "") or _option_override_map.get(pno, "")
+        existing_model = _model_map.get(pno, "")
+
+        vals = [
+            item["type"], pno, item["productName"], item["optionText"],
+            item["sellerCode"], item["stock"],
+            existing_erp,   # 기존 매핑 있으면 미리 채워줌
+            existing_model,
+        ]
+        for ci, val in enumerate(vals, 1):
+            c = ws.cell(ri, ci, val)
+            c.font = data_font
+            if ci in (7, 8):
+                c.fill = yel_fill
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    logger.info(f"[SS] 옵션조회 Excel: {len(items)}개 항목")
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=smartstore_options.xlsx"},
+    )

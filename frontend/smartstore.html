@@ -194,6 +194,10 @@
                     ⬆ Excel 업로드
                     <input type="file" id="map-excel-input" accept=".xlsx" style="display:none;" onchange="importMapExcel(this)">
                 </label>
+                <label class="btn btn-sm" style="cursor:pointer; margin:0; background:#7c3aed; color:#fff;">
+                    🔍 옵션조회 Excel
+                    <input type="file" id="opt-csv-input" accept=".csv" style="display:none;" onchange="fetchOptionsExcel(this)">
+                </label>
             </div>
             <div class="map-add-row">
                 <input type="text" id="map-new-pno" placeholder="상품번호 (필수)">
@@ -918,6 +922,46 @@ async function exportMapExcel() {
         document.body.removeChild(a); URL.revokeObjectURL(url);
         mapMsg('ok', 'Excel 다운로드 완료');
     } catch(e) { mapMsg('err', e.message); }
+}
+
+async function fetchOptionsExcel(input) {
+    if(!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    mapMsg('ok', `CSV 파싱 중...`);
+    try {
+        const text = await file.text();
+        const lines = text.split('\n');
+        const header = lines[0].split(',');
+        const pnoIdx = header.findIndex(h => h.replace(/"/g,'').trim() === '상품번호(스마트스토어)');
+        const optIdx = header.findIndex(h => h.replace(/"/g,'').trim() === '옵션');
+        const addIdx = header.findIndex(h => h.replace(/"/g,'').trim() === '추가상품');
+        if(pnoIdx < 0) { mapMsg('err', '상품번호(스마트스토어) 컬럼을 찾을 수 없습니다.'); return; }
+
+        const productNos = [];
+        for(let i=1; i<lines.length; i++) {
+            const cols = lines[i].split(',');
+            const pno  = (cols[pnoIdx] || '').replace(/"/g,'').trim();
+            const hasOpt = (cols[optIdx] || '').replace(/"/g,'').trim().toUpperCase() === 'Y';
+            const hasAdd = (cols[addIdx] || '').replace(/"/g,'').trim().toUpperCase() === 'Y';
+            if(pno && (hasOpt || hasAdd)) productNos.push(pno);
+        }
+        if(!productNos.length) { mapMsg('err', '옵션/추가상품이 있는 상품이 없습니다.'); return; }
+
+        mapMsg('ok', `${productNos.length}개 상품 옵션 조회 중... (시간이 걸릴 수 있습니다)`);
+        const res = await fetch(B+'/api/smartstore/product-map/fetch-options-excel', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({productNos}),
+        });
+        if(!res.ok) { mapMsg('err', '옵션 조회 실패: '+res.status); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url;
+        a.download = 'smartstore_options.xlsx'; a.click();
+        URL.revokeObjectURL(url);
+        mapMsg('ok', `✅ 옵션조회 완료 — Excel 다운로드됨`);
+    } catch(e) { mapMsg('err', e.message); }
+    input.value = '';
 }
 
 async function importMapExcel(input) {

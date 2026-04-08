@@ -246,4 +246,60 @@ class NaverCommerceClient:
         return results
 
 
+    async def fetch_channel_product(self, channel_product_no: str) -> dict:
+        """채널 상품 상세 조회 (옵션/추가상품 포함)"""
+        headers = await self._headers()
+        url = f"{NAVER_COMMERCE_URL}/external/v1/channel-products/{channel_product_no}"
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(url, headers=headers)
+            if r.status_code == 200:
+                return r.json().get("channelProduct") or r.json()
+            logger.warning(f"[Naver] 채널상품 조회 실패: {channel_product_no} status={r.status_code}")
+            return {}
+        except Exception as e:
+            logger.error(f"[Naver] 채널상품 조회 오류: {e}")
+            return {}
+
+    async def fetch_products_with_options(self, product_nos: list[str]) -> list[dict]:
+        """상품번호 목록의 옵션/추가상품 정보 일괄 조회"""
+        results = []
+        for pno in product_nos:
+            data = await self.fetch_channel_product(pno)
+            if not data:
+                continue
+            name = data.get("name", "")
+            # 옵션 조합
+            opt_info = data.get("optionInfo") or {}
+            combinations = opt_info.get("optionCombinations") or []
+            for combo in combinations:
+                opt_name = " / ".join(filter(None, [
+                    combo.get("optionName1", ""),
+                    combo.get("optionName2", ""),
+                    combo.get("optionName3", ""),
+                    combo.get("optionName4", ""),
+                ]))
+                results.append({
+                    "type": "옵션",
+                    "productNo": pno,
+                    "productName": name,
+                    "optionText": opt_name,
+                    "sellerCode": combo.get("sellerManagementCode", ""),
+                    "stock": combo.get("stockQuantity", 0),
+                })
+            # 추가상품
+            add_info = data.get("supplementProductInfo") or {}
+            add_products = add_info.get("supplementProducts") or []
+            for add in add_products:
+                results.append({
+                    "type": "추가상품",
+                    "productNo": pno,
+                    "productName": name,
+                    "optionText": add.get("name", ""),
+                    "sellerCode": add.get("sellerManagementCode", ""),
+                    "stock": add.get("stockQuantity", 0),
+                })
+        return results
+
+
 naver_client = NaverCommerceClient()
