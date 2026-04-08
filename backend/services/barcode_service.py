@@ -332,21 +332,45 @@ async def send_to_ecount(
         rows_10 = []       # 용산(10) 전환
         rows_no_stock = [] # 둘 다 재고 없음 → 전표 제외
 
+        # 순번별 수량 차감 추적 (원본 inv_30/inv_10은 표시용으로 보존)
+        rem_30: dict = dict(inv_30)  # 통진 남은 재고 (처리하면서 차감)
+        rem_10: dict = dict(inv_10)  # 용산 남은 재고 (처리하면서 차감)
+
         for _, row in valid.iterrows():
             prod_cd = str(row["_품목코드"]).strip()
-            has_30 = inv_30.get(prod_cd, 0) > 0
-            has_10 = inv_10.get(prod_cd, 0) > 0
             bc_val = str(row.get("상품바코드", "")).strip()
-            cd_val = prod_cd
-            is_label = bc_val in needs_label or (cd_val and cd_val in needs_label)
+            is_label = bc_val in needs_label or (prod_cd and prod_cd in needs_label)
 
-            if inv_checked and not has_30 and not has_10:
-                # 둘 다 재고 없음 → 전표 제외 (low_stock 처리만)
-                rows_no_stock.append((row, int(row["_orig_idx"]), is_label))
-            elif inv_checked and not has_30 and has_10:
-                rows_10.append((row, int(row["_orig_idx"]), is_label))
-            else:
+            # 발주 수량
+            try:
+                order_qty = float(
+                    str(row.get(qty_col, "0") or "0").replace(",", "").strip()
+                )
+            except Exception:
+                order_qty = 0.0
+
+            if not inv_checked:
+                # 재고 조회 실패 → 기본창고(통진)로 처리
                 rows_30.append((row, int(row["_orig_idx"]), is_label))
+                continue
+
+            stock_30 = rem_30.get(prod_cd, 0.0)
+            stock_10 = rem_10.get(prod_cd, 0.0)
+
+            if order_qty > 0 and stock_30 >= order_qty:
+                # 통진 재고 충분 → 통진 전표, 수량 차감
+                rows_30.append((row, int(row["_orig_idx"]), is_label))
+                rem_30[prod_cd] = stock_30 - order_qty
+                logger.debug(f"[바코드] {prod_cd} 통진 배정: {order_qty} (잔여 {rem_30[prod_cd]})")
+            elif order_qty > 0 and stock_10 >= order_qty:
+                # 통진 부족 → 용산 재고 충분 → 용산 전표, 수량 차감
+                rows_10.append((row, int(row["_orig_idx"]), is_label))
+                rem_10[prod_cd] = stock_10 - order_qty
+                logger.info(f"[바코드] {prod_cd} 통진부족({stock_30}<{order_qty}) → 용산 전환 (잔여 {rem_10[prod_cd]})")
+            else:
+                # 둘 다 부족 → 전표 제외
+                rows_no_stock.append((row, int(row["_orig_idx"]), is_label))
+                logger.info(f"[바코드] {prod_cd} 재고부족(통진:{stock_30}, 용산:{stock_10}, 필요:{order_qty}) → 전표제외")
 
         # ⑦ 통진 그룹 순번 할당 → 용산 그룹 순번 이어서 할당
         def assign_ser_nos(rows):
@@ -481,6 +505,9 @@ async def send_to_ecount(
             stock_status = "low_stock"
 
         slip_no = wh_ser_to_slip.get((used_wh, bd["UPLOAD_SER_NO"]), "")
+        # 차감 후 잔여 재고
+        rem_30_after = rem_30.get(prod_cd, None)
+        rem_10_after = rem_10.get(prod_cd, None)
 
         items_result.append({
             "upload_ser_no": bd["UPLOAD_SER_NO"],
@@ -488,8 +515,10 @@ async def send_to_ecount(
             "remarks": bd["U_MEMO5"],
             "prod_cd": prod_cd,
             "qty": bd["QTY"],
-            "bal_10": round(bal_10) if bal_10 is not None else None,
-            "bal_30": round(bal_30) if bal_30 is not None else None,
+            "bal_10": round(bal_10) if bal_10 is not None else None,   # 조회 시 원본 재고
+            "bal_30": round(bal_30) if bal_30 is not None else None,   # 조회 시 원본 재고
+            "rem_10": round(rem_10_after) if rem_10_after is not None else None,  # 배정 후 잔여
+            "rem_30": round(rem_30_after) if rem_30_after is not None else None,  # 배정 후 잔여
             "stock_status": stock_status,
             "used_wh": used_wh,           # 실제 전표 창고 (10=용산, 30=통진)
             "low_stock": stock_status == "low_stock",  # 하위호환

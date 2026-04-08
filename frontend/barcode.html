@@ -664,19 +664,31 @@ function renderInvTable(items) {
     if (ss === "wh10_used")  tr.classList.add("wh10-has");
     tr.dataset.rowIdx = rowIdx;
 
+    // 조회 시 원본 재고
     const bal10Html = item.bal_10 === null || item.bal_10 === undefined
       ? `<span style="color:var(--text3)">-</span>`
       : `<span class="${item.bal_10 > 0 ? 'inv-qty-warn' : 'inv-qty-bad'}">${item.bal_10}</span>`;
     const bal30Html = item.bal_30 === null || item.bal_30 === undefined
       ? `<span style="color:var(--text3)">-</span>`
       : `<span class="${item.bal_30 > 0 ? 'inv-qty-ok' : 'inv-qty-bad'}">${item.bal_30}</span>`;
+    // 배정 후 잔여 재고 (rem_30/rem_10)
+    const rem30Html = item.rem_30 === null || item.rem_30 === undefined
+      ? ``
+      : `<br><span style="font-size:10px;color:${item.rem_30 >= 0 ? 'var(--text3)' : '#dc3545'}">잔여:${item.rem_30}</span>`;
+    const rem10Html = item.rem_10 === null || item.rem_10 === undefined
+      ? ``
+      : `<br><span style="font-size:10px;color:${item.rem_10 >= 0 ? 'var(--text3)' : '#dc3545'}">잔여:${item.rem_10}</span>`;
 
     // 창고/상태 배지
     let statusBadge = "";
     if (ss === "low_stock") {
-      statusBadge = `<span style="font-size:10px;background:rgba(220,53,69,.15);color:#dc3545;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:700">재고없음</span>`;
+      const t30 = item.bal_30 !== null && item.bal_30 !== undefined ? `통진:${item.bal_30}` : "";
+      const t10 = item.bal_10 !== null && item.bal_10 !== undefined ? `용산:${item.bal_10}` : "";
+      const stockInfo = [t30, t10].filter(Boolean).join(", ");
+      statusBadge = `<span style="font-size:10px;background:rgba(220,53,69,.15);color:#dc3545;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:700">재고부족${stockInfo ? ` (${stockInfo})` : ""}</span>`;
     } else if (ss === "wh10_used") {
-      statusBadge = `<span style="font-size:10px;background:rgba(255,176,32,.2);color:var(--warning);padding:1px 6px;border-radius:4px;margin-left:4px">용산전환</span>`;
+      const t30 = item.bal_30 !== null && item.bal_30 !== undefined ? `통진:${item.bal_30}` : "";
+      statusBadge = `<span style="font-size:10px;background:rgba(255,176,32,.2);color:var(--warning);padding:1px 6px;border-radius:4px;margin-left:4px">통진부족${t30 ? `(${t30})` : ""}→용산전환</span>`;
     }
 
     // 전표번호 셀: 실제 slip_no 있으면 표시, 없으면 대시
@@ -695,8 +707,8 @@ function renderInvTable(items) {
       <td style="text-align:left;white-space:nowrap">${item.remarks}${statusBadge}</td>
       <td style="font-weight:600;font-family:'JetBrains Mono',monospace">${item.prod_cd}</td>
       <td>${item.qty}</td>
-      <td>${bal10Html}</td>
-      <td>${bal30Html}</td>
+      <td>${bal10Html}${rem10Html}</td>
+      <td>${bal30Html}${rem30Html}</td>
       <td style="white-space:nowrap">${delBtn}</td>
     `;
     tbody.appendChild(tr);
