@@ -755,19 +755,22 @@ def init_db():
     )""")
 
     # MOQ, supplier_group 컬럼 마이그레이션 (기존 테이블용)
-    if USE_PG:
-        cur_or_conn.execute("ALTER TABLE inventory_planning_targets ADD COLUMN IF NOT EXISTS moq INTEGER DEFAULT 0")
-        cur_or_conn.execute("ALTER TABLE inventory_planning_targets ADD COLUMN IF NOT EXISTS supplier_group TEXT DEFAULT ''")
-    else:
-        for _col, _type, _default in [("moq", "INTEGER", "0"), ("supplier_group", "TEXT", "''")]:
-            try:
-                cur_or_conn.execute(f"ALTER TABLE inventory_planning_targets ADD COLUMN {_col} {_type} DEFAULT {_default}")
-            except Exception:
-                pass
     try:
+        if USE_PG:
+            cur_or_conn.execute("ALTER TABLE inventory_planning_targets ADD COLUMN IF NOT EXISTS moq INTEGER DEFAULT 0")
+            cur_or_conn.execute("ALTER TABLE inventory_planning_targets ADD COLUMN IF NOT EXISTS supplier_group TEXT DEFAULT ''")
+        else:
+            for _col, _type, _default in [("moq", "INTEGER", "0"), ("supplier_group", "TEXT", "''")]:
+                try:
+                    cur_or_conn.execute(f"ALTER TABLE inventory_planning_targets ADD COLUMN {_col} {_type} DEFAULT {_default}")
+                except Exception:
+                    pass
         conn.commit()
     except Exception:
-        pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
     # ── 선적 메일 정보 ──
     cur_or_conn.execute("""
