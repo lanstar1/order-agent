@@ -12,6 +12,7 @@ import email
 from email.header import decode_header
 import logging
 import io
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -556,3 +557,130 @@ def save_nam_shipping_info(conn, scan_results: list):
     conn.commit()
     logger.info(f"[NAM메일] {saved}건 PI 저장 + orderlist_items 등록 완료")
     return saved
+
+
+# ═══════════════════════════════════════════════════════════
+#  구글시트 오더리스트 자동 기록 (서비스 계정)
+# ═══════════════════════════════════════════════════════════
+
+ORDERLIST_SHEET_ID = "1ej0cxyM3NHJKpF-KBXbZ16fH-lZcUrr3Z3eTwFVFSco"
+
+def _get_sheets_credentials():
+    """Google 서비스 계정으로 Sheets API 인증"""
+    import json
+    from google.oauth2.service_account import Credentials
+
+    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    if not sa_json:
+        return None
+
+    try:
+        sa_info = json.loads(sa_json)
+        creds = Credentials.from_service_account_info(
+            sa_info,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        return creds
+    except Exception as e:
+        logger.error(f"[구글시트] 서비스 계정 인증 실패: {e}")
+        return None
+
+
+def _sheets_api_request(method, url, body=None):
+    """Google Sheets API 호출 (서비스 계정 인증)"""
+    import httpx
+
+    creds = _get_sheets_credentials()
+    if not creds:
+        raise Exception("GOOGLE_SERVICE_ACCOUNT_JSON 환경변수 없음")
+
+    # 토큰 갱신
+    from google.auth.transport.requests import Request
+    creds.refresh(Request())
+
+    headers = {
+        "Authorization": f"Bearer {creds.token}",
+        "Content-Type": "application/json",
+    }
+
+    if method == "GET":
+        resp = httpx.get(url, headers=headers, timeout=30)
+    elif method == "POST":
+        resp = httpx.post(url, headers=headers, json=body, timeout=30)
+    elif method == "PUT":
+        resp = httpx.put(url, headers=headers, json=body, timeout=30)
+    else:
+        raise ValueError(f"Unsupported method: {method}")
+
+    resp.raise_for_status()
+    return resp.json()
+
+
+def write_nam_orders_to_sheet(scan_results: list) -> dict:
+    """
+    NAM 거래처 오더를 구글시트 오더리스트에 기록
+    기존 BOR 탭과 동일한 패턴으로 새 탭(NAM-2026) 또는 기존 탭에 추가
+    """
+    if not scan_results:
+        return {"status": "no_data"}
+
+    base_url = f"https://sheets.googleapis.com/v4/spreadsheets/{ORDERLIST_SHEET_ID}"
+    year = datetime.now(KST).strftime("%Y")
+    tab_name = f"NAM-{year}"
+
+    try:
+        # 1. 탭 존재 여부 확인
+        sheet_meta = _sheets_api_request("GET", f"{base_url}?fields=sheets.properties")
+        existing_tabs = [s["properties"]["title"] for s in sheet_meta.get("sheets", [])]
+
+        if tab_name not in existing_tabs:
+            # 새 탭 생성
+            _sheets_api_request("POST", f"{base_url}:batchUpdate", {
+                "requests": [{"addSheet": {"properties": {"title": tab_name}}}]
+            })
+            logger.info(f"[구글시트] '{tab_name}' 탭 생성")
+
+        # 2. 기존 데이터 클리어
+        _sheets_api_request("POST",
+            f"{base_url}/values/'{tab_name}'!A1:Z1000:clear", {})
+
+        # 3. 데이터 구성 (BOR 오더리스트와 유사한 패턴)
+        rows = []
+        for result in scan_results:
+            pi = result["pi_number"]
+            items = result.get("items", [])
+            email_date = result.get("email_date", "")
+
+            # 헤더 행
+            rows.append(["Seller:", "", "No.:", pi])
+            rows.append(["NAM/PUSIMA (深圳普思玛)", "", "Date:", email_date])
+            rows.append(["Item", "Description", "Quantity", "Unit",
+                        "Order Date", "Shipping Date", "Arrival Date"])
+
+            # 품목 행
+            for it in items:
+                model = it.get("model", "")
+                rows.append([
+                    model,
+                    "",
+                    it.get("qty", 0),
+                    "PCS",
+                    it.get("order_date", ""),
+                    it.get("shipping_date", ""),
+                    it.get("arrival_date", ""),
+                ])
+
+            rows.append([])  # 빈 행 구분
+
+        # 4. 시트에 쓰기
+        _sheets_api_request("PUT",
+            f"{base_url}/values/'{tab_name}'!A1?valueInputOption=USER_ENTERED",
+            {"values": rows}
+        )
+
+        logger.info(f"[구글시트] '{tab_name}'에 {len(scan_results)}건 PI 기록 완료")
+        return {"status": "ok", "tab": tab_name, "rows": len(rows)}
+
+    except Exception as e:
+        logger.error(f"[구글시트] 오더리스트 기록 실패: {e}")
+        return {"status": "error", "error": str(e)}

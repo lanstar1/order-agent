@@ -228,9 +228,9 @@ async def list_shipping_info():
 
 @router.post("/shipping/scan-nam")
 async def scan_nam_shipping():
-    """NAM 거래처 메일(네이버) 스캔 → PI 엑셀 파싱 → DB 저장"""
+    """NAM 거래처 메일(네이버) 스캔 → PI 엑셀 파싱 → DB + 구글시트 저장"""
     from config import MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER
-    from services.shipping_mail_service import scan_nam_shipping_emails, save_nam_shipping_info
+    from services.shipping_mail_service import scan_nam_shipping_emails, save_nam_shipping_info, write_nam_orders_to_sheet
 
     if not MAIL2_USER or not MAIL2_PASSWORD:
         raise HTTPException(400, "네이버 메일 설정이 없습니다 (MAIL2_USER, MAIL2_PASSWORD)")
@@ -245,17 +245,26 @@ async def scan_nam_shipping():
             days_back=180,
         )
 
+        # DB 저장 (orderlist_items + shipping_mail_info)
         conn = get_connection()
         try:
             saved = save_nam_shipping_info(conn, results)
         finally:
             conn.close()
 
+        # 구글시트 자동 기록
+        sheet_result = {"status": "skipped"}
+        try:
+            sheet_result = write_nam_orders_to_sheet(results)
+        except Exception as e:
+            sheet_result = {"status": "error", "error": str(e)}
+
         return {
             "status": "ok",
             "source": "NAM (Naver)",
             "scanned": len(results),
             "saved": saved,
+            "sheet": sheet_result,
             "items": [{
                 "pi_number": r["pi_number"],
                 "email_date": r["email_date"],
