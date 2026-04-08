@@ -315,3 +315,45 @@ async def scan_all_shipping():
 
     results["status"] = "ok"
     return results
+
+
+@router.post("/orderlist/sync-bor")
+async def sync_bor_orderlist():
+    """BOR 거래처 메일에서 REST 엑셀 → 구글시트 오더리스트 덮어쓰기"""
+    from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+    from services.shipping_mail_service import scan_bor_orderlist_emails, sync_bor_orderlist_to_sheet
+
+    if not MAIL_USER or not MAIL_PASSWORD:
+        raise HTTPException(400, "Ecount 메일 설정이 없습니다")
+
+    try:
+        # 1. 메일에서 REST 파일 스캔
+        results = scan_bor_orderlist_emails(
+            MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT,
+            days_back=90, sender_filter="guzhiyi@bor-cable.com"
+        )
+
+        if not results:
+            return {"status": "ok", "message": "REST 파일이 있는 메일을 찾지 못했습니다"}
+
+        # 가장 최근 파일만 사용 (덮어쓰기)
+        latest = results[0]
+
+        # 2. 구글시트에 덮어쓰기
+        sheet_result = sync_bor_orderlist_to_sheet([latest])
+
+        # 3. DB orderlist_items도 갱신 (오더리스트 동기화)
+        try:
+            from services.orderlist_service import sync_orderlist
+            sync_orderlist()
+        except Exception as e:
+            logger.warning(f"[BOR오더] DB 동기화 실패: {e}")
+
+        return {
+            "status": "ok",
+            "email_date": latest["email_date"],
+            "filename": latest["filename"],
+            "sheet": sheet_result,
+        }
+    except Exception as e:
+        raise HTTPException(500, f"BOR 오더리스트 동기화 실패: {str(e)}")

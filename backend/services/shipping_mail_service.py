@@ -684,3 +684,203 @@ def write_nam_orders_to_sheet(scan_results: list) -> dict:
     except Exception as e:
         logger.error(f"[구글시트] 오더리스트 기록 실패: {e}")
         return {"status": "error", "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════
+#  BOR 오더리스트 자동 최신화 (Ecount 메일 → 구글시트 덮어쓰기)
+# ═══════════════════════════════════════════════════════════
+
+def scan_bor_orderlist_emails(
+    imap_server: str, imap_user: str, imap_password: str,
+    imap_port: int = 993, days_back: int = 90,
+    sender_filter: str = "guzhiyi@bor-cable.com",
+) -> list:
+    """
+    kyu@lanstar.co.kr 메일에서 BOR 거래처(guzhiyi@bor-cable.com) 발신 메일 검색
+    'rest' 키워드가 포함된 엑셀 첨부파일 = 최신 오더리스트
+    가장 최근 메일의 첨부파일만 반환 (덮어쓰기용)
+    """
+    results = []
+
+    try:
+        logger.info(f"[BOR오더] IMAP 접속: {imap_server} ({imap_user})")
+        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        mail.login(imap_user, imap_password)
+        mail.select("INBOX", readonly=True)
+
+        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+
+        # 발신자 필터
+        status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
+        uids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[BOR오더] {sender_filter} 메일 {len(uids)}건")
+
+        for uid in sorted(uids, reverse=True):  # 최신 메일 먼저
+            try:
+                status, msg_data = mail.fetch(uid, "(RFC822)")
+                if status != "OK":
+                    continue
+
+                msg = email.message_from_bytes(msg_data[0][1])
+                subject = _decode_header_value(msg.get("Subject", ""))
+                email_dt = _parse_email_date(msg.get("Date", ""))
+                if not email_dt:
+                    continue
+
+                for part in msg.walk():
+                    content_disposition = str(part.get("Content-Disposition", ""))
+                    if "attachment" not in content_disposition:
+                        continue
+
+                    filename = _decode_header_value(part.get_filename() or "")
+                    if not filename:
+                        continue
+
+                    # "rest" 키워드가 있는 엑셀만 (FTA 제외)
+                    fn_upper = filename.upper()
+                    if "REST" not in fn_upper:
+                        continue
+                    if "FTA" in fn_upper:
+                        continue
+                    if not any(filename.lower().endswith(ext) for ext in [".xlsx", ".xls"]):
+                        continue
+
+                    file_data = part.get_payload(decode=True)
+
+                    # BOR 번호 추출
+                    bor_match = re.search(r'(BOR[-_]?\d+)', filename, re.IGNORECASE)
+                    bor_number = bor_match.group(1).upper().replace("_", "-") if bor_match else ""
+
+                    results.append({
+                        "filename": filename,
+                        "bor_number": bor_number,
+                        "subject": subject[:200],
+                        "email_date": email_dt.strftime("%Y-%m-%d"),
+                        "file_data": file_data,
+                    })
+                    logger.info(f"[BOR오더] REST 파일 발견: {filename} ({email_dt.strftime('%Y-%m-%d')})")
+
+            except Exception as e:
+                logger.warning(f"[BOR오더] 메일 파싱 실패: {e}")
+
+        mail.logout()
+
+    except Exception as e:
+        logger.error(f"[BOR오더] 메일 스캔 오류: {e}", exc_info=True)
+        raise
+
+    return results
+
+
+def _parse_bor_rest_excel(file_data: bytes, filename: str) -> list:
+    """BOR REST 엑셀을 구글시트에 쓸 수 있는 2D 배열로 변환"""
+    rows = []
+    try:
+        if filename.lower().endswith(".xlsx"):
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
+            sh = wb.active
+            for r in range(1, sh.max_row + 1):
+                row = []
+                for c in range(1, sh.max_column + 1):
+                    val = sh.cell(r, c).value
+                    if val is None:
+                        row.append("")
+                    elif isinstance(val, datetime):
+                        row.append(val.strftime("%Y-%m-%d"))
+                    elif isinstance(val, (int, float)):
+                        if val == int(val):
+                            row.append(int(val))
+                        else:
+                            row.append(round(val, 4))
+                    else:
+                        row.append(str(val))
+                rows.append(row)
+        elif filename.lower().endswith(".xls"):
+            import xlrd
+            wb = xlrd.open_workbook(file_contents=file_data)
+            sh = wb.sheet_by_index(0)
+            for r in range(sh.nrows):
+                row = []
+                for c in range(sh.ncols):
+                    val = sh.cell_value(r, c)
+                    if isinstance(val, float) and val == int(val):
+                        val = int(val)
+                    row.append(val if val else "")
+                rows.append(row)
+    except Exception as e:
+        logger.error(f"[BOR오더] 엑셀 파싱 실패 ({filename}): {e}")
+    return rows
+
+
+def sync_bor_orderlist_to_sheet(scan_results: list) -> dict:
+    """
+    BOR REST 엑셀 내용을 구글시트 오더리스트에 덮어쓰기
+    파일명에서 BOR 번호 → 해당 탭에 덮어쓰기
+    탭이 없으면 새로 생성
+    """
+    if not scan_results:
+        return {"status": "no_data"}
+
+    base_url = f"https://sheets.googleapis.com/v4/spreadsheets/{ORDERLIST_SHEET_ID}"
+    synced_tabs = []
+
+    try:
+        # 기존 탭 목록
+        sheet_meta = _sheets_api_request("GET", f"{base_url}?fields=sheets.properties")
+        existing_tabs = [s["properties"]["title"] for s in sheet_meta.get("sheets", [])]
+
+        for item in scan_results:
+            filename = item["filename"]
+            file_data = item["file_data"]
+
+            # 탭 이름 결정: BOR 번호 기반 또는 연도
+            bor = item.get("bor_number", "")
+            # 기존 탭에서 BOR 번호로 시작하는 탭 찾기
+            target_tab = None
+            for tab in existing_tabs:
+                if bor and bor in tab.upper():
+                    target_tab = tab
+                    break
+
+            # 기존 연도별 탭에 덮어쓰기 (2026, 2025 등)
+            if not target_tab:
+                year = item["email_date"][:4]
+                for tab in existing_tabs:
+                    if tab.strip() == year:
+                        target_tab = tab
+                        break
+
+            if not target_tab:
+                target_tab = f"BOR-{item['email_date'][:4]}"
+                if target_tab not in existing_tabs:
+                    _sheets_api_request("POST", f"{base_url}:batchUpdate", {
+                        "requests": [{"addSheet": {"properties": {"title": target_tab}}}]
+                    })
+                    existing_tabs.append(target_tab)
+
+            # 엑셀 → 2D 배열
+            rows = _parse_bor_rest_excel(file_data, filename)
+            if not rows:
+                continue
+
+            # 기존 데이터 클리어 후 덮어쓰기
+            try:
+                _sheets_api_request("POST",
+                    f"{base_url}/values/'{target_tab}'!A1:Z1000:clear", {})
+            except Exception:
+                pass
+
+            _sheets_api_request("PUT",
+                f"{base_url}/values/'{target_tab}'!A1?valueInputOption=USER_ENTERED",
+                {"values": rows}
+            )
+
+            synced_tabs.append({"tab": target_tab, "rows": len(rows), "file": filename})
+            logger.info(f"[BOR오더] '{target_tab}' 탭 덮어쓰기 완료 ({len(rows)}행)")
+
+        return {"status": "ok", "tabs": synced_tabs}
+
+    except Exception as e:
+        logger.error(f"[BOR오더] 구글시트 동기화 실패: {e}")
+        return {"status": "error", "error": str(e)}

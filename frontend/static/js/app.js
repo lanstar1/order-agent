@@ -5502,6 +5502,22 @@ async function ipScanShippingMails() {
   }
 }
 
+async function ipSyncBorOrderlist() {
+  if (!confirm('BOR 거래처 메일에서 최신 REST 파일을 찾아 구글시트 오더리스트를 덮어씁니다.')) return;
+  toast('📋 BOR 오더리스트 최신화 중...', 'info');
+  try {
+    const data = await api.post('/api/inventory-planning/orderlist/sync-bor', {});
+    if (data.status === 'ok') {
+      toast(`✅ 오더리스트 최신화 완료 (${data.filename || ''})`, 'success');
+      ipRefreshAnalysis();
+    } else {
+      toast(data.message || '최신화 실패', 'warning');
+    }
+  } catch (err) {
+    toast('오더리스트 최신화 실패: ' + (err.message || err), 'error');
+  }
+}
+
 
 // ═══════════════════════════════════════════════════════════
 //  매입정산 (Purchase Reconciliation) — 일괄 처리
