@@ -383,7 +383,7 @@ async def list_violations_grouped(severity: str = "", days: int = 7, search: str
         MAX(v.deviation_pct) as max_deviation,
         MAX(v.severity) as worst_severity,
         MAX(v.detected_at) as last_detected,
-        GROUP_CONCAT(DISTINCT v.seller_name) as sellers
+        STRING_AGG(DISTINCT v.seller_name, ',') as sellers
         FROM map_violations v JOIN map_products p ON v.product_id = p.id
         WHERE v.detected_at > ? AND v.is_resolved = 0"""
     params = [cutoff]
