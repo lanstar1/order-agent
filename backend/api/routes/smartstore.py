@@ -1302,28 +1302,31 @@ async def fetch_options_excel(body: dict = Body(...)):
 
 @router.get("/product-map/debug-option/{product_no}")
 async def debug_channel_product(product_no: str, naver_no: str = ""):
-    """채널상품 API 응답 구조 확인용 (디버그)"""
+    """채널상품 API 응답 구조 확인용 (디버그)
+    product_no = 상품번호(스마트스토어) = 원상품번호
+    naver_no   = 네이버쇼핑상품번호    = 채널상품번호
+    """
     from services.naver_client import naver_client
     headers = await naver_client._headers()
     import httpx
     from config import NAVER_COMMERCE_URL
 
-    endpoints = [
-        f"{NAVER_COMMERCE_URL}/external/v1/channel-products/{product_no}",
-        f"{NAVER_COMMERCE_URL}/external/v1/channel-products?channelProductNos={product_no}",
-        f"{NAVER_COMMERCE_URL}/external/v1/seller/channel-products/{product_no}",
-    ]
+    endpoints = {
+        # 원상품 조회 (v2) — 상품번호(스마트스토어) 사용
+        "v2_원상품": f"{NAVER_COMMERCE_URL}/external/v2/products/origin-products/{product_no}",
+        # 채널상품 조회 (v2) — 상품번호로 시도
+        "v2_채널_원상품번호": f"{NAVER_COMMERCE_URL}/external/v2/channel-products/{product_no}",
+    }
     if naver_no:
-        endpoints += [
-            f"{NAVER_COMMERCE_URL}/external/v1/channel-products/{naver_no}",
-            f"{NAVER_COMMERCE_URL}/external/v1/channel-products?channelProductNos={naver_no}",
-        ]
+        # 채널상품 조회 (v2) — 네이버쇼핑상품번호로 시도
+        endpoints["v2_채널_쇼핑번호"] = f"{NAVER_COMMERCE_URL}/external/v2/channel-products/{naver_no}"
+
     results = {}
     async with httpx.AsyncClient(timeout=15) as client:
-        for url in endpoints:
+        for key, url in endpoints.items():
             try:
                 r = await client.get(url, headers=headers)
-                results[url] = {"status": r.status_code, "body": r.json()}
+                results[key] = {"status": r.status_code, "url": url, "body": r.json()}
             except Exception as e:
-                results[url] = {"error": str(e)}
+                results[key] = {"error": str(e), "url": url}
     return results
