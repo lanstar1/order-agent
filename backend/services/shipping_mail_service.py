@@ -469,7 +469,7 @@ def _parse_date_value(val) -> str:
 # ─── NAM 선적정보 DB 저장 ─────────────────────────────────
 
 def save_nam_shipping_info(conn, scan_results: list):
-    """NAM 거래처 선적 정보를 shipping_mail_info 테이블에 저장"""
+    """NAM 거래처 선적 정보를 shipping_mail_info + orderlist_items 테이블에 저장"""
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     saved = 0
 
@@ -479,7 +479,7 @@ def save_nam_shipping_info(conn, scan_results: list):
         models_list = [it["model"] for it in items if it.get("model")]
         models_csv = ",".join(models_list)
 
-        # PI 단위로 저장 (bor_number 필드에 PI 번호 사용)
+        # 1) shipping_mail_info에 PI 단위 저장
         conn.execute("""
             INSERT INTO shipping_mail_info
                 (bor_number, subject, email_date, shipping_date, arrival_date,
@@ -498,7 +498,7 @@ def save_nam_shipping_info(conn, scan_results: list):
         ))
         saved += 1
 
-        # 개별 품목별로도 선적일 저장 (모델별 선적일이 다를 수 있음)
+        # 2) shipping_mail_info에 개별 모델 레코드 저장 (모델별 선적일)
         for it in items:
             model = it["model"].strip().upper()
             if not model:
@@ -518,6 +518,41 @@ def save_nam_shipping_info(conn, scan_results: list):
                 result["filename"], model, 1, now
             ))
 
+        # 3) orderlist_items에 오더 내역 자동 등록 (기존 오더리스트와 동일 구조)
+        year = result["email_date"][:4] if result["email_date"] else "2026"
+        tab_name = f"NAM-{year}"
+
+        # 해당 PI의 기존 데이터 삭제 후 재등록 (중복 방지)
+        conn.execute(
+            "DELETE FROM orderlist_items WHERE sheet_tab = ? AND order_no = ?",
+            (tab_name, pi)
+        )
+
+        current_category = ""
+        for idx, it in enumerate(items):
+            model = it["model"].strip()
+            if not model:
+                continue
+
+            conn.execute("""
+                INSERT INTO orderlist_items
+                    (sheet_tab, order_no, seller, order_date, category,
+                     model_name, description, qty, unit, unit_price,
+                     total_value, row_index, raw_row, synced_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                tab_name, pi, "NAM/PUSIMA",
+                it.get("order_date", ""), current_category,
+                model, "", it.get("qty", 0), "PCS",
+                "", "", idx + 1, "", now
+            ))
+
+        # 동기화 로그
+        conn.execute(
+            "INSERT INTO orderlist_sync_log(sheet_tab, item_count, synced_at) VALUES(?,?,?)",
+            (tab_name, len(items), now)
+        )
+
     conn.commit()
-    logger.info(f"[NAM메일] {saved}건 PI 저장 완료")
+    logger.info(f"[NAM메일] {saved}건 PI 저장 + orderlist_items 등록 완료")
     return saved
