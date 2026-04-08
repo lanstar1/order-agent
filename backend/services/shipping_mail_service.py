@@ -83,42 +83,36 @@ def scan_shipping_emails(
         # 날짜 범위 설정
         since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
 
-        # 전체 메일 대상 (일부 IMAP 서버는 SUBJECT 검색 미지원)
-        try:
-            status, data = mail.uid("search", None, f"(SINCE {since_date})")
-        except Exception:
-            try:
-                status, data = mail.uid("search", None, "ALL")
-            except Exception:
-                status, data = mail.search(None, "ALL")
-        all_uids = set(data[0].split()) if status == "OK" and data[0] else set()
+        # Ecount IMAP: 검색 미지원 → 전체 fetch 후 Python 필터
+        status, data = mail.search(None, "ALL")
+        all_ids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[선적메일] INBOX 전체 {len(all_ids)}건")
 
-        logger.info(f"[선적메일] 대상 메일 {len(all_uids)}건 (최근 {days_back}일)")
+        shipping_keywords = ["shipping", "final", "list"]
 
-        for uid in all_uids:
+        for mid in all_ids:
             try:
-                # UID FETCH 시도 → 일반 FETCH fallback
-                msg_data = None
-                try:
-                    status, msg_data = mail.uid("fetch", uid, "(RFC822)")
-                except Exception:
-                    try:
-                        status, msg_data = mail.fetch(uid, "RFC822")
-                    except Exception:
-                        continue
-                if not msg_data or not msg_data[0]:
+                status, msg_data = mail.fetch(mid, "(RFC822)")
+                if status != "OK" or not msg_data or not msg_data[0]:
                     continue
-
-                raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else msg_data[0]
-                if not isinstance(raw, bytes):
+                raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else None
+                if not raw or not isinstance(raw, bytes):
                     continue
 
                 msg = email.message_from_bytes(raw)
-                subject = _decode_header_value(msg.get("Subject", ""))
+
+                # 제목에 shipping/final/list 키워드 확인
+                subject = _decode_header_value(msg.get("Subject", "")).lower()
+                if not any(kw in subject for kw in shipping_keywords):
+                    continue
+
                 date_str = msg.get("Date", "")
                 email_dt = _parse_email_date(date_str)
-
                 if not email_dt:
+                    continue
+
+                # 3개월 이내 메일만
+                if (datetime.now(KST) - email_dt).days > days_back:
                     continue
 
                 email_date = email_dt.strftime("%Y-%m-%d")
@@ -825,42 +819,35 @@ def scan_bor_orderlist_emails(
         mail.login(imap_user, imap_password)
         mail.select("INBOX", readonly=True)
 
-        # Ecount 서버: UID 기반 검색 + fetch
-        try:
-            status, data = mail.uid("search", None, "ALL")
-        except Exception:
-            status, data = mail.search(None, "ALL")
-        all_uids = data[0].split() if status == "OK" and data[0] else []
-        logger.info(f"[BOR오더] 전체 메일 {len(all_uids)}건, 발신자 필터: {sender_filter}")
+        # Ecount: 전체 fetch 후 Python 필터 (검색 미지원)
+        status, data = mail.search(None, "ALL")
+        all_ids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[BOR오더] INBOX 전체 {len(all_ids)}건, 발신자: {sender_filter}")
 
-        for uid in sorted(all_uids, reverse=True):  # 최신 먼저
+        cutoff = datetime.now(KST) - timedelta(days=days_back)
+
+        for mid in sorted(all_ids, reverse=True):  # 최신 먼저
             try:
-                msg_data = None
-                try:
-                    status, msg_data = mail.uid("fetch", uid, "(RFC822)")
-                except Exception:
-                    try:
-                        status, msg_data = mail.fetch(uid, "RFC822")
-                    except Exception:
-                        continue
-                if not msg_data or not msg_data[0]:
+                status, msg_data = mail.fetch(mid, "(RFC822)")
+                if status != "OK" or not msg_data or not msg_data[0]:
                     continue
-
-                raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else msg_data[0]
-                if not isinstance(raw, bytes):
+                raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else None
+                if not raw or not isinstance(raw, bytes):
                     continue
 
                 msg = email.message_from_bytes(raw)
 
-                # Python에서 발신자 필터 (Ecount IMAP 검색 미지원)
+                # 발신자 필터
                 msg_from = _decode_header_value(msg.get("From", "")).lower()
                 if sender_filter and sender_filter.lower() not in msg_from:
                     continue
 
-                subject = _decode_header_value(msg.get("Subject", ""))
+                # 3개월 이내만
                 email_dt = _parse_email_date(msg.get("Date", ""))
-                if not email_dt:
+                if not email_dt or email_dt < cutoff:
                     continue
+
+                subject = _decode_header_value(msg.get("Subject", ""))
 
                 for part in msg.walk():
                     content_disposition = str(part.get("Content-Disposition", ""))
