@@ -31,6 +31,7 @@ from api.routes.purchases import router as purchases_router
 from api.routes.aicc import router as aicc_router
 from api.routes.inventory_alert import router as inventory_alert_router
 from api.routes.inventory_planning import router as inventory_planning_router
+from api.routes.debug_mail import router as debug_mail_router
 from api.routes.barcode import router as barcode_router
 from api.routes.smartstore import router as smartstore_router
 from api.routes.purchase_reconciliation import router as reconcile_router
@@ -270,6 +271,7 @@ app.include_router(purchases_router)
 app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
 app.include_router(inventory_alert_router)
 app.include_router(inventory_planning_router)
+app.include_router(debug_mail_router)
 app.include_router(barcode_router)
 app.include_router(smartstore_router)
 app.include_router(reconcile_router)
