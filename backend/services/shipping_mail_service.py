@@ -242,6 +242,8 @@ def save_shipping_info(conn, shipping_data: list):
 def get_shipping_info_map(conn) -> dict:
     """
     선적 정보를 모델명 기준으로 매핑
+    BOR: 전체 모델이 같은 선적일
+    NAM: 모델별로 다른 선적일 가능 (개별 레코드 우선)
     Returns: {"LS-1000H": {"bor": "BOR-2601001", "shipping_date": "2026-03-15", "arrival_date": "2026-03-23"}}
     """
     rows = conn.execute("""
@@ -253,9 +255,22 @@ def get_shipping_info_map(conn) -> dict:
     model_map = {}
     for r in rows:
         bor = r[0]
-        ship_date = r[1]
-        arr_date = r[2]
+        ship_date = r[1] or ""
+        arr_date = r[2] or ""
         models_str = r[3] or ""
+
+        # 개별 모델 레코드 (NAM: "LAN-PI20260304_LS-BDCH" 형태)
+        if "_" in bor and models_str and "," not in models_str:
+            m = models_str.strip().upper()
+            if m and m not in model_map and ship_date:
+                model_map[m] = {
+                    "bor_number": bor.split("_")[0],
+                    "shipping_date": ship_date,
+                    "arrival_date": arr_date,
+                }
+            continue
+
+        # BOR/PI 단위 레코드 → 소속 모델에 일괄 적용
         for m in models_str.split(","):
             m = m.strip().upper()
             if m and m not in model_map:
@@ -276,3 +291,231 @@ def get_all_shipping_info(conn) -> list:
         ORDER BY email_date DESC
     """).fetchall()
     return [dict(r) for r in rows]
+
+
+# ═══════════════════════════════════════════════════════════
+#  NAM 거래처 메일 파싱 (네이버 IMAP → 163.com 발신자)
+# ═══════════════════════════════════════════════════════════
+
+def scan_nam_shipping_emails(
+    imap_server: str,
+    imap_user: str,
+    imap_password: str,
+    sender_filter: str = "13428934642@163.com",
+    imap_port: int = 993,
+    days_back: int = 180,
+) -> list:
+    """
+    네이버 메일에서 NAM 거래처(163.com) 발신 메일 검색
+    첨부 엑셀의 첫 시트: B열=주문일, E열=모델명, K열=선적일
+    입고예정 = 선적일 + 8일
+
+    Returns: [{
+        "source": "NAM",
+        "pi_number": "LAN-PI20260304",
+        "email_date": "2026-03-04",
+        "filename": "nam-lanstar-pi20260304-01.xlsx",
+        "items": [{"model": "LS-BDCH", "order_date": "2026-03-04", "shipping_date": "2026-03-20", "arrival_date": "2026-03-28", "qty": 200}, ...]
+    }, ...]
+    """
+    results = []
+
+    try:
+        logger.info(f"[NAM메일] IMAP 접속: {imap_server}:{imap_port} ({imap_user})")
+        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        mail.login(imap_user, imap_password)
+        mail.select("INBOX", readonly=True)
+
+        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+
+        # 발신자 필터로 검색
+        status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
+        uids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[NAM메일] {sender_filter} 발신 메일 {len(uids)}건")
+
+        for uid in uids:
+            try:
+                status, msg_data = mail.fetch(uid, "(RFC822)")
+                if status != "OK":
+                    continue
+
+                msg = email.message_from_bytes(msg_data[0][1])
+                subject = _decode_header_value(msg.get("Subject", ""))
+                email_dt = _parse_email_date(msg.get("Date", ""))
+                if not email_dt:
+                    continue
+                email_date = email_dt.strftime("%Y-%m-%d")
+
+                # 엑셀 첨부파일 검색
+                for part in msg.walk():
+                    content_disposition = str(part.get("Content-Disposition", ""))
+                    if "attachment" not in content_disposition:
+                        continue
+
+                    filename = _decode_header_value(part.get_filename() or "")
+                    if not filename:
+                        continue
+                    if not any(filename.lower().endswith(ext) for ext in [".xlsx", ".xls"]):
+                        continue
+
+                    file_data = part.get_payload(decode=True)
+                    items = _parse_nam_excel(file_data, filename)
+
+                    # PI 번호 추출
+                    pi_match = re.search(r'(LAN-PI\d+)', filename, re.IGNORECASE)
+                    pi_number = pi_match.group(1).upper() if pi_match else filename.split(".")[0]
+
+                    if items:
+                        results.append({
+                            "source": "NAM",
+                            "pi_number": pi_number,
+                            "subject": subject[:200],
+                            "email_date": email_date,
+                            "filename": filename,
+                            "items": items,
+                        })
+                        logger.info(f"[NAM메일] {pi_number}: {len(items)}개 품목 파싱")
+
+            except Exception as e:
+                logger.warning(f"[NAM메일] 메일 파싱 실패 (uid={uid}): {e}")
+
+        mail.logout()
+
+    except Exception as e:
+        logger.error(f"[NAM메일] 메일 스캔 오류: {e}", exc_info=True)
+        raise
+
+    return results
+
+
+def _parse_nam_excel(file_data: bytes, filename: str) -> list:
+    """
+    NAM 거래처 PI 엑셀 파싱
+    첫 시트: B열=주문일, E열=모델명, G열=수량, K열=선적일
+    Stickers, color box, Battery 등 부자재 제외
+    """
+    items = []
+    skip_keywords = {"stickers", "sticker", "color box", "logo", "battery", "box", "manual", "none", ""}
+
+    try:
+        if filename.lower().endswith(".xlsx"):
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
+            sh = wb[wb.sheetnames[0]]  # 첫 시트
+
+            for r in range(2, sh.max_row + 1):
+                model = str(sh.cell(r, 5).value or "").strip()  # E열
+                if not model or model.lower() in skip_keywords:
+                    continue
+                if model.startswith("型号") or model == "Model":
+                    continue
+
+                order_date_raw = sh.cell(r, 2).value  # B열
+                shipping_date_raw = sh.cell(r, 11).value  # K열
+                qty_raw = sh.cell(r, 7).value  # G열
+
+                order_date = _parse_date_value(order_date_raw)
+                shipping_date = _parse_date_value(shipping_date_raw)
+                qty = int(float(qty_raw)) if qty_raw and str(qty_raw).replace(".", "").isdigit() else 0
+
+                # 선적일이 없으면 상위 행에서 상속
+                if not shipping_date and items:
+                    shipping_date = items[-1].get("shipping_date", "")
+
+                # 주문일이 없으면 상위 행에서 상속
+                if not order_date and items:
+                    order_date = items[-1].get("order_date", "")
+
+                arrival_date = ""
+                if shipping_date:
+                    try:
+                        sd = datetime.strptime(shipping_date, "%Y-%m-%d")
+                        arrival_date = (sd + timedelta(days=8)).strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+
+                items.append({
+                    "model": model,
+                    "order_date": order_date or "",
+                    "shipping_date": shipping_date or "",
+                    "arrival_date": arrival_date,
+                    "qty": qty,
+                })
+
+    except Exception as e:
+        logger.warning(f"[NAM메일] 엑셀 파싱 실패 ({filename}): {e}")
+
+    return items
+
+
+def _parse_date_value(val) -> str:
+    """다양한 날짜 형식을 YYYY-MM-DD로 변환"""
+    if not val:
+        return ""
+    if isinstance(val, datetime):
+        return val.strftime("%Y-%m-%d")
+    s = str(val).strip()
+    # "출고완료" 등 텍스트 포함 시 날짜 부분만 추출
+    date_match = re.search(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2})', s)
+    if date_match:
+        d = date_match.group(1).replace("/", "-")
+        parts = d.split("-")
+        return f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+    return ""
+
+
+# ─── NAM 선적정보 DB 저장 ─────────────────────────────────
+
+def save_nam_shipping_info(conn, scan_results: list):
+    """NAM 거래처 선적 정보를 shipping_mail_info 테이블에 저장"""
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    saved = 0
+
+    for result in scan_results:
+        pi = result["pi_number"]
+        items = result.get("items", [])
+        models_list = [it["model"] for it in items if it.get("model")]
+        models_csv = ",".join(models_list)
+
+        # PI 단위로 저장 (bor_number 필드에 PI 번호 사용)
+        conn.execute("""
+            INSERT INTO shipping_mail_info
+                (bor_number, subject, email_date, shipping_date, arrival_date,
+                 filename, models, model_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(bor_number) DO UPDATE SET
+                subject=excluded.subject, email_date=excluded.email_date,
+                shipping_date=excluded.shipping_date, arrival_date=excluded.arrival_date,
+                filename=excluded.filename, models=excluded.models,
+                model_count=excluded.model_count, updated_at=excluded.updated_at
+        """, (
+            pi, result.get("subject", ""), result["email_date"],
+            items[0]["shipping_date"] if items else "",
+            items[0]["arrival_date"] if items else "",
+            result["filename"], models_csv, len(models_list), now
+        ))
+        saved += 1
+
+        # 개별 품목별로도 선적일 저장 (모델별 선적일이 다를 수 있음)
+        for it in items:
+            model = it["model"].strip().upper()
+            if not model:
+                continue
+            key = f"{pi}_{model}"
+            conn.execute("""
+                INSERT INTO shipping_mail_info
+                    (bor_number, subject, email_date, shipping_date, arrival_date,
+                     filename, models, model_count, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(bor_number) DO UPDATE SET
+                    shipping_date=excluded.shipping_date, arrival_date=excluded.arrival_date,
+                    updated_at=excluded.updated_at
+            """, (
+                key, f"NAM:{pi}", result["email_date"],
+                it.get("shipping_date", ""), it.get("arrival_date", ""),
+                result["filename"], model, 1, now
+            ))
+
+    conn.commit()
+    logger.info(f"[NAM메일] {saved}건 PI 저장 완료")
+    return saved

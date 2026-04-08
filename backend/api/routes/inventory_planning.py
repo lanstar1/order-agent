@@ -224,3 +224,85 @@ async def list_shipping_info():
         return {"items": items, "total": len(items)}
     finally:
         conn.close()
+
+
+@router.post("/shipping/scan-nam")
+async def scan_nam_shipping():
+    """NAM 거래처 메일(네이버) 스캔 → PI 엑셀 파싱 → DB 저장"""
+    from config import MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER
+    from services.shipping_mail_service import scan_nam_shipping_emails, save_nam_shipping_info
+
+    if not MAIL2_USER or not MAIL2_PASSWORD:
+        raise HTTPException(400, "네이버 메일 설정이 없습니다 (MAIL2_USER, MAIL2_PASSWORD)")
+
+    try:
+        results = scan_nam_shipping_emails(
+            imap_server=MAIL2_IMAP_SERVER,
+            imap_user=MAIL2_USER,
+            imap_password=MAIL2_PASSWORD,
+            sender_filter=MAIL2_SENDER_FILTER,
+            imap_port=MAIL2_IMAP_PORT,
+            days_back=180,
+        )
+
+        conn = get_connection()
+        try:
+            saved = save_nam_shipping_info(conn, results)
+        finally:
+            conn.close()
+
+        return {
+            "status": "ok",
+            "source": "NAM (Naver)",
+            "scanned": len(results),
+            "saved": saved,
+            "items": [{
+                "pi_number": r["pi_number"],
+                "email_date": r["email_date"],
+                "item_count": len(r["items"]),
+                "filename": r["filename"],
+            } for r in results],
+        }
+    except Exception as e:
+        raise HTTPException(500, f"NAM 메일 스캔 실패: {str(e)}")
+
+
+@router.post("/shipping/scan-all")
+async def scan_all_shipping():
+    """모든 메일소스 통합 스캔"""
+    results = {"sources": []}
+
+    # 1. BOR 메일 (Ecount)
+    try:
+        from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+        if MAIL_USER and MAIL_PASSWORD:
+            from services.shipping_mail_service import scan_shipping_emails, save_shipping_info
+            bor_results = scan_shipping_emails(
+                MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
+            conn = get_connection()
+            try:
+                save_shipping_info(conn, bor_results)
+            finally:
+                conn.close()
+            results["sources"].append({"name": "BOR (Ecount)", "count": len(bor_results)})
+    except Exception as e:
+        results["sources"].append({"name": "BOR (Ecount)", "error": str(e)})
+
+    # 2. NAM 메일 (Naver)
+    try:
+        from config import MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER
+        if MAIL2_USER and MAIL2_PASSWORD:
+            from services.shipping_mail_service import scan_nam_shipping_emails, save_nam_shipping_info
+            nam_results = scan_nam_shipping_emails(
+                MAIL2_IMAP_SERVER, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER, MAIL2_IMAP_PORT, days_back=180)
+            conn = get_connection()
+            try:
+                save_nam_shipping_info(conn, nam_results)
+            finally:
+                conn.close()
+            results["sources"].append({"name": "NAM (Naver)", "count": len(nam_results)})
+    except Exception as e:
+        results["sources"].append({"name": "NAM (Naver)", "error": str(e)})
+
+    results["status"] = "ok"
+    return results

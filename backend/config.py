@@ -150,3 +150,10 @@ MAIL_IMAP_SERVER = os.getenv("MAIL_IMAP_SERVER", "wmbox3.ecount.com")
 MAIL_IMAP_PORT = int(os.getenv("MAIL_IMAP_PORT", "993"))
 MAIL_USER = os.getenv("MAIL_USER", "")
 MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+
+# ─── 선적 메일 2 (네이버 IMAP) ────────────────────────────
+MAIL2_IMAP_SERVER = os.getenv("MAIL2_IMAP_SERVER", "imap.naver.com")
+MAIL2_IMAP_PORT = int(os.getenv("MAIL2_IMAP_PORT", "993"))
+MAIL2_USER = os.getenv("MAIL2_USER", "")
+MAIL2_PASSWORD = os.getenv("MAIL2_PASSWORD", "")
+MAIL2_SENDER_FILTER = os.getenv("MAIL2_SENDER_FILTER", "13428934642@163.com")

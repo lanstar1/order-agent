@@ -5486,15 +5486,16 @@ function ipCloseDetailModal() {
 }
 
 async function ipScanShippingMails() {
-  if (!confirm('메일서버에서 선적 메일을 스캔합니다. 1~2분 소요될 수 있습니다.')) return;
-  toast('📧 선적 메일 스캔 중...', 'info');
+  if (!confirm('BOR(Ecount) + NAM(Naver) 메일서버를 모두 스캔합니다. 1~2분 소요될 수 있습니다.')) return;
+  toast('📧 선적 메일 통합 스캔 중...', 'info');
   try {
-    const data = await api.post('/api/inventory-planning/shipping/scan?days_back=90', {});
+    const data = await api.post('/api/inventory-planning/shipping/scan-all', {});
     if (data.status === 'ok') {
-      toast(`✅ ${data.scanned}건 선적 정보 스캔 완료`, 'success');
+      const summary = (data.sources||[]).map(s => `${s.name}: ${s.count||0}건${s.error?' (오류)':''}`).join(', ');
+      toast(`✅ 스캔 완료 — ${summary}`, 'success');
       ipRefreshAnalysis();
     } else {
-      toast('스캔 실패: ' + (data.detail || ''), 'error');
+      toast('스캔 실패', 'error');
     }
   } catch (err) {
     toast('선적 메일 스캔 실패: ' + (err.message || err), 'error');
