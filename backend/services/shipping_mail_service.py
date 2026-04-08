@@ -170,10 +170,15 @@ def scan_shipping_emails(
                             "models": models,
                             "model_count": len(models),
                         })
-                        logger.info(f"[선적메일] {bor_number}: {len(models)}개 모델 (선적일: {email_date})")
+                        logger.info(f"[선적메일] {bor_number}: {len(models)}개 모델 (선적일: {email_date}) → 최신 1개 사용, 검색 중단")
+                        break  # 최신 BOR 선적파일 1개만 필요
 
             except Exception as e:
                 logger.warning(f"[선적메일] 메일 파싱 실패 (uid={uid}): {e}")
+
+            # 최신 BOR 찾았으면 루프 종료
+            if results:
+                break
 
         mail.logout()
 
