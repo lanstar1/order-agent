@@ -83,16 +83,17 @@ def scan_shipping_emails(
         # 날짜 범위 설정
         since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
 
-        # Ecount IMAP: 검색 미지원 → 전체 fetch 후 Python 필터
-        status, data = mail.search(None, "ALL")
-        all_ids = data[0].split() if status == "OK" and data[0] else []
-        logger.info(f"[선적메일] INBOX 전체 {len(all_ids)}건")
+        # Ecount: UID 기반 SEARCH/FETCH 필수 (일반 search는 8개만 반환)
+        status, data = mail.uid("search", None, "ALL")
+        all_uids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[선적메일] INBOX UID 전체 {len(all_uids)}건")
 
         shipping_keywords = ["shipping", "final", "list"]
+        cutoff = datetime.now(KST) - timedelta(days=days_back)
 
-        for mid in all_ids:
+        for uid in reversed(all_uids):  # 최신 먼저
             try:
-                status, msg_data = mail.fetch(mid, "(RFC822)")
+                status, msg_data = mail.uid("fetch", uid, "(RFC822)")
                 if status != "OK" or not msg_data or not msg_data[0]:
                     continue
                 raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else None
@@ -101,18 +102,17 @@ def scan_shipping_emails(
 
                 msg = email.message_from_bytes(raw)
 
+                # 날짜 필터 (3개월 이내) — 초과하면 더 이상 검색 불필요
+                email_dt = _parse_email_date(msg.get("Date", ""))
+                if not email_dt:
+                    continue
+                if email_dt < cutoff:
+                    logger.info(f"[선적메일] {email_dt.strftime('%Y-%m-%d')} → 3개월 초과, 검색 중단")
+                    break
+
                 # 제목에 shipping/final/list 키워드 확인
                 subject = _decode_header_value(msg.get("Subject", "")).lower()
                 if not any(kw in subject for kw in shipping_keywords):
-                    continue
-
-                date_str = msg.get("Date", "")
-                email_dt = _parse_email_date(date_str)
-                if not email_dt:
-                    continue
-
-                # 3개월 이내 메일만
-                if (datetime.now(KST) - email_dt).days > days_back:
                     continue
 
                 email_date = email_dt.strftime("%Y-%m-%d")
@@ -819,33 +819,45 @@ def scan_bor_orderlist_emails(
         mail.login(imap_user, imap_password)
         mail.select("INBOX", readonly=True)
 
-        # Ecount: 전체 fetch 후 Python 필터 (검색 미지원)
-        status, data = mail.search(None, "ALL")
-        all_ids = data[0].split() if status == "OK" and data[0] else []
-        logger.info(f"[BOR오더] INBOX 전체 {len(all_ids)}건, 발신자: {sender_filter}")
+        # Ecount: UID 기반 SEARCH/FETCH 필수
+        status, data = mail.uid("search", None, "ALL")
+        all_uids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[BOR오더] INBOX UID 전체 {len(all_uids)}건, 발신자: {sender_filter}")
 
         cutoff = datetime.now(KST) - timedelta(days=days_back)
 
-        for mid in sorted(all_ids, reverse=True):  # 최신 먼저
+        for uid in reversed(all_uids):  # 최신 먼저
             try:
-                status, msg_data = mail.fetch(mid, "(RFC822)")
+                # 1단계: 헤더만 먼저 확인 (빠름)
+                status, hdr_data = mail.uid("fetch", uid, "(RFC822.HEADER)")
+                if status != "OK" or not hdr_data or not hdr_data[0]:
+                    continue
+                hdr_raw = hdr_data[0][1] if isinstance(hdr_data[0], tuple) else None
+                if not hdr_raw:
+                    continue
+                hdr_msg = email.message_from_bytes(hdr_raw)
+
+                # 날짜 필터 — 3개월 넘으면 중단
+                email_dt = _parse_email_date(hdr_msg.get("Date", ""))
+                if not email_dt:
+                    continue
+                if email_dt < cutoff:
+                    logger.info(f"[BOR오더] {email_dt.strftime('%Y-%m-%d')} → 3개월 초과, 검색 중단")
+                    break
+
+                # 발신자 필터
+                msg_from = _decode_header_value(hdr_msg.get("From", "")).lower()
+                if sender_filter and sender_filter.lower() not in msg_from:
+                    continue
+
+                # 2단계: 매칭된 메일만 전체 fetch (첨부파일 포함)
+                status, msg_data = mail.uid("fetch", uid, "(RFC822)")
                 if status != "OK" or not msg_data or not msg_data[0]:
                     continue
                 raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else None
                 if not raw or not isinstance(raw, bytes):
                     continue
-
                 msg = email.message_from_bytes(raw)
-
-                # 발신자 필터
-                msg_from = _decode_header_value(msg.get("From", "")).lower()
-                if sender_filter and sender_filter.lower() not in msg_from:
-                    continue
-
-                # 3개월 이내만
-                email_dt = _parse_email_date(msg.get("Date", ""))
-                if not email_dt or email_dt < cutoff:
-                    continue
 
                 subject = _decode_header_value(msg.get("Subject", ""))
 
