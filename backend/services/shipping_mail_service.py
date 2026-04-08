@@ -921,10 +921,15 @@ def scan_bor_orderlist_emails(
                         "email_date": email_dt.strftime("%Y-%m-%d"),
                         "file_data": file_data,
                     })
-                    logger.info(f"[BOR오더] REST 파일 발견: {filename} ({email_dt.strftime('%Y-%m-%d')})")
+                    logger.info(f"[BOR오더] REST 파일 발견: {filename} ({email_dt.strftime('%Y-%m-%d')}) → 최신 1개만 사용, 검색 중단")
+                    break  # 최신 REST 1개만 필요
 
             except Exception as e:
                 logger.warning(f"[BOR오더] 메일 파싱 실패: {e}")
+
+            # 최신 REST 찾았으면 루프 종료
+            if results:
+                break
 
         mail.logout()
 
