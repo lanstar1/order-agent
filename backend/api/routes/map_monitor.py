@@ -461,16 +461,18 @@ async def violations_by_product(product_id: int, days: int = 7):
 async def cleanup_duplicate_violations():
     """기존 누적된 중복 위반 정리 — 같은 제품+셀러에 대해 최신 1건만 남기고 삭제"""
     conn = get_connection()
-    # 미해결 위반 중 같은 product_id+seller_name 조합에서 최신 것만 남김
-    deleted = conn.execute("""DELETE FROM map_violations WHERE id NOT IN (
+    # 먼저 중복 건수 확인
+    before = conn.execute("SELECT COUNT(*) as c FROM map_violations WHERE is_resolved=0").fetchone()["c"]
+    # 각 product_id+seller_name 조합에서 최신 id만 남기고 삭제
+    conn.execute("""DELETE FROM map_violations WHERE is_resolved = 0 AND id NOT IN (
         SELECT MAX(id) FROM map_violations WHERE is_resolved = 0
         GROUP BY product_id, seller_name
-    ) AND is_resolved = 0""")
-    count = deleted.rowcount if hasattr(deleted, 'rowcount') else 0
+    )""")
     conn.commit()
-    remaining = conn.execute("SELECT COUNT(*) as c FROM map_violations WHERE is_resolved=0").fetchone()["c"]
+    after = conn.execute("SELECT COUNT(*) as c FROM map_violations WHERE is_resolved=0").fetchone()["c"]
     conn.close()
-    return {"message": f"중복 위반 {count}건 정리 완료. 남은 위반 {remaining}건"}
+    deleted = before - after
+    return {"message": f"중복 위반 {deleted}건 정리 완료. {before}건 → {after}건"}
 
 
 # ═══════════════════════════════════════════════════════
