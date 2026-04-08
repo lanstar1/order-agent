@@ -382,13 +382,14 @@ def scan_nam_shipping_emails(
         since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
 
         # 모든 폴더에서 검색 (네이버는 하위 폴더에 분류됨)
+        # IMAP SEARCH FROM이 일부 폴더에서 작동 안 하므로 직접 fetch + 헤더 확인
         status, folder_list = mail.list()
         folders_to_search = []
         for f in (folder_list or []):
             try:
-                parts = f.decode("utf-8", errors="replace").split('" ')
-                folder_name = parts[-1].strip().strip('"')
-                folders_to_search.append(folder_name)
+                decoded = f.decode("utf-8", errors="replace")
+                fname = decoded.rsplit('"', 2)[-2] if '"' in decoded else "INBOX"
+                folders_to_search.append(fname)
             except Exception:
                 pass
         if not folders_to_search:
@@ -397,11 +398,36 @@ def scan_nam_shipping_emails(
         all_uids_by_folder = []
         for folder in folders_to_search:
             try:
-                status, _ = mail.select(f'"{folder}"', readonly=True)
-                if status != "OK":
+                st, _ = mail.select('"' + folder + '"', readonly=True)
+                if st != "OK":
                     continue
-                status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
-                uids = data[0].split() if status == "OK" and data[0] else []
+
+                since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+                # 먼저 SEARCH 시도
+                try:
+                    status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
+                    uids = data[0].split() if status == "OK" and data[0] else []
+                except Exception:
+                    uids = []
+
+                # SEARCH 결과 없으면 → 전체 fetch 후 FROM 헤더 직접 확인
+                if not uids:
+                    try:
+                        status, data = mail.search(None, f"(SINCE {since_date})")
+                        all_folder_uids = data[0].split() if status == "OK" and data[0] else []
+                    except Exception:
+                        status, data = mail.search(None, "ALL")
+                        all_folder_uids = data[0].split() if status == "OK" and data[0] else []
+
+                    for uid in all_folder_uids:
+                        try:
+                            st2, md2 = mail.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM)])")
+                            from_hdr = md2[0][1].decode("utf-8", errors="replace").lower()
+                            if sender_filter.lower() in from_hdr:
+                                uids.append(uid)
+                        except Exception:
+                            pass
+
                 if uids:
                     all_uids_by_folder.extend([(folder, uid) for uid in uids])
                     logger.info(f"[NAM메일] 폴더 '{folder}': {len(uids)}건")
