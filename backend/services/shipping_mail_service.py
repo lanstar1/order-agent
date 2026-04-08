@@ -23,6 +23,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
 
+def _safe_fetch_body(fetch_result) -> bytes:
+    """IMAP FETCH 응답에서 메일 본문 안전 추출"""
+    if not fetch_result:
+        return None
+    for part in fetch_result:
+        if isinstance(part, tuple) and len(part) >= 2 and isinstance(part[1], bytes):
+            return part[1]
+    return None
+
+
 
 def _decode_header_value(value):
     """메일 헤더 디코딩"""
@@ -101,7 +111,7 @@ def scan_shipping_emails(
                 status, hdr_data = mail.uid("fetch", uid, "(RFC822.HEADER)")
                 if status != "OK" or not hdr_data or not hdr_data[0]:
                     continue
-                hdr_raw = hdr_data[0][1] if isinstance(hdr_data[0], tuple) else None
+                hdr_raw = _safe_fetch_body(hdr_data)
                 if not hdr_raw:
                     continue
                 hdr_msg = email.message_from_bytes(hdr_raw)
@@ -123,7 +133,7 @@ def scan_shipping_emails(
                 status, msg_data = mail.uid("fetch", uid, "(RFC822)")
                 if status != "OK" or not msg_data or not msg_data[0]:
                     continue
-                raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else None
+                raw = _safe_fetch_body(msg_data)
                 if not raw or not isinstance(raw, bytes):
                     continue
                 msg = email.message_from_bytes(raw)
@@ -485,7 +495,10 @@ def scan_nam_shipping_emails(
                 if status != "OK":
                     continue
 
-                msg = email.message_from_bytes(msg_data[0][1])
+                raw = _safe_fetch_body(msg_data)
+                if not raw:
+                    continue
+                msg = email.message_from_bytes(raw)
                 subject = _decode_header_value(msg.get("Subject", ""))
                 email_dt = _parse_email_date(msg.get("Date", ""))
                 if not email_dt:
@@ -884,7 +897,7 @@ def scan_bor_orderlist_emails(
                 status, hdr_data = mail.uid("fetch", uid, "(RFC822.HEADER)")
                 if status != "OK" or not hdr_data or not hdr_data[0]:
                     continue
-                hdr_raw = hdr_data[0][1] if isinstance(hdr_data[0], tuple) else None
+                hdr_raw = _safe_fetch_body(hdr_data)
                 if not hdr_raw:
                     continue
                 hdr_msg = email.message_from_bytes(hdr_raw)
@@ -906,7 +919,7 @@ def scan_bor_orderlist_emails(
                 status, msg_data = mail.uid("fetch", uid, "(RFC822)")
                 if status != "OK" or not msg_data or not msg_data[0]:
                     continue
-                raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else None
+                raw = _safe_fetch_body(msg_data)
                 if not raw or not isinstance(raw, bytes):
                     continue
                 msg = email.message_from_bytes(raw)
