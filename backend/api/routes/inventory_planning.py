@@ -540,3 +540,81 @@ async def debug_mail_connection():
         results["naver"] = {"error": str(e)}
 
     return results
+
+
+@router.get("/shipping/debug-fetch")
+async def debug_fetch_emails():
+    """실제 메일 내용 fetch — 발신자/제목/첨부파일명"""
+    import imaplib
+    import email as email_mod
+    from email.header import decode_header as _dh2
+
+    def dh(v):
+        if not v: return ""
+        decoded = _dh2(v)
+        parts = []
+        for p, c in decoded:
+            if isinstance(p, bytes): parts.append(p.decode(c or "utf-8", errors="replace"))
+            else: parts.append(str(p))
+        return " ".join(parts)
+
+    results = {}
+
+    # Ecount — 전체 메일 fetch
+    try:
+        from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+        mail = imaplib.IMAP4_SSL(MAIL_IMAP_SERVER, MAIL_IMAP_PORT)
+        mail.login(MAIL_USER, MAIL_PASSWORD)
+        mail.select("INBOX", readonly=True)
+        status, data = mail.search(None, "ALL")
+        uids = data[0].split() if data[0] else []
+        emails = []
+        for uid in uids[:15]:
+            st, md = mail.fetch(uid, "(RFC822)")
+            msg = email_mod.message_from_bytes(md[0][1])
+            atts = [dh(part.get_filename() or "") for part in msg.walk() if dh(part.get_filename() or "")]
+            emails.append({
+                "from": dh(msg.get("From", ""))[:100],
+                "subject": dh(msg.get("Subject", ""))[:100],
+                "date": msg.get("Date", "")[:35],
+                "attachments": atts,
+            })
+        mail.logout()
+        results["ecount"] = emails
+    except Exception as e:
+        results["ecount_error"] = str(e)
+
+    # Naver — 각 폴더 순회, 163.com 발신 찾기
+    try:
+        from config import MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD
+        mail = imaplib.IMAP4_SSL(MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT)
+        mail.login(MAIL2_USER, MAIL2_PASSWORD)
+        st, fl = mail.list()
+        folder_info = {}
+        for f in (fl or [])[:25]:
+            try:
+                decoded = f.decode("utf-8", errors="replace")
+                fname = decoded.rsplit('"', 2)[-2] if '"' in decoded else "INBOX"
+                st2, _ = mail.select('"' + fname + '"', readonly=True)
+                if st2 != "OK": continue
+                st3, d3 = mail.search(None, "ALL")
+                uids = d3[0].split() if d3[0] else []
+                cnt163 = 0
+                samples = []
+                for uid in uids[-5:]:
+                    try:
+                        st4, md4 = mail.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])")
+                        hdr = md4[0][1].decode("utf-8", errors="replace")
+                        if "163.com" in hdr:
+                            cnt163 += 1
+                            samples.append(hdr.strip()[:200])
+                    except: pass
+                if uids:
+                    folder_info[fname] = {"total": len(uids), "found_163": cnt163, "samples": samples}
+            except: pass
+        mail.logout()
+        results["naver_folders"] = folder_info
+    except Exception as e:
+        results["naver_error"] = str(e)
+
+    return results
