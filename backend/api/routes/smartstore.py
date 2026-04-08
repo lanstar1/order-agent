@@ -334,6 +334,7 @@ async def send_erp_only(
             "optionInfo": po.get("productOption", "") or seller_code,
             "quantity": po.get("quantity", 1),
             "settlementAmount": po.get("expectedSettlementAmount", 0) or po.get("totalPaymentAmount", 0),
+            "rcvName": po.get("shippingAddress", {}).get("name", ""),
         })
 
     DELIVERY_PROD_CD = "DEL-매출배002"
@@ -346,7 +347,7 @@ async def send_erp_only(
             qty = int(o.get("quantity", 1) or 1)
             settle = float(o.get("settlementAmount", 0) or 0)
             if code:
-                erp_lines.append({"prod_cd": code, "qty": qty, "price": round(settle / qty, 2) if qty else 0})
+                erp_lines.append({"prod_cd": code, "qty": qty, "price": round(settle / qty, 2) if qty else 0, "rcv_name": o.get("rcvName", "")})
             else:
                 unmatched_items.append({
                     "orderId": oid,
@@ -364,7 +365,7 @@ async def send_erp_only(
         fee = order_shipping.get(oid, 0)
         delivery_by_fee[fee] += 1
     for fee_amount, count in delivery_by_fee.items():
-        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount)})
+        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount), "rcv_name": order_groups[oid][0].get("rcvName", "") if order_groups.get(oid) else ""})
 
     if not erp_lines:
         return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
