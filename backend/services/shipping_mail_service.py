@@ -124,8 +124,10 @@ def scan_shipping_emails(
                     if not filename:
                         continue
 
-                    # BOR로 시작하는 엑셀 파일만
+                    # BOR로 시작하는 엑셀 파일만 (FTA 제외)
                     if not filename.upper().startswith("BOR"):
+                        continue
+                    if "FTA" in filename.upper():
                         continue
                     if not any(filename.lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"]):
                         continue
