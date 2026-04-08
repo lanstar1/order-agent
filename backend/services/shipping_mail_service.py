@@ -85,22 +85,25 @@ def scan_shipping_emails(
 
         # 전체 메일 대상 (일부 IMAP 서버는 SUBJECT 검색 미지원)
         try:
-            status, data = mail.search(None, f"(SINCE {since_date})")
+            status, data = mail.uid("search", None, f"(SINCE {since_date})")
         except Exception:
-            status, data = mail.search(None, "ALL")
+            try:
+                status, data = mail.uid("search", None, "ALL")
+            except Exception:
+                status, data = mail.search(None, "ALL")
         all_uids = set(data[0].split()) if status == "OK" and data[0] else set()
 
         logger.info(f"[선적메일] 대상 메일 {len(all_uids)}건 (최근 {days_back}일)")
 
         for uid in all_uids:
             try:
-                # Ecount IMAP 호환: 여러 FETCH 형식 시도
+                # UID FETCH 시도 → 일반 FETCH fallback
                 msg_data = None
-                for fetch_cmd in ["(RFC822)", "RFC822", "(BODY[])"]:
+                try:
+                    status, msg_data = mail.uid("fetch", uid, "(RFC822)")
+                except Exception:
                     try:
-                        status, msg_data = mail.fetch(uid, fetch_cmd)
-                        if status == "OK" and msg_data and msg_data[0]:
-                            break
+                        status, msg_data = mail.fetch(uid, "RFC822")
                     except Exception:
                         continue
                 if not msg_data or not msg_data[0]:
@@ -422,7 +425,7 @@ def scan_nam_shipping_emails(
                 except Exception:
                     uids = []
 
-                # SEARCH 결과 없으면 → 전체 fetch 후 FROM 헤더 직접 확인
+                # SEARCH 결과 없으면 → 최근 메일에서 FROM 헤더 직접 확인 (속도 최적화)
                 if not uids:
                     try:
                         status, data = mail.search(None, f"(SINCE {since_date})")
@@ -431,7 +434,8 @@ def scan_nam_shipping_emails(
                         status, data = mail.search(None, "ALL")
                         all_folder_uids = data[0].split() if status == "OK" and data[0] else []
 
-                    for uid in all_folder_uids:
+                    # 최근 30개만 체크 (속도 vs 정확도 균형)
+                    for uid in all_folder_uids[-30:]:
                         try:
                             st2, md2 = mail.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM)])")
                             from_hdr = md2[0][1].decode("utf-8", errors="replace").lower()
@@ -821,20 +825,22 @@ def scan_bor_orderlist_emails(
         mail.login(imap_user, imap_password)
         mail.select("INBOX", readonly=True)
 
-        # Ecount 서버는 검색 미지원 → 전체 메일 가져와서 Python에서 필터
-        status, data = mail.search(None, "ALL")
+        # Ecount 서버: UID 기반 검색 + fetch
+        try:
+            status, data = mail.uid("search", None, "ALL")
+        except Exception:
+            status, data = mail.search(None, "ALL")
         all_uids = data[0].split() if status == "OK" and data[0] else []
         logger.info(f"[BOR오더] 전체 메일 {len(all_uids)}건, 발신자 필터: {sender_filter}")
 
         for uid in sorted(all_uids, reverse=True):  # 최신 먼저
             try:
-                # Ecount IMAP 호환: 여러 FETCH 형식 시도
                 msg_data = None
-                for fetch_cmd in ["(RFC822)", "RFC822", "(BODY[])"]:
+                try:
+                    status, msg_data = mail.uid("fetch", uid, "(RFC822)")
+                except Exception:
                     try:
-                        status, msg_data = mail.fetch(uid, fetch_cmd)
-                        if status == "OK" and msg_data and msg_data[0]:
-                            break
+                        status, msg_data = mail.fetch(uid, "RFC822")
                     except Exception:
                         continue
                 if not msg_data or not msg_data[0]:
