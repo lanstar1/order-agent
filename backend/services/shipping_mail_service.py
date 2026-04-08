@@ -83,20 +83,14 @@ def scan_shipping_emails(
         # 날짜 범위 설정
         since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
 
-        # 선적 관련 키워드로 검색
-        keywords = ["Final shipping", "final shipping", "shipping list", "Shipping List", "shipping"]
-        all_uids = set()
+        # 전체 메일 대상 (일부 IMAP 서버는 SUBJECT 검색 미지원)
+        try:
+            status, data = mail.search(None, f"(SINCE {since_date})")
+        except Exception:
+            status, data = mail.search(None, "ALL")
+        all_uids = set(data[0].split()) if status == "OK" and data[0] else set()
 
-        for kw in keywords:
-            try:
-                status, data = mail.search(None, f'(SINCE {since_date} SUBJECT "{kw}")')
-                if status == "OK" and data[0]:
-                    uids = data[0].split()
-                    all_uids.update(uids)
-            except Exception as e:
-                logger.debug(f"[선적메일] 키워드 '{kw}' 검색 실패: {e}")
-
-        logger.info(f"[선적메일] 선적 관련 메일 {len(all_uids)}건 발견")
+        logger.info(f"[선적메일] 대상 메일 {len(all_uids)}건 (최근 {days_back}일)")
 
         for uid in all_uids:
             try:
@@ -327,17 +321,41 @@ def scan_nam_shipping_emails(
         logger.info(f"[NAM메일] IMAP 접속: {imap_server}:{imap_port} ({imap_user})")
         mail = imaplib.IMAP4_SSL(imap_server, imap_port)
         mail.login(imap_user, imap_password)
-        mail.select("INBOX", readonly=True)
 
         since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
 
-        # 발신자 필터로 검색
-        status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
-        uids = data[0].split() if status == "OK" and data[0] else []
-        logger.info(f"[NAM메일] {sender_filter} 발신 메일 {len(uids)}건")
-
-        for uid in uids:
+        # 모든 폴더에서 검색 (네이버는 하위 폴더에 분류됨)
+        status, folder_list = mail.list()
+        folders_to_search = []
+        for f in (folder_list or []):
             try:
+                parts = f.decode("utf-8", errors="replace").split('" ')
+                folder_name = parts[-1].strip().strip('"')
+                folders_to_search.append(folder_name)
+            except Exception:
+                pass
+        if not folders_to_search:
+            folders_to_search = ["INBOX"]
+
+        all_uids_by_folder = []
+        for folder in folders_to_search:
+            try:
+                status, _ = mail.select(f'"{folder}"', readonly=True)
+                if status != "OK":
+                    continue
+                status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
+                uids = data[0].split() if status == "OK" and data[0] else []
+                if uids:
+                    all_uids_by_folder.extend([(folder, uid) for uid in uids])
+                    logger.info(f"[NAM메일] 폴더 '{folder}': {len(uids)}건")
+            except Exception as e:
+                logger.debug(f"[NAM메일] 폴더 '{folder}' 검색 실패: {e}")
+
+        logger.info(f"[NAM메일] {sender_filter} 총 {len(all_uids_by_folder)}건 발견")
+
+        for folder, uid in all_uids_by_folder:
+            try:
+                mail.select(f'"{folder}"', readonly=True)
                 status, msg_data = mail.fetch(uid, "(RFC822)")
                 if status != "OK":
                     continue
@@ -708,20 +726,24 @@ def scan_bor_orderlist_emails(
         mail.login(imap_user, imap_password)
         mail.select("INBOX", readonly=True)
 
-        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+        # Ecount 서버는 검색 미지원 → 전체 메일 가져와서 Python에서 필터
+        status, data = mail.search(None, "ALL")
+        all_uids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[BOR오더] 전체 메일 {len(all_uids)}건, 발신자 필터: {sender_filter}")
 
-        # 발신자 필터
-        status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
-        uids = data[0].split() if status == "OK" and data[0] else []
-        logger.info(f"[BOR오더] {sender_filter} 메일 {len(uids)}건")
-
-        for uid in sorted(uids, reverse=True):  # 최신 메일 먼저
+        for uid in sorted(all_uids, reverse=True):  # 최신 먼저
             try:
                 status, msg_data = mail.fetch(uid, "(RFC822)")
                 if status != "OK":
                     continue
 
                 msg = email.message_from_bytes(msg_data[0][1])
+
+                # Python에서 발신자 필터 (Ecount IMAP 검색 미지원)
+                msg_from = _decode_header_value(msg.get("From", "")).lower()
+                if sender_filter and sender_filter.lower() not in msg_from:
+                    continue
+
                 subject = _decode_header_value(msg.get("Subject", ""))
                 email_dt = _parse_email_date(msg.get("Date", ""))
                 if not email_dt:
