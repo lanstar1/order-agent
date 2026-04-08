@@ -18,6 +18,8 @@ from config import (
     SMARTSTORE_CUST_CODE, SMARTSTORE_EMP_CODE, SMARTSTORE_WH_CODE,
     SMARTSTORE_PRODUCT_MAP_PATH, SMARTSTORE_MODEL_MAP_PATH,
     SMARTSTORE_OPTION_MAP_PATH, SMARTSTORE_ADDON_MAP_PATH,
+    SMARTSTORE_OPTION_TEXT_MAP_PATH, SMARTSTORE_ADDON_TEXT_MAP_PATH,
+    SMARTSTORE_CODE_ALIAS_MAP_PATH,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,12 @@ _addon_map: dict = {}
 _model_map: dict = {}
 # 역방향: 모델명 → ERP품목코드 (옵션 텍스트에서 모델명 추출 시 ERP코드로 변환)
 _model_to_erp_map: dict = {}
+# 옵션텍스트 직접매핑: "상품번호|옵션값" → ERP품목코드
+_option_text_map: dict = {}
+# 추가상품텍스트 직접매핑: "상품번호|추가상품값" → ERP품목코드
+_addon_text_map: dict = {}
+# 추출코드 별칭맵: HDSVAL-XXX 등 → ERP품목코드
+_code_alias_map: dict = {}
 
 
 def _load_json(path) -> dict:
@@ -54,10 +62,14 @@ def _save_json(path, data: dict):
 
 def _load_product_map():
     global _product_map, _option_override_map, _addon_map, _model_map, _model_to_erp_map
+    global _option_text_map, _addon_text_map, _code_alias_map
     _product_map        = _load_json(SMARTSTORE_PRODUCT_MAP_PATH)
     _option_override_map = _load_json(SMARTSTORE_OPTION_MAP_PATH)
     _addon_map          = _load_json(SMARTSTORE_ADDON_MAP_PATH)
     _model_map          = _load_json(SMARTSTORE_MODEL_MAP_PATH)
+    _option_text_map    = _load_json(SMARTSTORE_OPTION_TEXT_MAP_PATH)
+    _addon_text_map     = _load_json(SMARTSTORE_ADDON_TEXT_MAP_PATH)
+    _code_alias_map     = _load_json(SMARTSTORE_CODE_ALIAS_MAP_PATH)
     # 역방향 맵 빌드: 모델명 → ERP품목코드 (전 시트 포함)
     _model_to_erp_map = {}
     for pno, model in _model_map.items():
@@ -70,7 +82,8 @@ def _load_product_map():
                 _model_to_erp_map[model] = _addon_map[pno]
     logger.info(
         f"[SS] 매핑 로드 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} "
-        f"추가:{len(_addon_map)} 모델역방향:{len(_model_to_erp_map)}"
+        f"추가:{len(_addon_map)} 모델역방향:{len(_model_to_erp_map)} "
+        f"옵션텍스트:{len(_option_text_map)} 추가상품텍스트:{len(_addon_text_map)} 코드별칭:{len(_code_alias_map)}"
     )
 
 
@@ -88,8 +101,10 @@ def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
     """
     옵션 텍스트에서 ERP 품목코드 추출.
     우선순위:
-      1) 마지막 (코드) — 정상/비정상 괄호 모두 처리
+      1) 마지막 (코드) 또는 [코드] — 정상/비정상 괄호 모두 처리
       2) 콜론 뒤 코드
+      3) 옵션 전체가 코드
+      4) LS/LSP/LSN/LST/ZOT 로 시작하는 코드가 텍스트 내 포함
     유효 코드 기준: 영문·숫자로 시작, 공백 없음
     """
     if not option_text:
@@ -119,6 +134,13 @@ def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
         if is_valid_code(candidate):
             return candidate
 
+    # 패턴 1-c: 대괄호 [코드] (예: "0.5M [LS-5UTPD-0.5MG]", "서버탭 [HDSVAL-615]")
+    m3 = re.search(r"\[([A-Za-z0-9][A-Za-z0-9\-\.]*)\]", text)
+    if m3:
+        candidate = m3.group(1).strip()
+        if is_valid_code(candidate):
+            return candidate
+
     # 패턴 2: 콜론 뒤 코드
     if ":" in text:
         after_colon = text.rsplit(":", 1)[1].strip()
@@ -129,6 +151,14 @@ def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
     if is_valid_code(text):
         return text
 
+    # 패턴 4: LS/LSP/LSN/LST/ZOT 로 시작하는 코드가 텍스트 내 포함
+    # (예: "1. LS-U61MH", "0.5M LS-HF7005", "케이블세트 (LS-HD2KVM set)")
+    m4 = re.search(r'\b((?:LS[PNTG]?|ZOT)[A-Za-z0-9][A-Za-z0-9\-\.]*)', text, re.IGNORECASE)
+    if m4:
+        candidate = m4.group(1)
+        if is_valid_code(candidate) and len(candidate) >= 4:
+            return candidate
+
     return None
 
 
@@ -136,24 +166,33 @@ def _match_item_code(order: dict) -> Optional[str]:
     """
     ERP 품목코드 결정 우선순위:
       1) 시트2 오버라이드 (옵션상품, 사용자 수동 지정)
-      2) 옵션 텍스트 자동 추출
+      2a) 옵션텍스트 직접매핑 ("상품번호|옵션값" → ERP코드)
+      2b) 옵션 텍스트 자동 추출 → 코드별칭맵 → 모델역방향맵
       3) 시트1 (메인상품, 상품번호 기준)
-      4) 시트3 (추가상품, 상품번호 기준)
+      4a) 추가상품텍스트 직접매핑 ("상품번호|추가상품값" → ERP코드)
+      4b) 시트3 (추가상품, 상품번호 기준)
     """
     option_text = (order.get("optionInfo", "") or "").strip()
+    addon_text  = (order.get("addProductInfo", "") or "").strip()
     product_no  = str(order.get("productNo", "") or order.get("productId", "") or "")
 
     if option_text:
-        # 1) 시트2 오버라이드
+        # 1) 시트2 오버라이드 (상품번호 → ERP)
         if product_no and product_no in _option_override_map:
             code = _option_override_map[product_no]
             logger.info(f"[SS] 옵션오버라이드(시트2): {product_no} → {code}")
             return code
-        # 2) 자동 추출 (모델명 추출 시 역방향 맵으로 ERP품목코드 변환)
+        # 2a) 옵션텍스트 직접매핑 (상품번호|옵션값 → ERP)
+        opt_key = f"{product_no}|{option_text}"
+        if opt_key in _option_text_map:
+            code = _option_text_map[opt_key]
+            logger.info(f"[SS] 옵션텍스트직접매핑: '{option_text[:40]}' → {code}")
+            return code
+        # 2b) 자동 추출 → 코드별칭맵 → 모델역방향맵
         code = _extract_erp_code_from_option(option_text)
         if code:
-            erp_code = _model_to_erp_map.get(code, code)
-            logger.info(f"[SS] 옵션자동추출: '{option_text[:40]}' → 모델:{code} → ERP:{erp_code}")
+            erp_code = _code_alias_map.get(code) or _model_to_erp_map.get(code, code)
+            logger.info(f"[SS] 옵션자동추출: '{option_text[:40]}' → 코드:{code} → ERP:{erp_code}")
             return erp_code
 
     # 3) 시트1 메인상품
@@ -162,7 +201,21 @@ def _match_item_code(order: dict) -> Optional[str]:
         logger.info(f"[SS] 메인상품(시트1): {product_no} → {code}")
         return code
 
-    # 4) 시트3 추가상품
+    # 4a) 추가상품텍스트 직접매핑
+    if addon_text and product_no:
+        addon_key = f"{product_no}|{addon_text}"
+        if addon_key in _addon_text_map:
+            code = _addon_text_map[addon_key]
+            logger.info(f"[SS] 추가상품텍스트직접매핑: '{addon_text[:40]}' → {code}")
+            return code
+        # 추가상품도 코드 자동추출 시도
+        code = _extract_erp_code_from_option(addon_text)
+        if code:
+            erp_code = _code_alias_map.get(code) or _model_to_erp_map.get(code, code)
+            logger.info(f"[SS] 추가상품자동추출: '{addon_text[:40]}' → 코드:{code} → ERP:{erp_code}")
+            return erp_code
+
+    # 4b) 시트3 추가상품 (상품번호 기준)
     if product_no and product_no in _addon_map:
         code = _addon_map[product_no]
         logger.info(f"[SS] 추가상품(시트3): {product_no} → {code}")

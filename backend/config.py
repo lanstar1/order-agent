@@ -128,10 +128,13 @@ SENDER_YONGSAN_TEL   = os.getenv("SENDER_YONGSAN_TEL", "")
 SENDER_YONGSAN_ADDR  = os.getenv("SENDER_YONGSAN_ADDR", "")
 
 # 스마트스토어 상품매핑 경로
-SMARTSTORE_PRODUCT_MAP_PATH = BASE_DIR / "data" / "smartstore" / "smartstore_product_map.json"   # 시트1: 메인상품
-SMARTSTORE_MODEL_MAP_PATH   = BASE_DIR / "data" / "smartstore" / "smartstore_model_map.json"
-SMARTSTORE_OPTION_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_option_map.json"    # 시트2: 옵션상품 오버라이드
-SMARTSTORE_ADDON_MAP_PATH   = BASE_DIR / "data" / "smartstore" / "smartstore_addon_map.json"     # 시트3: 추가상품
+SMARTSTORE_PRODUCT_MAP_PATH    = BASE_DIR / "data" / "smartstore" / "smartstore_product_map.json"      # 시트1: 메인상품
+SMARTSTORE_MODEL_MAP_PATH      = BASE_DIR / "data" / "smartstore" / "smartstore_model_map.json"
+SMARTSTORE_OPTION_MAP_PATH     = BASE_DIR / "data" / "smartstore" / "smartstore_option_map.json"     # 시트2: 옵션상품 오버라이드
+SMARTSTORE_ADDON_MAP_PATH      = BASE_DIR / "data" / "smartstore" / "smartstore_addon_map.json"      # 시트3: 추가상품
+SMARTSTORE_OPTION_TEXT_MAP_PATH = BASE_DIR / "data" / "smartstore" / "smartstore_option_text_map.json"  # 옵션텍스트 직접매핑
+SMARTSTORE_ADDON_TEXT_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_addon_text_map.json"   # 추가상품텍스트 직접매핑
+SMARTSTORE_CODE_ALIAS_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_code_alias_map.json"   # 추출코드 별칭맵
 
 # ─────────────────────────────────────────
 #  바코드 ERP Bridge (쿠팡 PO → 이카운트)
