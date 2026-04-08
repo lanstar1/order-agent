@@ -339,7 +339,8 @@ async def batch_update_products(action: str = Query(...), ids: str = Query(...))
 @router.get("/violations")
 async def list_violations(
     severity: str = "", platform: str = "", resolved: bool = False,
-    days: int = 7, limit: int = 50, offset: int = 0
+    days: int = 7, limit: int = 200, offset: int = 0, search: str = "",
+    sort: str = "detected_at", order: str = "desc"
 ):
     conn = get_connection()
     cutoff = _days_ago(days)
@@ -350,16 +351,96 @@ async def list_violations(
     if not resolved: sql += " AND v.is_resolved = 0"
     if severity: sql += " AND v.severity = ?"; params.append(severity)
     if platform: sql += " AND v.platform = ?"; params.append(platform)
+    if search:
+        sql += " AND (p.model_name LIKE ? OR p.product_name LIKE ?)"
+        params += [f"%{search}%", f"%{search}%"]
 
-    # 총 건수
     count_sql = sql.replace("SELECT v.*, p.model_name, p.product_name, p.brand", "SELECT COUNT(*) as cnt")
     total = conn.execute(count_sql, params).fetchone()["cnt"]
 
-    sql += " ORDER BY v.detected_at DESC LIMIT ? OFFSET ?"
+    # 정렬 (허용 컬럼만)
+    allowed_sorts = {"detected_at": "v.detected_at", "severity": "v.severity", "deviation_pct": "v.deviation_pct",
+                     "map_price": "v.map_price", "violated_price": "v.violated_price", "seller_name": "v.seller_name",
+                     "model_name": "p.model_name"}
+    sort_col = allowed_sorts.get(sort, "v.detected_at")
+    sort_dir = "ASC" if order == "asc" else "DESC"
+    sql += f" ORDER BY {sort_col} {sort_dir} LIMIT ? OFFSET ?"
     params += [limit, offset]
     rows = conn.execute(sql, params).fetchall()
     conn.close()
     return {"violations": [dict(r) for r in rows], "total": total}
+
+
+@router.get("/violations/grouped")
+async def list_violations_grouped(severity: str = "", days: int = 7, search: str = ""):
+    """제품별 그룹핑 위반 현황"""
+    conn = get_connection()
+    cutoff = _days_ago(days)
+    sql = """SELECT p.id as product_id, p.model_name, p.product_name, p.map_price,
+        COUNT(v.id) as violation_count,
+        COUNT(DISTINCT v.seller_name) as seller_count,
+        MIN(v.violated_price) as min_price,
+        MAX(v.deviation_pct) as max_deviation,
+        MAX(v.severity) as worst_severity,
+        MAX(v.detected_at) as last_detected,
+        GROUP_CONCAT(DISTINCT v.seller_name) as sellers
+        FROM map_violations v JOIN map_products p ON v.product_id = p.id
+        WHERE v.detected_at > ? AND v.is_resolved = 0"""
+    params = [cutoff]
+    if severity: sql += " AND v.severity = ?"; params.append(severity)
+    if search:
+        sql += " AND (p.model_name LIKE ? OR p.product_name LIKE ?)"
+        params += [f"%{search}%", f"%{search}%"]
+    sql += " GROUP BY p.id, p.model_name, p.product_name, p.map_price ORDER BY violation_count DESC"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    results = []
+    for r in rows:
+        d = dict(r)
+        d["sellers"] = d.get("sellers", "").split(",") if d.get("sellers") else []
+        results.append(d)
+    return {"products": results, "total_products": len(results),
+            "total_violations": sum(r["violation_count"] for r in results)}
+
+
+@router.get("/violations/export")
+async def export_violations_excel(severity: str = "", days: int = 7, search: str = ""):
+    """위반 데이터 엑셀 다운로드"""
+    from fastapi.responses import StreamingResponse
+    import io, openpyxl
+    conn = get_connection()
+    cutoff = _days_ago(days)
+    sql = """SELECT p.model_name, p.product_name, v.seller_name, v.platform,
+        v.map_price, v.violated_price, v.deviation_pct, v.severity, v.violation_type,
+        v.detected_at, v.evidence_url
+        FROM map_violations v JOIN map_products p ON v.product_id = p.id
+        WHERE v.detected_at > ? AND v.is_resolved = 0"""
+    params = [cutoff]
+    if severity: sql += " AND v.severity = ?"; params.append(severity)
+    if search:
+        sql += " AND (p.model_name LIKE ? OR p.product_name LIKE ?)"
+        params += [f"%{search}%", f"%{search}%"]
+    sql += " ORDER BY v.detected_at DESC"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "지도가 위반 현황"
+    headers = ["모델명", "제품명", "셀러", "플랫폼", "지도가", "판매가", "편차(%)", "심각도", "유형", "탐지일시", "판매URL"]
+    ws.append(headers)
+    for r in rows:
+        ws.append([r["model_name"], r["product_name"], r["seller_name"], r["platform"],
+                   r["map_price"], r["violated_price"], r["deviation_pct"], r["severity"],
+                   r["violation_type"], r["detected_at"], r["evidence_url"]])
+    # 열폭 자동
+    for col in ws.columns:
+        ws.column_dimensions[col[0].column_letter].width = max(len(str(c.value or "")) for c in col[:5]) + 4
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=MAP_violations_{days}d.xlsx"})
 
 @router.put("/violations/{violation_id}/resolve")
 async def resolve_violation(violation_id: int, data: ViolationResolve):

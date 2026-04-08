@@ -7437,7 +7437,6 @@ function reconcileNewMatch() {
     if (tabId === 'dashboard') mapLoadDashboard();
     else if (tabId === 'violations') mapLoadViolations();
     else if (tabId === 'products') mapLoadProducts();
-    else if (tabId === 'watch') mapLoadWatch();
     else if (tabId === 'sellers') mapLoadSellers();
     else if (tabId === 'settings') {
       if (!_mapAdminAuth) {
@@ -7463,18 +7462,17 @@ function reconcileNewMatch() {
       const d = await api.get('/api/map/dashboard');
       _mapSettings = d.settings_summary;
       document.getElementById('map-status-text').textContent =
-        `감시 중: ${d.monitored_count}개 제품 · 하루 ${(d.settings_summary.schedules||[]).length}회 · 상시감시 ${d.watch_count}개`;
+        `감시 중: ${d.monitored_count}개 제품 · 하루 ${(d.settings_summary.schedules||[]).length}회`;
       const vs = d.violation_stats || {};
       document.getElementById('map-stats-cards').innerHTML = `
         <div class="map-stat-card"><div class="label">📦 감시 제품</div><div class="value">${d.monitored_count}</div><div class="sub">${won(d.settings_summary.min_price)} 이상</div></div>
-        <div class="map-stat-card"><div class="label">🚨 위반</div><div class="value" style="color:#dc2626">${vs.total||0}</div><div class="sub">최근 7일</div></div>
-        <div class="map-stat-card"><div class="label">🔴 긴급</div><div class="value" style="color:#dc2626">${vs.critical||0}</div><div class="sub">CRITICAL</div></div>
-        <div class="map-stat-card"><div class="label">👁 상시감시</div><div class="value" style="color:#7c3aed">${d.watch_count}</div><div class="sub">${d.settings_summary.watch_interval_hours||2}h 간격</div></div>`;
+        <div class="map-stat-card"><div class="label">🚨 위반 제품</div><div class="value" style="color:#dc2626">${vs.total||0}</div><div class="sub">최근 7일 (건수)</div></div>
+        <div class="map-stat-card"><div class="label">🔴 긴급</div><div class="value" style="color:#dc2626">${vs.critical||0}</div><div class="sub">CRITICAL</div></div>`;
       const rv = d.recent_violations || [];
       if (!rv.length) { document.getElementById('map-recent-violations').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">최근 위반 없음</p>'; }
       else {
-        let h = '<table class="map-tbl"><thead><tr><th>심각도</th><th>제품</th><th>셀러</th><th>플랫폼</th><th>지도가</th><th>판매가</th><th>편차</th><th>유형</th><th>탐지</th></tr></thead><tbody>';
-        rv.forEach(v => { const link = v.evidence_url ? `<a href="${v.evidence_url}" target="_blank" style="color:#1e293b;text-decoration:none;border-bottom:1px dashed #94a3b8" title="판매 페이지 열기">${v.product_name||''}</a>` : `<span>${v.product_name||''}</span>`; h += `<tr><td>${sev(v.severity)}</td><td><b>${link}</b><br><span style="font-size:11px;color:#94a3b8">${v.model_name||''}</span></td><td>${v.seller_name}</td><td>${plat(v.platform)}</td><td style="color:#64748b">${won(v.map_price)}</td><td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626">-${v.deviation_pct}%</td><td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">${v.violation_type}</span></td><td style="font-size:11px;color:#64748b">${(v.detected_at||'').slice(0,16)}</td></tr>`; });
+        let h = '<table class="map-tbl"><thead><tr><th>심각도</th><th>제품</th><th>셀러</th><th>지도가</th><th>판매가</th><th>편차</th><th>탐지</th></tr></thead><tbody>';
+        rv.forEach(v => { const link = v.evidence_url ? `<a href="${v.evidence_url}" target="_blank" style="color:#1e293b;text-decoration:none;border-bottom:1px dashed #94a3b8">${v.product_name||''}</a>` : (v.product_name||''); h += `<tr><td>${sev(v.severity)}</td><td><b>${link}</b><br><span style="font-size:11px;color:#94a3b8">${v.model_name||''}</span></td><td>${v.seller_name}</td><td style="color:#64748b">${won(v.map_price)}</td><td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626">-${v.deviation_pct}%</td><td style="font-size:11px;color:#64748b;white-space:nowrap">${(v.detected_at||'').slice(0,16)}</td></tr>`; });
         h += '</tbody></table>';
         document.getElementById('map-recent-violations').innerHTML = h;
       }
@@ -7489,7 +7487,6 @@ function reconcileNewMatch() {
       document.getElementById('map-summary').innerHTML = `<div style="display:flex;flex-direction:column;gap:12px">
         <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">전체 제품</span><b>${d.total_products}개</b></div>
         <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">감시 대상</span><b style="color:#2563eb">${d.monitored_count}개</b></div>
-        <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">상시감시</span><b style="color:#7c3aed">${d.watch_count}개</b></div>
         <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">수집 횟수</span><b>하루 ${(d.settings_summary.schedules||[]).length}회</b></div>
         <div style="display:flex;justify-content:space-between"><span style="color:#64748b;font-size:13px">쇼핑몰</span><b>${(d.settings_summary.platforms||[]).length}개</b></div>
         <div style="height:1px;background:#e2e8f0"></div>
@@ -7498,19 +7495,111 @@ function reconcileNewMatch() {
   }
 
   // ── 위반현황 ──
+  let _vioSortCol = 'violation_count', _vioSortDir = 'desc';
+  let _vioSearchTimer = null;
+
   window.mapLoadViolations = async function() {
-    const sv = document.getElementById('map-vio-severity').value;
-    const pl = document.getElementById('map-vio-platform').value;
-    const dy = document.getElementById('map-vio-days').value;
+    const sv = document.getElementById('map-vio-severity')?.value || '';
+    const dy = document.getElementById('map-vio-days')?.value || '7';
+    const q = (document.getElementById('map-vio-search')?.value || '').trim();
+    const grouped = document.getElementById('map-vio-grouped')?.checked;
+
     try {
-      const d = await api.get(`/api/map/violations?severity=${sv}&platform=${pl}&days=${dy}&limit=50`);
-      const vios = d.violations || [];
-      if (!vios.length) { document.getElementById('map-violations-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">위반 없음</p>'; return; }
-      let h = '<table class="map-tbl"><thead><tr><th>심각도</th><th>제품</th><th>모델</th><th>셀러</th><th>플랫폼</th><th>지도가</th><th>판매가</th><th>편차</th><th>유형</th><th>탐지</th><th>조치</th></tr></thead><tbody>';
-      vios.forEach(v => { const link = v.evidence_url ? `<a href="${v.evidence_url}" target="_blank" style="color:#1e293b;text-decoration:none;border-bottom:1px dashed #94a3b8" title="판매 페이지 열기">${v.product_name||''}</a>` : `<span>${v.product_name||''}</span>`; h += `<tr><td>${sev(v.severity)}</td><td><b>${link}</b></td><td style="font-family:monospace;font-size:12px;color:#64748b">${v.model_name||''}</td><td>${v.evidence_url?`<a href="${v.evidence_url}" target="_blank" style="color:#334155;text-decoration:none;border-bottom:1px dashed #cbd5e1">${v.seller_name}</a>`:v.seller_name}</td><td>${plat(v.platform)}</td><td style="color:#64748b">${won(v.map_price)}</td><td style="color:#dc2626;font-weight:700">${won(v.violated_price)}</td><td style="color:#dc2626">-${v.deviation_pct}%</td><td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">${v.violation_type}</span></td><td style="font-size:11px;color:#64748b;white-space:nowrap">${(v.detected_at||'').slice(0,16)}</td><td style="white-space:nowrap"><button class="btn btn-xs" onclick="mapScreenshot(${v.id})" style="font-size:10px;padding:2px 6px" title="스크린샷 캡처">📸</button> <button class="btn btn-xs" onclick="mapWarningEmail(${v.id})" style="font-size:10px;padding:2px 6px" title="경고 메일 생성">📧</button> <button class="btn btn-xs" onclick="mapResolveVio(${v.id})" style="font-size:10px;padding:2px 6px">해결</button></td></tr>`; });
-      h += '</tbody></table>';
-      document.getElementById('map-violations-table').innerHTML = h;
+      if (grouped) {
+        const d = await api.get(`/api/map/violations/grouped?severity=${sv}&days=${dy}&search=${encodeURIComponent(q)}`);
+        const prods = d.products || [];
+        if (!prods.length) { document.getElementById('map-violations-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">위반 없음</p>'; return; }
+        let h = `<p style="font-size:12px;color:#64748b;margin:0 0 8px">위반 제품 <b>${d.total_products}개</b> · 총 위반 건수 <b style="color:#dc2626">${d.total_violations}건</b> ${q?`· "${q}" 검색`:''}</p>`;
+        h += `<table class="map-tbl"><thead><tr>
+          <th style="cursor:pointer" onclick="mapVioSort('model_name')">모델명 ${_vioSortIcon('model_name')}</th>
+          <th>제품명</th>
+          <th style="cursor:pointer" onclick="mapVioSort('violation_count')">위반건수 ${_vioSortIcon('violation_count')}</th>
+          <th style="cursor:pointer" onclick="mapVioSort('seller_count')">셀러수 ${_vioSortIcon('seller_count')}</th>
+          <th style="cursor:pointer" onclick="mapVioSort('map_price')">지도가 ${_vioSortIcon('map_price')}</th>
+          <th style="cursor:pointer" onclick="mapVioSort('min_price')">최저판매가 ${_vioSortIcon('min_price')}</th>
+          <th style="cursor:pointer" onclick="mapVioSort('max_deviation')">최대편차 ${_vioSortIcon('max_deviation')}</th>
+          <th>위반 셀러</th>
+          <th style="cursor:pointer" onclick="mapVioSort('last_detected')">최근탐지 ${_vioSortIcon('last_detected')}</th>
+        </tr></thead><tbody>`;
+        _sortProds(prods);
+        prods.forEach(p => {
+          const sevBadge = p.max_deviation >= 15 ? sev('CRITICAL') : p.max_deviation >= 10 ? sev('HIGH') : sev('MEDIUM');
+          const sellers = (p.sellers||[]).slice(0,3).join(', ') + (p.sellers.length > 3 ? ` 외 ${p.sellers.length-3}개` : '');
+          h += `<tr>
+            <td style="font-family:monospace;font-weight:600">${p.model_name}</td>
+            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.product_name}</td>
+            <td style="text-align:center"><span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-weight:700;font-size:13px">${p.violation_count}건</span></td>
+            <td style="text-align:center;font-weight:600">${p.seller_count}개</td>
+            <td style="color:#64748b;text-align:right">${won(p.map_price)}</td>
+            <td style="color:#dc2626;font-weight:700;text-align:right">${won(p.min_price)}</td>
+            <td style="color:#dc2626;text-align:right">-${p.max_deviation}%</td>
+            <td style="font-size:12px;color:#475569;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(p.sellers||[]).join(', ')}">${sellers}</td>
+            <td style="font-size:11px;color:#64748b;white-space:nowrap">${(p.last_detected||'').slice(0,16)}</td>
+          </tr>`;
+        });
+        h += '</tbody></table>';
+        document.getElementById('map-violations-table').innerHTML = h;
+      } else {
+        // 상세 뷰 (기존)
+        const d = await api.get(`/api/map/violations?severity=${sv}&days=${dy}&search=${encodeURIComponent(q)}&limit=200`);
+        const vios = d.violations || [];
+        if (!vios.length) { document.getElementById('map-violations-table').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">위반 없음</p>'; return; }
+        let h = `<p style="font-size:12px;color:#64748b;margin:0 0 8px">총 <b style="color:#dc2626">${d.total}건</b> ${q?`· "${q}" 검색`:''}</p>`;
+        h += `<table class="map-tbl"><thead><tr>
+          <th style="cursor:pointer" onclick="mapVioSort('severity')">심각도</th>
+          <th style="cursor:pointer" onclick="mapVioSort('model_name')">모델</th><th>제품</th>
+          <th style="cursor:pointer" onclick="mapVioSort('seller_name')">셀러</th>
+          <th style="cursor:pointer" onclick="mapVioSort('map_price')">지도가</th>
+          <th style="cursor:pointer" onclick="mapVioSort('violated_price')">판매가</th>
+          <th style="cursor:pointer" onclick="mapVioSort('deviation_pct')">편차</th>
+          <th style="cursor:pointer" onclick="mapVioSort('detected_at')">탐지</th><th>조치</th>
+        </tr></thead><tbody>`;
+        vios.forEach(v => {
+          const link = v.evidence_url ? `<a href="${v.evidence_url}" target="_blank" style="color:#1e293b;text-decoration:none;border-bottom:1px dashed #94a3b8">${v.product_name||''}</a>` : (v.product_name||'');
+          h += `<tr><td>${sev(v.severity)}</td><td style="font-family:monospace;font-size:12px">${v.model_name||''}</td><td><b>${link}</b></td><td>${v.evidence_url?`<a href="${v.evidence_url}" target="_blank" style="color:#334155;text-decoration:none;border-bottom:1px dashed #cbd5e1">${v.seller_name}</a>`:v.seller_name}</td><td style="color:#64748b;text-align:right">${won(v.map_price)}</td><td style="color:#dc2626;font-weight:700;text-align:right">${won(v.violated_price)}</td><td style="color:#dc2626;text-align:right">-${v.deviation_pct}%</td><td style="font-size:11px;color:#64748b;white-space:nowrap">${(v.detected_at||'').slice(0,16)}</td><td style="white-space:nowrap"><button class="btn btn-xs" onclick="mapScreenshot(${v.id})" style="font-size:10px;padding:2px 6px">📸</button> <button class="btn btn-xs" onclick="mapWarningEmail(${v.id})" style="font-size:10px;padding:2px 6px">📧</button> <button class="btn btn-xs" onclick="mapResolveVio(${v.id})" style="font-size:10px;padding:2px 6px">해결</button></td></tr>`;
+        });
+        h += '</tbody></table>';
+        document.getElementById('map-violations-table').innerHTML = h;
+      }
     } catch(e) { console.error('위반 로드:', e); }
+  };
+
+  function _vioSortIcon(col) { return _vioSortCol === col ? (_vioSortDir === 'asc' ? '▲' : '▼') : ''; }
+  function _sortProds(arr) {
+    const c = _vioSortCol, d = _vioSortDir === 'asc' ? 1 : -1;
+    arr.sort((a,b) => {
+      let va = a[c], vb = b[c];
+      if (typeof va === 'string') return va.localeCompare(vb) * d;
+      return ((va||0) - (vb||0)) * d;
+    });
+  }
+  window.mapVioSort = function(col) {
+    if (_vioSortCol === col) _vioSortDir = _vioSortDir === 'asc' ? 'desc' : 'asc';
+    else { _vioSortCol = col; _vioSortDir = 'desc'; }
+    mapLoadViolations();
+  };
+
+  // 위반 검색 자동완성
+  window.mapVioSearchAuto = function(q) {
+    clearTimeout(_vioSearchTimer);
+    const dd = document.getElementById('map-vio-dropdown');
+    if (!q || q.length < 1) { dd.style.display = 'none'; return; }
+    _vioSearchTimer = setTimeout(() => {
+      const term = q.toUpperCase();
+      let matches = _allMapProducts.filter(p => p.model_name.toUpperCase().includes(term) || p.product_name.toUpperCase().includes(term)).slice(0, 10);
+      if (!matches.length) { dd.style.display = 'none'; return; }
+      dd.innerHTML = matches.map(p => `<div onclick="document.getElementById('map-vio-search').value='${p.model_name.replace(/'/g,"\\'")}';mapLoadViolations();mapHideVioDropdown()" style="padding:6px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid #f1f5f9" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><span style="font-family:monospace;font-weight:600;color:#2563eb">${_highlight(p.model_name,term)}</span> <span style="color:#64748b">${_highlight(p.product_name,term)}</span></div>`).join('');
+      dd.style.display = 'block';
+    }, 200);
+  };
+  window.mapHideVioDropdown = function() { setTimeout(() => { const dd = document.getElementById('map-vio-dropdown'); if(dd) dd.style.display='none'; }, 200); };
+
+  // 엑셀 다운로드
+  window.mapExportViolations = function() {
+    const sv = document.getElementById('map-vio-severity')?.value || '';
+    const dy = document.getElementById('map-vio-days')?.value || '7';
+    const q = (document.getElementById('map-vio-search')?.value || '').trim();
+    window.open(`/api/map/violations/export?severity=${sv}&days=${dy}&search=${encodeURIComponent(q)}`, '_blank');
   };
   window.mapResolveVio = async function(id) {
     const note = prompt('해결 내용:'); if (note === null) return;

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LANstar Agent</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/css/style.css?v=20260407a">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260408a">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
   <style>
     /* CS/RMA 파이프라인 탭 */
@@ -943,7 +943,6 @@ C규격품 200개
         <button class="map-tab-btn active" data-map-tab="dashboard" onclick="switchMapTab('dashboard')">대시보드</button>
         <button class="map-tab-btn" data-map-tab="violations" onclick="switchMapTab('violations')">🚨 위반현황</button>
         <button class="map-tab-btn" data-map-tab="products" onclick="switchMapTab('products')">제품·지도가</button>
-        <button class="map-tab-btn" data-map-tab="watch" onclick="switchMapTab('watch')">👁 상시감시</button>
         <button class="map-tab-btn" data-map-tab="sellers" onclick="switchMapTab('sellers')">셀러관리</button>
         <button class="map-tab-btn" data-map-tab="settings" onclick="switchMapTab('settings')">⚙ 설정</button>
       </div>
@@ -952,13 +951,13 @@ C규격품 200개
       <div class="map-tab-content active" id="map-tab-dashboard">
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px" id="map-stats-cards"></div>
         <div class="card" style="margin-bottom:16px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
             <h3 style="margin:0;font-size:15px">🚨 최근 위반</h3>
             <button class="btn btn-sm btn-ghost" onclick="switchMapTab('violations')">전체보기 →</button>
           </div>
           <div id="map-recent-violations" style="overflow-x:auto"><p style="color:#94a3b8">로딩 중...</p></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
           <div class="card">
             <h3 style="margin:0 0 12px;font-size:15px">🏴 위반 빈도 Top 셀러</h3>
             <div id="map-top-sellers"><p style="color:#94a3b8">로딩 중...</p></div>
@@ -972,16 +971,20 @@ C규격품 200개
 
       <!-- 위반현황 -->
       <div class="map-tab-content" id="map-tab-violations">
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <select id="map-vio-severity" onchange="mapLoadViolations()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <div style="flex:1;min-width:180px;position:relative">
+            <input type="text" id="map-vio-search" placeholder="모델명 또는 제품명 검색..." oninput="mapVioSearchAuto(this.value)" onkeydown="if(event.key==='Enter'){mapLoadViolations();mapHideVioDropdown()}" autocomplete="off" style="width:100%;padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box">
+            <div id="map-vio-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-top:none;border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100"></div>
+          </div>
+          <button class="btn btn-sm" onclick="mapLoadViolations();mapHideVioDropdown()" style="padding:6px 12px">🔍</button>
+          <select id="map-vio-severity" onchange="mapLoadViolations()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
             <option value="">전체 심각도</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
           </select>
-          <select id="map-vio-platform" onchange="mapLoadViolations()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-            <option value="">전체 플랫폼</option><option>네이버</option><option>쿠팡</option><option>G마켓</option><option>옥션</option><option>11번가</option>
-          </select>
-          <select id="map-vio-days" onchange="mapLoadViolations()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          <select id="map-vio-days" onchange="mapLoadViolations()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
             <option value="7">최근 7일</option><option value="14">최근 14일</option><option value="30">최근 30일</option>
           </select>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#64748b;cursor:pointer"><input type="checkbox" id="map-vio-grouped" onchange="mapLoadViolations()" checked> 제품별 그룹</label>
+          <button class="btn btn-sm" onclick="mapExportViolations()" style="padding:6px 12px" title="엑셀 다운로드">📥 엑셀</button>
         </div>
         <div class="card"><div id="map-violations-table" style="overflow-x:auto"><p style="color:#94a3b8">로딩 중...</p></div></div>
       </div>
@@ -998,14 +1001,6 @@ C규격품 200개
           <button class="btn btn-sm" onclick="mapShowAddProduct()">+ 제품추가</button>
         </div>
         <div class="card"><div id="map-products-table" style="overflow-x:auto"><p style="color:#94a3b8">로딩 중...</p></div></div>
-      </div>
-
-      <!-- 상시감시 -->
-      <div class="map-tab-content" id="map-tab-watch">
-        <div class="card" style="background:#faf5ff;border-color:#e9d5ff;margin-bottom:16px">
-          <p style="margin:0;font-size:13px;color:#7e22ce">👁 <b>상시 감시 모드</b> — 정기 스케줄과 별도로, 지정 제품을 짧은 간격으로 집중 감시합니다. '제품·지도가' 탭에서 토글을 켜면 추가됩니다.</p>
-        </div>
-        <div class="card"><div id="map-watch-table" style="overflow-x:auto"><p style="color:#94a3b8">로딩 중...</p></div></div>
       </div>
 
       <!-- 셀러관리 -->
@@ -4961,7 +4956,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260407p"></script>
+<script src="/static/js/app.js?v=20260408a"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

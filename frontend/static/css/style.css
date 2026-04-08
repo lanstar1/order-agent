@@ -546,8 +546,15 @@ textarea.form-control { resize: vertical; min-height: 120px; }
 .map-toggle.on { background: #7c3aed; } .map-toggle.on .knob { left: 20px; }
 .map-toggle.off { background: #d1d5db; } .map-toggle.off .knob { left: 2px; }
 table.map-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-table.map-tbl th { padding: 8px 12px; text-align: left; font-weight: 600; color: #64748b; font-size: 12px; background: #f8fafc; white-space: nowrap; }
-table.map-tbl td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; }
+table.map-tbl th { padding: 8px 10px; text-align: left; font-weight: 600; color: #64748b; font-size: 12px; background: #f8fafc; white-space: nowrap; vertical-align: middle; }
+table.map-tbl td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; line-height: 1.4; }
+table.map-tbl th[style*="cursor:pointer"]:hover { background: #e2e8f0; }
+@media (max-width: 768px) {
+  .map-stat-card { min-width: 120px; padding: 12px 14px; }
+  .map-stat-card .value { font-size: 20px; }
+  table.map-tbl { font-size: 12px; }
+  table.map-tbl th, table.map-tbl td { padding: 6px 6px; }
+}
 .map-settings-section { background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 16px; overflow: hidden; }
 .map-settings-section .hdr { padding: 14px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; font-weight: 700; font-size: 15px; }
 .map-settings-section .body { padding: 20px; }
