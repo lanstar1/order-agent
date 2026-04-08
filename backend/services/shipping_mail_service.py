@@ -241,8 +241,11 @@ def get_shipping_info_map(conn) -> dict:
     선적 정보를 모델명 기준으로 매핑
     BOR: 전체 모델이 같은 선적일
     NAM: 모델별로 다른 선적일 가능 (개별 레코드 우선)
+    입고예정일이 오늘 이전인 제품은 이미 입고된 것이므로 제외
     Returns: {"LS-1000H": {"bor": "BOR-2601001", "shipping_date": "2026-03-15", "arrival_date": "2026-03-23"}}
     """
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+
     rows = conn.execute("""
         SELECT bor_number, shipping_date, arrival_date, models
         FROM shipping_mail_info
@@ -255,6 +258,10 @@ def get_shipping_info_map(conn) -> dict:
         ship_date = r[1] or ""
         arr_date = r[2] or ""
         models_str = r[3] or ""
+
+        # 입고예정일이 지났으면 이미 입고됨 → 표시 불필요
+        if arr_date and arr_date < today:
+            continue
 
         # 개별 모델 레코드 (NAM: "LAN-PI20260304_LS-BDCH" 형태)
         if "_" in bor and models_str and "," not in models_str:
