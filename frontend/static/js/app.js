@@ -5213,13 +5213,13 @@ let _ipSortAsc = true;
 
 async function ipRefreshAnalysis() {
   const tbody = document.getElementById('ip-table-body');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="13" style="padding:30px;text-align:center;color:#94a3b8">⏳ 분석 중...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="15" style="padding:30px;text-align:center;color:#94a3b8">⏳ 분석 중...</td></tr>';
   try {
     _ipData = await api.get('/api/inventory-planning/analysis');
     ipRenderSummary(_ipData.summary);
     ipRenderTable(_ipData.items);
   } catch (err) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="padding:20px;text-align:center;color:#dc2626">분석 실패: ${err.message||err}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="15" style="padding:20px;text-align:center;color:#dc2626">분석 실패: ${err.message||err}</td></tr>`;
   }
 }
 
@@ -5246,7 +5246,7 @@ function ipRenderTable(items) {
   const tbody = document.getElementById('ip-table-body');
   if (!tbody) return;
   if (!items || items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="13" style="padding:30px;text-align:center;color:#94a3b8">등록된 관리품목이 없습니다. [+ 품목 등록] 버튼으로 추가하세요.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" style="padding:30px;text-align:center;color:#94a3b8">등록된 관리품목이 없습니다. [+ 품목 등록] 버튼으로 추가하세요.</td></tr>';
     return;
   }
 
@@ -5307,12 +5307,14 @@ function ipRenderTable(items) {
       <td style="padding:8px;text-align:right;font-weight:600;${i.recommended_qty>0?'color:#DC2626':''}">${i.recommended_qty>0?i.recommended_qty.toLocaleString():'-'}</td>
       <td style="padding:8px;font-size:12px;${i.need_order?'color:#DC2626;font-weight:600':''}">${i.order_deadline||'-'}</td>
       <td style="padding:8px">${orderInfo}</td>
+      <td style="padding:8px;font-size:11px;${i.shipping_date?'color:#7c3aed':''}">${i.shipping_date||'-'}</td>
+      <td style="padding:8px;font-size:11px;font-weight:${i.arrival_date?'600':'400'};${i.arrival_date?'color:#059669':''}">${i.arrival_date||'-'}</td>
       <td style="padding:8px"><button onclick="event.stopPropagation();ipDeleteTarget(${i.id},'${i.model_name}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:12px">삭제</button></td>
     </tr>`;
   }).join('');
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="13" style="padding:20px;text-align:center;color:#94a3b8">해당하는 품목이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" style="padding:20px;text-align:center;color:#94a3b8">해당하는 품목이 없습니다.</td></tr>';
   }
 }
 
@@ -5481,6 +5483,22 @@ async function ipShowDetail(targetId) {
 
 function ipCloseDetailModal() {
   document.getElementById('ip-detail-modal').style.display = 'none';
+}
+
+async function ipScanShippingMails() {
+  if (!confirm('메일서버에서 선적 메일을 스캔합니다. 1~2분 소요될 수 있습니다.')) return;
+  toast('📧 선적 메일 스캔 중...', 'info');
+  try {
+    const data = await api.post('/api/inventory-planning/shipping/scan?days_back=90', {});
+    if (data.status === 'ok') {
+      toast(`✅ ${data.scanned}건 선적 정보 스캔 완료`, 'success');
+      ipRefreshAnalysis();
+    } else {
+      toast('스캔 실패: ' + (data.detail || ''), 'error');
+    }
+  } catch (err) {
+    toast('선적 메일 스캔 실패: ' + (err.message || err), 'error');
+  }
 }
 
 

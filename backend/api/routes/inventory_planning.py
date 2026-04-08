@@ -171,3 +171,56 @@ async def check_pending_orders(model_name: str):
         return {"model_name": model_name, "orders": orders, "has_orders": len(orders) > 0}
     finally:
         conn.close()
+
+# ─── 선적 메일 스캔 ──────────────────────────────────────
+
+@router.post("/shipping/scan")
+async def scan_shipping_mails(days_back: int = 90):
+    """메일서버에서 선적 메일 스캔 → BOR 첨부파일 파싱 → DB 저장"""
+    from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+    from services.shipping_mail_service import scan_shipping_emails, save_shipping_info
+
+    if not MAIL_USER or not MAIL_PASSWORD:
+        raise HTTPException(400, "메일 설정이 없습니다 (MAIL_USER, MAIL_PASSWORD 환경변수 필요)")
+
+    try:
+        results = scan_shipping_emails(
+            imap_server=MAIL_IMAP_SERVER,
+            imap_user=MAIL_USER,
+            imap_password=MAIL_PASSWORD,
+            imap_port=MAIL_IMAP_PORT,
+            days_back=days_back,
+        )
+
+        conn = get_connection()
+        try:
+            saved = save_shipping_info(conn, results)
+        finally:
+            conn.close()
+
+        return {
+            "status": "ok",
+            "scanned": len(results),
+            "saved": saved,
+            "items": [{
+                "bor_number": r["bor_number"],
+                "shipping_date": r["shipping_date"],
+                "arrival_date": r["arrival_date"],
+                "model_count": r["model_count"],
+                "filename": r["filename"],
+            } for r in results],
+        }
+    except Exception as e:
+        raise HTTPException(500, f"메일 스캔 실패: {str(e)}")
+
+
+@router.get("/shipping/list")
+async def list_shipping_info():
+    """저장된 선적 정보 목록"""
+    from services.shipping_mail_service import get_all_shipping_info
+    conn = get_connection()
+    try:
+        items = get_all_shipping_info(conn)
+        return {"items": items, "total": len(items)}
+    finally:
+        conn.close()

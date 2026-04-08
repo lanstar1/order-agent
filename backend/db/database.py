@@ -765,6 +765,21 @@ def init_db():
         except Exception:
             pass
 
+    # ── 선적 메일 정보 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS shipping_mail_info (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        bor_number      TEXT NOT NULL UNIQUE,
+        subject         TEXT DEFAULT '',
+        email_date      TEXT DEFAULT '',
+        shipping_date   TEXT DEFAULT '',
+        arrival_date    TEXT DEFAULT '',
+        filename        TEXT DEFAULT '',
+        models          TEXT DEFAULT '',
+        model_count     INTEGER DEFAULT 0,
+        updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+
     # ── ERP 캐시 (매입정산용 구매/판매현황 영속 캐시) ──
     cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS erp_cache (

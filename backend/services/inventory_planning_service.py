@@ -328,19 +328,34 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
 
 
 def analyze_all_targets(conn) -> dict:
-    """전체 관리품목 일괄 분석"""
+    """전체 관리품목 일괄 분석 (오더리스트 + 선적메일 연동)"""
     targets = get_planning_targets(conn, active_only=True)
     if not targets:
         return {"items": [], "summary": {"total": 0, "urgent": 0, "warning": 0, "ordered": 0, "safe": 0}}
 
-    # 오더리스트 한 번에 로딩
+    # 오더리스트 + 선적정보 한 번에 로딩
     order_map = get_all_pending_orders_map(conn)
+
+    # 선적 메일 정보 로딩
+    try:
+        from services.shipping_mail_service import get_shipping_info_map
+        shipping_map = get_shipping_info_map(conn)
+    except Exception:
+        shipping_map = {}
 
     results = []
     summary = {"total": 0, "urgent": 0, "warning": 0, "ordered": 0, "safe": 0, "no_sales": 0}
 
     for target in targets:
         analysis = analyze_single_product(conn, target, order_map)
+
+        # 선적 정보 매칭
+        model_key = (analysis.get("model_name") or "").strip().upper()
+        ship_info = shipping_map.get(model_key, {})
+        analysis["shipping_date"] = ship_info.get("shipping_date", "")
+        analysis["arrival_date"] = ship_info.get("arrival_date", "")
+        analysis["shipping_bor"] = ship_info.get("bor_number", "")
+
         results.append(analysis)
         summary["total"] += 1
         if analysis["status"] in summary:

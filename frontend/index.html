@@ -969,6 +969,7 @@ C규격품 200개
             </div>
             <div style="display:flex;gap:8px">
               <button class="btn btn-sm" onclick="ipRefreshAnalysis()" style="background:#2563eb;color:#fff">🔄 분석 새로고침</button>
+              <button class="btn btn-sm" onclick="ipScanShippingMails()" style="background:#7c3aed;color:#fff">📧 선적메일 스캔</button>
               <button class="btn btn-sm" onclick="ipShowAddModal()" style="background:#059669;color:#fff">+ 품목 등록</button>
             </div>
           </div>
@@ -991,11 +992,13 @@ C규격품 200개
                   <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right;cursor:pointer" onclick="ipSort('recommended_qty')">권장수량 ⇅</th>
                   <th style="padding:8px;border-bottom:2px solid #e2e8f0;cursor:pointer" onclick="ipSort('order_deadline')">발주기한 ⇅</th>
                   <th style="padding:8px;border-bottom:2px solid #e2e8f0">오더</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;cursor:pointer" onclick="ipSort('shipping_date')">선적일 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;cursor:pointer" onclick="ipSort('arrival_date')">입고예정 ⇅</th>
                   <th style="padding:8px;border-bottom:2px solid #e2e8f0;width:50px"></th>
                 </tr>
               </thead>
               <tbody id="ip-table-body">
-                <tr><td colspan="13" style="padding:30px;text-align:center;color:#94a3b8">분석 데이터를 로딩 중...</td></tr>
+                <tr><td colspan="15" style="padding:30px;text-align:center;color:#94a3b8">분석 데이터를 로딩 중...</td></tr>
               </tbody>
             </table>
           </div>
@@ -5082,7 +5085,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260408d"></script>
+<script src="/static/js/app.js?v=20260408e"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

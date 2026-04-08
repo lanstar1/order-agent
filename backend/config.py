@@ -144,3 +144,9 @@ SMARTSTORE_MODEL_MAP_PATH   = BASE_DIR / "data" / "smartstore" / "smartstore_mod
 BARCODE_CUST_CODE = os.getenv("BARCODE_CUST_CODE", "202308091")  # 바코드서버 거래처코드
 BARCODE_WH_CD     = os.getenv("BARCODE_WH_CD", "30")             # 바코드서버 출하창고
 BARCODE_MASTER_PATH = os.getenv("BARCODE_MASTER_PATH", "")       # master_data.xlsx 경로 (빈값이면 data/barcode/master_data.xlsx)
+
+# ─── 선적 메일 (IMAP) ──────────────────────────────────
+MAIL_IMAP_SERVER = os.getenv("MAIL_IMAP_SERVER", "wmbox3.ecount.com")
+MAIL_IMAP_PORT = int(os.getenv("MAIL_IMAP_PORT", "993"))
+MAIL_USER = os.getenv("MAIL_USER", "")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
