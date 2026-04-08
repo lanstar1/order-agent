@@ -610,7 +610,8 @@ async function sendErp(){
             log('완료: '+JSON.stringify({lines: r.lines, matched: r.erp_matched, unmatched: r.erp_unmatched}));
             renderErpResult(r);
         } else {
-            const errMsg = typeof r.error === 'string' ? r.error : (r.error ? JSON.stringify(r.error) : (r.detail || 'ERP 전송 실패'));
+            const _toStr = v => typeof v === 'string' ? v : (v ? JSON.stringify(v) : '');
+            const errMsg = _toStr(r.error) || _toStr(r.detail) || 'ERP 전송 실패';
             ss('s-auto','err', errMsg);
             log('실패: '+JSON.stringify(r));
         }
