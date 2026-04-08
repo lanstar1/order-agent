@@ -5208,16 +5208,18 @@ async function removeKeyword(keyword) {
 
 let _ipData = null;
 let _ipSelected = null; // 등록 모달에서 선택된 품목
+let _ipSortKey = '';
+let _ipSortAsc = true;
 
 async function ipRefreshAnalysis() {
   const tbody = document.getElementById('ip-table-body');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="12" style="padding:30px;text-align:center;color:#94a3b8">⏳ 분석 중...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="13" style="padding:30px;text-align:center;color:#94a3b8">⏳ 분석 중...</td></tr>';
   try {
     _ipData = await api.get('/api/inventory-planning/analysis');
     ipRenderSummary(_ipData.summary);
     ipRenderTable(_ipData.items);
   } catch (err) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="12" style="padding:20px;text-align:center;color:#dc2626">분석 실패: ${err.message||err}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="padding:20px;text-align:center;color:#dc2626">분석 실패: ${err.message||err}</td></tr>`;
   }
 }
 
@@ -5229,11 +5231,16 @@ function ipRenderSummary(s) {
   if (el('ip-cnt-safe')) el('ip-cnt-safe').textContent = (s.safe || 0) + (s.no_sales || 0);
 }
 
+function ipSort(key) {
+  if (_ipSortKey === key) { _ipSortAsc = !_ipSortAsc; } else { _ipSortKey = key; _ipSortAsc = true; }
+  if (_ipData) ipRenderTable(_ipData.items);
+}
+
 function ipRenderTable(items) {
   const tbody = document.getElementById('ip-table-body');
   if (!tbody) return;
   if (!items || items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" style="padding:30px;text-align:center;color:#94a3b8">등록된 관리품목이 없습니다. [+ 품목 등록] 버튼으로 추가하세요.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="padding:30px;text-align:center;color:#94a3b8">등록된 관리품목이 없습니다. [+ 품목 등록] 버튼으로 추가하세요.</td></tr>';
     return;
   }
 
@@ -5251,7 +5258,7 @@ function ipRenderTable(items) {
   const filter = (document.getElementById('ip-status-filter')||{}).value || '';
   const search = ((document.getElementById('ip-search')||{}).value || '').toUpperCase();
 
-  let filtered = items;
+  let filtered = items.slice();
   if (filter) filtered = filtered.filter(i => i.status === filter);
   if (search) filtered = filtered.filter(i =>
     (i.model_name||'').toUpperCase().includes(search) ||
@@ -5259,22 +5266,38 @@ function ipRenderTable(items) {
     (i.prod_cd||'').toUpperCase().includes(search)
   );
 
+  // 정렬
+  if (_ipSortKey) {
+    const statusOrder = {urgent:0, warning:1, ordered:2, no_sales:3, safe:4};
+    filtered.sort((a, b) => {
+      let va = a[_ipSortKey], vb = b[_ipSortKey];
+      if (_ipSortKey === 'status') { va = statusOrder[va]||9; vb = statusOrder[vb]||9; }
+      if (_ipSortKey === 'model_name' || _ipSortKey === 'order_deadline') {
+        va = (va||'').toString(); vb = (vb||'').toString();
+        return _ipSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      va = parseFloat(va) || 0; vb = parseFloat(vb) || 0;
+      return _ipSortAsc ? va - vb : vb - va;
+    });
+  }
+
   tbody.innerHTML = filtered.map(i => {
     const stockout = i.days_until_stockout >= 9999 ? '-' : `${Math.round(i.days_until_stockout)}일`;
     const stockoutStyle = i.days_until_stockout <= i.lead_time_days ? 'color:#DC2626;font-weight:700' : '';
     const orderInfo = i.has_pending_order
       ? `<span style="color:#059669;font-size:11px" title="${(i.pending_orders||[]).map(o=>o.order_no+' '+o.qty+'개').join(', ')}">✅ ${i.pending_orders[0]?.order_no||'발주됨'}</span>`
-      : (i.need_order ? '<span style="color:#DC2626;font-size:11px">❌ 미발주</span>' : '<span style="color:#94a3b8;font-size:11px">-</span>');
+      : (i.need_order ? '<span style="color:#DC2626;font-size:11px">❌ 미발주</span>' : '<span style="color:#94a3b8;font-size:11px">여유</span>');
 
     return `<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="ipShowDetail(${i.id})">
       <td style="padding:8px">${statusBadge(i.status, i.status_label)}</td>
       <td style="padding:8px;font-weight:600;font-size:12px">${i.model_name||i.prod_cd}</td>
-      <td style="padding:8px;font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.prod_name}">${i.prod_name||'-'}</td>
+      <td style="padding:8px;font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.prod_name}">${i.prod_name||'-'}</td>
       <td style="padding:8px;text-align:right;font-weight:600">${(i.current_stock||0).toLocaleString()}</td>
       <td style="padding:8px;text-align:right">${i.avg_daily_7d||0}</td>
       <td style="padding:8px;text-align:right">${i.avg_daily_30d||0}</td>
+      <td style="padding:8px;text-align:right">${i.avg_daily_90d||0}</td>
+      <td style="padding:8px;text-align:right">${i.avg_daily_180d||0}</td>
       <td style="padding:8px;text-align:right;${stockoutStyle}">${stockout}</td>
-      <td style="padding:8px;text-align:right;color:#64748b">${i.lead_time_days}일</td>
       <td style="padding:8px;text-align:right;font-weight:600;${i.recommended_qty>0?'color:#DC2626':''}">${i.recommended_qty>0?i.recommended_qty.toLocaleString():'-'}</td>
       <td style="padding:8px;font-size:12px;${i.need_order?'color:#DC2626;font-weight:600':''}">${i.order_deadline||'-'}</td>
       <td style="padding:8px">${orderInfo}</td>
@@ -5283,7 +5306,7 @@ function ipRenderTable(items) {
   }).join('');
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" style="padding:20px;text-align:center;color:#94a3b8">해당하는 품목이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="padding:20px;text-align:center;color:#94a3b8">해당하는 품목이 없습니다.</td></tr>';
   }
 }
 
@@ -5431,11 +5454,13 @@ async function ipShowDetail(targetId) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;margin-bottom:16px">
         <div>일평균 판매 (7일): <b>${d.avg_daily_7d}</b>개</div>
         <div>일평균 판매 (30일): <b>${d.avg_daily_30d}</b>개</div>
+        <div>일평균 판매 (3개월): <b>${d.avg_daily_90d||0}</b>개</div>
+        <div>일평균 판매 (6개월): <b>${d.avg_daily_180d||0}</b>개</div>
         <div>30일 총 판매: <b>${(d.total_sold_30d||0).toLocaleString()}</b>개</div>
+        <div>3개월 총 판매: <b>${(d.total_sold_90d||0).toLocaleString()}</b>개</div>
         <div>판매일수: <b>${d.selling_days||0}</b>일 / ${d.daily_sales?.length||0}일</div>
-        <div>리드타임: <b>${d.lead_time_days}일</b></div>
-        <div>안전재고: <b>${d.safety_stock_days}일</b></div>
-        <div>권장 발주수량: <b style="color:${d.recommended_qty>0?'#DC2626':'inherit'}">${d.recommended_qty>0?d.recommended_qty.toLocaleString()+'개':'발주 불필요'}</b></div>
+        <div>리드타임: <b>${d.lead_time_days}일</b> | 안전재고: <b>${d.safety_stock_days}일</b></div>
+        <div>권장 발주수량: <b style="color:${d.recommended_qty>0?'#DC2626':'inherit'}">${d.recommended_qty>0?d.recommended_qty.toLocaleString()+'개':'발주 불필요'}</b> <span style="font-size:11px;color:#94a3b8">(3개월 평균 기준)</span></div>
         <div>발주 기한: <b style="color:${d.need_order?'#DC2626':'inherit'}">${d.order_deadline||'-'}</b></div>
       </div>
       ${chartHtml}

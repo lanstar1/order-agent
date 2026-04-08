@@ -90,7 +90,7 @@ def bulk_add_planning_targets(conn, items: list):
 
 # ─── 일별 판매량 계산 (스냅샷 차이) ─────────────────────
 
-def get_daily_sales(conn, prod_cd: str, days: int = 30) -> list:
+def get_daily_sales(conn, prod_cd: str, days: int = 180) -> list:
     """
     최근 N일간 일별 판매량 조회
     판매량 = 전일 재고 - 금일 재고 (양수만, 음수=입고)
@@ -127,21 +127,27 @@ def get_daily_sales(conn, prod_cd: str, days: int = 30) -> list:
 def calc_sales_velocity(daily_sales: list) -> dict:
     """
     판매속도 통계 계산
-    - 7일/30일 이동평균
-    - 최대/최소 판매일
+    - 7일/30일/90일(3개월)/180일(6개월) 이동평균
+    - 권장수량 계산은 장기 평균(90일) 기반으로 단기 급등에 의한 과잉발주 방지
     """
     if not daily_sales:
-        return {"avg_7d": 0, "avg_30d": 0, "max_daily": 0, "total_days": 0}
+        return {"avg_7d": 0, "avg_30d": 0, "avg_90d": 0, "avg_180d": 0,
+                "max_daily": 0, "total_days": 0, "selling_days": 0, "total_sold_30d": 0}
 
     sales_only = [d["sales"] for d in daily_sales]
     recent_7 = sales_only[-7:] if len(sales_only) >= 7 else sales_only
     recent_30 = sales_only[-30:] if len(sales_only) >= 30 else sales_only
+    recent_90 = sales_only[-90:] if len(sales_only) >= 90 else sales_only
+    recent_180 = sales_only  # 전체 (최대 180일)
 
     return {
         "avg_7d": round(sum(recent_7) / len(recent_7), 1) if recent_7 else 0,
         "avg_30d": round(sum(recent_30) / len(recent_30), 1) if recent_30 else 0,
+        "avg_90d": round(sum(recent_90) / len(recent_90), 1) if recent_90 else 0,
+        "avg_180d": round(sum(recent_180) / len(recent_180), 1) if recent_180 else 0,
         "max_daily": max(sales_only) if sales_only else 0,
         "total_sold_30d": sum(recent_30),
+        "total_sold_90d": sum(recent_90),
         "total_days": len(daily_sales),
         "selling_days": sum(1 for s in sales_only if s > 0),
     }
@@ -207,8 +213,8 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
     lead_time = target.get("lead_time_days", 40)
     safety_days = target.get("safety_stock_days", 10)
 
-    # 1. 일별 판매량
-    daily = get_daily_sales(conn, prod_cd, days=60)
+    # 1. 일별 판매량 (6개월)
+    daily = get_daily_sales(conn, prod_cd, days=180)
     velocity = calc_sales_velocity(daily)
 
     # 2. 현재고 (최신 스냅샷)
@@ -219,10 +225,10 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
     current_stock = latest[0] if latest else 0
     stock_date = latest[1] if latest else ""
 
-    # 3. 소진일 예측 (30일 평균 기준)
-    avg_daily = velocity["avg_7d"] if velocity["avg_7d"] > 0 else velocity["avg_30d"]
-    if avg_daily > 0:
-        days_until_stockout = round(current_stock / avg_daily, 1)
+    # 3. 소진일 예측 — 30일 평균 기준 (현재 추세 반영)
+    avg_daily_for_stockout = velocity["avg_30d"] if velocity["avg_30d"] > 0 else velocity["avg_7d"]
+    if avg_daily_for_stockout > 0:
+        days_until_stockout = round(current_stock / avg_daily_for_stockout, 1)
     else:
         days_until_stockout = 9999  # 판매 없음
 
@@ -253,22 +259,25 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
     elif days_until_stockout <= (lead_time + safety_days):
         status = "warning"       # 곧 발주 필요
         status_label = "발주검토"
-    elif avg_daily == 0:
+    elif avg_daily_for_stockout == 0:
         status = "no_sales"      # 최근 판매 없음
         status_label = "판매없음"
     else:
         status = "safe"          # 여유
         status_label = "여유"
 
-    # 7. 권장 발주 수량 (리드타임 + 안전재고 기간 동안의 예상 판매량 - 현재고)
+    # 7. 권장 발주 수량
+    #    - 90일(3개월) 평균 기반으로 계산 → 단기 급등에 의한 과잉발주 방지
+    #    - 90일 데이터 부족 시 30일 → 7일 순으로 fallback
     recommended_qty = 0
-    if need_order and avg_daily > 0:
-        required = avg_daily * (lead_time + safety_days)
+    avg_for_order = velocity["avg_90d"] or velocity["avg_30d"] or velocity["avg_7d"]
+    if need_order and avg_for_order > 0:
+        required = avg_for_order * (lead_time + safety_days)
         recommended_qty = max(0, round(required - current_stock))
 
     # 8. 권장 발주일 (소진일 - 리드타임)
     order_deadline = ""
-    if avg_daily > 0 and days_until_stockout < 9999:
+    if avg_daily_for_stockout > 0 and days_until_stockout < 9999:
         deadline_days = max(0, days_until_stockout - lead_time)
         deadline_date = datetime.now(KST) + timedelta(days=deadline_days)
         order_deadline = deadline_date.strftime("%Y-%m-%d")
@@ -282,7 +291,10 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
         "stock_date": stock_date,
         "avg_daily_7d": velocity["avg_7d"],
         "avg_daily_30d": velocity["avg_30d"],
+        "avg_daily_90d": velocity["avg_90d"],
+        "avg_daily_180d": velocity["avg_180d"],
         "total_sold_30d": velocity.get("total_sold_30d", 0),
+        "total_sold_90d": velocity.get("total_sold_90d", 0),
         "selling_days": velocity.get("selling_days", 0),
         "max_daily": velocity.get("max_daily", 0),
         "days_until_stockout": days_until_stockout,
@@ -295,7 +307,7 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
         "order_deadline": order_deadline,
         "has_pending_order": has_pending_order,
         "pending_orders": pending_orders[:3],
-        "daily_sales": daily[-30:],  # 최근 30일만
+        "daily_sales": daily[-30:],  # 최근 30일만 (차트용)
     }
 
 

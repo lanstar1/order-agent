@@ -979,22 +979,23 @@ C규격품 200개
             <table style="width:100%;border-collapse:collapse;font-size:13px">
               <thead>
                 <tr style="background:#f8fafc;text-align:left">
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0">상태</th>
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0">모델명</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;cursor:pointer" onclick="ipSort('status')">상태 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;cursor:pointer" onclick="ipSort('model_name')">모델명 ⇅</th>
                   <th style="padding:8px;border-bottom:2px solid #e2e8f0">품목명</th>
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right">현재고</th>
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right">일평균(7일)</th>
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right">일평균(30일)</th>
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right">소진예상</th>
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right">리드타임</th>
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right">권장수량</th>
-                  <th style="padding:8px;border-bottom:2px solid #e2e8f0">발주기한</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right;cursor:pointer" onclick="ipSort('current_stock')">현재고 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right;cursor:pointer" onclick="ipSort('avg_daily_7d')">7일 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right;cursor:pointer" onclick="ipSort('avg_daily_30d')">30일 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right;cursor:pointer" onclick="ipSort('avg_daily_90d')">3개월 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right;cursor:pointer" onclick="ipSort('avg_daily_180d')">6개월 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right;cursor:pointer" onclick="ipSort('days_until_stockout')">소진예상 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right;cursor:pointer" onclick="ipSort('recommended_qty')">권장수량 ⇅</th>
+                  <th style="padding:8px;border-bottom:2px solid #e2e8f0;cursor:pointer" onclick="ipSort('order_deadline')">발주기한 ⇅</th>
                   <th style="padding:8px;border-bottom:2px solid #e2e8f0">오더</th>
                   <th style="padding:8px;border-bottom:2px solid #e2e8f0;width:50px"></th>
                 </tr>
               </thead>
               <tbody id="ip-table-body">
-                <tr><td colspan="12" style="padding:30px;text-align:center;color:#94a3b8">분석 데이터를 로딩 중...</td></tr>
+                <tr><td colspan="13" style="padding:30px;text-align:center;color:#94a3b8">분석 데이터를 로딩 중...</td></tr>
               </tbody>
             </table>
           </div>
@@ -5071,7 +5072,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260408b"></script>
+<script src="/static/js/app.js?v=20260408c"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
