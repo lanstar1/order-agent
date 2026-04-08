@@ -131,34 +131,27 @@ async def update_settings(data: SettingsUpdate):
 @router.get("/products")
 async def list_products(search: str = "", active_only: bool = True, watched_only: bool = False):
     conn = get_connection()
-    sql = "SELECT * FROM map_products WHERE 1=1"
-    params = []
-    if active_only: sql += " AND is_active = 1"
-    if watched_only: sql += " AND is_watched = 1"
-    if search:
-        sql += " AND (model_name LIKE ? OR product_name LIKE ?)"
-        params += [f"%{search}%", f"%{search}%"]
-    sql += " ORDER BY model_name"
-    rows = conn.execute(sql, params).fetchall()
-    products = [dict(r) for r in rows]
-
-    # 각 제품별 현재 최저가 및 위반 건수 추가
     cutoff = _days_ago(1)
-    for p in products:
-        row = conn.execute(
-            "SELECT MIN(effective_price) as min_p FROM map_price_records WHERE product_id=? AND collected_at>?",
-            (p["id"], cutoff)
-        ).fetchone()
-        p["current_min_price"] = row["min_p"] if row and row["min_p"] else 0
-
-        row2 = conn.execute(
-            "SELECT COUNT(*) as cnt FROM map_violations WHERE product_id=? AND is_resolved=0",
-            (p["id"],)
-        ).fetchone()
-        p["active_violations"] = row2["cnt"] if row2 else 0
-
+    # 단일 쿼리로 최저가 + 위반 건수 함께 조회 (N+1 쿼리 제거)
+    sql = """SELECT p.*,
+        COALESCE(pr.min_price, 0) as current_min_price,
+        COALESCE(vc.cnt, 0) as active_violations
+        FROM map_products p
+        LEFT JOIN (SELECT product_id, MIN(effective_price) as min_price
+            FROM map_price_records WHERE collected_at > ? GROUP BY product_id) pr ON p.id = pr.product_id
+        LEFT JOIN (SELECT product_id, COUNT(*) as cnt
+            FROM map_violations WHERE is_resolved = 0 GROUP BY product_id) vc ON p.id = vc.product_id
+        WHERE 1=1"""
+    params = [cutoff]
+    if active_only: sql += " AND p.is_active = 1"
+    if watched_only: sql += " AND p.is_watched = 1"
+    if search:
+        sql += " AND (p.model_name LIKE ? OR p.product_name LIKE ?)"
+        params += [f"%{search}%", f"%{search}%"]
+    sql += " ORDER BY p.model_name"
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
-    return products
+    return [dict(r) for r in rows]
 
 @router.post("/products")
 async def create_product(data: ProductCreate):
@@ -451,6 +444,18 @@ async def resolve_violation(violation_id: int, data: ViolationResolve):
     conn.commit(); conn.close()
     return {"message": "해결 처리 완료"}
 
+@router.get("/violations/by-product/{product_id}")
+async def violations_by_product(product_id: int, days: int = 7):
+    """특정 제품의 개별 위반 목록"""
+    conn = get_connection()
+    cutoff = _days_ago(days)
+    rows = conn.execute("""SELECT v.*, p.model_name, p.product_name FROM map_violations v
+        JOIN map_products p ON v.product_id=p.id
+        WHERE v.product_id=? AND v.detected_at>? AND v.is_resolved=0
+        ORDER BY v.violated_price ASC""", (product_id, cutoff)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 
 # ═══════════════════════════════════════════════════════
 # 4. 대시보드 API
@@ -474,9 +479,10 @@ async def get_dashboard():
     vs = conn.execute("""SELECT COUNT(*) as total,
         SUM(CASE WHEN severity='CRITICAL' THEN 1 ELSE 0 END) as critical,
         SUM(CASE WHEN severity='HIGH' THEN 1 ELSE 0 END) as high,
-        SUM(CASE WHEN severity='MEDIUM' THEN 1 ELSE 0 END) as medium
+        SUM(CASE WHEN severity='MEDIUM' THEN 1 ELSE 0 END) as medium,
+        COUNT(DISTINCT product_id) as product_count
         FROM map_violations WHERE detected_at>? AND is_resolved=0""", (cutoff7,)).fetchone()
-    vs = dict(vs) if vs else {"total":0,"critical":0,"high":0,"medium":0}
+    vs = dict(vs) if vs else {"total":0,"critical":0,"high":0,"medium":0,"product_count":0}
 
     # Top 셀러 (30일)
     cutoff30 = _days_ago(30)

@@ -7466,7 +7466,7 @@ function reconcileNewMatch() {
       const vs = d.violation_stats || {};
       document.getElementById('map-stats-cards').innerHTML = `
         <div class="map-stat-card"><div class="label">📦 감시 제품</div><div class="value">${d.monitored_count}</div><div class="sub">${won(d.settings_summary.min_price)} 이상</div></div>
-        <div class="map-stat-card"><div class="label">🚨 위반 제품</div><div class="value" style="color:#dc2626">${vs.total||0}</div><div class="sub">최근 7일 (건수)</div></div>
+        <div class="map-stat-card"><div class="label">🚨 위반 제품</div><div class="value" style="color:#dc2626">${vs.product_count||0}개</div><div class="sub">위반 건수 ${vs.total||0}건 (7일)</div></div>
         <div class="map-stat-card"><div class="label">🔴 긴급</div><div class="value" style="color:#dc2626">${vs.critical||0}</div><div class="sub">CRITICAL</div></div>`;
       const rv = d.recent_violations || [];
       if (!rv.length) { document.getElementById('map-recent-violations').innerHTML = '<p style="color:#94a3b8;padding:20px;text-align:center">최근 위반 없음</p>'; }
@@ -7523,10 +7523,9 @@ function reconcileNewMatch() {
         </tr></thead><tbody>`;
         _sortProds(prods);
         prods.forEach(p => {
-          const sevBadge = p.max_deviation >= 15 ? sev('CRITICAL') : p.max_deviation >= 10 ? sev('HIGH') : sev('MEDIUM');
           const sellers = (p.sellers||[]).slice(0,3).join(', ') + (p.sellers.length > 3 ? ` 외 ${p.sellers.length-3}개` : '');
-          h += `<tr>
-            <td style="font-family:monospace;font-weight:600">${p.model_name}</td>
+          h += `<tr style="cursor:pointer" onclick="mapToggleVioDetail(this,${p.product_id},${parseInt(dy)})" title="클릭하여 상세 위반 보기">
+            <td style="font-family:monospace;font-weight:600">${p.model_name} <span style="font-size:10px;color:#94a3b8">▼</span></td>
             <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.product_name}</td>
             <td style="text-align:center"><span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-weight:700;font-size:13px">${p.violation_count}건</span></td>
             <td style="text-align:center;font-weight:600">${p.seller_count}개</td>
@@ -7573,6 +7572,40 @@ function reconcileNewMatch() {
       return ((va||0) - (vb||0)) * d;
     });
   }
+  // 제품 행 클릭 → 개별 위반 드롭다운
+  window.mapToggleVioDetail = async function(tr, productId, days) {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('map-vio-detail')) {
+      next.remove(); // 이미 열려있으면 닫기
+      tr.querySelector('span:last-child').textContent = '▼';
+      return;
+    }
+    tr.querySelector('span:last-child').textContent = '▲';
+    const detailRow = document.createElement('tr');
+    detailRow.className = 'map-vio-detail';
+    detailRow.innerHTML = `<td colspan="9" style="padding:0"><div style="padding:8px 16px;background:#f8fafc;font-size:12px;color:#64748b">로딩 중...</div></td>`;
+    tr.after(detailRow);
+    try {
+      const vios = await api.get(`/api/map/violations/by-product/${productId}?days=${days}`);
+      if (!vios.length) { detailRow.innerHTML = `<td colspan="9" style="padding:8px 16px;background:#f8fafc;font-size:12px;color:#94a3b8">위반 상세 없음</td>`; return; }
+      let h = `<td colspan="9" style="padding:0"><table style="width:100%;font-size:12px;background:#f8fafc">
+        <tr style="background:#eef2ff"><td style="padding:6px 12px;font-weight:600;color:#4f46e5">심각도</td><td style="padding:6px 12px;font-weight:600;color:#4f46e5">셀러</td><td style="padding:6px 12px;font-weight:600;color:#4f46e5">판매가</td><td style="padding:6px 12px;font-weight:600;color:#4f46e5">편차</td><td style="padding:6px 12px;font-weight:600;color:#4f46e5">탐지</td><td style="padding:6px 12px;font-weight:600;color:#4f46e5">조치</td></tr>`;
+      vios.forEach(v => {
+        const link = v.evidence_url ? `<a href="${v.evidence_url}" target="_blank" style="color:#334155;text-decoration:none;border-bottom:1px dashed #94a3b8">${v.seller_name}</a>` : v.seller_name;
+        h += `<tr style="border-bottom:1px solid #e2e8f0">
+          <td style="padding:6px 12px">${sev(v.severity)}</td>
+          <td style="padding:6px 12px">${link}</td>
+          <td style="padding:6px 12px;color:#dc2626;font-weight:600">${won(v.violated_price)}</td>
+          <td style="padding:6px 12px;color:#dc2626">-${v.deviation_pct}%</td>
+          <td style="padding:6px 12px;color:#64748b">${(v.detected_at||'').slice(0,16)}</td>
+          <td style="padding:6px 12px"><button class="btn btn-xs" onclick="event.stopPropagation();mapResolveVio(${v.id})" style="font-size:10px;padding:2px 6px">해결</button></td>
+        </tr>`;
+      });
+      h += '</table></td>';
+      detailRow.innerHTML = h;
+    } catch(e) { detailRow.innerHTML = `<td colspan="9" style="padding:8px;color:#dc2626">오류: ${e.message}</td>`; }
+  };
+
   window.mapVioSort = function(col) {
     if (_vioSortCol === col) _vioSortDir = _vioSortDir === 'asc' ? 'desc' : 'asc';
     else { _vioSortCol = col; _vioSortDir = 'desc'; }
@@ -7653,12 +7686,10 @@ function reconcileNewMatch() {
         <span style="font-size:12px;color:#64748b;font-weight:600">일괄:</span>
         <button class="btn btn-xs" onclick="mapBatch('monitor_on')" style="font-size:11px;padding:3px 10px;background:#eff6ff;color:#2563eb;border-color:#bfdbfe">감시 ON</button>
         <button class="btn btn-xs" onclick="mapBatch('monitor_off')" style="font-size:11px;padding:3px 10px;background:#fef2f2;color:#dc2626;border-color:#fecaca">감시 OFF</button>
-        <button class="btn btn-xs" onclick="mapBatch('watch_on')" style="font-size:11px;padding:3px 10px;background:#faf5ff;color:#7c3aed;border-color:#e9d5ff">상시 ON</button>
-        <button class="btn btn-xs" onclick="mapBatch('watch_off')" style="font-size:11px;padding:3px 10px;background:#f1f5f9;color:#64748b;border-color:#d1d5db">상시 OFF</button>
       </div>
       <table class="map-tbl"><thead><tr>
         <th style="width:30px"><input type="checkbox" id="map-chk-all" onchange="mapToggleAll(this.checked)"></th>
-        <th>모델명</th><th>제품명</th><th>지도가</th><th>최저가</th><th>상태</th><th>감시</th><th>상시감시</th><th></th>
+        <th>모델명</th><th>제품명</th><th>지도가</th><th>최저가</th><th>상태</th><th>감시</th><th></th>
       </tr></thead><tbody>`;
       products.forEach(p => {
         const ex = p.map_price < mp;
@@ -7676,7 +7707,6 @@ function reconcileNewMatch() {
           <td style="font-weight:700;color:${p.active_violations>0?'#dc2626':'#16a34a'}">${p.current_min_price?won(p.current_min_price):'-'}</td>
           <td>${st}</td>
           <td><button class="map-toggle ${p.is_active?'on':'off'}" onclick="mapToggleMonitor(${p.id},${p.is_active?0:1})" style="${p.is_active?'background:#2563eb':'background:#d1d5db'}"><div class="knob" style="left:${p.is_active?'20px':'2px'}"></div></button></td>
-          <td><button class="map-toggle ${p.is_watched?'on':'off'}" onclick="mapToggleWatch(${p.id},${p.is_watched?0:1})"><div class="knob"></div></button></td>
           <td><button class="btn btn-xs" onclick="mapDeleteProduct(${p.id})" style="font-size:11px;padding:2px 6px;color:#dc2626">삭제</button></td></tr>`;
       });
       h += '</tbody></table>';
