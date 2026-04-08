@@ -363,7 +363,7 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cur
     <div class="inv-table-wrap hidden" id="invTableWrap">
       <table class="inv-table">
         <thead>
-          <tr><th>전표번호</th><th>물류센터 - 발주번호</th><th>품목코드</th><th>수량</th><th>용산</th><th>통진</th><th>삭제</th></tr>
+          <tr><th>전표번호</th><th>물류센터 - 발주번호</th><th>품목코드</th><th>수량</th><th>용산</th><th>통진</th></tr>
         </thead>
         <tbody id="invTableBody"></tbody>
       </table>
@@ -589,31 +589,35 @@ async function sendToEcount() {
     if (!res.ok) throw new Error(data.detail || "서버 오류");
 
     const isOk      = String(data.status) === "200" && data.fail === 0;
-    const lowCnt    = (data.items_result || []).filter(r => r.low_stock).length;
+    const lowCnt    = (data.items_result || []).filter(r => r.stock_status === "low_stock").length;
     const wh10Cnt   = (data.items_result || []).filter(r => r.stock_status === "wh10_used").length;
+    const partialCnt = data.partial || 0;
+
+    // 부분출고 수량 저장 (PO 다운로드 시 확정수량 반영용)
+    window._partialQtys = data.partial_quantities || {};
 
     resultDiv.className = `ecount-result ${isOk ? "success" : "fail"}`;
     resultDiv.innerHTML = `
       <strong>${isOk ? "✅ 전표 등록 완료!" : "⚠️ 일부 실패"}</strong><br>
       전송: ${data.total}건 &nbsp;|&nbsp; 성공: ${data.success}건 &nbsp;|&nbsp; 실패: ${data.fail}건
       ${data.slip_nos?.length ? `<br>전표번호: <strong>${data.slip_nos.join(", ")}</strong>` : ""}
-      ${data.excluded  > 0 ? `<br>🚫 제외(제품단종/제품인상): ${data.excluded}건` : ""}
-      ${data.unmatched > 0 ? `<br>⚠ 바코드 미매칭 ${data.unmatched}건 (미전송)` : ""}
-      ${wh10Cnt        > 0 ? `<br>🔄 통진 재고 없어 용산 전표로 자동 전환: <strong>${wh10Cnt}건</strong>` : ""}
-      ${data.no_stock  > 0 ? `<br>🔴 재고 없음(전표 미생성): <strong>${data.no_stock}건</strong> → 납품부족사유 자동 반영` : ""}
-      ${!data.inv_checked  ? `<br><span style="color:var(--text3);font-size:11px">※ 재고 조회 실패 (기본창고로 전표 등록됨)</span>` : ""}
+      ${data.excluded   > 0 ? `<br>🚫 제외(제품단종/제품인상): ${data.excluded}건` : ""}
+      ${data.unmatched  > 0 ? `<br>⚠ 바코드 미매칭 ${data.unmatched}건 (미전송)` : ""}
+      ${wh10Cnt         > 0 ? `<br>🔄 통진 재고 부족 → 용산 전표 자동 전환: <strong>${wh10Cnt}건</strong>` : ""}
+      ${partialCnt      > 0 ? `<br>🟡 소량 재고 부분출고: <strong>${partialCnt}건</strong> → 확정수량 자동 조정 + 납품부족사유 반영` : ""}
+      ${data.no_stock   > 0 ? `<br>🔴 재고 없음(전표 미생성): <strong>${data.no_stock}건</strong> → 납품부족사유 자동 반영` : ""}
+      ${!data.inv_checked ? `<br><span style="color:var(--text3);font-size:11px">※ 재고 조회 실패 (기본창고로 전표 등록됨)</span>` : ""}
       ${data.errors?.length ? `<br><span style="color:var(--danger)">${data.errors.join("<br>")}</span>` : ""}
     `;
     resultDiv.classList.remove("hidden");
     renderInvTable(data.items_result || []);
 
-    // 재고 완전 부족(low_stock)만 납품부족사유 자동 입력
-    // wh10_used(용산 전환)는 전표가 이미 잡혔으므로 사유 불필요
+    // low_stock + partial 모두 납품부족사유 자동 입력
     const LOW_STOCK_REASON = "협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)";
     let autoSetCnt = 0;
     (data.items_result || []).forEach(item => {
-      const ss = item.stock_status || (item.low_stock ? "low_stock" : "ok");
-      if (ss === "low_stock" && item.orig_idx !== undefined) {
+      const ss = item.stock_status;
+      if ((ss === "low_stock" || ss === "partial") && item.orig_idx !== undefined) {
         const sel = document.querySelector(`#poTableBody select[data-idx="${item.orig_idx}"]`);
         if (sel && !sel.value) {
           sel.value = LOW_STOCK_REASON;
@@ -624,11 +628,10 @@ async function sendToEcount() {
     });
     if (autoSetCnt > 0) {
       updateSummary();
-      elog(`📋 재고 부족 ${autoSetCnt}건 → 납품부족사유 자동 설정`, "o");
+      elog(`📋 재고부족/부분출고 ${autoSetCnt}건 → 납품부족사유 자동 설정`, "o");
     }
-    if (wh10Cnt > 0) {
-      elog(`🔄 통진 재고 없음 → 용산 전표 자동 전환 ${wh10Cnt}건`, "o");
-    }
+    if (wh10Cnt   > 0) elog(`🔄 통진 재고 부족 → 용산 전표 자동 전환 ${wh10Cnt}건`, "o");
+    if (partialCnt > 0) elog(`🟡 부분출고 ${partialCnt}건 → 확정수량 자동 조정됨`, "w");
 
     // 바코드 부착 필요 목록 표시
     renderLabelSection(data.label_items || []);
@@ -638,8 +641,8 @@ async function sendToEcount() {
 
     elog(`${isOk ? "✅" : "⚠️"} 결과 - 성공:${data.success} 실패:${data.fail}`, isOk ? "o" : "w");
     if (data.slip_nos?.length) elog(`전표번호: ${data.slip_nos.join(", ")}`, "o");
-    if (lowCnt > 0)            elog(`🔴 재고 부족 ${lowCnt}건 → 납품부족사유 자동 반영됨`, "w");
-    if (data.errors?.length)   data.errors.forEach(e => elog(`❌ ${e}`, "e"));
+    if (lowCnt    > 0) elog(`🔴 재고 없음 ${lowCnt}건 → 납품부족사유 자동 반영됨`, "w");
+    if (data.errors?.length) data.errors.forEach(e => elog(`❌ ${e}`, "e"));
 
   } catch(err) {
     resultDiv.className = "ecount-result fail";
@@ -685,31 +688,33 @@ function renderInvTable(items) {
       const t30 = item.bal_30 !== null && item.bal_30 !== undefined ? `통진:${item.bal_30}` : "";
       const t10 = item.bal_10 !== null && item.bal_10 !== undefined ? `용산:${item.bal_10}` : "";
       const stockInfo = [t30, t10].filter(Boolean).join(", ");
-      statusBadge = `<span style="font-size:10px;background:rgba(220,53,69,.15);color:#dc3545;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:700">재고부족${stockInfo ? ` (${stockInfo})` : ""}</span>`;
+      statusBadge = `<span style="font-size:10px;background:rgba(220,53,69,.15);color:#dc3545;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:700">재고없음${stockInfo ? ` (${stockInfo})` : ""}</span>`;
+    } else if (ss === "partial") {
+      const origQty = item.orig_qty || "";
+      statusBadge = `<span style="font-size:10px;background:rgba(255,193,7,.2);color:#d39e00;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:700">부분출고 ${item.qty}/${origQty}</span>`;
     } else if (ss === "wh10_used") {
       const t30 = item.bal_30 !== null && item.bal_30 !== undefined ? `통진:${item.bal_30}` : "";
       statusBadge = `<span style="font-size:10px;background:rgba(255,176,32,.2);color:var(--warning);padding:1px 6px;border-radius:4px;margin-left:4px">통진부족${t30 ? `(${t30})` : ""}→용산전환</span>`;
     }
 
-    // 전표번호 셀: 실제 slip_no 있으면 표시, 없으면 대시
+    // 전표번호 셀
     const slipNo = item.slip_no || "";
     const slipCell = slipNo
       ? `<span style="font-size:11px;font-family:'JetBrains Mono',monospace">${slipNo}</span>`
-      : `<span style="color:var(--text3);font-size:11px">-</span>`;
-
-    // 삭제 버튼: 전표가 생성된 행에만 표시
-    const delBtn = slipNo
-      ? `<button onclick="deleteSlip('${slipNo}', this)" style="font-size:11px;padding:2px 8px;border:1px solid #dc3545;background:transparent;color:#dc3545;border-radius:4px;cursor:pointer;white-space:nowrap" title="이카운트 전표 삭제">🗑 삭제</button>`
       : `<span style="color:var(--text3);font-size:11px">전표없음</span>`;
+
+    // 수량 셀: 부분출고면 "실제/원래" 표시
+    const qtyCell = ss === "partial"
+      ? `<span style="color:#d39e00;font-weight:700">${item.qty}</span><span style="color:var(--text3);font-size:10px">/${item.orig_qty}</span>`
+      : item.qty;
 
     tr.innerHTML = `
       <td style="font-size:11px">${slipCell}</td>
       <td style="text-align:left;white-space:nowrap">${item.remarks}${statusBadge}</td>
       <td style="font-weight:600;font-family:'JetBrains Mono',monospace">${item.prod_cd}</td>
-      <td>${item.qty}</td>
+      <td>${qtyCell}</td>
       <td>${bal10Html}${rem10Html}</td>
       <td>${bal30Html}${rem30Html}</td>
-      <td style="white-space:nowrap">${delBtn}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -745,8 +750,9 @@ async function downloadPO() {
   btn.disabled = true; btn.textContent = "⏳ 다운로드 준비 중...";
 
   const fd = new FormData();
-  fd.append("file",             ecountFile);
-  fd.append("shortage_reasons", getShortageReasons());
+  fd.append("file",              ecountFile);
+  fd.append("shortage_reasons",  getShortageReasons());
+  fd.append("partial_quantities", JSON.stringify(window._partialQtys || {}));
 
   try {
     const res = await fetch(`${API_BASE}/download-po`, { method: "POST", body: fd });

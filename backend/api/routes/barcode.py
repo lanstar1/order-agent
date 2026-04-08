@@ -97,12 +97,14 @@ async def parse_po(file: UploadFile = File(...)):
 async def download_po(
     file: UploadFile = File(...),
     shortage_reasons: str = Form("{}"),
+    partial_quantities: str = Form("{}"),
 ):
     """납품부족사유를 채워서 PO 파일 다운로드"""
     contents = await file.read()
     try:
         reasons = json.loads(shortage_reasons)
-        output = fill_shortage_reasons(contents, reasons)
+        partial = {int(k): int(v) for k, v in json.loads(partial_quantities).items()} if partial_quantities else {}
+        output = fill_shortage_reasons(contents, reasons, partial)
         safe_name = quote(file.filename.replace(".xlsx", "_납품부족사유.xlsx"))
         return StreamingResponse(
             output,
