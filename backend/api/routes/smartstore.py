@@ -318,8 +318,9 @@ async def send_erp_only(
         erp = ERPClientSS()
         await erp.ensure_session()
         r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, SMARTSTORE_EMP_CODE)
+        delivery_count = len(delivery_by_fee)
         r["lines"] = len(erp_lines)
-        r["erp_matched"] = len(erp_lines) - (1 if delivery_count > 0 else 0)
+        r["erp_matched"] = len(erp_lines) - delivery_count
         r["erp_unmatched"] = len(unmatched_items)
         r["unmatched_items"] = unmatched_items
 
