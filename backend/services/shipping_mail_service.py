@@ -238,8 +238,18 @@ def _parse_bor_excel(file_data: bytes, filename: str) -> list:
 # ─── DB 저장/조회 ─────────────────────────────────────────
 
 def save_shipping_info(conn, shipping_data: list):
-    """선적 정보를 DB에 저장"""
+    """선적 정보를 DB에 저장 (최신 BOR만 유지, 이전 기록 정리)"""
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+    # 최신 BOR 1개만 저장하므로, 이전 BOR 선적 레코드 전부 삭제
+    # (NAM/PI 레코드는 유지 — bor_number가 LAN-PI로 시작)
+    conn.execute("""
+        DELETE FROM shipping_mail_info
+        WHERE bor_number NOT LIKE 'LAN-PI%'
+        AND bor_number NOT LIKE 'LAN-PI%\\_%' ESCAPE '\\'
+    """)
+    logger.info("[선적메일] 이전 BOR 선적 레코드 정리 완료")
+
     saved = 0
     for item in shipping_data:
         bor = item["bor_number"]
@@ -613,6 +623,10 @@ def _parse_date_value(val) -> str:
 def save_nam_shipping_info(conn, scan_results: list):
     """NAM 거래처 선적 정보를 shipping_mail_info + orderlist_items 테이블에 저장"""
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+    # 이전 NAM 선적 레코드 전부 삭제 후 새로 등록 (최신 스캔 결과만 유지)
+    conn.execute("DELETE FROM shipping_mail_info WHERE bor_number LIKE 'LAN-PI%'")
+
     saved = 0
 
     for result in scan_results:
