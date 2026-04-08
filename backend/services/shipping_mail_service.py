@@ -419,7 +419,7 @@ def scan_nam_shipping_emails(
         since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
 
         # 모든 폴더에서 검색 (네이버는 하위 폴더에 분류됨)
-        # IMAP SEARCH FROM이 일부 폴더에서 작동 안 하므로 직접 fetch + 헤더 확인
+        # 최적화: 한글 폴더(거래처 분류)를 먼저 검색, 발견 시 나머지 스킵
         status, folder_list = mail.list()
         folders_to_search = []
         for f in (folder_list or []):
@@ -432,6 +432,11 @@ def scan_nam_shipping_emails(
         if not folders_to_search:
             folders_to_search = ["INBOX"]
 
+        # 우선순위: 한글 인코딩 폴더(&로 시작) + 사람이름 폴더를 먼저 검색
+        priority = [f for f in folders_to_search if f.startswith("&") or f in ["Tiger", "Gu", "Tony", "soply"]]
+        others = [f for f in folders_to_search if f not in priority]
+        folders_to_search = priority + others
+
         all_uids_by_folder = []
         for folder in folders_to_search:
             try:
@@ -440,24 +445,21 @@ def scan_nam_shipping_emails(
                     continue
 
                 since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
-                # 먼저 SEARCH 시도
                 try:
                     status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
                     uids = data[0].split() if status == "OK" and data[0] else []
                 except Exception:
                     uids = []
 
-                # SEARCH 결과 없으면 → 최근 메일에서 FROM 헤더 직접 확인 (속도 최적화)
+                # SEARCH 안 되면 → 최근 메일 FROM 헤더 직접 확인
                 if not uids:
                     try:
                         status, data = mail.search(None, f"(SINCE {since_date})")
-                        all_folder_uids = data[0].split() if status == "OK" and data[0] else []
+                        folder_uids = data[0].split() if status == "OK" and data[0] else []
                     except Exception:
-                        status, data = mail.search(None, "ALL")
-                        all_folder_uids = data[0].split() if status == "OK" and data[0] else []
+                        continue
 
-                    # 최근 30개만 체크 (속도 vs 정확도 균형)
-                    for uid in all_folder_uids[-30:]:
+                    for uid in reversed(folder_uids):
                         try:
                             st2, md2 = mail.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM)])")
                             from_hdr = md2[0][1].decode("utf-8", errors="replace").lower()
@@ -468,7 +470,9 @@ def scan_nam_shipping_emails(
 
                 if uids:
                     all_uids_by_folder.extend([(folder, uid) for uid in uids])
-                    logger.info(f"[NAM메일] 폴더 '{folder}': {len(uids)}건")
+                    logger.info(f"[NAM메일] 폴더 '{folder}': {len(uids)}건 → 나머지 폴더 스킵")
+                    break  # 163.com 메일이 있는 폴더 찾음 → 나머지 폴더 검색 불필요
+
             except Exception as e:
                 logger.debug(f"[NAM메일] 폴더 '{folder}' 검색 실패: {e}")
 
