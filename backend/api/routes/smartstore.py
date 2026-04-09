@@ -10,7 +10,8 @@ from typing import Optional
 from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Query, HTTPException, Body, UploadFile, File
+from fastapi import APIRouter, Query, HTTPException, Body
+from pydantic import BaseModel, UploadFile, File
 from pydantic import BaseModel
 
 KST = ZoneInfo("Asia/Seoul")
