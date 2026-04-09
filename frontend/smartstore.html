@@ -227,7 +227,7 @@
 const B = '';
 let _rawOrders = null;   // API 응답 원본 배열
 let _checkedSet = new Set();  // 체크된 상품주문번호(productOrderId) Set
-let _inventoryMap = {};  // ERP 품목코드 → 재고수량
+let _inventoryMap = {};  // {yongsan: {품목코드: 수량}, tongjin: {품목코드: 수량}}
 let _orderErpMap = {};   // 상품주문번호 → ERP 품목코드
 
 // ── 담당자 목록 로드 ──
@@ -344,9 +344,11 @@ async function fetchInventory(){
             body: JSON.stringify({orders: _rawOrders}),
         })).json();
         if(r.success && r.inventory){
-            _inventoryMap = r.inventory;
+            _inventoryMap = r.inventory;  // {yongsan: {...}, tongjin: {...}}
             _orderErpMap = r.order_erp_map || {};
-            log('재고조회: '+Object.keys(r.inventory).length+'건');
+            const yCnt = Object.keys(r.inventory.yongsan||{}).length;
+            const tCnt = Object.keys(r.inventory.tongjin||{}).length;
+            log('재고조회: 용산 '+yCnt+'건, 통진 '+tCnt+'건');
             renderTbl(_rawOrders);
         } else {
             log('재고조회 실패: '+(r.error||''));
@@ -446,15 +448,23 @@ function getQuantity(order) {
 function getPayment(order) {
     return (order.productOrder || {}).totalPaymentAmount || 0;
 }
-function getStock(order) {
+function fmtQty(q) {
+    if(q === undefined || q === null) return '<span style="color:#94a3b8">-</span>';
+    if(q <= 0) return '<span style="color:#dc2626;font-weight:600">0</span>';
+    if(q <= 5) return '<span style="color:#ea580c;font-weight:600">'+q+'</span>';
+    return '<span style="color:#16a34a;font-weight:600">'+q+'</span>';
+}
+function getStockYongsan(order) {
     const poid = getProductOrderId(order);
     const erpCode = _orderErpMap[poid];
-    if(!erpCode) return '<span style="color:#94a3b8">-</span>';
-    const qty = _inventoryMap[erpCode];
-    if(qty === undefined) return '<span style="color:#94a3b8">-</span>';
-    if(qty <= 0) return '<span style="color:#dc2626;font-weight:600">0</span>';
-    if(qty <= 5) return '<span style="color:#ea580c;font-weight:600">'+qty+'</span>';
-    return '<span style="color:#16a34a;font-weight:600">'+qty+'</span>';
+    if(!erpCode || !_inventoryMap.yongsan) return '<span style="color:#94a3b8">-</span>';
+    return fmtQty(_inventoryMap.yongsan[erpCode]);
+}
+function getStockTongjin(order) {
+    const poid = getProductOrderId(order);
+    const erpCode = _orderErpMap[poid];
+    if(!erpCode || !_inventoryMap.tongjin) return '<span style="color:#94a3b8">-</span>';
+    return fmtQty(_inventoryMap.tongjin[erpCode]);
 }
 function getReceiverName(order) {
     return ((order.productOrder || {}).shippingAddress || {}).name || '';
@@ -594,7 +604,8 @@ function renderTbl(orders){
             <th>상품명</th>
             <th>옵션</th>
             <th>수량</th>
-            <th>재고</th>
+            <th>용산</th>
+            <th>통진</th>
             <th>결제금액</th>
             <th>배송방법</th>
             <th>상태</th>
@@ -629,7 +640,8 @@ function renderTbl(orders){
             <td>${getProductName(o)}${matchTag}</td>
             <td>${getOptionText(o)}</td>
             <td style="text-align:center">${getQuantity(o)}</td>
-            <td style="text-align:center">${getStock(o)}</td>
+            <td style="text-align:center">${getStockYongsan(o)}</td>
+            <td style="text-align:center">${getStockTongjin(o)}</td>
             <td style="text-align:right">${Number(getPayment(o)).toLocaleString()}원</td>
             <td>${getDeliveryMethod(o)}</td>
             <td>${getStatus(o)}</td>
