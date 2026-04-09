@@ -99,11 +99,6 @@ function toggleNavGroup(headerEl) {
 }
 
 function navigateTo(pageId) {
-  // AI 메일 에이전트는 외부 링크로 열기 (내부 페이지 전환 안 함)
-  if (pageId === "mail_agent") {
-    window.open("https://mail-dqxh.onrender.com", "_blank");
-    return;
-  }
   // 스마트스토어는 별도 페이지로 열기
   if (pageId === "smartstore_bridge") {
     window.open("/smartstore", "_blank");
@@ -155,6 +150,8 @@ function navigateTo(pageId) {
     reconcile:    "매입정산",
     rebate:       "리베이트",
     map_monitor:  "지도가 감시",
+    naver_datalab: "데이터랩",
+    mail_agent:   "📧 메일 자동화",
   }[pageId] || "";
   // AI 상담 페이지 진입 시 초기화
   if (pageId === "aicc") initAiccTab();
@@ -162,6 +159,8 @@ function navigateTo(pageId) {
   if (pageId === "cs_rma") csInit();
   // MAP 감시 페이지 진입 시 초기화
   if (pageId === "map_monitor") initMapMonitor();
+  // 메일 자동화 페이지 진입 시 초기화
+  if (pageId === "mail_agent") initMailAutoPage();
   // 재고모니터 페이지 진입 시 초기화
   if (pageId === "inventory_monitor") initInventoryMonitor();
   // 택배조회 페이지 진입 시 통계 로드
@@ -8415,4 +8414,210 @@ function reconcileNewMatch() {
   }
 
   console.log('MAP Monitor 모듈 로드 완료');
+})();
+
+// ═══════════════════════════════════════════════════════
+//  메일 자동화 (Mail Automation) 모듈
+// ═══════════════════════════════════════════════════════
+(function(){
+  let _mailAuth = false;
+
+  window.initMailAutoPage = async function() {
+    if (!_mailAuth) {
+      document.getElementById('mail-auto-content').style.display='none';
+      document.getElementById('mail-auto-login').style.display='block';
+      return;
+    }
+    document.getElementById('mail-auto-login').style.display='none';
+    document.getElementById('mail-auto-content').style.display='block';
+    await mailLoadDashboard();
+    await mailLoadRate();
+    await mailLoadLogs();
+  };
+
+  window.mailAutoLogin = async function() {
+    const pw = document.getElementById('mail-auto-pw').value;
+    try {
+      const r = await fetch('/api/mail-auto/auth', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({password: pw})
+      });
+      if (r.ok) {
+        _mailAuth = true;
+        initMailAutoPage();
+      } else {
+        alert('비밀번호가 올바르지 않습니다');
+      }
+    } catch(e) { alert('인증 오류: '+e.message); }
+  };
+
+  async function mailLoadDashboard() {
+    try {
+      const r = await fetch('/api/mail-auto/dashboard');
+      const d = await r.json();
+      const s = d.stats || {};
+      document.getElementById('mail-stat-today').textContent = s.today_count || 0;
+      document.getElementById('mail-stat-week').textContent = s.week_count || 0;
+      document.getElementById('mail-stat-total').textContent = s.total_count || 0;
+      document.getElementById('mail-stat-hs').textContent = s.total_hs || 0;
+      document.getElementById('mail-stat-oem').textContent = s.pending_oem || 0;
+    } catch(e) { console.error('대시보드 로드 실패:', e); }
+  }
+
+  async function mailLoadRate() {
+    try {
+      const r = await fetch('/api/mail-auto/exchange-rate');
+      const d = await r.json();
+      document.getElementById('mail-rate-value').textContent = d.rate ? Math.round(d.rate).toLocaleString() : '-';
+      document.getElementById('mail-rate-input').value = d.rate ? Math.round(d.rate) : '';
+      document.getElementById('mail-rate-updated').textContent = d.updated ? d.updated.substring(0,16) : '';
+    } catch(e) { console.error('환율 로드 실패:', e); }
+  }
+
+  window.mailSetRate = async function() {
+    const v = document.getElementById('mail-rate-input').value;
+    if (!v || parseFloat(v) <= 0) return alert('유효한 환율을 입력하세요');
+    try {
+      await fetch('/api/mail-auto/exchange-rate', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({rate: parseFloat(v)})
+      });
+      await mailLoadRate();
+    } catch(e) { alert('환율 설정 실패'); }
+  };
+
+  window.mailRefreshRate = async function() {
+    try {
+      // force refresh by clearing cache first
+      const r = await fetch('/api/mail-auto/exchange-rate');
+      const d = await r.json();
+      document.getElementById('mail-rate-value').textContent = d.rate ? Math.round(d.rate).toLocaleString() : '-';
+      document.getElementById('mail-rate-input').value = d.rate ? Math.round(d.rate) : '';
+    } catch(e) { alert('환율 조회 실패'); }
+  };
+
+  async function mailLoadLogs() {
+    try {
+      const r = await fetch('/api/mail-auto/logs?limit=20');
+      const d = await r.json();
+      const tbody = document.getElementById('mail-logs-tbody');
+      if (!d.logs || d.logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999">처리 이력이 없습니다</td></tr>';
+        return;
+      }
+      tbody.innerHTML = d.logs.map(l => `
+        <tr>
+          <td style="font-size:12px">${(l.processed_at||'').substring(0,16)}</td>
+          <td title="${l.subject}" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject||''}</td>
+          <td style="text-align:center">${l.attachment_count||0}</td>
+          <td style="text-align:center"><b>${l.hs_code_count||0}</b></td>
+          <td style="text-align:center">${l.reply_sent ? '✅' : '—'}</td>
+          <td><span class="badge ${l.status==='completed'?'badge-success':'badge-warn'}">${l.status}</span></td>
+          <td><button class="btn btn-sm" onclick="mailShowDetail('${l.message_id}')">상세</button></td>
+        </tr>
+      `).join('');
+    } catch(e) { console.error('로그 로드 실패:', e); }
+  }
+
+  window.mailPreviewEmails = async function() {
+    const btn = document.getElementById('mail-preview-btn');
+    btn.disabled = true; btn.textContent = '검색 중...';
+    try {
+      const r = await fetch('/api/mail-auto/preview-emails?days_back=30');
+      const d = await r.json();
+      const div = document.getElementById('mail-preview-result');
+      if (!d.emails || d.emails.length === 0) {
+        div.innerHTML = '<p style="color:#999">새 메일이 없습니다</p>';
+      } else {
+        div.innerHTML = '<table class="table table-sm"><thead><tr><th>날짜</th><th>제목</th><th>첨부</th><th>상태</th></tr></thead><tbody>' +
+          d.emails.map(e => `<tr style="${e.already_processed?'opacity:0.5':''}">
+            <td style="font-size:12px">${(e.date||'').substring(0,16)}</td>
+            <td>${e.subject}</td>
+            <td>${e.attachments.map(a=>a.filename).join(', ')}</td>
+            <td>${e.already_processed?'<span class="badge badge-muted">처리됨</span>':'<span class="badge badge-info">신규</span>'}</td>
+          </tr>`).join('') + '</tbody></table>';
+      }
+    } catch(e) { div.innerHTML = '<p style="color:red">오류: '+e.message+'</p>'; }
+    btn.disabled = false; btn.textContent = '📬 메일 검색';
+  };
+
+  window.mailRunPipeline = async function() {
+    if (!confirm('메일 자동화 파이프라인을 실행합니다.\nHS코드 입력 + ERP 구매전표 생성이 자동 실행됩니다.\n계속하시겠습니까?')) return;
+    const btn = document.getElementById('mail-run-btn');
+    btn.disabled = true; btn.textContent = '⏳ 처리 중...';
+    const resultDiv = document.getElementById('mail-run-result');
+    resultDiv.innerHTML = '<p>처리 중입니다... IMAP 접속 → Excel 파싱 → HS코드 입력 → ERP 전표 생성</p>';
+    try {
+      const autoReply = document.getElementById('mail-auto-reply-check')?.checked || false;
+      const rate = document.getElementById('mail-rate-input').value;
+      const r = await fetch('/api/mail-auto/trigger', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          days_back: 30, auto_reply: autoReply, auto_erp: true,
+          exchange_rate: rate ? parseFloat(rate) : null
+        })
+      });
+      const d = await r.json();
+      let html = `<div class="card" style="margin-top:12px;padding:16px">
+        <h4>✅ 처리 완료</h4>
+        <p>총 메일: <b>${d.total_emails}</b>건 | 신규 처리: <b>${d.new_processed}</b>건 | 기처리: ${d.already_processed}건 | 환율: ${d.exchange_rate?.toLocaleString()}원</p>`;
+      if (d.results && d.results.length > 0) {
+        html += '<table class="table table-sm"><thead><tr><th>제목</th><th>첨부</th><th>HS입력</th><th>ERP</th><th>OEM</th></tr></thead><tbody>';
+        d.results.forEach(r => {
+          const hsCount = r.attachments_processed?.reduce((s,a) => s + (a.stats?.hs_filled||0), 0) || 0;
+          const erpOk = r.erp_result?.success ? '✅' : (r.erp_result ? '❌' : '—');
+          const oemCount = r.oem_items?.length || 0;
+          html += `<tr>
+            <td>${r.subject?.substring(0,40)}</td>
+            <td>${r.attachments_processed?.length||0}개</td>
+            <td><b>${hsCount}</b>건</td>
+            <td>${erpOk}</td>
+            <td>${oemCount > 0 ? '<span class="badge badge-warn">'+oemCount+'</span>' : '—'}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+      resultDiv.innerHTML = html;
+      await mailLoadDashboard();
+      await mailLoadLogs();
+    } catch(e) {
+      resultDiv.innerHTML = '<p style="color:red">오류: '+e.message+'</p>';
+    }
+    btn.disabled = false; btn.textContent = '🚀 파이프라인 실행';
+  };
+
+  window.mailShowDetail = function(msgId) {
+    alert('상세 보기: ' + msgId + '\n(추후 모달로 구현 예정)');
+  };
+
+  // Excel 파일 테스트 업로드
+  window.mailTestUpload = async function() {
+    const input = document.getElementById('mail-test-file');
+    if (!input.files.length) return alert('Excel 파일을 선택하세요');
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    const btn = document.getElementById('mail-test-btn');
+    btn.disabled = true; btn.textContent = '처리 중...';
+    try {
+      const r = await fetch('/api/mail-auto/process-file', {method:'POST', body: fd});
+      const d = await r.json();
+      const div = document.getElementById('mail-test-result');
+      let html = `<div class="card" style="padding:12px;margin-top:8px">
+        <p><b>통계:</b> 총 ${d.stats.total}개 | HS입력: ${d.stats.hs_filled}개 | 스킵: ${d.stats.skipped}개 | 미매칭: ${d.stats.unknown}개</p>
+        <p><b>ERP 대상:</b> ${d.erp_lines.length}개 | <b>OEM:</b> ${d.oem_items.length}개</p>`;
+      if (d.items && d.items.length > 0) {
+        html += '<table class="table table-sm" style="font-size:12px"><thead><tr><th>모델명</th><th>카테고리</th><th>HS코드</th><th>규칙</th></tr></thead><tbody>';
+        d.items.forEach(i => {
+          html += `<tr><td>${i.model}</td><td>${i.category}</td><td><b>${i.hs_code||'—'}</b></td><td>${i.rule}</td></tr>`;
+        });
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+      div.innerHTML = html;
+    } catch(e) { alert('처리 실패: '+e.message); }
+    btn.disabled = false; btn.textContent = '🔍 HS코드 테스트';
+  };
+
+  console.log('Mail Auto 모듈 로드 완료');
 })();

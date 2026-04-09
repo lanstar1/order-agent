@@ -151,6 +151,13 @@ MAIL_IMAP_PORT = int(os.getenv("MAIL_IMAP_PORT", "993"))
 MAIL_USER = os.getenv("MAIL_USER", "")
 MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
 
+# ─── 메일 자동화 (SMTP 회신) ──────────────────────────────
+MAIL_SMTP_HOST = os.getenv("MAIL_SMTP_HOST", "wsmtp.ecount.com")
+MAIL_SMTP_PORT = int(os.getenv("MAIL_SMTP_PORT", "587"))
+MAIL_TARGET_SENDER = os.getenv("MAIL_TARGET_SENDER", "guzhiyi@bor-cable.com")
+MAIL_AUTO_PASSWORD = os.getenv("MAIL_AUTO_PASSWORD", "lanstar2026")
+ERP_SUPPLIER_CODE = os.getenv("ERP_SUPPLIER_CODE", "1111122222")
+
 # ─── 선적 메일 2 (네이버 IMAP) ────────────────────────────
 MAIL2_IMAP_SERVER = os.getenv("MAIL2_IMAP_SERVER", "imap.naver.com")
 MAIL2_IMAP_PORT = int(os.getenv("MAIL2_IMAP_PORT", "993"))
