@@ -37,8 +37,8 @@ class HSCodeEngine:
         },
         {
             "name": "lan_cable",
-            "keywords": ["LAN CABLE"],
-            "note": "랜케이블 - FTA 불필요",
+            "keywords": ["LAN CABLE", "REEL CABLE"],
+            "note": "랜케이블/릴케이블 - FTA 불필요",
         },
         {
             "name": "fiber_optic",
@@ -98,6 +98,7 @@ class HSCodeEngine:
                 "A/V CABLE",
                 "TYPE-C TO RJ45", "TYPE-C CABLE",
                 "AOC CABLE",
+                "ANTENNA CABLE", "KEYBOARD CABLE",
             ],
             "description_keywords": [
                 "USB", "HDMI", "DVI", "DISPLAYPORT",

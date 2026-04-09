@@ -8610,13 +8610,33 @@ function reconcileNewMatch() {
       const r = await fetch('/api/mail-auto/process-file', {method:'POST', body: fd});
       const d = await r.json();
       const div = document.getElementById('mail-test-result');
+      const unknowns = d.items.filter(i => i.confidence === 'unknown');
       let html = `<div class="card" style="padding:12px;margin-top:8px">
-        <p><b>통계:</b> 총 ${d.stats.total}개 | HS입력: ${d.stats.hs_filled}개 | 스킵: ${d.stats.skipped}개 | 미매칭: ${d.stats.unknown}개</p>
-        <p><b>ERP 대상:</b> ${d.erp_lines.length}개 | <b>OEM:</b> ${d.oem_items.length}개</p>`;
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <p style="margin:0"><b>통계:</b> 총 ${d.stats.total}개 | HS입력: <b style="color:#059669">${d.stats.hs_filled}</b>개 | 스킵: ${d.stats.skipped}개 | <span style="color:#dc2626">미매칭: ${d.stats.unknown}개</span></p>
+            <p style="margin:4px 0 0"><b>ERP 대상:</b> ${d.erp_lines.length}개 | <b>OEM:</b> ${d.oem_items.length}개</p>
+          </div>
+          <button onclick="mailDownloadProcessed()" class="btn btn-primary" style="padding:8px 16px">📥 HS코드 입력된 Excel 다운로드</button>
+        </div>`;
+      // 미매칭 경고
+      if (unknowns.length > 0) {
+        html += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-bottom:12px">';
+        html += `<b style="color:#dc2626">⚠️ 미매칭 ${unknowns.length}건 — HS코드 규칙 추가 필요:</b>`;
+        html += '<table class="table table-sm" style="font-size:12px;margin-top:8px"><thead><tr><th>모델명</th><th>카테고리</th><th>조치 필요</th></tr></thead><tbody>';
+        unknowns.forEach(i => {
+          html += `<tr style="background:#fef2f2"><td><b>${i.model}</b></td><td>${i.category}</td><td style="color:#dc2626">규칙 미등록</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+      }
+      // 전체 목록
       if (d.items && d.items.length > 0) {
         html += '<table class="table table-sm" style="font-size:12px"><thead><tr><th>모델명</th><th>카테고리</th><th>HS코드</th><th>규칙</th></tr></thead><tbody>';
         d.items.forEach(i => {
-          html += `<tr><td>${i.model}</td><td>${i.category}</td><td><b>${i.hs_code||'—'}</b></td><td>${i.rule}</td></tr>`;
+          const isUnknown = i.confidence === 'unknown';
+          const rowStyle = isUnknown ? 'background:#fef2f2;color:#dc2626' : '';
+          const hsDisplay = i.hs_code ? `<b style="color:#059669">${i.hs_code}</b>` : '<span style="color:#999">—</span>';
+          html += `<tr style="${rowStyle}"><td>${i.model}</td><td>${i.category}</td><td>${hsDisplay}</td><td>${i.rule}${isUnknown ? ' ⚠️' : ''}</td></tr>`;
         });
         html += '</tbody></table>';
       }
@@ -8624,6 +8644,29 @@ function reconcileNewMatch() {
       div.innerHTML = html;
     } catch(e) { alert('처리 실패: '+e.message); }
     btn.disabled = false; btn.textContent = '🔍 HS코드 테스트';
+  };
+
+  window.mailDownloadProcessed = function() {
+    const input = document.getElementById('mail-test-file');
+    if (!input.files.length) return alert('파일을 먼저 선택하고 테스트를 실행하세요');
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    fetch('/api/mail-auto/process-file/download', {method:'POST', body: fd})
+      .then(r => {
+        if (!r.ok) throw new Error('다운로드 실패');
+        return r.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'HS_' + input.files[0].name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch(e => alert('다운로드 실패: ' + e.message));
   };
 
   console.log('Mail Auto 모듈 로드 완료');
