@@ -259,6 +259,9 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
     }
     """
     import openpyxl
+    from openpyxl.styles import Font
+    
+    hs_font = Font(bold=True, color="FF0000")  # 빨간색 + 볼드
     
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_data))
@@ -327,7 +330,7 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                     
                     # HS코드 입력
                     if result.hs_code and not i_val:
-                        ws.cell(row=row_idx, column=9).value = result.hs_code
+                        cell = ws.cell(row=row_idx, column=9); cell.value = result.hs_code; cell.font = hs_font
                         stats["hs_filled"] += 1
                     elif result.confidence == "skip":
                         stats["skipped"] += 1
@@ -367,7 +370,7 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                 stats["total"] += 1
                 
                 if result.hs_code and not i_val:
-                    ws.cell(row=row_idx, column=9).value = result.hs_code
+                    cell = ws.cell(row=row_idx, column=9); cell.value = result.hs_code; cell.font = hs_font
                     stats["hs_filled"] += 1
                 elif result.confidence == "skip":
                     stats["skipped"] += 1
