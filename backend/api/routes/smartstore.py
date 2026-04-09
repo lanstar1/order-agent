@@ -1,6 +1,6 @@
 """
-스마트스토어 주문 자동화 API 라우트
-네이버 주문수집 → ERP 판매입력 → 로젠택배 등록 → 발송처리
+ì¤ë§í¸ì¤í ì´ ì£¼ë¬¸ ìëí API ë¼ì°í¸
+ë¤ì´ë² ì£¼ë¬¸ìì§ â ERP íë§¤ìë ¥ â ë¡ì  íë°° ë±ë¡ â ë°ì¡ì²ë¦¬
 """
 import re
 import json
@@ -26,25 +26,25 @@ from config import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/smartstore", tags=["SmartStore"])
 
-# 모델코드 정규식
+# ëª¨ë¸ì½ë ì ê·ì
 MODEL_CODE_RE = re.compile(r"(LS[PNE]?-[\w\-]+|ZOT-[\w\-]+)", re.IGNORECASE)
-EXCLUDE_KEYWORDS = ["허브랙", "서버랙", "캐비넷"]
+EXCLUDE_KEYWORDS = ["íë¸ë", "ìë²ë", "ìºë¹ë·"]
 
-# 시트1: 메인상품 — 상품번호 → ERP품목코드 (옵션 없는 상품)
+# ìí¸1: ë©ì¸ìí â ìíë²í¸ â ERPíëª©ì½ë (ìµì ìë ìí)
 _product_map: dict = {}
-# 시트2: 옵션상품 — 상품번호 → ERP품목코드 (자동추출 오버라이드)
+# ìí¸2: ìµììí â ìíë²í¸ â ERPíëª©ì½ë (ìëì¶ì¶ ì¤ë²ë¼ì´ë)
 _option_override_map: dict = {}
-# 시트3: 추가상품 — 상품번호 → ERP품목코드
+# ìí¸3: ì¶ê°ìí â ìíë²í¸ â ERPíëª©ì½ë
 _addon_map: dict = {}
-# 모델명: 상품번호 → 모델명 (로젠 송장용, 전 시트 공용)
+# ëª¨ë¸ëª: ìíë²í¸ â ëª¨ë¸ëª (ë¡ì   ì¡ì¥ì©, ì  ìí¸ ê³µì©)
 _model_map: dict = {}
-# 역방향: 모델명 → ERP품목코드 (옵션 텍스트에서 모델명 추출 시 ERP코드로 변환)
+# ì­ë°©í¥: ëª¨ë¸ëª â ERPíëª©ì½ë (ìµì íì¤í¸ìì ëª¨ë¸ëª ì¶ì¶ ì ERPì½ëë¡ ë³í)
 _model_to_erp_map: dict = {}
-# 옵션텍스트 직접매핑: "상품번호|옵션값" → ERP품목코드
+# ìµìíì¤í¸ ì§ì ë§¤í: "ìíë²í¸|ìµìê°" â ERPíëª©ì½ë
 _option_text_map: dict = {}
-# 추가상품텍스트 직접매핑: "상품번호|추가상품값" → ERP품목코드
+# ì¶ê°ìííì¤í¸ ì§ì ë§¤í: "ìíë²í¸|ì¶ê°ìíê°" â ERPíëª©ì½ë
 _addon_text_map: dict = {}
-# 추출코드 별칭맵: HDSVAL-XXX 등 → ERP품목코드
+# ì¶ì¶ì½ë ë³ì¹­ë§µ: HDSVAL-XXX ë± â ERPíëª©ì½ë
 _code_alias_map: dict = {}
 
 
@@ -71,7 +71,7 @@ def _load_product_map():
     _option_text_map    = _load_json(SMARTSTORE_OPTION_TEXT_MAP_PATH)
     _addon_text_map     = _load_json(SMARTSTORE_ADDON_TEXT_MAP_PATH)
     _code_alias_map     = _load_json(SMARTSTORE_CODE_ALIAS_MAP_PATH)
-    # 역방향 맵 빌드: 모델명 → ERP품목코드 (전 시트 포함)
+    # ì­ë°©í¥ ë§µ ë¹ë: ëª¨ë¸ëª â ERPíëª©ì½ë (ì  ìí¸ í¬í¨)
     _model_to_erp_map = {}
     for pno, model in _model_map.items():
         if model:
@@ -82,9 +82,9 @@ def _load_product_map():
             elif pno in _addon_map:
                 _model_to_erp_map[model] = _addon_map[pno]
     logger.info(
-        f"[SS] 매핑 로드 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} "
-        f"추가:{len(_addon_map)} 모델역방향:{len(_model_to_erp_map)} "
-        f"옵션텍스트:{len(_option_text_map)} 추가상품텍스트:{len(_addon_text_map)} 코드별칭:{len(_code_alias_map)}"
+        f"[SS] ë§¤í ë¡ë â ë©ì¸:{len(_product_map)} ìµì:{len(_option_override_map)} "
+        f"ì¶ê°:{len(_addon_map)} ëª¨ë¸ì­ë°©í¥:{len(_model_to_erp_map)} "
+        f"ìµìíì¤í¸:{len(_option_text_map)} ì¶ê°ìííì¤í¸:{len(_addon_text_map)} ì½ëë³ì¹­:{len(_code_alias_map)}"
     )
 
 
@@ -100,61 +100,61 @@ _load_product_map()
 
 def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
     """
-    옵션 텍스트에서 ERP 품목코드 추출.
-    우선순위:
-      1) 마지막 (코드) 또는 [코드] — 정상/비정상 괄호 모두 처리
-      2) 콜론 뒤 코드
-      3) 옵션 전체가 코드
-      4) LS/LSP/LSN/LST/ZOT 로 시작하는 코드가 텍스트 내 포함
-    유효 코드 기준: 영문·숫자로 시작, 공백 없음
+    ìµì íì¤í¸ìì ERP íëª©ì½ë ì¶ì¶.
+    ì°ì ìì:
+      1) ë§ì§ë§ (ì½ë) ëë [ì½ë] â ì ì/ë¹ì ì ê´í¸ ëª¨ë ì²ë¦¬
+      2) ì½ë¡  ë¤ ì½ë
+      3) ìµì ì ì²´ê° ì½ë
+      4) LS/LSP/LSN/LST/ZOT ë¡ ììíë ì½ëê° íì¤í¸ ë´ í¬í¨
+    ì í¨ ì½ë ê¸°ì¤: ìë¬¸Â·ì«ìë¡ ìì, ê³µë°± ìì
     """
     if not option_text:
         return None
 
     text = option_text.strip()
 
-    # '/ 배송방법:' 이후 제거 (예: "LS-750HS / 배송방법: 경동택배 (원하는 배송지 도착)")
+    # '/ ë°°ì¡ë°©ë²:' ì´í ì ê±° (ì: "LS-750HS / ë°°ì¡ë°©ë²: ê²½ëíë°° (ìíë ë°°ì¡ì§ ëì°©)")
     if " / " in text:
         text = text.split(" / ")[0].strip()
 
     def is_valid_code(s: str) -> bool:
-        # 영문·숫자 시작, 공백 없음, 최소 3자 이상 (단일 문자 오탐 방지)
+        # ìë¬¸Â·ì«ì ìì, ê³µë°± ìì, ìµì 3ì ì´ì (ë¨ì¼ ë¬¸ì ì¤í ë°©ì§)
         return bool(s and " " not in s and len(s) >= 3 and re.match(r"[A-Za-z0-9]", s))
 
-    # 패턴 1: 마지막 (코드) — 닫힌 괄호
+    # í¨í´ 1: ë§ì§ë§ (ì½ë) â ë«í ê´í¸
     m = re.search(r"\(([^()]*(?:\([^)]*\))[^()]*|[^()]+)\)\s*$", text)
     if m:
         candidate = m.group(1).strip()
         if is_valid_code(candidate):
             return candidate
 
-    # 패턴 1-b: 닫히지 않은 괄호 (예: (LS-ADOOR(B) )
+    # í¨í´ 1-b: ë«íì§ ìì ê´í¸ (ì: (LS-ADOOR(B) )
     m2 = re.search(r"\(([A-Za-z0-9][A-Za-z0-9\-\(\)\.]*)\s*$", text)
     if m2:
         candidate = m2.group(1).strip()
         if is_valid_code(candidate):
             return candidate
 
-    # 패턴 1-c: 대괄호 [코드] (예: "0.5M [LS-5UTPD-0.5MG]", "서버탭 [HDSVAL-615]")
+    # í¨í´ 1-c: ëê´í¸ [ì½ë] (ì: "0.5M [LS-5UTPD-0.5MG]", "ìë²í­ [HDSVAL-615]")
     m3 = re.search(r"\[([A-Za-z0-9][A-Za-z0-9\-\.]*)\]", text)
     if m3:
         candidate = m3.group(1).strip()
         if is_valid_code(candidate):
             return candidate
 
-    # 패턴 2: 콜론 뒤 코드
+    # í¨í´ 2: ì½ë¡  ë¤ ì½ë
     if ":" in text:
         after_colon = text.rsplit(":", 1)[1].strip()
         if is_valid_code(after_colon):
             return after_colon
 
-    # 패턴 3: 옵션 텍스트 전체가 코드 (예: "LS-420HM", "LS-UHS2SR", "LS-WPCOP-C6")
+    # í¨í´ 3: ìµì íì¤í¸ ì ì²´ê° ì½ë (ì: "LS-420HM", "LS-UHS2SR", "LS-WPCOP-C6")
     if is_valid_code(text):
         return text
 
-    # 패턴 4: LS/LSP/LSN/ZOT 로 시작하는 코드가 텍스트 내 포함
-    # (예: "1. LS-U61MH", "0.5M LS-HF7005", "모니터 4개 연결(LS-UCHD4) 리퍼제품")
-    # LS- 형식처럼 접두어 다음에 하이픈이 오는 경우도 포함
+    # í¨í´ 4: LS/LSP/LSN/ZOT ë¡ ììíë ì½ëê° íì¤í¸ ë´ í¬í¨
+    # (ì: "1. LS-U61MH", "0.5M LS-HF7005", "ëª¨ëí° 4ê° ì°ê²°(LS-UCHD4) ë¦¬í¼ì í")
+    # LS- íìì²ë¼ ì ëì´ ë¤ìì íì´íì´ ì¤ë ê²½ì°ë í¬í¨
     m4 = re.search(r'\b((?:LS[PNT]?|ZOT)[A-Za-z0-9\-\.]{2,})', text, re.IGNORECASE)
     if m4:
         candidate = m4.group(1).rstrip('-.')
@@ -166,78 +166,78 @@ def _extract_erp_code_from_option(option_text: str) -> Optional[str]:
 
 def _match_item_code(order: dict) -> Optional[str]:
     """
-    ERP 품목코드 결정 우선순위:
-      1) 시트2 오버라이드 (옵션상품, 사용자 수동 지정)
-      2a) 옵션텍스트 직접매핑 ("상품번호|옵션값" → ERP코드)
-      2b) 옵션 텍스트 자동 추출 → 코드별칭맵 → 모델역방향맵
-      3) 시트1 (메인상품, 상품번호 기준)
-      4a) 추가상품텍스트 직접매핑 ("상품번호|추가상품값" → ERP코드)
-      4b) 시트3 (추가상품, 상품번호 기준)
+    ERP íëª©ì½ë ê²°ì  ì°ì ìì:
+      1) ìí¸2 ì¤ë²ë¼ì´ë (ìµììí, ì¬ì©ì ìë ì§ì )
+      2a) ìµìíì¤í¸ ì§ì ë§¤í ("ìíë²í¸|ìµìê°" â ERPì½ë)
+      2b) ìµì íì¤í¸ ìë ì¶ì¶ â ì½ëë³ì¹­ë§µ â ëª¨ë¸ì­ë°©í¥ë§µ
+      3) ìí¸1 (ë©ì¸ìí, ìíë²í¸ ê¸°ì¤)
+      4a) ì¶ê°ìííì¤í¸ ì§ì ë§¤í ("ìíë²í¸|ì¶ê°ìíê°" â ERPì½ë)
+      4b) ìí¸3 (ì¶ê°ìí, ìíë²í¸ ê¸°ì¤)
     """
     option_text = (order.get("optionInfo", "") or "").strip()
     addon_text  = (order.get("addProductInfo", "") or "").strip()
     product_no  = str(order.get("productNo", "") or order.get("productId", "") or "")
 
     if option_text:
-        # 1) 시트2 오버라이드 (상품번호 → ERP)
+        # 1) ìí¸2 ì¤ë²ë¼ì´ë (ìíë²í¸ â ERP)
         if product_no and product_no in _option_override_map:
             code = _option_override_map[product_no]
-            logger.info(f"[SS] 옵션오버라이드(시트2): {product_no} → {code}")
+            logger.info(f"[SS] ìµìì¤ë²ë¼ì´ë(ìí¸2): {product_no} â {code}")
             return code
-        # 2a) 옵션텍스트 직접매핑 (상품번호|옵션값 → ERP)
+        # 2a) ìµìíì¤í¸ ì§ì ë§¤í (ìíë²í¸|ìµìê° â ERP)
         opt_key = f"{product_no}|{option_text}"
         if opt_key in _option_text_map:
             code = _option_text_map[opt_key]
-            logger.info(f"[SS] 옵션텍스트직접매핑: '{option_text[:40]}' → {code}")
+            logger.info(f"[SS] ìµìíì¤í¸ì§ì ë§¤í: '{option_text[:40]}' â {code}")
             return code
-        # 2a-2) 추가상품맵에서도 optionInfo로 검색 (추가상품이 productOption으로 넘어오는 경우)
+        # 2a-2) ì¶ê°ìíë§µììë optionInfoë¡ ê²ì (ì¶ê°ìíì´ productOptionì¼ë¡ ëì´ì¤ë ê²½ì°)
         if product_no and opt_key in _addon_text_map:
             code = _addon_text_map[opt_key]
-            logger.info(f"[SS] 추가상품텍스트(optionInfo경유): '{option_text[:40]}' → {code}")
+            logger.info(f"[SS] ì¶ê°ìííì¤í¸(optionInfoê²½ì ): '{option_text[:40]}' â {code}")
             return code
-        # 2b) 자동 추출 → 코드별칭맵 → 모델역방향맵
+        # 2b) ìë ì¶ì¶ â ì½ëë³ì¹­ë§µ â ëª¨ë¸ì­ë°©í¥ë§µ
         code = _extract_erp_code_from_option(option_text)
         if code:
             erp_code = _code_alias_map.get(code) or _model_to_erp_map.get(code, code)
-            logger.info(f"[SS] 옵션자동추출: '{option_text[:40]}' → 코드:{code} → ERP:{erp_code}")
+            logger.info(f"[SS] ìµììëì¶ì¶: '{option_text[:40]}' â ì½ë:{code} â ERP:{erp_code}")
             return erp_code
 
-    # 3) 시트1 메인상품
+    # 3) ìí¸1 ë©ì¸ìí
     if product_no and product_no in _product_map:
         code = _product_map[product_no]
-        logger.info(f"[SS] 메인상품(시트1): {product_no} → {code}")
+        logger.info(f"[SS] ë©ì¸ìí(ìí¸1): {product_no} â {code}")
         return code
 
-    # 4a) 추가상품텍스트 직접매핑
+    # 4a) ì¶ê°ìííì¤í¸ ì§ì ë§¤í
     if addon_text and product_no:
         addon_key = f"{product_no}|{addon_text}"
         if addon_key in _addon_text_map:
             code = _addon_text_map[addon_key]
-            logger.info(f"[SS] 추가상품텍스트직접매핑: '{addon_text[:40]}' → {code}")
+            logger.info(f"[SS] ì¶ê°ìííì¤í¸ì§ì ë§¤í: '{addon_text[:40]}' â {code}")
             return code
-        # 추가상품도 코드 자동추출 시도
+        # ì¶ê°ìíë ì½ë ìëì¶ì¶ ìë
         code = _extract_erp_code_from_option(addon_text)
         if code:
             erp_code = _code_alias_map.get(code) or _model_to_erp_map.get(code, code)
-            logger.info(f"[SS] 추가상품자동추출: '{addon_text[:40]}' → 코드:{code} → ERP:{erp_code}")
+            logger.info(f"[SS] ì¶ê°ìíìëì¶ì¶: '{addon_text[:40]}' â ì½ë:{code} â ERP:{erp_code}")
             return erp_code
 
-    # 4b) 시트3 추가상품 (상품번호 기준)
+    # 4b) ìí¸3 ì¶ê°ìí (ìíë²í¸ ê¸°ì¤)
     if product_no and product_no in _addon_map:
         code = _addon_map[product_no]
-        logger.info(f"[SS] 추가상품(시트3): {product_no} → {code}")
+        logger.info(f"[SS] ì¶ê°ìí(ìí¸3): {product_no} â {code}")
         return code
 
     seller_code = (order.get("sellerProductCode", "") or "").strip()
     logger.warning(
-        f"[SS] 매칭 실패: productNo={product_no}, option='{option_text[:30]}', "
+        f"[SS] ë§¤ì¹­ ì¤í¨: productNo={product_no}, option='{option_text[:30]}', "
         f"sellerCode={seller_code}, name={order.get('productName','')[:40]}"
     )
     return None
 
 
 def _is_excluded(order: dict) -> bool:
-    # 중첩 구조(_rawOrders: {productOrder: {...}})와 평탄화 구조(그룹 내부 dict) 모두 지원
+    # ì¤ì²© êµ¬ì¡°(_rawOrders: {productOrder: {...}})ì ííí êµ¬ì¡°(ê·¸ë£¹ ë´ë¶ dict) ëª¨ë ì§ì
     po = order.get("productOrder") or {}
     name   = po.get("productName", "")   or order.get("productName", "")   or ""
     option = po.get("productOption", "") or po.get("optionInfo", "") or \
@@ -258,7 +258,7 @@ def _build_goods_nm(orders_in_group: list[dict]) -> str:
 @router.get("/token-test")
 async def token_test():
     import httpx
-    # 서버 outbound IP 확인 (네이버 IP 화이트리스트 등록용)
+    # ìë² outbound IP íì¸ (ë¤ì´ë² IP íì´í¸ë¦¬ì¤í¸ ë±ë¡ì©)
     server_ip = None
     try:
         async with httpx.AsyncClient(timeout=5) as c:
@@ -277,8 +277,8 @@ async def token_test():
 
 @router.get("/orders")
 async def fetch_orders(
-    date_from: Optional[str] = Query(None, description="시작일 YYYY-MM-DD"),
-    date_to: Optional[str] = Query(None, description="종료일 YYYY-MM-DD"),
+    date_from: Optional[str] = Query(None, description="ììì¼ YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="ì¢ë£ì¼ YYYY-MM-DD"),
     order_type: str = Query("NEW_BEFORE", description="NEW_BEFORE|NEW_AFTER|DELIVERING"),
 ):
     try:
@@ -288,7 +288,7 @@ async def fetch_orders(
         )
         return {"success": True, "orders": orders, "count": len(orders)}
     except Exception as e:
-        logger.error(f"[SS] 주문수집 오류: {e}", exc_info=True)
+        logger.error(f"[SS] ì£¼ë¬¸ìì§ ì¤ë¥: {e}", exc_info=True)
         return {"success": False, "error": str(e), "orders": []}
 
 
@@ -300,18 +300,18 @@ class SendErpRequest(BaseModel):
 async def send_erp_only(
     req: SendErpRequest,
 ):
-    """ERP 판매전표만 전송 (로젠 미포함)"""
+    """ERP íë§¤ì íë§ ì ì¡ (ë¡ì   ë¯¸í¬í¨)"""
     selected_orders = req.orders
     _emp_cd = req.emp_cd or SMARTSTORE_EMP_CODE
     from services.erp_client_ss import ERPClientSS
 
     if not selected_orders:
-        return {"success": True, "message": "선택된 주문이 없습니다.", "lines": 0}
+        return {"success": True, "message": "ì íë ì£¼ë¬¸ì´ ììµëë¤.", "lines": 0}
 
     order_groups = {}
     unmatched_items = []
 
-    order_shipping: dict = {}   # orderId → 배송비 금액
+    order_shipping: dict = {}   # orderId â ë°°ì¡ë¹ ê¸ì¡
     for o in selected_orders:
         od = o.get("order", {})
         po = o.get("productOrder", {})
@@ -321,7 +321,7 @@ async def send_erp_only(
             continue
         if oid not in order_groups:
             order_groups[oid] = []
-            # 배송비: productOrder.deliveryFeeAmount
+            # ë°°ì¡ë¹: productOrder.deliveryFeeAmount
             fee = float(po.get("deliveryFeeAmount", 0) or 0)
             order_shipping[oid] = fee
         product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
@@ -337,12 +337,12 @@ async def send_erp_only(
             "rcvName": po.get("shippingAddress", {}).get("name", ""),
         })
 
-    DELIVERY_PROD_CD = "DEL-매출배002"
+    DELIVERY_PROD_CD = "DEL-ë§¤ì¶ë°°002"
     erp_lines = []
 
     for oid, group in order_groups.items():
         for o in group:
-            # 직접 선택해서 ERP 전송하는 경우 제외 키워드 무시 (사용자 명시적 선택 우선)
+            # ì§ì  ì íí´ì ERP ì ì¡íë ê²½ì° ì ì¸ í¤ìë ë¬´ì (ì¬ì©ì ëªìì  ì í ì°ì )
             code = _match_item_code(o)
             qty = int(o.get("quantity", 1) or 1)
             settle = float(o.get("settlementAmount", 0) or 0)
@@ -358,7 +358,7 @@ async def send_erp_only(
                     "quantity": qty, "settlementAmount": settle,
                 })
 
-    # 배송비: 금액별로 묶어서 (같은 금액 → 수량 합산, 다른 금액 → 별도 라인)
+    # ë°°ì¡ë¹: ê¸ì¡ë³ë¡ ë¬¶ì´ì (ê°ì ê¸ì¡ â ìë í©ì°, ë¤ë¥¸ ê¸ì¡ â ë³ë ë¼ì¸)
     from collections import defaultdict
     delivery_by_fee: dict = defaultdict(int)
     for oid in order_groups:
@@ -368,12 +368,12 @@ async def send_erp_only(
         erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount), "rcv_name": order_groups[oid][0].get("rcvName", "") if order_groups.get(oid) else ""})
 
     if not erp_lines:
-        return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
+        return {"success": False, "error": "ERP ì ì¡ ëì ìì", "unmatched_items": unmatched_items}
 
     if not SMARTSTORE_CUST_CODE:
-        return {"success": False, "error": "SMARTSTORE_CUST_CODE 미설정"}
+        return {"success": False, "error": "SMARTSTORE_CUST_CODE ë¯¸ì¤ì "}
 
-    # 발주확인 대상 productOrderId 수집
+    # ë°ì£¼íì¸ ëì productOrderId ìì§
     all_po_ids = []
     for o in selected_orders:
         po = o.get("productOrder", {})
@@ -391,16 +391,16 @@ async def send_erp_only(
         r["erp_unmatched"] = len(unmatched_items)
         r["unmatched_items"] = unmatched_items
 
-        # ERP 전송 성공 시 네이버 발주확인 처리 → "신규주문(발주 후)"로 이동
+        # ERP ì ì¡ ì±ê³µ ì ë¤ì´ë² ë°ì£¼íì¸ ì²ë¦¬ â "ì ê·ì£¼ë¬¸(ë°ì£¼ í)"ë¡ ì´ë
         if r.get("success") and all_po_ids:
             from services.naver_client import naver_client
             confirm_result = await naver_client.confirm_orders(all_po_ids)
             r["confirm"] = confirm_result
-            logger.info(f"[SS] 발주확인: {confirm_result.get('confirmed', 0)}건")
+            logger.info(f"[SS] ë°ì£¼íì¸: {confirm_result.get('confirmed', 0)}ê±´")
 
         return r
     except Exception as e:
-        logger.error(f"[SS] ERP 전송 오류: {e}", exc_info=True)
+        logger.error(f"[SS] ERP ì ì¡ ì¤ë¥: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -412,29 +412,29 @@ class ExcludedSendErpRequest(BaseModel):
 async def excluded_send_erp(
     req: ExcludedSendErpRequest,
 ):
-    """제외 키워드 주문 → ERP 판매전표 전송 (비고사항에 경동택배선불/착불 자동 기입)"""
+    """ì ì¸ í¤ìë ì£¼ë¬¸ â ERP íë§¤ì í ì ì¡ (ë¹ê³ ì¬í­ì ê²½ëíë°°ì ë¶/ì°©ë¶ ìë ê¸°ì)"""
     selected_orders = req.orders
     _emp_cd = req.emp_cd or SMARTSTORE_EMP_CODE
     from services.erp_client_ss import ERPClientSS
     from collections import defaultdict
 
     if not selected_orders:
-        return {"success": False, "error": "선택된 주문이 없습니다."}
+        return {"success": False, "error": "ì íë ì£¼ë¬¸ì´ ììµëë¤."}
 
-    # 제외 키워드 포함 주문만 필터
+    # ì ì¸ í¤ìë í¬í¨ ì£¼ë¬¸ë§ íí°
     excluded_orders = []
     for o in selected_orders:
         if _is_excluded(o):
             excluded_orders.append(o)
 
     if not excluded_orders:
-        return {"success": False, "error": "제외 키워드(허브랙/서버랙/캐비넷) 주문이 없습니다."}
+        return {"success": False, "error": "ì ì¸ í¤ìë(íë¸ë/ìë²ë/ìºë¹ë·) ì£¼ë¬¸ì´ ììµëë¤."}
 
-    # orderId 기준 그룹화
+    # orderId ê¸°ì¤ ê·¸ë£¹í
     order_groups: dict = {}
     order_shipping: dict = {}
     order_feetype: dict = {}
-    order_addr: dict = {}    # orderId → 배송지 정보 (비고사항 합산용)
+    order_addr: dict = {}    # orderId â ë°°ì¡ì§ ì ë³´ (ë¹ê³ ì¬í­ í©ì°ì©)
     for o in excluded_orders:
         od = o.get("order") or {}
         po = o.get("productOrder") or {}
@@ -448,7 +448,7 @@ async def excluded_send_erp(
             order_shipping[oid] = fee
             fee_type = str(po.get("shippingFeeType") or od.get("shippingFeeType") or "")
             order_feetype[oid] = fee_type
-            # 배송지 정보 수집
+            # ë°°ì¡ì§ ì ë³´ ìì§
             addr = po.get("shippingAddress") or {}
             rcv       = addr.get("name", "") or ""
             tel       = addr.get("tel2", "") or addr.get("tel1", "") or ""
@@ -469,21 +469,21 @@ async def excluded_send_erp(
             "settlementAmount": po.get("expectedSettlementAmount", 0) or po.get("totalPaymentAmount", 0),
         })
 
-    DELIVERY_PROD_CD = "DEL-매출배002"
+    DELIVERY_PROD_CD = "DEL-ë§¤ì¶ë°°002"
     erp_lines = []
     unmatched_items = []
 
     for oid, group in order_groups.items():
-        # 선불/착불 판단
+        # ì ë¶/ì°©ë¶ íë¨
         fee_type = order_feetype.get(oid, "")
-        if "착불" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
-            delivery_type = "경동택배착불"
+        if "ì°©ë¶" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
+            delivery_type = "ê²½ëíë°°ì°©ë¶"
         else:
-            delivery_type = "경동택배선불"
+            delivery_type = "ê²½ëíë°°ì ë¶"
 
-        # 비고사항: 경동택배선불/착불 / 전표제외 / 수령인 / 연락처 / 주소 / 배송메세지
+        # ë¹ê³ ì¬í­: ê²½ëíë°°ì ë¶/ì°©ë¶ / ì íì ì¸ / ìë ¹ì¸ / ì°ë½ì² / ì£¼ì / ë°°ì¡ë©ì¸ì§
         ai = order_addr.get(oid, {})
-        parts = [f"{delivery_type} / 전표제외"]
+        parts = [f"{delivery_type} / ì íì ì¸"]
         if ai.get("rcv"):   parts.append(ai["rcv"])
         if ai.get("tel"):   parts.append(ai["tel"])
         if ai.get("addr"):  parts.append(ai["addr"])
@@ -508,8 +508,8 @@ async def excluded_send_erp(
                     "quantity": qty, "settlementAmount": settle,
                 })
 
-    # 배송비 라인 (경동택배 배송비) — 비고사항 동일하게 포함
-    # (모든 라인에 CHAR5가 있어야 Ecount가 마지막 라인으로 덮어쓰지 않음)
+    # ë°°ì¡ë¹ ë¼ì¸ (ê²½ëíë°° ë°°ì¡ë¹) â ë¹ê³ ì¬í­ ëì¼íê² í¬í¨
+    # (ëª¨ë  ë¼ì¸ì CHAR5ê° ìì´ì¼ Ecountê° ë§ì§ë§ ë¼ì¸ì¼ë¡ ë®ì´ì°ì§ ìì)
     first_remark = erp_lines[0]["remark"] if erp_lines and erp_lines[0].get("remark") else ""
     delivery_by_fee: dict = defaultdict(int)
     for oid in order_groups:
@@ -520,12 +520,12 @@ async def excluded_send_erp(
                            "remark": first_remark})
 
     if not erp_lines:
-        return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
+        return {"success": False, "error": "ERP ì ì¡ ëì ìì", "unmatched_items": unmatched_items}
 
     if not SMARTSTORE_CUST_CODE:
-        return {"success": False, "error": "SMARTSTORE_CUST_CODE 미설정"}
+        return {"success": False, "error": "SMARTSTORE_CUST_CODE ë¯¸ì¤ì "}
 
-    # 발주확인 대상 productOrderId 수집
+    # ë°ì£¼íì¸ ëì productOrderId ìì§
     all_po_ids = []
     for o in excluded_orders:
         po = o.get("productOrder") or {}
@@ -541,18 +541,18 @@ async def excluded_send_erp(
         r["erp_matched"] = len(erp_lines)
         r["erp_unmatched"] = len(unmatched_items)
         r["unmatched_items"] = unmatched_items
-        logger.info(f"[SS] 경동택배 ERP 전송: {len(erp_lines)}건, 미매칭: {len(unmatched_items)}건")
+        logger.info(f"[SS] ê²½ëíë°° ERP ì ì¡: {len(erp_lines)}ê±´, ë¯¸ë§¤ì¹­: {len(unmatched_items)}ê±´")
 
-        # ERP 전송 성공 시 네이버 발주확인 처리 → "신규주문(발주 후)"로 이동
+        # ERP ì ì¡ ì±ê³µ ì ë¤ì´ë² ë°ì£¼íì¸ ì²ë¦¬ â "ì ê·ì£¼ë¬¸(ë°ì£¼ í)"ë¡ ì´ë
         if r.get("success") and all_po_ids:
             from services.naver_client import naver_client
             confirm_result = await naver_client.confirm_orders(all_po_ids)
             r["confirm"] = confirm_result
-            logger.info(f"[SS] 경동 발주확인: {confirm_result.get('confirmed', 0)}건")
+            logger.info(f"[SS] ê²½ë ë°ì£¼íì¸: {confirm_result.get('confirmed', 0)}ê±´")
 
         return r
     except Exception as e:
-        logger.error(f"[SS] 경동택배 ERP 전송 오류: {e}", exc_info=True)
+        logger.error(f"[SS] ê²½ëíë°° ERP ì ì¡ ì¤ë¥: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
@@ -560,13 +560,13 @@ async def excluded_send_erp(
 async def excluded_export_excel(
     selected_orders: list[dict] = Body(...),
 ):
-    """제외 키워드 주문 → 경동택배 전표용 엑셀 다운로드"""
+    """ì ì¸ í¤ìë ì£¼ë¬¸ â ê²½ëíë°° ì íì© ìì ë¤ì´ë¡ë"""
     import io
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
     from fastapi.responses import StreamingResponse
 
-    # 제외 키워드 포함 주문만 필터 (orderId 기준 그룹)
+    # ì ì¸ í¤ìë í¬í¨ ì£¼ë¬¸ë§ íí° (orderId ê¸°ì¤ ê·¸ë£¹)
     excluded_oids: set = set()
     for o in selected_orders:
         po = o.get("productOrder") or {}
@@ -576,13 +576,13 @@ async def excluded_export_excel(
             oid = od.get("orderId", "") or po.get("orderId", "")
             if oid:
                 excluded_oids.add(oid)
-    logger.info(f"[SS] excluded-export-excel: 제외 주문 {len(excluded_oids)}개 orderId={excluded_oids}")
+    logger.info(f"[SS] excluded-export-excel: ì ì¸ ì£¼ë¬¸ {len(excluded_oids)}ê° orderId={excluded_oids}")
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "경동택배전표"
+    ws.title = "ê²½ëíë°°ì í"
 
-    headers = ["비고사항", "수령인", "연락처", "주소", "배송메세지"]
+    headers = ["ë¹ê³ ì¬í­", "ìë ¹ì¸", "ì°ë½ì²", "ì£¼ì", "ë°°ì¡ë©ì¸ì§"]
     hdr_fill = PatternFill("solid", fgColor="C00000")
     hdr_font = Font(bold=True, color="FFFFFF")
     for ci, h in enumerate(headers, 1):
@@ -614,28 +614,28 @@ async def excluded_export_excel(
                          od.get("deliveryMemo") or "")
 
             fee_type = str(po.get("shippingFeeType") or od.get("shippingFeeType") or "")
-            if "착불" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
-                delivery_type = "경동택배착불"
+            if "ì°©ë¶" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
+                delivery_type = "ê²½ëíë°°ì°©ë¶"
             else:
-                delivery_type = "경동택배선불"
+                delivery_type = "ê²½ëíë°°ì ë¶"
 
-            ws.cell(row, 1, f"{delivery_type} / 전표제외")
+            ws.cell(row, 1, f"{delivery_type} / ì íì ì¸")
             ws.cell(row, 2, rcv)
             ws.cell(row, 3, tel)
             ws.cell(row, 4, full_addr)
             ws.cell(row, 5, cust_msg)
             row += 1
         except Exception as ex:
-            logger.error(f"[SS] excluded-export-excel 행 처리 오류: {ex}", exc_info=True)
+            logger.error(f"[SS] excluded-export-excel í ì²ë¦¬ ì¤ë¥: {ex}", exc_info=True)
             continue
 
     if row == 2:
-        raise HTTPException(status_code=404, detail="제외 키워드(허브랙/서버랙/캐비넷) 주문이 없습니다.")
+        raise HTTPException(status_code=404, detail="ì ì¸ í¤ìë(íë¸ë/ìë²ë/ìºë¹ë·) ì£¼ë¬¸ì´ ììµëë¤.")
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
     from urllib.parse import quote
-    filename = f"경동택배전표_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.xlsx"
+    filename = f"ê²½ëíë°°ì í_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -647,8 +647,8 @@ async def excluded_export_excel(
 async def logen_export_excel(
     selected_orders: list[dict] = Body(...),
 ):
-    """선택 주문을 로젠 전송용 엑셀로 다운로드.
-    컬럼: 주문번호 | 상품주문번호 | 수령인 | 연락처 | 주소 | 상품명 | 수량
+    """ì í ì£¼ë¬¸ì ë¡ì   ì ì¡ì© ììë¡ ë¤ì´ë¡ë.
+    ì»¬ë¼: ì£¼ë¬¸ë²í¸ | ìíì£¼ë¬¸ë²í¸ | ìë ¹ì¸ | ì°ë½ì² | ì£¼ì | ìíëª | ìë
     """
     import io
     import openpyxl
@@ -657,15 +657,15 @@ async def logen_export_excel(
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "엑셀파일첫행-제목있음"
+    ws.title = "ììíì¼ì²«í-ì ëª©ìì"
 
-    # 로젠 구시스템양식 (A타입) - 사용자 설정 컬럼 순서
-    # A:수하인명 B:수하인주소1 C:수하인전화 D:수하인휴대폰
-    # E:택배수량 F:택배운임 G:운임구분 H:물품명 I:주문번호(→반환파일 S열 매칭용)
-    # J:제주운임구분 K:배송메세지
-    headers = ["수하인명", "수하인주소1", "수하인전화", "수하인휴대폰",
-               "택배수량", "택배운임", "운임구분", "물품명", "주문번호",
-               None, "배송메세지"]
+    # ë¡ì   êµ¬ìì¤íìì (Aíì) - ì¬ì©ì ì¤ì  ì»¬ë¼ ìì
+    # A:ìíì¸ëª B:ìíì¸ì£¼ì1 C:ìíì¸ì í D:ìíì¸í´ëí°
+    # E:íë°°ìë F:íë°°ì´ì G:ì´ìêµ¬ë¶ H:ë¬¼íëª I:ì£¼ë¬¸ë²í¸(âë°ííì¼ Sì´ ë§¤ì¹­ì©)
+    # J:ì ì£¼ì´ìêµ¬ë¶ K:ë°°ì¡ë©ì¸ì§
+    headers = ["ìíì¸ëª", "ìíì¸ì£¼ì1", "ìíì¸ì í", "ìíì¸í´ëí°",
+               "íë°°ìë", "íë°°ì´ì", "ì´ìêµ¬ë¶", "ë¬¼íëª", "ì£¼ë¬¸ë²í¸",
+               None, "ë°°ì¡ë©ì¸ì§"]
     hdr_fill = PatternFill("solid", fgColor="1F4E79")
     hdr_font = Font(bold=True, color="FFFFFF")
     for ci, h in enumerate(headers, 1):
@@ -684,7 +684,7 @@ async def logen_export_excel(
     ws.column_dimensions["I"].width = 22
     ws.column_dimensions["K"].width = 25
 
-    # orderId 기준으로 그룹화
+    # orderId ê¸°ì¤ì¼ë¡ ê·¸ë£¹í
     groups: dict = {}
     for o in selected_orders:
         od = o.get("order", {})
@@ -699,7 +699,7 @@ async def logen_export_excel(
     row = 2
     for oid, g in groups.items():
         od = g["od"]
-        po = g["po"]   # 첫 번째 productOrder (수령인 정보용)
+        po = g["po"]   # ì²« ë²ì§¸ productOrder (ìë ¹ì¸ ì ë³´ì©)
         addr     = po.get("shippingAddress", {})
         rcv      = addr.get("name", "")
         tel_home = addr.get("tel1", "")
@@ -708,7 +708,7 @@ async def logen_export_excel(
         ship_fee = int(float(po.get("deliveryFeeAmount", 0) or 0))
         fare_tp  = "010"
 
-        # 품목명: 모델명(or ERP코드) + 수량 요약
+        # íëª©ëª: ëª¨ë¸ëª(or ERPì½ë) + ìë ìì½
         model_qty: dict = {}
         total_qty = 0
         first_poid = ""
@@ -722,7 +722,7 @@ async def logen_export_excel(
                             od.get("shippingMemo", "") or
                             od.get("deliveryMemo", "") or "")
             product_id = str(item_po.get("productId", "") or item_po.get("productNo", "") or "")
-            # 모델명 우선, 없으면 ERP코드, 없으면 상품명
+            # ëª¨ë¸ëª ì°ì , ìì¼ë©´ ERPì½ë, ìì¼ë©´ ìíëª
             model = _model_map.get(product_id, "")
             if not model:
                 model = _product_map.get(product_id, "") or item_po.get("productName", "")[:20]
@@ -732,18 +732,18 @@ async def logen_export_excel(
 
         goods = ", ".join(f"{m} x{q}" for m, q in model_qty.items())[:50]
 
-        ws.cell(row, 1,  rcv)         # A: 수하인명
-        ws.cell(row, 2,  full_addr)   # B: 수하인주소1
-        ws.cell(row, 3,  tel_home)    # C: 수하인전화
-        ws.cell(row, 4,  tel_cell)    # D: 수하인휴대폰
-        ws.cell(row, 5,  1)            # E: 택배수량 (박스 수량, 항상 1)
-        ws.cell(row, 6,  ship_fee)    # F: 택배운임
-        ws.cell(row, 7,  fare_tp)     # G: 운임구분
-        ws.cell(row, 8,  goods)       # H: 물품명 (모델명+수량)
-        ws.cell(row, 9,  first_poid)  # I: 주문번호 → 반환파일 S열(index 18)로 매칭
-        jeju = "선착불" if "제주" in full_addr else None
-        ws.cell(row, 10, jeju)        # J: 제주운임구분 (제주 주소면 선착불 자동)
-        ws.cell(row, 11, cust_msg)    # K: 배송메세지 (고객 요청사항)
+        ws.cell(row, 1,  rcv)         # A: ìíì¸ëª
+        ws.cell(row, 2,  full_addr)   # B: ìíì¸ì£¼ì1
+        ws.cell(row, 3,  tel_home)    # C: ìíì¸ì í
+        ws.cell(row, 4,  tel_cell)    # D: ìíì¸í´ëí°
+        ws.cell(row, 5,  1)            # E: íë°°ìë (ë°ì¤ ìë, í­ì 1)
+        ws.cell(row, 6,  ship_fee)    # F: íë°°ì´ì
+        ws.cell(row, 7,  fare_tp)     # G: ì´ìêµ¬ë¶
+        ws.cell(row, 8,  goods)       # H: ë¬¼íëª (ëª¨ë¸ëª+ìë)
+        ws.cell(row, 9,  first_poid)  # I: ì£¼ë¬¸ë²í¸ â ë°ííì¼ Sì´(index 18)ë¡ ë§¤ì¹­
+        jeju = "ì ì°©ë¶" if "ì ì£¼" in full_addr else None
+        ws.cell(row, 10, jeju)        # J: ì ì£¼ì´ìêµ¬ë¶ (ì ì£¼ ì£¼ìë©´ ì ì°©ë¶ ìë)
+        ws.cell(row, 11, cust_msg)    # K: ë°°ì¡ë©ì¸ì§ (ê³ ê° ìì²­ì¬í­)
         row += 1
 
     buf = io.BytesIO()
@@ -760,8 +760,8 @@ async def logen_export_excel(
 async def logen_dispatch_excel(
     file: UploadFile = File(...),
 ):
-    """송장번호 기입된 엑셀 업로드 → 네이버 발송처리.
-    H열(8번째)에 송장번호, A열(1번째)에 주문번호, B열(2번째)에 상품주문번호
+    """ì¡ì¥ë²í¸ ê¸°ìë ìì ìë¡ë â ë¤ì´ë² ë°ì¡ì²ë¦¬.
+    Hì´(8ë²ì§¸)ì ì¡ì¥ë²í¸, Aì´(1ë²ì§¸)ì ì£¼ë¬¸ë²í¸, Bì´(2ë²ì§¸)ì ìíì£¼ë¬¸ë²í¸
     """
     import io
     import openpyxl
@@ -773,15 +773,15 @@ async def logen_dispatch_excel(
 
     dispatch_list = []
     skipped = []
-    # 로젠 반환 파일 구조:
-    #   1행: 타이틀, 2행: 헤더, 3행: 서브헤더, 4행~: 데이터
-    #   D열(index 3): 운송장번호
-    #   S열(index 18): 주문번호 → 다운로드 시 I열에 삽입한 productOrderId
+    # ë¡ì   ë°í íì¼ êµ¬ì¡°:
+    #   1í: íì´í, 2í: í¤ë, 3í: ìë¸í¤ë, 4í~: ë°ì´í°
+    #   Dì´(index 3): ì´ì¡ì¥ë²í¸
+    #   Sì´(index 18): ì£¼ë¬¸ë²í¸ â ë¤ì´ë¡ë ì Iì´ì ì½ìí productOrderId
     for row in ws.iter_rows(min_row=4, values_only=True):
         if not any(row):
             continue
-        tracking = str(row[3]  or "").strip()   # D열: 운송장번호
-        poid     = str(row[18] or "").strip()   # S열: 주문번호(=productOrderId)
+        tracking = str(row[3]  or "").strip()   # Dì´: ì´ì¡ì¥ë²í¸
+        poid     = str(row[18] or "").strip()   # Sì´: ì£¼ë¬¸ë²í¸(=productOrderId)
         if not tracking or not poid or tracking == "None" or poid == "None":
             skipped.append(poid or str(row[6] or ""))
             continue
@@ -792,16 +792,16 @@ async def logen_dispatch_excel(
         })
 
     if not dispatch_list:
-        return {"success": False, "error": f"송장번호가 입력된 행이 없습니다. (빈 행: {len(skipped)}개)"}
+        return {"success": False, "error": f"ì¡ì¥ë²í¸ê° ìë ¥ë íì´ ììµëë¤. (ë¹ í: {len(skipped)}ê°)"}
 
     try:
         result = await naver_client.dispatch_orders(dispatch_list)
         result["dispatched_count"] = len(dispatch_list)
         result["skipped_count"] = len(skipped)
-        logger.info(f"[SS] 엑셀발송처리: {len(dispatch_list)}건, 결과={result}")
+        logger.info(f"[SS] ììë°ì¡ì²ë¦¬: {len(dispatch_list)}ê±´, ê²°ê³¼={result}")
         return {"success": True, **result}
     except Exception as e:
-        logger.error(f"[SS] 엑셀발송처리 오류: {e}", exc_info=True)
+        logger.error(f"[SS] ììë°ì¡ì²ë¦¬ ì¤ë¥: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
@@ -809,28 +809,28 @@ async def logen_dispatch_excel(
 async def dispatch_manual(
     body: dict = Body(...),
 ):
-    """수기 송장번호로 네이버 발송처리.
+    """ìê¸° ì¡ì¥ë²í¸ë¡ ë¤ì´ë² ë°ì¡ì²ë¦¬.
     body: { "items": [{"productOrderId": "...", "trackingNumber": "..."}, ...] }
     """
     from services.naver_client import naver_client
     items = body.get("items", [])
     if not items:
-        return {"success": False, "error": "송장 데이터가 없습니다."}
+        return {"success": False, "error": "ì¡ì¥ ë°ì´í°ê° ììµëë¤."}
 
     dispatch_list = [
         {"productOrderId": it["productOrderId"], "deliveryCompanyCode": "LOGEN", "trackingNumber": it["trackingNumber"]}
         for it in items if it.get("productOrderId") and it.get("trackingNumber")
     ]
     if not dispatch_list:
-        return {"success": False, "error": "유효한 송장번호가 없습니다."}
+        return {"success": False, "error": "ì í¨í ì¡ì¥ë²í¸ê° ììµëë¤."}
 
     try:
         result = await naver_client.dispatch_orders(dispatch_list)
         result["dispatched_count"] = len(dispatch_list)
-        logger.info(f"[SS] 수기발송처리: {len(dispatch_list)}건, 결과={result}")
+        logger.info(f"[SS] ìê¸°ë°ì¡ì²ë¦¬: {len(dispatch_list)}ê±´, ê²°ê³¼={result}")
         return {"success": True, **result}
     except Exception as e:
-        logger.error(f"[SS] 수기발송처리 오류: {e}", exc_info=True)
+        logger.error(f"[SS] ìê¸°ë°ì¡ì²ë¦¬ ì¤ë¥: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
@@ -839,12 +839,12 @@ async def register_logen_only(
     warehouse: str = Query(..., pattern="^(gimpo|yongsan)$"),
     selected_orders: list[dict] = Body(...),
 ):
-    """로젠택배 등록 + 발주확인 + 발송처리 (ERP 미포함)"""
+    """ë¡ì  íë°° ë±ë¡ + ë°ì£¼íì¸ + ë°ì¡ì²ë¦¬ (ERP ë¯¸í¬í¨)"""
     from services.naver_client import naver_client
     from services.ilogen_client import register_orders, get_sender
 
     if not selected_orders:
-        return {"success": True, "message": "선택된 주문이 없습니다."}
+        return {"success": True, "message": "ì íë ì£¼ë¬¸ì´ ììµëë¤."}
 
     order_groups = {}
     all_po_ids = []
@@ -880,7 +880,7 @@ async def register_logen_only(
 
     for oid, group in order_groups.items():
         first = group[0]
-        fare_code = "020" if "착불" in str(first.get("deliveryFeeType", "")) else "030"
+        fare_code = "020" if "ì°©ë¶" in str(first.get("deliveryFeeType", "")) else "030"
         ilogen_orders.append({
             "snd_name": sender["name"], "snd_tel": sender["tel"], "snd_addr": sender["addr"],
             "rcv_name": first["rcvName"], "rcv_tel": first["rcvTel"], "rcv_addr": first["rcvAddr"],
@@ -893,8 +893,8 @@ async def register_logen_only(
         tns = logen_res.get("tracking_numbers", [])
         logen_ok = logen_res.get("success", False) and len(tns) > 0
 
-        confirm_result = {"confirmed": 0, "message": "로젠 등록 실패로 보류"}
-        dispatch_result = {"dispatched": 0, "message": "로젠 등록 실패로 보류"}
+        confirm_result = {"confirmed": 0, "message": "ë¡ì   ë±ë¡ ì¤í¨ë¡ ë³´ë¥"}
+        dispatch_result = {"dispatched": 0, "message": "ë¡ì   ë±ë¡ ì¤í¨ë¡ ë³´ë¥"}
 
         if logen_ok:
             confirm_result = await naver_client.confirm_orders(all_po_ids)
@@ -912,7 +912,7 @@ async def register_logen_only(
                         continue
                     for o in group:
                         dispatch_list.append({"productOrderId": o["productOrderId"], "deliveryCompanyCode": "LOGEN", "trackingNumber": slip})
-                dispatch_result = await naver_client.dispatch_orders(dispatch_list) if dispatch_list else {"success": True, "message": "대상 없음"}
+                dispatch_result = await naver_client.dispatch_orders(dispatch_list) if dispatch_list else {"success": True, "message": "ëì ìì"}
 
         return {
             "success": logen_ok,
@@ -923,7 +923,7 @@ async def register_logen_only(
             "total_orders": len(all_po_ids),
         }
     except Exception as e:
-        logger.error(f"[SS] 로젠등록 오류: {e}", exc_info=True)
+        logger.error(f"[SS] ë¡ì  ë±ë¡ ì¤ë¥: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -946,12 +946,12 @@ async def auto_register_logen(
 
     try:
         if not selected_orders:
-            return {"success": True, "message": "선택된 주문이 없습니다.", **result}
+            return {"success": True, "message": "ì íë ì£¼ë¬¸ì´ ììµëë¤.", **result}
 
         order_groups = {}
         all_po_ids = []
 
-        order_shipping: dict = {}   # orderId → 배송비 금액
+        order_shipping: dict = {}   # orderId â ë°°ì¡ë¹ ê¸ì¡
         for o in selected_orders:
             od = o.get("order", {})
             po = o.get("productOrder", {})
@@ -980,17 +980,17 @@ async def auto_register_logen(
                 "rcvAddr": (po.get("shippingAddress", {}).get("baseAddress", "") + " " + po.get("shippingAddress", {}).get("detailedAddress", "")).strip(),
             })
 
-        logger.info(f"[SS] 선택 주문: {len(all_po_ids)}건, {len(order_groups)}그룹")
+        logger.info(f"[SS] ì í ì£¼ë¬¸: {len(all_po_ids)}ê±´, {len(order_groups)}ê·¸ë£¹")
 
-        # ERP 라인 구성
-        DELIVERY_PROD_CD = "DEL-매출배002"
+        # ERP ë¼ì¸ êµ¬ì±
+        DELIVERY_PROD_CD = "DEL-ë§¤ì¶ë°°002"
         erp_lines = []
         unmatched_items = []
 
         for oid, group in order_groups.items():
             for o in group:
                 if _is_excluded(o):
-                    logger.info(f"[SS] 제외 키워드 필터: {o.get('productName','')[:40]}")
+                    logger.info(f"[SS] ì ì¸ í¤ìë íí°: {o.get('productName','')[:40]}")
                     continue
                 code = _match_item_code(o)
                 qty = int(o.get("quantity", 1) or 1)
@@ -1009,7 +1009,7 @@ async def auto_register_logen(
                         "rcvName": o.get("rcvName", ""),
                     })
 
-        # 배송비: 금액별로 묶어서 (같은 금액 → 수량 합산, 다른 금액 → 별도 라인)
+        # ë°°ì¡ë¹: ê¸ì¡ë³ë¡ ë¬¶ì´ì (ê°ì ê¸ì¡ â ìë í©ì°, ë¤ë¥¸ ê¸ì¡ â ë³ë ë¼ì¸)
         from collections import defaultdict
         delivery_by_fee: dict = defaultdict(int)
         for oid in order_groups:
@@ -1024,7 +1024,7 @@ async def auto_register_logen(
 
         for oid, group in order_groups.items():
             first = group[0]
-            fare_code = "020" if "착불" in str(first.get("deliveryFeeType", "")) else "030"
+            fare_code = "020" if "ì°©ë¶" in str(first.get("deliveryFeeType", "")) else "030"
             ilogen_orders.append({
                 "snd_name": sender["name"], "snd_tel": sender["tel"], "snd_addr": sender["addr"],
                 "rcv_name": first["rcvName"], "rcv_tel": first["rcvTel"], "rcv_addr": first["rcvAddr"],
@@ -1034,9 +1034,9 @@ async def auto_register_logen(
 
         async def _do_erp():
             if not erp_lines:
-                return {"success": True, "lines": 0, "message": "ERP 입력 대상 없음"}
+                return {"success": True, "lines": 0, "message": "ERP ìë ¥ ëì ìì"}
             if not SMARTSTORE_CUST_CODE:
-                return {"success": False, "lines": len(erp_lines), "error": "SMARTSTORE_CUST_CODE 미설정"}
+                return {"success": False, "lines": len(erp_lines), "error": "SMARTSTORE_CUST_CODE ë¯¸ì¤ì "}
             erp = ERPClientSS()
             await erp.ensure_session()
             r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, _emp_cd)
@@ -1062,9 +1062,9 @@ async def auto_register_logen(
             result["step2_confirm"] = confirm_result
         else:
             reasons = []
-            if not erp_ok: reasons.append("ERP 판매입력 실패")
-            if not logen_ok: reasons.append("로젠 송장발급 실패")
-            result["step2_confirm"] = {"confirmed": 0, "message": f"발주확인 보류 ({', '.join(reasons)})"}
+            if not erp_ok: reasons.append("ERP íë§¤ìë ¥ ì¤í¨")
+            if not logen_ok: reasons.append("ë¡ì   ì¡ì¥ë°ê¸ ì¤í¨")
+            result["step2_confirm"] = {"confirmed": 0, "message": f"ë°ì£¼íì¸ ë³´ë¥ ({', '.join(reasons)})"}
 
         if tns and erp_ok and result["step2_confirm"].get("confirmed", 0) > 0:
             oid_slip = {}
@@ -1079,10 +1079,10 @@ async def auto_register_logen(
                 if not slip: continue
                 for o in group:
                     dispatch_list.append({"productOrderId": o["productOrderId"], "deliveryCompanyCode": "LOGEN", "trackingNumber": slip})
-            result["step3_dispatch"] = await naver_client.dispatch_orders(dispatch_list) if dispatch_list else {"success": True, "message": "대상 없음"}
+            result["step3_dispatch"] = await naver_client.dispatch_orders(dispatch_list) if dispatch_list else {"success": True, "message": "ëì ìì"}
         else:
-            skip_reason = "ERP/로젠 미완료" if not (erp_ok and logen_ok) else "운송장 없음"
-            result["step3_dispatch"] = {"dispatched": 0, "message": f"발송처리 보류 ({skip_reason})"}
+            skip_reason = "ERP/ë¡ì   ë¯¸ìë£" if not (erp_ok and logen_ok) else "ì´ì¡ì¥ ìì"
+            result["step3_dispatch"] = {"dispatched": 0, "message": f"ë°ì¡ì²ë¦¬ ë³´ë¥ ({skip_reason})"}
 
         result["unmatched_items"] = unmatched_items
         result["summary"] = {
@@ -1098,8 +1098,64 @@ async def auto_register_logen(
         return result
 
     except Exception as e:
-        logger.error(f"[SS] 자동등록 오류: {e}", exc_info=True)
+        logger.error(f"[SS] ìëë±ë¡ ì¤ë¥: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════
+# 재고현황 조회
+# ═══════════════════════════════════════════
+
+@router.post("/inventory")
+async def get_inventory(body: dict = Body(...)):
+    """
+    ERP 재고현황 조회.
+    body: { "orders": [...] }  — 프론트엔드에서 보내는 주문 목록
+    각 주문의 품목코드를 매칭해서 재고수량을 반환.
+    Returns: { "success": true, "inventory": { "ERP코드": 수량, ... } }
+    """
+    from services.erp_client_ss import ERPClientSS
+
+    try:
+        orders = body.get("orders", [])
+        if not orders:
+            return {"success": True, "inventory": {}, "message": "주문 없음"}
+
+        # 주문별 ERP 코드 매칭
+        prod_codes = set()
+        order_erp_map = {}  # productOrderId → ERP 품목코드
+        for o in orders:
+            po = o.get("productOrder", {})
+            poid = po.get("productOrderId", "")
+            product_id = str(po.get("productId", "") or po.get("productNo", "") or "")
+            seller_code = po.get("sellerProductCode", "") or ""
+            option_info = po.get("productOption", "") or seller_code
+
+            item = {
+                "productNo": product_id,
+                "productId": product_id,
+                "sellerProductCode": seller_code,
+                "optionInfo": option_info,
+                "productName": po.get("productName", ""),
+            }
+            code = _match_item_code(item)
+            if code:
+                prod_codes.add(code)
+                if poid:
+                    order_erp_map[poid] = code
+
+        if not prod_codes:
+            return {"success": True, "inventory": {}, "order_erp_map": {}, "message": "매칭된 품목코드 없음"}
+
+        erp = ERPClientSS()
+        await erp.ensure_session()
+        result = await erp.get_inventory_balance(list(prod_codes))
+        result["order_erp_map"] = order_erp_map
+
+        return result
+    except Exception as e:
+        logger.error(f"[SS] 재고조회 오류: {e}", exc_info=True)
+        return {"success": False, "error": str(e), "inventory": {}}
 
 
 @router.post("/reload-product-map")
@@ -1108,9 +1164,9 @@ async def reload_product_map():
     return {"success": True, "count": len(_product_map)}
 
 
-# ═══════════════════════════════════════════
-# 매핑 관리 API
-# ═══════════════════════════════════════════
+# âââââââââââââââââââââââââââââââââââââââââââ
+# ë§¤í ê´ë¦¬ API
+# âââââââââââââââââââââââââââââââââââââââââââ
 
 @router.get("/product-map")
 async def get_product_map(
@@ -1134,7 +1190,7 @@ async def add_product_map(entry: dict = Body(...)):
     model = str(entry.get("model", "")).strip()
 
     if not prod_no or not erp_code:
-        return {"success": False, "error": "상품번호와 품목코드는 필수입니다."}
+        return {"success": False, "error": "ìíë²í¸ì íëª©ì½ëë íììëë¤."}
 
     is_new = prod_no not in _product_map
     _product_map[prod_no] = erp_code
@@ -1142,8 +1198,8 @@ async def add_product_map(entry: dict = Body(...)):
         _model_map[prod_no] = model
     _save_product_map()
 
-    action = "추가" if is_new else "수정"
-    logger.info(f"[SS] 매핑 {action}: {prod_no} → ERP:{erp_code}, 모델:{model}")
+    action = "ì¶ê°" if is_new else "ìì "
+    logger.info(f"[SS] ë§¤í {action}: {prod_no} â ERP:{erp_code}, ëª¨ë¸:{model}")
     return {"success": True, "action": action, "productNo": prod_no, "erpCode": erp_code, "model": model,
             "total": len(_product_map)}
 
@@ -1151,20 +1207,20 @@ async def add_product_map(entry: dict = Body(...)):
 @router.delete("/product-map/{product_no}")
 async def delete_product_map(product_no: str):
     if product_no not in _product_map:
-        return {"success": False, "error": f"상품번호 {product_no} 매핑이 없습니다."}
+        return {"success": False, "error": f"ìíë²í¸ {product_no} ë§¤íì´ ììµëë¤."}
     erp_code = _product_map.pop(product_no)
     _model_map.pop(product_no, None)
     _save_product_map()
-    logger.info(f"[SS] 매핑 삭제: {product_no} (was {erp_code})")
+    logger.info(f"[SS] ë§¤í ì­ì : {product_no} (was {erp_code})")
     return {"success": True, "deleted": product_no, "total": len(_product_map)}
 
 
-# ═══════════════════════════════════════════
-# Excel 업로드/다운로드 API
-# ═══════════════════════════════════════════
+# âââââââââââââââââââââââââââââââââââââââââââ
+# Excel ìë¡ë/ë¤ì´ë¡ë API
+# âââââââââââââââââââââââââââââââââââââââââââ
 
 def _make_header(ws, headers: list, fill_color: str):
-    """공통 헤더 스타일 적용"""
+    """ê³µíµ í¤ë ì¤íì¼ ì ì©"""
     from openpyxl.styles import Font, PatternFill, Alignment
     fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
     for col, h in enumerate(headers, 1):
@@ -1175,15 +1231,15 @@ def _make_header(ws, headers: list, fill_color: str):
 
 
 def _find_data_start(ws) -> int:
-    """헤더행(상품번호 포함) 다음 행 반환"""
+    """í¤ëí(ìíë²í¸ í¬í¨) ë¤ì í ë°í"""
     for r in range(1, min(5, ws.max_row + 1)):
-        if "상품번호" in str(ws.cell(r, 1).value or ""):
+        if "ìíë²í¸" in str(ws.cell(r, 1).value or ""):
             return r + 1
-    return 2  # 헤더 없으면 2행부터
+    return 2  # í¤ë ìì¼ë©´ 2íë¶í°
 
 
 def _read_sheet_2col(ws) -> tuple[dict, dict]:
-    """상품번호|ERP품목코드|모델명 시트 읽기 → (map, model_map)"""
+    """ìíë²í¸|ERPíëª©ì½ë|ëª¨ë¸ëª ìí¸ ì½ê¸° â (map, model_map)"""
     data_start = _find_data_start(ws)
     prod_map, model_map = {}, {}
     for r in range(data_start, ws.max_row + 1):
@@ -1199,31 +1255,31 @@ def _read_sheet_2col(ws) -> tuple[dict, dict]:
 
 @router.get("/product-map/export-excel")
 async def export_product_map_excel():
-    """현재 매핑 전체를 3시트 Excel로 다운로드
-       시트1: 메인상품 / 시트2: 옵션상품(오버라이드) / 시트3: 추가상품
+    """íì¬ ë§¤í ì ì²´ë¥¼ 3ìí¸ Excelë¡ ë¤ì´ë¡ë
+       ìí¸1: ë©ì¸ìí / ìí¸2: ìµììí(ì¤ë²ë¼ì´ë) / ìí¸3: ì¶ê°ìí
     """
     import io
     from fastapi.responses import StreamingResponse
     try:
         import openpyxl
     except ImportError:
-        raise HTTPException(status_code=500, detail="openpyxl 미설치")
+        raise HTTPException(status_code=500, detail="openpyxl ë¯¸ì¤ì¹")
 
     wb = openpyxl.Workbook()
 
-    # ── 시트1: 메인상품 ──────────────────────────
+    # ââ ìí¸1: ë©ì¸ìí ââââââââââââââââââââââââââ
     ws1 = wb.active
-    ws1.title = "1_메인상품"
-    _make_header(ws1, ["상품번호", "ERP품목코드", "모델명(로젠송장용)"], "1F4E79")
+    ws1.title = "1_ë©ì¸ìí"
+    _make_header(ws1, ["ìíë²í¸", "ERPíëª©ì½ë", "ëª¨ë¸ëª(ë¡ì  ì¡ì¥ì©)"], "1F4E79")
     ws1.column_dimensions["A"].width = 20
     ws1.column_dimensions["B"].width = 30
     ws1.column_dimensions["C"].width = 30
     for i, (pno, code) in enumerate(_product_map.items(), start=2):
         ws1.cell(i, 1, pno); ws1.cell(i, 2, code); ws1.cell(i, 3, _model_map.get(pno, ""))
 
-    # ── 시트2: 옵션상품 ──────────────────────────
-    ws2 = wb.create_sheet("2_옵션상품")
-    _make_header(ws2, ["상품번호", "옵션텍스트(참고용)", "자동추출코드(참고용)", "ERP품목코드(비우면자동)", "모델명(로젠송장용)"], "375623")
+    # ââ ìí¸2: ìµììí ââââââââââââââââââââââââââ
+    ws2 = wb.create_sheet("2_ìµììí")
+    _make_header(ws2, ["ìíë²í¸", "ìµìíì¤í¸(ì°¸ê³ ì©)", "ìëì¶ì¶ì½ë(ì°¸ê³ ì©)", "ERPíëª©ì½ë(ë¹ì°ë©´ìë)", "ëª¨ë¸ëª(ë¡ì  ì¡ì¥ì©)"], "375623")
     ws2.column_dimensions["A"].width = 20
     ws2.column_dimensions["B"].width = 45
     ws2.column_dimensions["C"].width = 25
@@ -1232,9 +1288,9 @@ async def export_product_map_excel():
     for i, (pno, code) in enumerate(_option_override_map.items(), start=2):
         ws2.cell(i, 1, pno); ws2.cell(i, 4, code); ws2.cell(i, 5, _model_map.get(pno, ""))
 
-    # ── 시트3: 추가상품 ──────────────────────────
-    ws3 = wb.create_sheet("3_추가상품")
-    _make_header(ws3, ["상품번호", "ERP품목코드", "모델명(로젠송장용)"], "7B3F00")
+    # ââ ìí¸3: ì¶ê°ìí ââââââââââââââââââââââââââ
+    ws3 = wb.create_sheet("3_ì¶ê°ìí")
+    _make_header(ws3, ["ìíë²í¸", "ERPíëª©ì½ë", "ëª¨ë¸ëª(ë¡ì  ì¡ì¥ì©)"], "7B3F00")
     ws3.column_dimensions["A"].width = 20
     ws3.column_dimensions["B"].width = 30
     ws3.column_dimensions["C"].width = 30
@@ -1243,7 +1299,7 @@ async def export_product_map_excel():
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
-    logger.info(f"[SS] Excel 내보내기 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} 추가:{len(_addon_map)}")
+    logger.info(f"[SS] Excel ë´ë³´ë´ê¸° â ë©ì¸:{len(_product_map)} ìµì:{len(_option_override_map)} ì¶ê°:{len(_addon_map)}")
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1253,46 +1309,46 @@ async def export_product_map_excel():
 
 @router.post("/product-map/import-excel")
 async def import_product_map_excel(file: bytes = Body(..., media_type="application/octet-stream")):
-    """3시트 Excel 업로드 → 전체 매핑 갱신
-       시트1: 메인상품 / 시트2: 옵션상품 / 시트3: 추가상품
+    """3ìí¸ Excel ìë¡ë â ì ì²´ ë§¤í ê°±ì 
+       ìí¸1: ë©ì¸ìí / ìí¸2: ìµììí / ìí¸3: ì¶ê°ìí
     """
     import io
     try:
         import openpyxl
     except ImportError:
-        raise HTTPException(status_code=500, detail="openpyxl 미설치")
+        raise HTTPException(status_code=500, detail="openpyxl ë¯¸ì¤ì¹")
 
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file), data_only=True)
 
         new_product_map, new_model_map, new_option_map, new_addon_map = {}, {}, {}, {}
 
-        # 시트1: 메인상품 (컬럼: 상품번호|ERP품목코드|모델명)
+        # ìí¸1: ë©ì¸ìí (ì»¬ë¼: ìíë²í¸|ERPíëª©ì½ë|ëª¨ë¸ëª)
         if len(wb.sheetnames) >= 1:
             m, mdl = _read_sheet_2col(wb.worksheets[0])
             new_product_map.update(m); new_model_map.update(mdl)
 
-        # 시트2: 옵션상품 (컬럼: 상품번호|옵션텍스트|자동추출코드|ERP품목코드|모델명)
+        # ìí¸2: ìµììí (ì»¬ë¼: ìíë²í¸|ìµìíì¤í¸|ìëì¶ì¶ì½ë|ERPíëª©ì½ë|ëª¨ë¸ëª)
         if len(wb.sheetnames) >= 2:
             ws2 = wb.worksheets[1]
             data_start = _find_data_start(ws2)
             for r in range(data_start, ws2.max_row + 1):
                 pno  = str(ws2.cell(r, 1).value or "").strip()
-                code = str(ws2.cell(r, 4).value or "").strip()  # D열: ERP품목코드
-                mdl  = str(ws2.cell(r, 5).value or "").strip()  # E열: 모델명
+                code = str(ws2.cell(r, 4).value or "").strip()  # Dì´: ERPíëª©ì½ë
+                mdl  = str(ws2.cell(r, 5).value or "").strip()  # Eì´: ëª¨ë¸ëª
                 if pno and code and pno != "None" and code != "None":
                     new_option_map[pno] = code
                     if mdl and mdl != "None":
                         new_model_map[pno] = mdl
 
-        # 시트3: 추가상품 (컬럼: 상품번호|ERP품목코드|모델명)
+        # ìí¸3: ì¶ê°ìí (ì»¬ë¼: ìíë²í¸|ERPíëª©ì½ë|ëª¨ë¸ëª)
         if len(wb.sheetnames) >= 3:
             m, mdl = _read_sheet_2col(wb.worksheets[2])
             new_addon_map.update(m); new_model_map.update(mdl)
 
         total = len(new_product_map) + len(new_option_map) + len(new_addon_map)
         if total == 0:
-            return {"success": False, "error": "유효한 데이터가 없습니다."}
+            return {"success": False, "error": "ì í¨í ë°ì´í°ê° ììµëë¤."}
 
         global _product_map, _option_override_map, _addon_map, _model_map, _model_to_erp_map
         _product_map         = new_product_map
@@ -1300,25 +1356,25 @@ async def import_product_map_excel(file: bytes = Body(..., media_type="applicati
         _addon_map           = new_addon_map
         _model_map           = new_model_map
         _save_product_map()
-        _load_product_map()   # 역방향 맵 재빌드
+        _load_product_map()   # ì­ë°©í¥ ë§µ ì¬ë¹ë
 
-        logger.info(f"[SS] Excel 가져오기 — 메인:{len(_product_map)} 옵션:{len(_option_override_map)} 추가:{len(_addon_map)}")
+        logger.info(f"[SS] Excel ê°ì ¸ì¤ê¸° â ë©ì¸:{len(_product_map)} ìµì:{len(_option_override_map)} ì¶ê°:{len(_addon_map)}")
         return {
             "success": True,
             "sheet1_main": len(_product_map),
             "sheet2_option": len(_option_override_map),
             "sheet3_addon": len(_addon_map),
-            "message": f"메인 {len(_product_map)}건 / 옵션 {len(_option_override_map)}건 / 추가상품 {len(_addon_map)}건 갱신 완료",
+            "message": f"ë©ì¸ {len(_product_map)}ê±´ / ìµì {len(_option_override_map)}ê±´ / ì¶ê°ìí {len(_addon_map)}ê±´ ê°±ì  ìë£",
         }
 
     except Exception as e:
-        logger.error(f"[SS] Excel 가져오기 오류: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"파일 파싱 오류: {e}")
+        logger.error(f"[SS] Excel ê°ì ¸ì¤ê¸° ì¤ë¥: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"íì¼ íì± ì¤ë¥: {e}")
 
 
 @router.post("/product-map/fetch-options-excel")
 async def fetch_options_excel(body: dict = Body(...)):
-    """상품번호 목록으로 네이버 API 조회 → 옵션/추가상품 매핑 작업용 Excel 다운로드"""
+    """ìíë²í¸ ëª©ë¡ì¼ë¡ ë¤ì´ë² API ì¡°í â ìµì/ì¶ê°ìí ë§¤í ììì© Excel ë¤ì´ë¡ë"""
     import io
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
@@ -1328,20 +1384,20 @@ async def fetch_options_excel(body: dict = Body(...)):
 
     product_nos = body.get("productNos", [])
     if not product_nos:
-        raise HTTPException(status_code=400, detail="productNos 필요")
+        raise HTTPException(status_code=400, detail="productNos íì")
 
     items = await naver_client.fetch_products_with_options(product_nos)
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "옵션_추가상품_매핑"
+    ws.title = "ìµì_ì¶ê°ìí_ë§¤í"
 
     hdr_fill = PatternFill("solid", fgColor="1F4E79")
     hdr_font = Font(bold=True, color="FFFFFF", name="Arial", size=10)
     yel_fill = PatternFill("solid", fgColor="FFF2CC")
     data_font = Font(name="Arial", size=10)
 
-    cols = ["구분", "상품번호", "상품명", "옵션텍스트", "판매자코드(참고)", "재고", "ERP품목코드(입력)", "모델명(입력)"]
+    cols = ["êµ¬ë¶", "ìíë²í¸", "ìíëª", "ìµìíì¤í¸", "íë§¤ìì½ë(ì°¸ê³ )", "ì¬ê³ ", "ERPíëª©ì½ë(ìë ¥)", "ëª¨ë¸ëª(ìë ¥)"]
     for ci, col in enumerate(cols, 1):
         c = ws.cell(1, ci, col)
         c.fill = hdr_fill; c.font = hdr_font
@@ -1352,7 +1408,7 @@ async def fetch_options_excel(body: dict = Body(...)):
         ws.column_dimensions[get_column_letter(i)].width = w
 
     for ri, item in enumerate(items, 2):
-        # 현재 매핑 여부 확인
+        # íì¬ ë§¤í ì¬ë¶ íì¸
         pno = item["productNo"]
         existing_erp = _product_map.get(pno, "") or _option_override_map.get(pno, "")
         existing_model = _model_map.get(pno, "")
@@ -1360,7 +1416,7 @@ async def fetch_options_excel(body: dict = Body(...)):
         vals = [
             item["type"], pno, item["productName"], item["optionText"],
             item["sellerCode"], item["stock"],
-            existing_erp,   # 기존 매핑 있으면 미리 채워줌
+            existing_erp,   # ê¸°ì¡´ ë§¤í ìì¼ë©´ ë¯¸ë¦¬ ì±ìì¤
             existing_model,
         ]
         for ci, val in enumerate(vals, 1):
@@ -1371,7 +1427,7 @@ async def fetch_options_excel(body: dict = Body(...)):
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
-    logger.info(f"[SS] 옵션조회 Excel: {len(items)}개 항목")
+    logger.info(f"[SS] ìµìì¡°í Excel: {len(items)}ê° í­ëª©")
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1381,9 +1437,9 @@ async def fetch_options_excel(body: dict = Body(...)):
 
 @router.get("/product-map/debug-option/{product_no}")
 async def debug_channel_product(product_no: str, naver_no: str = ""):
-    """채널상품 API 응답 구조 확인용 (디버그)
-    product_no = 상품번호(스마트스토어) = 원상품번호
-    naver_no   = 네이버쇼핑상품번호    = 채널상품번호
+    """ì±ëìí API ìëµ êµ¬ì¡° íì¸ì© (ëë²ê·¸)
+    product_no = ìíë²í¸(ì¤ë§í¸ì¤í ì´) = ììíë²í¸
+    naver_no   = ë¤ì´ë²ì¼íìíë²í¸    = ì±ëìíë²í¸
     """
     from services.naver_client import naver_client
     headers = await naver_client._headers()
@@ -1391,14 +1447,14 @@ async def debug_channel_product(product_no: str, naver_no: str = ""):
     from config import NAVER_COMMERCE_URL
 
     endpoints = {
-        # 원상품 조회 (v2) — 상품번호(스마트스토어) 사용
-        "v2_원상품": f"{NAVER_COMMERCE_URL}/external/v2/products/origin-products/{product_no}",
-        # 채널상품 조회 (v2) — 상품번호로 시도
-        "v2_채널_원상품번호": f"{NAVER_COMMERCE_URL}/external/v2/channel-products/{product_no}",
+        # ììí ì¡°í (v2) â ìíë²í¸(ì¤ë§í¸ì¤í ì´) ì¬ì©
+        "v2_ììí": f"{NAVER_COMMERCE_URL}/external/v2/products/origin-products/{product_no}",
+        # ì±ëìí ì¡°í (v2) â ìíë²í¸ë¡ ìë
+        "v2_ì±ë_ììíë²í¸": f"{NAVER_COMMERCE_URL}/external/v2/channel-products/{product_no}",
     }
     if naver_no:
-        # 채널상품 조회 (v2) — 네이버쇼핑상품번호로 시도
-        endpoints["v2_채널_쇼핑번호"] = f"{NAVER_COMMERCE_URL}/external/v2/channel-products/{naver_no}"
+        # ì±ëìí ì¡°í (v2) â ë¤ì´ë²ì¼íìíë²í¸ë¡ ìë
+        endpoints["v2_ì±ë_ì¼íë²í¸"] = f"{NAVER_COMMERCE_URL}/external/v2/channel-products/{naver_no}"
 
     results = {}
     async with httpx.AsyncClient(timeout=15) as client:
