@@ -1156,6 +1156,27 @@ async def get_inventory(body: dict = Body(...)):
         return {"success": False, "error": str(e), "inventory": {}}
 
 
+
+@router.get("/inventory-debug")
+async def inventory_debug():
+    """디버그: PROD_CD 없이 재고 전체 조회 (최대 몇건 반환되는지 확인)"""
+    from services.erp_client_ss import ERPClientSS
+    try:
+        erp = ERPClientSS()
+        await erp.ensure_session()
+        r10 = await erp.get_inventory_balance(prod_codes=None, wh_cd="10")
+        r30 = await erp.get_inventory_balance(prod_codes=None, wh_cd="30")
+        return {
+            "success": True,
+            "yongsan_count": r10.get("total", 0),
+            "yongsan_sample": dict(list(r10.get("inventory", {}).items())[:5]),
+            "tongjin_count": r30.get("total", 0),
+            "tongjin_sample": dict(list(r30.get("inventory", {}).items())[:5]),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/reload-product-map")
 async def reload_product_map():
     _load_product_map()
