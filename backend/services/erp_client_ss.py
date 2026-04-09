@@ -123,25 +123,24 @@ class ERPClientSS:
                     return {"success": False, "error": str(e)}
         return {"success": False, "error": "최대 재시도 초과"}
 
-    async def get_inventory_balance(self, prod_codes: list[str] = None, wh_cd: str = "") -> dict:
+    async def get_inventory_by_location(self, prod_codes: list[str] = None) -> dict:
         """
-        ECOUNT 재고현황 조회 API
-        prod_codes: 품목코드 리스트 (None이면 전체 조회)
-        wh_cd: 창고코드 (빈 문자열이면 전체 창고)
-        Returns: {"success": True, "inventory": {품목코드: 재고수량}}
+        ECOUNT 창고별 재고현황 조회 API (ByLocation)
+        한 번 호출로 모든 창고의 재고를 조회.
+        Returns: {"success": True, "inventory": {"yongsan": {PROD_CD: qty}, "tongjin": {PROD_CD: qty}}}
         """
         if not self._session_id:
             await self.ensure_session()
 
         zone = self._zone.lower()
-        url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus?SESSION_ID={self._session_id}"
+        url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatusByLocation?SESSION_ID={self._session_id}"
 
         KST = timezone(timedelta(hours=9))
         base_date = datetime.now(KST).strftime("%Y%m%d")
 
         payload = {
             "BASE_DATE": base_date,
-            "WH_CD": wh_cd,
+            "WH_CD": "",
             "PROD_CD": ",".join(prod_codes) if prod_codes else "",
         }
 
@@ -152,28 +151,44 @@ class ERPClientSS:
                     data = r.json()
 
                 if str(data.get("Status")) == "200":
-                    rows = data.get("Data", {}).get("Datas", []) if isinstance(data.get("Data"), dict) else []
-                    inventory = {}
-                    for row in rows:
-                        prod_cd = row.get("PROD_CD", "")
+                    result_list = []
+                    inner = data.get("Data", {})
+                    if isinstance(inner, dict):
+                        result_list = inner.get("Result", []) or []
+
+                    # 창고코드별 분류: 10=용산, 30=통진
+                    yongsan = {}
+                    tongjin = {}
+                    for row in result_list:
+                        wh_cd = str(row.get("WH_CD", "")).strip()
+                        prod_cd = row.get("PROD_CD", "").strip()
                         bal_qty = row.get("BAL_QTY", 0)
                         try:
-                            bal_qty = int(float(bal_qty))
+                            bal_qty = int(float(str(bal_qty)))
                         except (ValueError, TypeError):
                             bal_qty = 0
-                        if prod_cd:
-                            inventory[prod_cd] = bal_qty
-                    logger.info(f"[ERP-SS] 재고조회 완료 (WH={wh_cd or '전체'}): {len(inventory)}건")
-                    return {"success": True, "inventory": inventory, "total": len(inventory)}
+                        if not prod_cd:
+                            continue
+                        if wh_cd == "10":
+                            yongsan[prod_cd] = bal_qty
+                        elif wh_cd == "30":
+                            tongjin[prod_cd] = bal_qty
+
+                    logger.info(f"[ERP-SS] 창고별 재고조회 완료: 용산 {len(yongsan)}건, 통진 {len(tongjin)}건 (전체 {len(result_list)}행)")
+                    return {
+                        "success": True,
+                        "inventory": {"yongsan": yongsan, "tongjin": tongjin},
+                        "total_rows": len(result_list),
+                    }
 
                 if str(data.get("Status")) in ("301", "302"):
                     logger.warning("[ERP-SS] 재고조회 세션 만료, 재로그인")
                     await self.ensure_session()
                     zone = self._zone.lower()
-                    url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus?SESSION_ID={self._session_id}"
+                    url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatusByLocation?SESSION_ID={self._session_id}"
                     continue
 
-                logger.error(f"[ERP-SS] 재고조회 실패: Status={data.get('Status')}")
+                logger.error(f"[ERP-SS] 재고조회 실패: Status={data.get('Status')}, Errors={data.get('Errors')}")
                 return {"success": False, "error": f"API 오류: Status {data.get('Status')}"}
             except Exception as e:
                 if attempt < 2:
@@ -181,28 +196,3 @@ class ERPClientSS:
                 else:
                     return {"success": False, "error": str(e)}
         return {"success": False, "error": "최대 재시도 초과"}
-
-    async def get_inventory_by_warehouses(self, prod_codes: list[str], warehouses: dict) -> dict:
-        """
-        여러 창고의 재고를 병렬 조회
-        warehouses: {"용산": "10", "통진": "30"} 형태
-        Returns: {"success": True, "inventory": {"용산": {품목코드: 수량}, "통진": {품목코드: 수량}}}
-        """
-        import asyncio
-        results = {}
-        tasks = {}
-        for name, wh_cd in warehouses.items():
-            tasks[name] = self.get_inventory_balance(prod_codes, wh_cd)
-
-        gathered = await asyncio.gather(*tasks.values(), return_exceptions=True)
-        inventory = {}
-        for name, result in zip(tasks.keys(), gathered):
-            if isinstance(result, Exception):
-                logger.error(f"[ERP-SS] 창고 {name} 재고조회 오류: {result}")
-                inventory[name] = {}
-            elif result.get("success"):
-                inventory[name] = result.get("inventory", {})
-            else:
-                inventory[name] = {}
-
-        return {"success": True, "inventory": inventory}
