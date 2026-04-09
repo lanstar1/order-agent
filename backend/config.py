@@ -157,11 +157,7 @@ MAIL_SMTP_PORT = int(os.getenv("MAIL_SMTP_PORT", "587"))
 MAIL_TARGET_SENDER = os.getenv("MAIL_TARGET_SENDER", "guzhiyi@bor-cable.com")
 MAIL_AUTO_PASSWORD = os.getenv("MAIL_AUTO_PASSWORD", "lanstar2026")
 ERP_SUPPLIER_CODE = os.getenv("ERP_SUPPLIER_CODE", "1111122222")
-
-# ─── 하나은행 환율 API ────────────────────────────────────
-HANA_API_URL = os.getenv("HANA_API_URL", "https://openapi.hanabank.com/kebhnb/ldm/v1/inquiry/exchange")
-HANA_ENTR_CD = os.getenv("HANA_ENTR_CD", "")
-HANA_AUTH_TOKEN = os.getenv("HANA_AUTH_TOKEN", "")
+TT_SELL_SPREAD = float(os.getenv("TT_SELL_SPREAD", "1.75"))  # 전신환매도율 스프레드 %
 
 # ─── 선적 메일 2 (네이버 IMAP) ────────────────────────────
 MAIL2_IMAP_SERVER = os.getenv("MAIL2_IMAP_SERVER", "imap.naver.com")

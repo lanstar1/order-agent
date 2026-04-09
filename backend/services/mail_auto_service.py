@@ -68,91 +68,24 @@ def _parse_email_date(date_str):
         return None
 
 
-# ─── 환율 조회 (하나은행 Open API - 전신환매도율) ─────────
+# ─── 환율 조회 (전신환매도율 근사) ─────────────────────────
+# 무료 API 기준율 + 은행 스프레드(약 1.75%) = 전신환매도율 근사
+# 스프레드는 프론트에서 조정 가능
 
-HANA_API_URL = os.getenv("HANA_API_URL", "https://openapi.hanabank.com/kebhnb/ldm/v1/inquiry/exchange")
-HANA_ENTR_CD = os.getenv("HANA_ENTR_CD", "")
-HANA_AUTH_TOKEN = os.getenv("HANA_AUTH_TOKEN", "")
-
-
-def _parse_hana_rate(raw: str) -> float:
-    """하나은행 환율 문자열 → float 변환
-    예: '0010692000000000' → 1069.2 (value / 10^10)
-    """
-    try:
-        return float(raw) / 10_000_000_000
-    except (ValueError, TypeError):
-        return 0.0
-
-
-async def fetch_exchange_rate_hana() -> dict:
-    """
-    하나은행 Open API - USD 전신환매도율(TT_SLL_RT) 조회
-    Returns: {"rate": float, "source": "hana", "detail": {...}}
-    """
-    if not HANA_ENTR_CD or not HANA_AUTH_TOKEN:
-        return None
-
-    headers = {
-        "Content-Type": "application/json; charset=utf-8",
-        "Accept": "application/json",
-        "Authorization": HANA_AUTH_TOKEN,
-        "CRYP_DV_CD": "0",
-    }
-    body = {
-        "dataHeader": {
-            "ENTR_CD": HANA_ENTR_CD,
-            "CNTY_CD": "KR",
-            "PROC_RSLT_DV_CD": "0",
-            "CLNT_IP_ADR": "",
-        },
-        "dataBody": {
-            "CUR_CD": "USD",
-            "PBLD_DV_CD": "0",  # 최종고시
-        },
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(HANA_API_URL, json=body, headers=headers)
-            if r.status_code == 200:
-                data = r.json()
-                recs = data.get("dataBody", {}).get("REC", [])
-                if recs:
-                    rec = recs[0]
-                    tt_sll = _parse_hana_rate(rec.get("TT_SLL_RT", "0"))
-                    deal_basc = _parse_hana_rate(rec.get("DEAL_BASC_RT", "0"))
-                    tt_buy = _parse_hana_rate(rec.get("TT_BUY_RT", "0"))
-                    logger.info(f"[환율] 하나은행 TT매도={tt_sll}, 기준={deal_basc}")
-                    return {
-                        "rate": tt_sll,
-                        "source": "hana_tt_sll",
-                        "detail": {
-                            "tt_sll_rt": tt_sll,       # 전신환매도율
-                            "deal_basc_rt": deal_basc,  # 매매기준율
-                            "tt_buy_rt": tt_buy,        # 전신환매입율
-                            "pbld_sqn": rec.get("PBLD_SQN", ""),  # 고시회차
-                            "reg_dt": rec.get("REG_DT", ""),
-                        },
-                    }
-            logger.warning(f"[환율] 하나은행 API 실패: {r.status_code}")
-    except Exception as e:
-        logger.warning(f"[환율] 하나은행 API 오류: {e}")
-
-    return None
+TT_SELL_SPREAD = float(os.getenv("TT_SELL_SPREAD", "1.75"))  # 기본 1.75%
 
 
 async def fetch_exchange_rate() -> dict:
     """
-    환율 조회 (하나은행 우선 → 무료API 폴백)
-    Returns: {"rate": float, "source": str, "detail": dict}
+    USD/KRW 전신환매도율 근사 조회
+    = 매매기준율(무료API) × (1 + 스프레드%)
+    
+    Returns: {"rate": float, "base_rate": float, "spread": float, "source": str}
     """
-    # 1차: 하나은행 Open API (전신환매도율)
-    hana = await fetch_exchange_rate_hana()
-    if hana and hana["rate"] > 0:
-        return hana
+    base_rate = None
+    source = ""
 
-    # 2차: 무료 환율 API (매매기준율 대용)
+    # 1차: exchangerate-api (무료, 매매기준율 근사)
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get("https://open.er-api.com/v6/latest/USD")
@@ -160,18 +93,43 @@ async def fetch_exchange_rate() -> dict:
                 data = r.json()
                 rate = data.get("rates", {}).get("KRW")
                 if rate:
-                    logger.info(f"[환율] er-api 폴백: {rate}")
-                    return {
-                        "rate": float(rate),
-                        "source": "er-api (매매기준율 근사)",
-                        "detail": {"deal_basc_rt": float(rate)},
-                    }
+                    base_rate = float(rate)
+                    source = "er-api"
     except Exception as e:
-        logger.warning(f"[환율] er-api 폴백 실패: {e}")
+        logger.warning(f"[환율] er-api 실패: {e}")
+
+    # 2차: 폴백 API
+    if not base_rate:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get("https://api.exchangerate.host/latest?base=USD&symbols=KRW")
+                if r.status_code == 200:
+                    data = r.json()
+                    rate = data.get("rates", {}).get("KRW")
+                    if rate:
+                        base_rate = float(rate)
+                        source = "exchangerate.host"
+        except Exception as e:
+            logger.warning(f"[환율] 폴백 API 실패: {e}")
 
     # 3차: 고정값
-    logger.warning("[환율] 모든 API 실패, 기본값 1530 사용")
-    return {"rate": 1530.0, "source": "기본값", "detail": {}}
+    if not base_rate:
+        base_rate = 1450.0
+        source = "기본값"
+        logger.warning("[환율] 모든 API 실패, 기본값 사용")
+
+    # 전신환매도율 = 기준율 × (1 + 스프레드%)
+    spread = TT_SELL_SPREAD
+    tt_sell_rate = round(base_rate * (1 + spread / 100), 2)
+
+    logger.info(f"[환율] 기준율={base_rate}, 스프레드={spread}%, 매도율={tt_sell_rate} ({source})")
+
+    return {
+        "rate": tt_sell_rate,         # 전신환매도율 (실제 적용 환율)
+        "base_rate": base_rate,       # 매매기준율
+        "spread": spread,             # 스프레드 %
+        "source": source,
+    }
 
 
 # ─── IMAP 메일 수신 ──────────────────────────────────────
@@ -553,11 +511,10 @@ async def run_mail_automation_pipeline(
     # 환율 조회
     rate_info = {}
     if not exchange_rate:
-        rate_result = await fetch_exchange_rate()
-        exchange_rate = rate_result["rate"]
-        rate_info = rate_result
+        rate_info = await fetch_exchange_rate()
+        exchange_rate = rate_info["rate"]
     else:
-        rate_info = {"rate": exchange_rate, "source": "manual", "detail": {}}
+        rate_info = {"rate": exchange_rate, "base_rate": exchange_rate, "spread": 0, "source": "manual"}
     
     # 처리된 메일 ID 조회 (중복 방지)
     processed_ids = set()
@@ -673,8 +630,9 @@ async def run_mail_automation_pipeline(
     
     return {
         "exchange_rate": exchange_rate,
+        "base_rate": rate_info.get("base_rate", exchange_rate),
+        "spread": rate_info.get("spread", 0),
         "rate_source": rate_info.get("source", ""),
-        "rate_detail": rate_info.get("detail", {}),
         "total_emails": len(emails),
         "new_processed": len(pipeline_results),
         "already_processed": len(processed_ids),

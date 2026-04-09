@@ -246,26 +246,29 @@ async def process_and_download(file: UploadFile = File(...)):
 
 @router.get("/exchange-rate")
 async def get_exchange_rate():
-    """환율 조회 (하나은행 TT매도율 우선)"""
+    """환율 조회 (전신환매도율 = 기준율 + 스프레드)"""
     cached = _exchange_rate_cache.get("rate")
-    if cached and _exchange_rate_cache.get("detail"):
+    if cached and _exchange_rate_cache.get("base_rate"):
         return {
             "rate": cached,
+            "base_rate": _exchange_rate_cache.get("base_rate"),
+            "spread": _exchange_rate_cache.get("spread", 1.75),
             "source": _exchange_rate_cache.get("source", "cache"),
-            "detail": _exchange_rate_cache.get("detail", {}),
             "updated": _exchange_rate_cache.get("updated"),
         }
     
     rate_info = await fetch_exchange_rate()
     _exchange_rate_cache["rate"] = rate_info["rate"]
+    _exchange_rate_cache["base_rate"] = rate_info.get("base_rate")
+    _exchange_rate_cache["spread"] = rate_info.get("spread", 1.75)
     _exchange_rate_cache["source"] = rate_info.get("source", "")
-    _exchange_rate_cache["detail"] = rate_info.get("detail", {})
     _exchange_rate_cache["updated"] = datetime.now(KST).isoformat()
     
     return {
         "rate": rate_info["rate"],
+        "base_rate": rate_info.get("base_rate"),
+        "spread": rate_info.get("spread", 1.75),
         "source": rate_info.get("source", ""),
-        "detail": rate_info.get("detail", {}),
         "updated": _exchange_rate_cache["updated"],
     }
 
