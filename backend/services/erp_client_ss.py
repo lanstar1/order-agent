@@ -124,6 +124,67 @@ class ERPClientSS:
                     return {"success": False, "error": str(e)}
         return {"success": False, "error": "최대 재시도 초과"}
 
+
+    async def get_inventory_balance(self, prod_codes: list[str] = None, wh_cd: str = "") -> dict:
+        """
+        ECOUNT 재고현황 조회 API
+        prod_codes: 품목코드 리스트 (None이면 전체 조회)
+        wh_cd: 창고코드 (빈 문자열이면 전체 창고)
+        Returns: {"success": True, "inventory": {품목코드: 재고수량}}
+        """
+        if not self._session_id:
+            await self.ensure_session()
+
+        zone = self._zone.lower()
+        url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus?SESSION_ID={self._session_id}"
+
+        KST = timezone(timedelta(hours=9))
+        base_date = datetime.now(KST).strftime("%Y%m%d")
+
+        payload = {
+            "BASE_DATE": base_date,
+            "WH_CD": wh_cd,
+            "PROD_CD": ",".join(prod_codes) if prod_codes else "",
+        }
+
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(url, json=payload, timeout=15)
+                    data = r.json()
+
+                logger.info(f"[ERP-SS] 재고API 응답(WH={wh_cd}): Status={data.get('Status')}, DataType={type(data.get('Data')).__name__}")
+                if str(data.get("Status")) == "200":
+                    rows = data.get("Data", {}).get("Datas", []) if isinstance(data.get("Data"), dict) else []
+                    inventory = {}
+                    for row in rows:
+                        prod_cd = row.get("PROD_CD", "")
+                        bal_qty = row.get("BAL_QTY", 0)
+                        try:
+                            bal_qty = int(float(bal_qty))
+                        except (ValueError, TypeError):
+                            bal_qty = 0
+                        if prod_cd:
+                            inventory[prod_cd] = bal_qty
+                    logger.info(f"[ERP-SS] 재고조회 완료 (WH={wh_cd}): {len(inventory)}건")
+                    return {"success": True, "inventory": inventory, "total": len(inventory)}
+
+                if str(data.get("Status")) in ("301", "302"):
+                    logger.warning("[ERP-SS] 재고조회 세션 만료, 재로그인")
+                    await self.ensure_session()
+                    zone = self._zone.lower()
+                    url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus?SESSION_ID={self._session_id}"
+                    continue
+
+                logger.error(f"[ERP-SS] 재고조회 실패: Status={data.get('Status')}, Data={data}")
+                return {"success": False, "error": f"API 오류: Status {data.get('Status')}"}
+            except Exception as e:
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    return {"success": False, "error": str(e)}
+        return {"success": False, "error": "최대 재시도 초과"}
+
     async def get_inventory_by_warehouses(self, prod_codes: list[str] = None) -> dict:
         """
         창고별 재고현황 조회 - 용산(10), 통진(30) 병렬 조회
