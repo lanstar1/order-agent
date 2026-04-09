@@ -1109,9 +1109,9 @@ async def auto_register_logen(
 @router.post("/inventory")
 async def get_inventory(body: dict = Body(...)):
     """
-    ERP 재고현황 조회.
+    ERP 재고현황 조회 (창고별).
     body: { "orders": [...] }
-    각 주문의 품목코드를 매칭해서 재고수량을 반환.
+    용산(10), 통진(30) 창고 재고를 각각 조회하여 반환.
     """
     from services.erp_client_ss import ERPClientSS
 
@@ -1147,7 +1147,8 @@ async def get_inventory(body: dict = Body(...)):
 
         erp = ERPClientSS()
         await erp.ensure_session()
-        result = await erp.get_inventory_balance(list(prod_codes))
+        warehouses = {"yongsan": "10", "tongjin": "30"}
+        result = await erp.get_inventory_by_warehouses(list(prod_codes), warehouses)
         result["order_erp_map"] = order_erp_map
 
         return result
