@@ -50,11 +50,11 @@ class ERPClientSS:
         io_date = datetime.now(KST).strftime("%Y%m%d")
 
         sale_list = []
-        for line in lines:
+        for idx, line in enumerate(lines, start=1):
             qty = float(line["qty"])
             qty_str = str(int(qty)) if qty == int(qty) else str(qty)
             bulk = {
-                "UPLOAD_SER_NO": "1",
+                "UPLOAD_SER_NO": str(idx),
                 "IO_DATE": io_date,
                 "CUST": cust_code,
                 "PROD_CD": line["prod_cd"],
@@ -63,10 +63,6 @@ class ERPClientSS:
             }
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
-            if line.get("remark"):
-                bulk["U_MEMO5"] = line["remark"]   # 비고사항 (이카운트 문자형식5)
-            if line.get("rcv_name"):
-                bulk["P_REMARKS2"] = line["rcv_name"]   # 적요2(판매) → 수령인
             price = float(line.get("price", 0) or 0)
             if price > 0:
                 supply = round(price * qty, 2)
@@ -75,7 +71,6 @@ class ERPClientSS:
             sale_list.append({"BulkDatas": bulk})
 
         payload = {"SaleList": sale_list}
-        logger.info(f"[ERP-SS] SaveSale payload 첫번째 BulkDatas: {sale_list[0]['BulkDatas'] if sale_list else {}}")
 
         for attempt in range(3):
             try:
@@ -120,8 +115,7 @@ class ERPClientSS:
                     url = f"https://oapi{zone}.ecount.com/OAPI/V2/Sale/SaveSale?SESSION_ID={self._session_id}"
                     continue
                 logger.error(f"[ERP-SS] SaveSale 실패: Status={data.get('Status')}")
-                err_msg = f"ERP 오류 (Status {data.get('Status')}): {data.get('Message') or data.get('Error') or str(data)}"
-                return {"success": False, "error": err_msg}
+                return {"success": False, "error": data}
             except Exception as e:
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
@@ -133,8 +127,8 @@ class ERPClientSS:
         """
         ECOUNT 재고현황 조회 API
         prod_codes: 품목코드 리스트 (None이면 전체 조회)
-        wh_cd: 창고코드 (빈 문자열이면 전체 창고)
-        Returns: {품목코드: 재고수량} dict
+        wh_cd: 창고코드 (빈 문자열이메 전체 창고)
+        Returns: {"success": True, "inventory": {품목코드: 재고수량}}
         """
         if not self._session_id:
             await self.ensure_session()
@@ -158,33 +152,33 @@ class ERPClientSS:
                     data = r.json()
 
                 if str(data.get("Status")) == "200":
-                    inner = data.get("Data", {})
-                    result_list = inner.get("Result", [])
+                    rows = data.get("Data", {}).get("Datas", []) if isinstance(data.get("Data"), dict) else []
                     inventory = {}
-                    for item in result_list:
-                        prod_cd = item.get("PROD_CD", "")
-                        bal_qty = item.get("BAL_QTY", "0")
+                    for row in rows:
+                        prod_cd = row.get("PROD_CD", "")
+                        # BAL_QTY = 재고수량 (기말재고)
+                        bal_qty = row.get("BAL_QTY", 0)
                         try:
-                            qty = float(bal_qty)
-                            inventory[prod_cd] = int(qty) if qty == int(qty) else qty
+                            bal_qty = int(float(bal_qty))
                         except (ValueError, TypeError):
-                            inventory[prod_cd] = 0
-                    logger.info(f"[ERP-SS] 재고조회 성공: {len(inventory)}건")
-                    return {"success": True, "inventory": inventory, "total": inner.get("TotalCnt", 0)}
+                            bal_qty = 0
+                        if prod_cd:
+                            inventory[prod_cd] = bal_qty
+                    logger.info(f"[ERP-SS] 재고조회 완료: {len(inventory)}건")
+                    return {"success": True, "inventory": inventory, "total": len(inventory)}
 
                 if str(data.get("Status")) in ("301", "302"):
-                    logger.warning("[ERP-SS] 세션 만료, 재로그인 시도")
+                    logger.warning("[ERP-SS] 재고조회 세션 만료, 재로그인")
                     await self.ensure_session()
                     zone = self._zone.lower()
                     url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus?SESSION_ID={self._session_id}"
                     continue
 
-                logger.error(f"[ERP-SS] 재고조회 실패: {data}")
-                return {"success": False, "error": str(data), "inventory": {}}
+                logger.error(f"[ERP-SS] 재고조회 실패: Status={data.get('Status')}, Data={data}")
+                return {"success": False, "error": f"API 오류: Status {data.get('Status')}"}
             except Exception as e:
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
                 else:
-                    return {"success": False, "error": str(e), "inventory": {}}
-        return {"success": False, "error": "최대 재시도 초과", "inventory": {}}
-
+                    return {"success": False, "error": str(e)}
+        return {"success": False, "error": "최대 재시도 초과"}
