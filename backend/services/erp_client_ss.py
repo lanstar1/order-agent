@@ -128,3 +128,63 @@ class ERPClientSS:
                 else:
                     return {"success": False, "error": str(e)}
         return {"success": False, "error": "최대 재시도 초과"}
+
+    async def get_inventory_balance(self, prod_codes: list[str] = None, wh_cd: str = "") -> dict:
+        """
+        ECOUNT 재고현황 조회 API
+        prod_codes: 품목코드 리스트 (None이면 전체 조회)
+        wh_cd: 창고코드 (빈 문자열이면 전체 창고)
+        Returns: {품목코드: 재고수량} dict
+        """
+        if not self._session_id:
+            await self.ensure_session()
+
+        zone = self._zone.lower()
+        url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus?SESSION_ID={self._session_id}"
+
+        KST = timezone(timedelta(hours=9))
+        base_date = datetime.now(KST).strftime("%Y%m%d")
+
+        payload = {
+            "BASE_DATE": base_date,
+            "WH_CD": wh_cd,
+            "PROD_CD": ",".join(prod_codes) if prod_codes else "",
+        }
+
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(url, json=payload, timeout=15)
+                    data = r.json()
+
+                if str(data.get("Status")) == "200":
+                    inner = data.get("Data", {})
+                    result_list = inner.get("Result", [])
+                    inventory = {}
+                    for item in result_list:
+                        prod_cd = item.get("PROD_CD", "")
+                        bal_qty = item.get("BAL_QTY", "0")
+                        try:
+                            qty = float(bal_qty)
+                            inventory[prod_cd] = int(qty) if qty == int(qty) else qty
+                        except (ValueError, TypeError):
+                            inventory[prod_cd] = 0
+                    logger.info(f"[ERP-SS] 재고조회 성공: {len(inventory)}건")
+                    return {"success": True, "inventory": inventory, "total": inner.get("TotalCnt", 0)}
+
+                if str(data.get("Status")) in ("301", "302"):
+                    logger.warning("[ERP-SS] 세션 만료, 재로그인 시도")
+                    await self.ensure_session()
+                    zone = self._zone.lower()
+                    url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus?SESSION_ID={self._session_id}"
+                    continue
+
+                logger.error(f"[ERP-SS] 재고조회 실패: {data}")
+                return {"success": False, "error": str(data), "inventory": {}}
+            except Exception as e:
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    return {"success": False, "error": str(e), "inventory": {}}
+        return {"success": False, "error": "최대 재시도 초과", "inventory": {}}
+
