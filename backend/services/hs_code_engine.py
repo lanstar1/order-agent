@@ -36,6 +36,15 @@ class HSCodeEngine:
             "note": "패치코드 - FTA 불필요",
         },
         {
+            "name": "network_cable_generic",
+            # PATCH CORD/LAN CABLE 명시 없어도 Cat./UTP/FTP/SFTP 키워드면 네트워크 케이블
+            "keywords": ["CAT.5", "CAT.6", "CAT.7", "CAT.8",
+                         "CAT5", "CAT6", "CAT7", "CAT8",
+                         "U/UTP", "F/UTP", "S/FTP", "SF/UTP",
+                         "UTP ", "FTP ", "SFTP "],
+            "note": "네트워크 케이블(Cat/UTP/FTP) - FTA 불필요",
+        },
+        {
             "name": "lan_cable",
             "keywords": ["LAN CABLE", "REEL CABLE"],
             "note": "랜케이블/릴케이블 - FTA 불필요",
