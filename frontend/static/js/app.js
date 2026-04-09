@@ -8422,6 +8422,21 @@ function reconcileNewMatch() {
 (function(){
   let _mailAuth = false;
 
+  window.mailSaveTemplate = function() {
+    const body = document.getElementById('mail-template-body').value;
+    localStorage.setItem('mail_auto_template', body);
+    alert('템플릿이 저장되었습니다.');
+  };
+
+  // 페이지 로드 시 저장된 템플릿 복원
+  function mailLoadTemplate() {
+    const saved = localStorage.getItem('mail_auto_template');
+    if (saved) {
+      const el = document.getElementById('mail-template-body');
+      if (el) el.value = saved;
+    }
+  }
+
   window.initMailAutoPage = async function() {
     if (!_mailAuth) {
       document.getElementById('mail-auto-content').style.display='none';
@@ -8430,6 +8445,7 @@ function reconcileNewMatch() {
     }
     document.getElementById('mail-auto-login').style.display='none';
     document.getElementById('mail-auto-content').style.display='block';
+    mailLoadTemplate();
     await mailLoadDashboard();
     await mailLoadRate();
     await mailLoadLogs();
@@ -8557,11 +8573,13 @@ function reconcileNewMatch() {
     try {
       const autoReply = document.getElementById('mail-auto-reply-check')?.checked || false;
       const rate = document.getElementById('mail-rate-input').value;
+      const replyBody = document.getElementById('mail-template-body')?.value || '';
       const r = await fetch('/api/mail-auto/trigger', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           days_back: 30, auto_reply: autoReply, auto_erp: true,
-          exchange_rate: rate ? parseFloat(rate) : null
+          exchange_rate: rate ? parseFloat(rate) : null,
+          reply_template: replyBody
         })
       });
       const d = await r.json();

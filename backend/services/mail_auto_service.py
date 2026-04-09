@@ -522,6 +522,7 @@ async def run_mail_automation_pipeline(
     auto_reply: bool = False,
     auto_erp: bool = True,
     db_conn=None,
+    reply_template: str = "",
 ) -> dict:
     """
     전체 메일 자동화 파이프라인 실행
@@ -599,11 +600,11 @@ async def run_mail_automation_pipeline(
         # 자동 회신 (첫 번째 처리된 Excel 첨부)
         if auto_reply and processed_excels:
             first_excel = processed_excels[0]
-            reply_body = (
-                "안녕하세요,\n\n"
-                "HS코드를 입력하여 회신드립니다.\n"
-                "확인 부탁드립니다.\n\n"
-                "감사합니다.\n"
+            reply_body = reply_template if reply_template.strip() else (
+                "Dear Mr. Gu,\n\n"
+                "We have reviewed the packing list and added the HS codes accordingly.\n"
+                "Please find the attached file for your reference.\n\n"
+                "Best regards,\n"
                 "LINEUP SYSTEM CO., LTD."
             )
             reply_sent = send_reply_email(

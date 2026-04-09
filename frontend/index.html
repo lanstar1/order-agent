@@ -1903,8 +1903,58 @@ C규격품 200개
               <button id="mail-run-btn" onclick="mailRunPipeline()" class="btn btn-primary" style="flex:1;padding:10px">🚀 파이프라인 실행</button>
             </div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#666">
-              <input type="checkbox" id="mail-auto-reply-check"> 처리 완료 후 자동 회신
+              <input type="checkbox" id="mail-auto-reply-check" onchange="document.getElementById('mail-template-section').style.display=this.checked?'block':'none'"> 처리 완료 후 자동 회신
             </label>
+          </div>
+        </div>
+
+        <!-- 회신 메일 템플릿 -->
+        <div id="mail-template-section" class="card" style="padding:20px;margin-bottom:20px;display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="margin:0">✉️ 회신 메일 미리보기</h3>
+            <button onclick="mailSaveTemplate()" class="btn btn-sm" style="padding:6px 14px">💾 템플릿 저장</button>
+          </div>
+          
+          <!-- 메일 헤더 -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:16px">
+            <div style="display:grid;grid-template-columns:80px 1fr;gap:8px;font-size:14px">
+              <span style="color:#64748b;font-weight:500">받는사람</span>
+              <span>guzhiyi@bor-cable.com</span>
+              <span style="color:#64748b;font-weight:500">보내는이</span>
+              <span>kyu@lanstar.co.kr</span>
+              <span style="color:#64748b;font-weight:500">제목</span>
+              <span style="color:#666">Re: <i>(원본 메일 제목 자동 사용)</i></span>
+            </div>
+          </div>
+
+          <!-- 메일 본문 편집 -->
+          <div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+            <div style="background:#f1f5f9;padding:8px 12px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0">메일 본문 (직접 편집 가능)</div>
+            <textarea id="mail-template-body" style="width:100%;min-height:200px;padding:16px;border:none;font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.8;resize:vertical;outline:none"
+>Dear Mr. Gu,
+
+Thank you for sending the shipping documents.
+
+We have reviewed the packing list and added the HS codes accordingly.
+Please find the attached file for your reference.
+
+If there are any discrepancies, please let us know.
+
+Best regards,
+
+James Kyu Lee (이규형)
+Vice President
+
+LINEUP SYSTEM CO., LTD.
+132-21, Masong 2 Ro, 104 Beon-Gil
+Tongjin-Eup, Kimpo City, Kyunggi, Korea
+Tel: +82-2-716-0600
+Email: kyu@lanstar.co.kr</textarea>
+          </div>
+
+          <!-- 첨부파일 안내 -->
+          <div style="margin-top:12px;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:13px;color:#166534">
+            📎 첨부파일: <b>HS코드 입력된 Excel</b> (HS_BOR-XXXXXXX.xlsx) — 자동 첨부됩니다
           </div>
         </div>
 
@@ -5226,7 +5276,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260409d"></script>
+<script src="/static/js/app.js?v=20260409e"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

@@ -182,6 +182,7 @@ async def trigger_pipeline(request: Request):
     auto_reply = body.get("auto_reply", False)
     auto_erp = body.get("auto_erp", True)
     custom_rate = body.get("exchange_rate", None)
+    reply_template = body.get("reply_template", "")
     
     exchange_rate = custom_rate or _exchange_rate_cache.get("rate")
     conn = get_connection()
@@ -192,6 +193,7 @@ async def trigger_pipeline(request: Request):
         auto_reply=auto_reply,
         auto_erp=auto_erp,
         db_conn=conn,
+        reply_template=reply_template,
     )
     
     # 환율 캐시 갱신
