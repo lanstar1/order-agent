@@ -1147,8 +1147,7 @@ async def get_inventory(body: dict = Body(...)):
 
         erp = ERPClientSS()
         await erp.ensure_session()
-        warehouses = {"yongsan": "10", "tongjin": "30"}
-        result = await erp.get_inventory_by_warehouses(list(prod_codes), warehouses)
+        result = await erp.get_inventory_by_location(list(prod_codes))
         result["order_erp_map"] = order_erp_map
 
         return result
