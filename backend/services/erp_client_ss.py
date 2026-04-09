@@ -127,7 +127,7 @@ class ERPClientSS:
         """
         ECOUNT 재고현황 조회 API
         prod_codes: 품목코드 리스트 (None이면 전체 조회)
-        wh_cd: 창고코드 (빈 문자열이메 전체 창고)
+        wh_cd: 창고코드 (빈 문자열이면 전체 창고)
         Returns: {"success": True, "inventory": {품목코드: 재고수량}}
         """
         if not self._session_id:
@@ -156,7 +156,6 @@ class ERPClientSS:
                     inventory = {}
                     for row in rows:
                         prod_cd = row.get("PROD_CD", "")
-                        # BAL_QTY = 재고수량 (기말재고)
                         bal_qty = row.get("BAL_QTY", 0)
                         try:
                             bal_qty = int(float(bal_qty))
@@ -164,7 +163,7 @@ class ERPClientSS:
                             bal_qty = 0
                         if prod_cd:
                             inventory[prod_cd] = bal_qty
-                    logger.info(f"[ERP-SS] 재고조회 완료: {len(inventory)}건")
+                    logger.info(f"[ERP-SS] 재고조회 완료 (WH={wh_cd or '전체'}): {len(inventory)}건")
                     return {"success": True, "inventory": inventory, "total": len(inventory)}
 
                 if str(data.get("Status")) in ("301", "302"):
@@ -174,7 +173,7 @@ class ERPClientSS:
                     url = f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBalance/GetListInventoryBalanceStatus?SESSION_ID={self._session_id}"
                     continue
 
-                logger.error(f"[ERP-SS] 재고조회 실패: Status={data.get('Status')}, Data={data}")
+                logger.error(f"[ERP-SS] 재고조회 실패: Status={data.get('Status')}")
                 return {"success": False, "error": f"API 오류: Status {data.get('Status')}"}
             except Exception as e:
                 if attempt < 2:
@@ -182,3 +181,28 @@ class ERPClientSS:
                 else:
                     return {"success": False, "error": str(e)}
         return {"success": False, "error": "최대 재시도 초과"}
+
+    async def get_inventory_by_warehouses(self, prod_codes: list[str], warehouses: dict) -> dict:
+        """
+        여러 창고의 재고를 병렬 조회
+        warehouses: {"용산": "10", "통진": "30"} 형태
+        Returns: {"success": True, "inventory": {"용산": {품목코드: 수량}, "통진": {품목코드: 수량}}}
+        """
+        import asyncio
+        results = {}
+        tasks = {}
+        for name, wh_cd in warehouses.items():
+            tasks[name] = self.get_inventory_balance(prod_codes, wh_cd)
+
+        gathered = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        inventory = {}
+        for name, result in zip(tasks.keys(), gathered):
+            if isinstance(result, Exception):
+                logger.error(f"[ERP-SS] 창고 {name} 재고조회 오류: {result}")
+                inventory[name] = {}
+            elif result.get("success"):
+                inventory[name] = result.get("inventory", {})
+            else:
+                inventory[name] = {}
+
+        return {"success": True, "inventory": inventory}
