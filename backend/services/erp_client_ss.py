@@ -153,7 +153,7 @@ class ERPClientSS:
                     r = await client.post(url, json=payload, timeout=15)
                     data = r.json()
 
-                logger.info(f"[ERP-SS] 재고API 응답(WH={wh_cd}): Status={data.get('Status')}, DataType={type(data.get('Data')).__name__}")
+                logger.info(f"[ERP-SS] 재고API raw(WH={wh_cd}): {str(data)[:500]}")
                 if str(data.get("Status")) == "200":
                     rows = data.get("Data", {}).get("Datas", []) if isinstance(data.get("Data"), dict) else []
                     inventory = {}
