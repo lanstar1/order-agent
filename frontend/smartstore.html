@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ì¤ë§í¸ì¤í ì´ ì£¼ë¬¸ ìëí</title>
+    <title>스마트스토어 주문 자동화</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; color: #1e293b; }
@@ -55,18 +55,18 @@
         .badge-ready { background: #fef3c7; color: #92400e; }
         .badge-ship { background: #d1fae5; color: #065f46; }
         .badge-done { background: #e2e8f0; color: #475569; }
-        /* ë§¤ì¹­ ì í í ìì */
-        tr.row-option td { background: #fef9c3 !important; }          /* ìµìì½ë: ë¸ëì */
+        /* 매칭 유형 행 색상 */
+        tr.row-option td { background: #fef9c3 !important; }          /* 옵션코드: 노란색 */
         tr.row-option:hover td { background: #fef08a !important; }
-        tr.row-addon td { background: #ede9fe !important; }           /* ì¶ê°ìí: ë³´ë¼ì */
+        tr.row-addon td { background: #ede9fe !important; }           /* 추가상품: 보라색 */
         tr.row-addon:hover td { background: #ddd6fe !important; }
         tr.row-option.row-unchecked td, tr.row-addon.row-unchecked td { opacity: 0.4; }
         tr.row-excluded td { background: #fff7ed !important; color: #c2410c !important; }
         tr.row-excluded:hover td { background: #ffedd5 !important; }
         .match-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; margin-left: 4px; }
-        .match-tag-opt  { background: #fbbf24; color: #78350f; }     /* ìµì */
-        .match-tag-add  { background: #a78bfa; color: #4c1d95; }     /* ì¶ê°ìí */
-        .match-tag-exc  { background: #e2e8f0; color: #64748b; }     /* ERPì ì¸ */
+        .match-tag-opt  { background: #fbbf24; color: #78350f; }     /* 옵션 */
+        .match-tag-add  { background: #a78bfa; color: #4c1d95; }     /* 추가상품 */
+        .match-tag-exc  { background: #e2e8f0; color: #64748b; }     /* ERP제외 */
 
         .sel-bar { display: flex; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; flex-wrap: wrap; }
         .sel-bar .sel-info { font-size: 14px; font-weight: 600; color: #334155; }
@@ -98,137 +98,139 @@
 <body>
     <div class="header">
         <div>
-            <h1>ì¤ë§í¸ì¤í ì´ ì£¼ë¬¸ ìëí</h1>
-            <div class="sub">ë¤ì´ë² ì£¼ë¬¸ìì§ â ERP íë§¤ìë ¥ â ë¡ì  íë°° ë±ë¡ â ë°ì¡ì²ë¦¬</div>
+            <h1>스마트스토어 주문 자동화</h1>
+            <div class="sub">네이버 주문수집 → ERP 판매입력 → 로젠택배 등록 → 발송처리</div>
         </div>
         <div style="display:flex;align-items:center;gap:16px;">
-            <a href="/" style="color:#fff;text-decoration:none;font-size:13px;opacity:0.8;padding:5px 12px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;">â ë©ì¸ì¼ë¡</a>
+            <a href="/" style="color:#fff;text-decoration:none;font-size:13px;opacity:0.8;padding:5px 12px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;">← 메인으로</a>
             <span style="font-size:13px; opacity:0.8;" id="clock"></span>
         </div>
     </div>
 
     <div class="container">
-        <!-- ì°ê²° ìí -->
+        <!-- 연결 상태 -->
         <div class="card">
-            <h2>ì°ê²° ìí</h2>
+            <h2>연결 상태</h2>
             <div style="display:flex; gap:24px; flex-wrap:wrap;">
-                <div class="ec"><div class="dot dot-y" id="d-nv"></div> ë¤ì´ë² ì»¤ë¨¸ì¤ API</div>
+                <div class="ec"><div class="dot dot-y" id="d-nv"></div> 네이버 커머스 API</div>
                 <div class="ec"><div class="dot dot-y" id="d-erp"></div> ECOUNT ERP</div>
-                <div class="ec"><div class="dot dot-y" id="d-lg"></div> iLogen íë°°</div>
+                <div class="ec"><div class="dot dot-y" id="d-lg"></div> iLogen 택배</div>
             </div>
-            <div style="margin-top:12px;"><button class="btn btn-gray" onclick="testConn()">ì°ê²° íì¤í¸</button></div>
+            <div style="margin-top:12px;"><button class="btn btn-gray" onclick="testConn()">연결 테스트</button></div>
             <div class="sb" id="s-conn"></div>
         </div>
 
-        <!-- ì£¼ë¬¸ ìì§ -->
+        <!-- 주문 수집 -->
         <div class="card">
-            <h2>ì£¼ë¬¸ ìì§ <span class="count-badge" id="order-cnt" style="display:none;">0</span></h2>
+            <h2>주문 수집 <span class="count-badge" id="order-cnt" style="display:none;">0</span></h2>
 
             <div class="filter-row">
                 <div>
-                    <label>ììì¼</label>
+                    <label>시작일</label>
                     <input type="date" id="f-from">
                 </div>
                 <div>
-                    <label>ì¢ë£ì¼</label>
+                    <label>종료일</label>
                     <input type="date" id="f-to">
                 </div>
                 <div>
-                    <label>ì£¼ë¬¸ìí</label>
+                    <label>주문상태</label>
                     <select id="f-status">
-                        <option value="NEW_BEFORE" selected>ì ê·ì£¼ë¬¸ (ë°ì£¼ ì )</option>
-                        <option value="NEW_AFTER">ì ê·ì£¼ë¬¸ (ë°ì£¼ í)</option>
-                        <option value="DELIVERING">ë°°ì¡ì¤ (ë°ì¡ì²ë¦¬ ìë£)</option>
+                        <option value="NEW_BEFORE" selected>신규주문 (발주 전)</option>
+                        <option value="NEW_AFTER">신규주문 (발주 후)</option>
+                        <option value="DELIVERING">배송중 (발송처리 완료)</option>
                     </select>
                 </div>
                 <div>
-                    <button class="btn btn-blue" onclick="fetchOrders()" id="b-fetch">ì£¼ë¬¸ìì§</button>
+                    <button class="btn btn-blue" onclick="fetchOrders()" id="b-fetch">주문수집</button>
                 </div>
             </div>
 
             <div class="sb" id="s-fetch"></div>
             <div class="tbl-scroll" id="tbl-wrap"></div>
 
-            <!-- ì í ë° (ì£¼ë¬¸ ìì§ í íì) -->
+            <!-- 선택 바 (주문 수집 후 표시) -->
             <div id="sel-bar" style="display:none;" class="sel-bar">
-                <span class="sel-info">ì í: <em id="sel-cnt">0</em> / <span id="sel-total">0</span>ê±´</span>
-                <button class="btn btn-sm btn-gray" onclick="selectAll()">ì ì²´ì í</button>
-                <button class="btn btn-sm btn-gray" onclick="deselectAll()">ì ì²´í´ì </button>
+                <span class="sel-info">선택: <em id="sel-cnt">0</em> / <span id="sel-total">0</span>건</span>
+                <button class="btn btn-sm btn-gray" onclick="selectAll()">전체선택</button>
+                <button class="btn btn-sm btn-gray" onclick="deselectAll()">전체해제</button>
                 <span style="flex:1;"></span>
                 <div style="display:flex;align-items:center;gap:6px;">
-                    <label style="font-size:12px;font-weight:600;color:#475569;white-space:nowrap;">ë´ë¹ì</label>
+                    <label style="font-size:12px;font-weight:600;color:#475569;white-space:nowrap;">담당자</label>
                     <select id="sel-emp" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff;color:#1e293b;min-width:100px;">
-                        <option value="">-- ì í --</option>
+                        <option value="">-- 선택 --</option>
                     </select>
                 </div>
-                <button class="btn btn-blue" onclick="sendErp()" id="b-erp">ð¤ ERP ì ì¡</button>
-                <button class="btn btn-red" onclick="openTrackingModal('gimpo')" id="b-gp">ð ê¹í¬ ì¡ì¥ìë ¥</button>
-                <button class="btn btn-orange" onclick="openTrackingModal('yongsan')" id="b-ys">ð ì©ì° ì¡ì¥ìë ¥</button>
-                <button class="btn btn-gray" onclick="sendExcludedErp()" id="b-exc">ð ê²½ë ERPì ì¡</button>
-                <button class="btn btn-gray" onclick="downloadExcludedExcel()" id="b-exc-xl">ð¥ ê²½ë ìì</button>
+                <button class="btn btn-blue" onclick="sendErp()" id="b-erp">📤 ERP 전송</button>
+                <button class="btn btn-red" onclick="openTrackingModal('gimpo')" id="b-gp">🚚 김포 송장입력</button>
+                <button class="btn btn-orange" onclick="openTrackingModal('yongsan')" id="b-ys">🚚 용산 송장입력</button>
+                <button class="btn btn-gray" onclick="sendExcludedErp()" id="b-exc">📋 경동 ERP전송</button>
+                <button class="btn btn-gray" onclick="downloadExcludedExcel()" id="b-exc-xl">📥 경동 엑셀</button>
             </div>
 
             <div style="margin-top:12px;">
-                <button class="btn btn-gray btn-sm" onclick="toggleRaw()" id="b-raw" style="display:none;">API ìëµ ìë³¸ ë³´ê¸°</button>
+                <button class="btn btn-gray btn-sm" onclick="toggleRaw()" id="b-raw" style="display:none;">API 응답 원본 보기</button>
             </div>
             <div class="raw-json" id="raw-json"></div>
         </div>
 
-        <!-- ì²ë¦¬ ê²°ê³¼ -->
+        <!-- 처리 결과 -->
         <div class="card" id="card-result" style="display:none;">
-            <h2>ì²ë¦¬ ê²°ê³¼</h2>
+            <h2>처리 결과</h2>
             <div class="sb" id="s-auto"></div>
             <div class="rg" id="res" style="display:none;"></div>
 
-            <!-- ë¯¸ë§¤ì¹­ê±´ (ìê¸°ìë ¥ íì) -->
+            <!-- 미매칭건 (수기입력 필요) -->
             <div id="unmatched-section" style="display:none; margin-top:20px;">
-                <h2 style="color:#dc2626;">ERP ë¯¸ë§¤ì¹­ â ìê¸°ìë ¥ íì <span class="count-badge" style="background:#dc2626;" id="unmatched-cnt">0</span></h2>
-                <p style="font-size:13px; color:#64748b; margin:8px 0 12px;">íëª©ì½ëê° ë§¤ì¹­ëì§ ìì ì£¼ë¬¸ìëë¤. ERPì ì§ì  íë§¤ìë ¥í´ì£¼ì¸ì.</p>
+                <h2 style="color:#dc2626;">ERP 미매칭 — 수기입력 필요 <span class="count-badge" style="background:#dc2626;" id="unmatched-cnt">0</span></h2>
+                <p style="font-size:13px; color:#64748b; margin:8px 0 12px;">품목코드가 매칭되지 않은 주문입니다. ERP에 직접 판매입력해주세요.</p>
                 <div class="tbl-scroll" id="unmatched-tbl"></div>
             </div>
         </div>
 
-        <!-- ë§¤í ê´ë¦¬ -->
+        <!-- 매핑 관리 -->
         <div class="card">
-            <h2>íëª©ì½ë ë§¤í ê´ë¦¬ <span class="count-badge" id="map-total" style="display:none;">0</span></h2>
+            <h2>품목코드 매핑 관리 <span class="count-badge" id="map-total" style="display:none;">0</span></h2>
             <div class="map-search">
-                <input type="text" id="map-q" placeholder="ê²ì (ìíë²í¸, íëª©ì½ë, ëª¨ë¸ëª)" onkeyup="if(event.key==='Enter') searchMap()">
-                <button class="btn btn-blue btn-sm" onclick="searchMap()">ê²ì</button>
-                <button class="btn btn-gray btn-sm" onclick="searchMap('')">ì ì²´</button>
-                <button class="btn btn-green btn-sm" onclick="exportMapExcel()">â¬ Excel ë¤ì´ë¡ë</button>
+                <input type="text" id="map-q" placeholder="검색 (상품번호, 품목코드, 모델명)" onkeyup="if(event.key==='Enter') searchMap()">
+                <button class="btn btn-blue btn-sm" onclick="searchMap()">검색</button>
+                <button class="btn btn-gray btn-sm" onclick="searchMap('')">전체</button>
+                <button class="btn btn-green btn-sm" onclick="exportMapExcel()">⬇ Excel 다운로드</button>
                 <label class="btn btn-orange btn-sm" style="cursor:pointer; margin:0;">
-                    â¬ Excel ìë¡ë
+                    ⬆ Excel 업로드
                     <input type="file" id="map-excel-input" accept=".xlsx" style="display:none;" onchange="importMapExcel(this)">
                 </label>
                 <label class="btn btn-sm" style="cursor:pointer; margin:0; background:#7c3aed; color:#fff;">
-                    ð ìµìì¡°í Excel
+                    🔍 옵션조회 Excel
                     <input type="file" id="opt-csv-input" accept=".csv" style="display:none;" onchange="fetchOptionsExcel(this)">
                 </label>
             </div>
             <div class="map-add-row">
-                <input type="text" id="map-new-pno" placeholder="ìíë²í¸ (íì)">
-                <input type="text" id="map-new-erp" placeholder="íëª©ì½ë (íì)">
-                <input type="text" id="map-new-model" placeholder="ëª¨ë¸ëª">
-                <button class="btn btn-green btn-sm" onclick="addMapEntry()">ì¶ê°</button>
+                <input type="text" id="map-new-pno" placeholder="상품번호 (필수)">
+                <input type="text" id="map-new-erp" placeholder="품목코드 (필수)">
+                <input type="text" id="map-new-model" placeholder="모델명">
+                <button class="btn btn-green btn-sm" onclick="addMapEntry()">추가</button>
             </div>
             <div class="tbl-scroll" id="map-tbl" style="margin-top:12px; max-height:400px; overflow-y:auto;"></div>
             <div class="sb" id="s-map"></div>
         </div>
 
-        <!-- ì¤í ë¡ê·¸ -->
+        <!-- 실행 로그 -->
         <div class="card">
-            <h2>ì¤í ë¡ê·¸</h2>
-            <button class="btn btn-gray btn-sm" onclick="document.getElementById('logbox').classList.toggle('vis')">ë¡ê·¸ í ê¸</button>
+            <h2>실행 로그</h2>
+            <button class="btn btn-gray btn-sm" onclick="document.getElementById('logbox').classList.toggle('vis')">로그 토글</button>
             <div class="log" id="logbox"></div>
         </div>
     </div>
 
 <script>
 const B = '';
-let _rawOrders = null;   // API ìëµ ìë³¸ ë°°ì´
-let _checkedSet = new Set();  // ì²´í¬ë ìíì£¼ë¬¸ë²í¸(productOrderId) Set
+let _rawOrders = null;   // API 응답 원본 배열
+let _checkedSet = new Set();  // 체크된 상품주문번호(productOrderId) Set
+let _inventoryMap = {};  // ERP 품목코드 → 재고수량
+let _orderErpMap = {};   // 상품주문번호 → ERP 품목코드
 
-// ââ ë´ë¹ì ëª©ë¡ ë¡ë ââ
+// ── 담당자 목록 로드 ──
 (async function loadEmployees(){
     try {
         const r = await(await fetch(B+'/api/auth/employees')).json();
@@ -239,14 +241,14 @@ let _checkedSet = new Set();  // ì²´í¬ë ìíì£¼ë¬¸ë²
             opt.textContent = emp.name;
             sel.appendChild(opt);
         });
-    } catch(e) { console.warn('ë´ë¹ì ëª©ë¡ ë¡ë ì¤í¨', e); }
+    } catch(e) { console.warn('담당자 목록 로드 실패', e); }
 })();
 
 function getSelectedEmpCd() {
     return document.getElementById('sel-emp')?.value || '';
 }
 
-// ë ì§ ê¸°ë³¸ê°
+// 날짜 기본값
 (function initDates(){
     const now = new Date();
     const to = now.toISOString().slice(0,10);
@@ -264,27 +266,27 @@ function log(m){
 function ss(id,t,m){const e=document.getElementById(id);e.className='sb '+t;e.textContent=m;}
 function sd(id,c){document.getElementById(id).className='dot dot-'+c;}
 
-// ââ ì°ê²° íì¤í¸ ââ
+// ── 연결 테스트 ──
 async function testConn(){
-    ss('s-conn','load','ì°ê²° íì¤í¸ ì¤...');log('ì°ê²° íì¤í¸');
+    ss('s-conn','load','연결 테스트 중...');log('연결 테스트');
     try{
         const r=await(await fetch(B+'/api/smartstore/token-test')).json();
-        if(r.server_ip) log('ìë² IP: '+r.server_ip+' (ë¤ì´ë² íì©IPì ë±ë¡ íì)');
-        if(r.success){sd('d-nv','g');log('ë¤ì´ë² API OK');}
-        else{sd('d-nv','r');log('ë¤ì´ë²: '+r.error);}
-    }catch(e){sd('d-nv','r');log('ë¤ì´ë² ì°ê²°ì¤í¨: '+e.message);}
+        if(r.server_ip) log('서버 IP: '+r.server_ip+' (네이버 허용IP에 등록 필요)');
+        if(r.success){sd('d-nv','g');log('네이버 API OK');}
+        else{sd('d-nv','r');log('네이버: '+r.error);}
+    }catch(e){sd('d-nv','r');log('네이버 연결실패: '+e.message);}
     try{
         const r=await(await fetch(B+'/health')).json();
-        if(r.status==='ok'){sd('d-erp','g');log('ìë² OK');}else{sd('d-erp','y');}
-    }catch(e){sd('d-erp','r');log('ìë² ì°ê²°ì¤í¨');}
-    sd('d-lg','g');log('iLogenì ì¤ì  ë±ë¡ì íì¸');
-    ss('s-conn','ok','ì°ê²° íì¤í¸ ìë£');
+        if(r.status==='ok'){sd('d-erp','g');log('서버 OK');}else{sd('d-erp','y');}
+    }catch(e){sd('d-erp','r');log('서버 연결실패');}
+    sd('d-lg','g');log('iLogen은 실제 등록시 확인');
+    ss('s-conn','ok','연결 테스트 완료');
 }
 
-// ââ ì£¼ë¬¸ ìì§ ââ
+// ── 주문 수집 ──
 async function fetchOrders(){
     const b=document.getElementById('b-fetch');
-    b.disabled=true;b.innerHTML='<span class="sp" style="border-color:#fff;border-top-color:transparent;"></span> ìì§ ì¤...';
+    b.disabled=true;b.innerHTML='<span class="sp" style="border-color:#fff;border-top-color:transparent;"></span> 수집 중...';
 
     const dateFrom = document.getElementById('f-from').value;
     const dateTo = document.getElementById('f-to').value;
@@ -296,8 +298,8 @@ async function fetchOrders(){
     if(dateTo) params.set('date_to', dateTo);
     params.set('order_type', orderType);
 
-    ss('s-fetch','load',`${statusLabel} ìì§ ì¤... (${dateFrom} ~ ${dateTo})`);
-    log(`ì£¼ë¬¸ ìì§: ${statusLabel}, ${dateFrom} ~ ${dateTo}`);
+    ss('s-fetch','load',`${statusLabel} 수집 중... (${dateFrom} ~ ${dateTo})`);
+    log(`주문 수집: ${statusLabel}, ${dateFrom} ~ ${dateTo}`);
 
     try{
         const r = await(await fetch(B+'/api/smartstore/orders?'+params.toString())).json();
@@ -305,12 +307,12 @@ async function fetchOrders(){
         _checkedSet.clear();
 
         if(r.success && _rawOrders.length > 0){
-            // ê¸°ë³¸: ì ì²´ ì í
+            // 기본: 전체 선택
             for(const o of _rawOrders) {
                 _checkedSet.add(getProductOrderId(o));
             }
-            ss('s-fetch','ok', r.count+'ê±´ ìì§ ìë£ ('+statusLabel+')');
-            log('ìì§: '+r.count+'ê±´');
+            ss('s-fetch','ok', r.count+'건 수집 완료 ('+statusLabel+')');
+            log('수집: '+r.count+'건');
             document.getElementById('order-cnt').textContent = r.count;
             document.getElementById('order-cnt').style.display = 'inline';
             document.getElementById('b-raw').style.display = 'inline-flex';
@@ -318,21 +320,41 @@ async function fetchOrders(){
             showSelBar(true);
             fetchInventory();  // 재고현황 자동 조회
         } else if(r.success){
-            ss('s-fetch','info','í´ë¹ ì¡°ê±´ì ì£¼ë¬¸ì´ ììµëë¤.');
-            log('ìì');
+            ss('s-fetch','info','해당 조건의 주문이 없습니다.');
+            log('없음');
             document.getElementById('order-cnt').style.display = 'none';
             document.getElementById('tbl-wrap').innerHTML = '';
             showSelBar(false);
         } else {
-            ss('s-fetch','err', r.error||'ì¤í¨');
-            log('ì¤í¨: '+r.error);
+            ss('s-fetch','err', r.error||'실패');
+            log('실패: '+r.error);
             showSelBar(false);
         }
-    }catch(e){ss('s-fetch','err',e.message);log('ì¤ë¥: '+e.message);showSelBar(false);}
-    finally{b.disabled=false;b.innerHTML='ì£¼ë¬¸ìì§';}
+    }catch(e){ss('s-fetch','err',e.message);log('오류: '+e.message);showSelBar(false);}
+    finally{b.disabled=false;b.innerHTML='주문수집';}
 }
 
-// ââ ì í ë° ââ
+// ── 재고현황 조회 ──
+async function fetchInventory(){
+    if(!_rawOrders || _rawOrders.length === 0) return;
+    try{
+        const r = await(await fetch(B+'/api/smartstore/inventory', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({orders: _rawOrders}),
+        })).json();
+        if(r.success && r.inventory){
+            _inventoryMap = r.inventory;
+            _orderErpMap = r.order_erp_map || {};
+            log('재고조회: '+Object.keys(r.inventory).length+'건');
+            renderTbl(_rawOrders);
+        } else {
+            log('재고조회 실패: '+(r.error||''));
+        }
+    }catch(e){log('재고조회 오류: '+e.message);}
+}
+
+// ── 선택 바 ──
 function showSelBar(show) {
     document.getElementById('sel-bar').style.display = show ? 'flex' : 'none';
     if(show) updateSelCount();
@@ -341,11 +363,11 @@ function showSelBar(show) {
 function updateSelCount() {
     document.getElementById('sel-cnt').textContent = _checkedSet.size;
     document.getElementById('sel-total').textContent = _rawOrders ? _rawOrders.length : 0;
-    // ë²í¼ íì±í
+    // 버튼 활성화
     const hasSelection = _checkedSet.size > 0;
     document.getElementById('b-gp').disabled = !hasSelection;
     document.getElementById('b-ys').disabled = !hasSelection;
-    // í ì¤íì¼
+    // 행 스타일
     document.querySelectorAll('tr[data-poid]').forEach(tr => {
         const poid = tr.getAttribute('data-poid');
         tr.classList.toggle('row-unchecked', !_checkedSet.has(poid));
@@ -388,21 +410,21 @@ function deselectAll() {
     updateSelCount();
 }
 
-// ââ Raw JSON ââ
+// ── Raw JSON ──
 function toggleRaw(){
     const el = document.getElementById('raw-json');
     if(el.classList.contains('vis')){
         el.classList.remove('vis');
     } else {
         if(_rawOrders && _rawOrders.length > 0){
-            el.textContent = '// ì²« ë²ì§¸ ì£¼ë¬¸ ìë³¸ ë°ì´í° (ì ì²´ ' + _rawOrders.length + 'ê±´ ì¤ 1ê±´)\n' +
+            el.textContent = '// 첫 번째 주문 원본 데이터 (전체 ' + _rawOrders.length + '건 중 1건)\n' +
                 JSON.stringify(_rawOrders[0], null, 2);
         }
         el.classList.add('vis');
     }
 }
 
-// ââ íë ì¶ì¶ ââ
+// ── 필드 추출 ──
 function getOrderId(order) {
     return (order.order || {}).orderId || '';
 }
@@ -441,46 +463,46 @@ function getDeliveryMethod(order) {
     const po = order.productOrder || {};
     const method = po.expectedDeliveryMethod || '';
 
-    // íë°°ê° ìë ê²½ì°ë ê·¸ë¥ íê¸ë¡ íê¸°
+    // 택배가 아닌 경우는 그냥 한글로 표기
     const nonDeliveryMap = {
-        'QUICK_SVC':       'íµìë¹ì¤',
-        'VISIT':           'ë°©ë¬¸ìë ¹',
-        'VISIT_RECEIPT':   'ë°©ë¬¸ìë ¹',
-        'DIRECT_DELIVERY': 'ì§ì ì ë¬',
-        'NOTHING':         'ë°°ì¡ìì',
+        'QUICK_SVC':       '퀵서비스',
+        'VISIT':           '방문수령',
+        'VISIT_RECEIPT':   '방문수령',
+        'DIRECT_DELIVERY': '직접전달',
+        'NOTHING':         '배송없음',
     };
     if (nonDeliveryMap[method]) return nonDeliveryMap[method];
 
-    // íë°°(DELIVERY)ì¸ ê²½ì° íë°°ì¬ + ì ë¶/ì°©ë¶ íì
-    // â  ì´ë¯¸ ë°ì¡ë ê²½ì°: deliveryCompanyCode ì¬ì©
+    // 택배(DELIVERY)인 경우 택배사 + 선불/착불 표시
+    // ① 이미 발송된 경우: deliveryCompanyCode 사용
     const carrierCodeMap = {
-        'LOGEN':    'ë¡ì  íë°°',
-        'KDEXP':    'ê²½ëíë°°',
-        'CJGLS':    'CJëííµì´',
-        'POST':     'ì°ì²´êµ­íë°°',
-        'HANJIN':   'íì§íë°°',
-        'LOTTE':    'ë¡¯ë°íë°°',
-        'ILYANG':   'ì¼ìë¡ì§ì¤',
-        'CHUNILPS': 'ì²ì¼íë°°',
-        'DAESIN':   'ëì íë°°',
-        'HYUNDAI':  'íëíë°°',
+        'LOGEN':    '로젠택배',
+        'KDEXP':    '경동택배',
+        'CJGLS':    'CJ대한통운',
+        'POST':     '우체국택배',
+        'HANJIN':   '한진택배',
+        'LOTTE':    '롯데택배',
+        'ILYANG':   '일양로지스',
+        'CHUNILPS': '천일택배',
+        'DAESIN':   '대신택배',
+        'HYUNDAI':  '현대택배',
     };
     let carrier = '';
     const dispatchedCode = po.deliveryCompanyCode || '';
     if (dispatchedCode) {
         carrier = carrierCodeMap[dispatchedCode] || dispatchedCode;
     } else {
-        // â¡ ë¯¸ë°ì¡: ì ì¸ í¤ìë â ê²½ëíë°°, ìëë©´ ë¡ì  íë°°
-        carrier = isExcluded(order) ? 'ê²½ëíë°°' : 'ë¡ì  íë°°';
+        // ② 미발송: 제외 키워드 → 경동택배, 아니면 로젠택배
+        carrier = isExcluded(order) ? '경동택배' : '로젠택배';
     }
 
-    // ì ë¶/ì°©ë¶/ë¬´ë£ íì
+    // 선불/착불/무료 표시
     const feeType = po.shippingFeeType || '';
     const feeMap = {
-        'FREE':             '<span style="color:#16a34a;font-size:0.8em">[ë¬´ë£]</span>',
-        'CONDITIONAL_FREE': '<span style="color:#16a34a;font-size:0.8em">[ì¡°ê±´ë¬´ë£]</span>',
-        'CHARGED':          '<span style="color:#2563eb;font-size:0.8em">[ì ë¶]</span>',
-        'COLLECT':          '<span style="color:#dc2626;font-size:0.8em">[ì°©ë¶]</span>',
+        'FREE':             '<span style="color:#16a34a;font-size:0.8em">[무료]</span>',
+        'CONDITIONAL_FREE': '<span style="color:#16a34a;font-size:0.8em">[조건무료]</span>',
+        'CHARGED':          '<span style="color:#2563eb;font-size:0.8em">[선불]</span>',
+        'COLLECT':          '<span style="color:#dc2626;font-size:0.8em">[착불]</span>',
     };
     const feeBadge = feeMap[feeType] || '';
 
@@ -491,47 +513,47 @@ function getStatus(order) {
     const st = po.productOrderStatus || '';
     const placeStatus = po.placeOrderStatus || '';
     if (st === 'PAYED') {
-        if (placeStatus === 'OK') return '<span class="badge badge-ready">ë°ì£¼ í</span>';
-        return '<span class="badge badge-pay">ë°ì£¼ ì </span>';
+        if (placeStatus === 'OK') return '<span class="badge badge-ready">발주 후</span>';
+        return '<span class="badge badge-pay">발주 전</span>';
     }
     const map = {
-        'DELIVERING': ['ë°°ì¡ì¤', 'badge-ship'],
-        'DISPATCHED': ['ë°ì¡ìë£', 'badge-ship'],
-        'DELIVERED': ['ë°°ë¬ìë£', 'badge-done'],
-        'PURCHASE_DECIDED': ['êµ¬ë§¤íì ', 'badge-done'],
+        'DELIVERING': ['배송중', 'badge-ship'],
+        'DISPATCHED': ['발송완료', 'badge-ship'],
+        'DELIVERED': ['배달완료', 'badge-done'],
+        'PURCHASE_DECIDED': ['구매확정', 'badge-done'],
     };
     const m = map[st];
     return m ? `<span class="badge ${m[1]}">${m[0]}</span>` : (st || '-');
 }
 
-// ââ ì ì¸ í¤ìë (ë°±ìë EXCLUDE_KEYWORDS ëê¸°í) ââ
-const EXCLUDE_KEYWORDS = ['íë¸ë', 'ìë²ë', 'ìºë¹ë·'];
+// ── 제외 키워드 (백엔드 EXCLUDE_KEYWORDS 동기화) ──
+const EXCLUDE_KEYWORDS = ['허브랙', '서버랙', '캐비넷'];
 function isExcluded(order) {
     const po = order.productOrder || {};
     const combined = ((po.productName || '') + ' ' + (po.productOption || '')).toLowerCase();
     return EXCLUDE_KEYWORDS.some(kw => combined.includes(kw));
 }
 
-// ââ ë§¤ì¹­ ì í ë¶ë¥ (ë°±ìë ë¡ì§ ë¯¸ë¬ë§) ââ
+// ── 매칭 유형 분류 (백엔드 로직 미러링) ──
 function classifyMatchType(order) {
     const po = order.productOrder || {};
     let option = (po.productOption || po.optionInfo || '').trim();
     const prodName = (po.productName || '').trim();
 
     if (option) {
-        // ë°°ì¡ë°©ë² suffix ì ê±°
+        // 배송방법 suffix 제거
         if (option.includes(' / ')) option = option.split(' / ')[0].trim();
 
         const extracted = extractErpCodeFromOption(option);
         if (extracted) {
-            // ìµì íì¤í¸ ìì²´ê° ì½ë (í¨í´3) â ìíëªê³¼ ëì¼í ì½ë, ë©ì¸ì¼ë¡ ë¶ë¥
+            // 옵션 텍스트 자체가 코드 (패턴3) → 상품명과 동일한 코드, 메인으로 분류
             if (option === extracted) return 'main';
-            // ê´í¸Â·ì½ë¡  ë±ì¼ë¡ ì¶ì¶ë ê²½ì° â ì¤ì  ìµì ë¶ê¸°
+            // 괄호·콜론 등으로 추출된 경우 → 실제 옵션 분기
             return 'option';
         }
     }
 
-    // ì¶ê°ìí íë³: ìíëª ìì²´ê° ì½ëì²ë¼ ìê¸´ ê²½ì°
+    // 추가상품 판별: 상품명 자체가 코드처럼 생긴 경우
     if (/^[A-Za-z0-9][A-Za-z0-9\-\.]+$/.test(prodName) && prodName.length >= 4) return 'addon';
 
     return 'main';
@@ -543,23 +565,23 @@ function extractErpCodeFromOption(text) {
 
     function valid(s) { return s && !s.includes(' ') && s.length >= 3 && /^[A-Za-z0-9]/.test(s); }
 
-    // í¨í´1: ë«í ê´í¸
+    // 패턴1: 닫힌 괄호
     let m = text.match(/\(([^()]*(?:\([^)]*\))[^()]*|[^()]+)\)\s*$/);
     if (m && valid(m[1].trim())) return m[1].trim();
-    // í¨í´1-b: ë«íì§ ìì ê´í¸
+    // 패턴1-b: 닫히지 않은 괄호
     m = text.match(/\(([A-Za-z0-9][A-Za-z0-9\-\(\)\.]*)\s*$/);
     if (m && valid(m[1].trim())) return m[1].trim();
-    // í¨í´2: ì½ë¡  ë¤
+    // 패턴2: 콜론 뒤
     if (text.includes(':')) {
         const after = text.split(':').pop().trim();
         if (valid(after)) return after;
     }
-    // í¨í´3: ìµì íì¤í¸ ì ì²´ê° ì½ë (ì: LS-420HM, LS-UHS2SR)
+    // 패턴3: 옵션 텍스트 전체가 코드 (예: LS-420HM, LS-UHS2SR)
     if (valid(text)) return text;
     return null;
 }
 
-// ââ íì´ë¸ ë ëë§ ââ
+// ── 테이블 렌더링 ──
 function renderTbl(orders){
     const w = document.getElementById('tbl-wrap');
     if(!orders.length){ w.innerHTML=''; return; }
@@ -567,18 +589,19 @@ function renderTbl(orders){
     let h = `<table>
         <thead><tr>
             <th style="width:40px;text-align:center;"><input type="checkbox" id="master-cb" checked onchange="toggleAllChecks(this)"></th>
-            <th>ì£¼ë¬¸ë²í¸</th>
-            <th>ìíì£¼ë¬¸ë²í¸</th>
-            <th>ìíëª</th>
-            <th>ìµì</th>
-            <th>ìë</th>
-            <th>ê²°ì ê¸ì¡</th>
-            <th>ë°°ì¡ë°©ë²</th>
-            <th>ìí</th>
-            <th>ìë ¹ì¸</th>
+            <th>주문번호</th>
+            <th>상품주문번호</th>
+            <th>상품명</th>
+            <th>옵션</th>
+            <th>수량</th>
+            <th>재고</th>
+            <th>결제금액</th>
+            <th>배송방법</th>
+            <th>상태</th>
+            <th>수령인</th>
         </tr></thead><tbody>`;
 
-    // ì ì¸ í¤ìëê° í¬í¨ë orderId ì§í© (ê°ì ì£¼ë¬¸ë²í¸ ì ì²´ ì£¼í©ì)
+    // 제외 키워드가 포함된 orderId 집합 (같은 주문번호 전체 주황색)
     const excludedOrderIds = new Set();
     for(const o of orders){
         if(isExcluded(o)) excludedOrderIds.add(getOrderId(o));
@@ -593,11 +616,11 @@ function renderTbl(orders){
             : matchType === 'option' ? 'row-option'
             : matchType === 'addon' ? 'row-addon' : '';
         const matchTag = excluded
-            ? '<span class="match-tag match-tag-exc">ERPì ì¸</span>'
+            ? '<span class="match-tag match-tag-exc">ERP제외</span>'
             : matchType === 'option'
-            ? '<span class="match-tag match-tag-opt">ìµì</span>'
+            ? '<span class="match-tag match-tag-opt">옵션</span>'
             : matchType === 'addon'
-            ? '<span class="match-tag match-tag-add">ì¶ê°ìí</span>'
+            ? '<span class="match-tag match-tag-add">추가상품</span>'
             : '';
         h += `<tr data-poid="${poid}" class="${rowClass}${checked ? '' : ' row-unchecked'}">
             <td style="text-align:center;"><input type="checkbox" class="row-cb" ${checked?'checked':''} onchange="toggleCheck('${poid}',this)"></td>
@@ -607,7 +630,7 @@ function renderTbl(orders){
             <td>${getOptionText(o)}</td>
             <td style="text-align:center">${getQuantity(o)}</td>
             <td style="text-align:center">${getStock(o)}</td>
-            <td style="text-align:right">${Number(getPayment(o)).toLocaleString()}ì</td>
+            <td style="text-align:right">${Number(getPayment(o)).toLocaleString()}원</td>
             <td>${getDeliveryMethod(o)}</td>
             <td>${getStatus(o)}</td>
             <td>${getReceiverName(o)}</td>
@@ -616,27 +639,27 @@ function renderTbl(orders){
     w.innerHTML = h + '</tbody></table>';
 }
 
-// ââ ERP ì ì¡ë§ ââ
+// ── ERP 전송만 ──
 async function sendErp(){
     if(!_rawOrders || _checkedSet.size === 0){
-        ss('s-auto','warn','ì íë ì£¼ë¬¸ì´ ììµëë¤.');
+        ss('s-auto','warn','선택된 주문이 없습니다.');
         document.getElementById('card-result').style.display = 'block';
         return;
     }
     const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
     const groupSet = new Set(selectedOrders.map(o => getOrderId(o)));
-    if(!confirm(`ERP íë§¤ì í ì ì¡\n\nì í: ${selectedOrders.length}ê±´ (${groupSet.size}ê·¸ë£¹)\n\nâ» ë¡ì  ë±ë¡/ë°ì¡ì²ë¦¬ë í¬í¨ëì§ ììµëë¤.`)) return;
+    if(!confirm(`ERP 판매전표 전송\n\n선택: ${selectedOrders.length}건 (${groupSet.size}그룹)\n\n※ 로젠등록/발송처리는 포함되지 않습니다.`)) return;
 
     const btn = document.getElementById('b-erp');
     const bg = document.getElementById('b-gp'), by = document.getElementById('b-ys');
     btn.disabled = bg.disabled = by.disabled = true;
     const ot = btn.innerHTML;
-    btn.innerHTML = '<span class="sp"></span> ì ì¡ ì¤...';
+    btn.innerHTML = '<span class="sp"></span> 전송 중...';
 
     document.getElementById('card-result').style.display = 'block';
-    ss('s-auto','load',`ERP ì ì¡ ì¤... (${selectedOrders.length}ê±´)`);
+    ss('s-auto','load',`ERP 전송 중... (${selectedOrders.length}건)`);
     document.getElementById('res').style.display = 'none';
-    log(`=== ERP ì ì¡ (${selectedOrders.length}ê±´) ===`);
+    log(`=== ERP 전송 (${selectedOrders.length}건) ===`);
 
     try{
         const r = await(await fetch(B+'/api/smartstore/send-erp', {
@@ -646,16 +669,16 @@ async function sendErp(){
         })).json();
 
         if(r.success){
-            ss('s-auto','ok',`ERP ì ì¡ ìë£! ë§¤ì¹­ ${r.erp_matched||0}ê±´ + íë°°ë¹ ${r.lines? r.lines - (r.erp_matched||0) : 0}ê±´`);
-            log('ìë£: '+JSON.stringify({lines: r.lines, matched: r.erp_matched, unmatched: r.erp_unmatched}));
+            ss('s-auto','ok',`ERP 전송 완료! 매칭 ${r.erp_matched||0}건 + 택배비 ${r.lines? r.lines - (r.erp_matched||0) : 0}건`);
+            log('완료: '+JSON.stringify({lines: r.lines, matched: r.erp_matched, unmatched: r.erp_unmatched}));
             renderErpResult(r);
         } else {
             const _toStr = v => typeof v === 'string' ? v : (v ? JSON.stringify(v) : '');
-            const errMsg = _toStr(r.error) || _toStr(r.detail) || 'ERP ì ì¡ ì¤í¨';
+            const errMsg = _toStr(r.error) || _toStr(r.detail) || 'ERP 전송 실패';
             ss('s-auto','err', errMsg);
-            log('ì¤í¨: '+JSON.stringify(r));
+            log('실패: '+JSON.stringify(r));
         }
-    }catch(e){ss('s-auto','err',e.message);log('ì¤ë¥: '+e.message);}
+    }catch(e){ss('s-auto','err',e.message);log('오류: '+e.message);}
     finally{btn.disabled=bg.disabled=by.disabled=false; btn.innerHTML=ot; updateSelCount();}
 }
 
@@ -663,9 +686,9 @@ function renderErpResult(r){
     const g = document.getElementById('res'); g.style.display = 'grid';
     g.innerHTML = `
         <div class="rc ${r.success?'g':'r'}">
-            <h3>ERP íë§¤ìë ¥</h3>
-            <div class="v">${r.lines||0}ê±´</div>
-            <div class="d">ë§¤ì¹­ ${r.erp_matched||0}ê±´${r.erp_unmatched>0?`<br><span style="color:#dc2626;">ë¯¸ë§¤ì¹­ ${r.erp_unmatched}ê±´ (ìê¸°ìë ¥)</span>`:''}</div>
+            <h3>ERP 판매입력</h3>
+            <div class="v">${r.lines||0}건</div>
+            <div class="d">매칭 ${r.erp_matched||0}건${r.erp_unmatched>0?`<br><span style="color:#dc2626;">미매칭 ${r.erp_unmatched}건 (수기입력)</span>`:''}</div>
         </div>`;
 
     const um = r.unmatched_items || [];
@@ -674,22 +697,22 @@ function renderErpResult(r){
         umSec.style.display = 'block';
         document.getElementById('unmatched-cnt').textContent = um.length;
         let h = `<table><thead><tr>
-            <th>ìíë²í¸</th><th>ìíëª</th><th>ìµì</th><th>ìë</th><th>ì ì°ê¸ì¡</th><th>íëª©ì½ë</th><th>ëª¨ë¸ëª</th><th></th>
+            <th>상품번호</th><th>상품명</th><th>옵션</th><th>수량</th><th>정산금액</th><th>품목코드</th><th>모델명</th><th></th>
             </tr></thead><tbody>`;
         um.forEach((it,i) => {
             const pno = it.productNo || '';
             h += `<tr>
                 <td>${pno}</td><td>${it.productName||''}</td><td>${it.optionInfo||''}</td>
-                <td>${it.quantity||1}</td><td>${Number(it.settlementAmount||0).toLocaleString()}ì</td>
-                <td><input id="mc-erp-${i}" style="width:120px;padding:3px 6px;font-size:12px;border:1px solid #ccc;border-radius:4px;" placeholder="íëª©ì½ë"></td>
-                <td><input id="mm-erp-${i}" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid #ccc;border-radius:4px;" placeholder="ëª¨ë¸ëª(ì í)"></td>
-                <td><button class="btn-xs btn-xs-green" onclick="addMapFromErp('${pno}',${i})">ë§¤íì¶ê°</button></td>
+                <td>${it.quantity||1}</td><td>${Number(it.settlementAmount||0).toLocaleString()}원</td>
+                <td><input id="mc-erp-${i}" style="width:120px;padding:3px 6px;font-size:12px;border:1px solid #ccc;border-radius:4px;" placeholder="품목코드"></td>
+                <td><input id="mm-erp-${i}" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid #ccc;border-radius:4px;" placeholder="모델명(선택)"></td>
+                <td><button class="btn-xs btn-xs-green" onclick="addMapFromErp('${pno}',${i})">매핑추가</button></td>
             </tr>`;
         });
         umSec.querySelector('tbody') ? umSec.querySelector('tbody').innerHTML = h + '</tbody>' : null;
-        umSec.innerHTML = `<h2 style="color:#dc2626;">ERP ë¯¸ë§¤ì¹­ â ìê¸°ìë ¥ íì <span class="count-badge" style="background:#dc2626;">${um.length}</span></h2>
-            <p style="font-size:13px;color:#64748b;margin:8px 0 12px;">íëª©ì½ëë¥¼ ë§¤ííë©´ ë¤ì ì ì¡ ì ìë ì²ë¦¬ë©ëë¤.</p>
-            <table><thead><tr><th>ìíë²í¸</th><th>ìíëª</th><th>ìµì</th><th>ìë</th><th>ì ì°ê¸ì¡</th><th>íëª©ì½ë</th><th>ëª¨ë¸ëª</th><th></th></tr></thead><tbody>${h}</tbody></table>`;
+        umSec.innerHTML = `<h2 style="color:#dc2626;">ERP 미매칭 — 수기입력 필요 <span class="count-badge" style="background:#dc2626;">${um.length}</span></h2>
+            <p style="font-size:13px;color:#64748b;margin:8px 0 12px;">품목코드를 매핑하면 다음 전송 시 자동 처리됩니다.</p>
+            <table><thead><tr><th>상품번호</th><th>상품명</th><th>옵션</th><th>수량</th><th>정산금액</th><th>품목코드</th><th>모델명</th><th></th></tr></thead><tbody>${h}</tbody></table>`;
     } else {
         umSec.style.display = 'none';
     }
@@ -698,37 +721,37 @@ function renderErpResult(r){
 async function addMapFromErp(pno, i){
     const code = document.getElementById(`mc-erp-${i}`)?.value?.trim();
     const model = document.getElementById(`mm-erp-${i}`)?.value?.trim() || '';
-    if(!code){ alert('íëª©ì½ëë¥¼ ìë ¥íì¸ì.'); return; }
+    if(!code){ alert('품목코드를 입력하세요.'); return; }
     const r = await(await fetch(B+'/api/smartstore/product-map',{
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({productNo: pno, erpCode: code, model}),
     })).json();
-    if(r.success){ alert(`ë§¤í ì¶ê° ìë£: ${pno} â ${code}`); loadMap(); }
-    else alert('ì¤í¨: '+(r.error||''));
+    if(r.success){ alert(`매핑 추가 완료: ${pno} → ${code}`); loadMap(); }
+    else alert('실패: '+(r.error||''));
 }
 
-// ââ ë¡ì  ë±ë¡ë§ ââ
+// ── 로젠등록만 ──
 async function regLogen(wh){
     if(!_rawOrders || _checkedSet.size === 0){
-        ss('s-auto','warn','ì íë ì£¼ë¬¸ì´ ììµëë¤.');
+        ss('s-auto','warn','선택된 주문이 없습니다.');
         document.getElementById('card-result').style.display = 'block';
         return;
     }
     const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
     const groupSet = new Set(selectedOrders.map(o => getOrderId(o)));
-    const nm = wh==='gimpo'?'ê¹í¬':'ì©ì°';
-    if(!confirm(`${nm} ë¡ì  íë°° ë±ë¡\n\nì í: ${selectedOrders.length}ê±´ (${groupSet.size}ê·¸ë£¹)\n\në°ì£¼íì¸ + ë°ì¡ì²ë¦¬ í¬í¨\nâ» ERP ì ì¡ì í¬í¨ëì§ ììµëë¤.`)) return;
+    const nm = wh==='gimpo'?'김포':'용산';
+    if(!confirm(`${nm} 로젠택배 등록\n\n선택: ${selectedOrders.length}건 (${groupSet.size}그룹)\n\n발주확인 + 발송처리 포함\n※ ERP 전송은 포함되지 않습니다.`)) return;
 
     const btn = document.getElementById(wh==='gimpo'?'b-gp':'b-ys');
     const be = document.getElementById('b-erp'), bo = document.getElementById(wh==='gimpo'?'b-ys':'b-gp');
     btn.disabled = be.disabled = bo.disabled = true;
     const ot = btn.innerHTML;
-    btn.innerHTML = '<span class="sp"></span> ì²ë¦¬ ì¤...';
+    btn.innerHTML = '<span class="sp"></span> 처리 중...';
 
     document.getElementById('card-result').style.display = 'block';
-    ss('s-auto','load',`${nm} ë¡ì  ë±ë¡ ì¤... (${groupSet.size}ê·¸ë£¹, 1~2ë¶ ìì)`);
+    ss('s-auto','load',`${nm} 로젠등록 중... (${groupSet.size}그룹, 1~2분 소요)`);
     document.getElementById('res').style.display = 'none';
-    log(`=== ${nm} ë¡ì  ë±ë¡ (${selectedOrders.length}ê±´) ===`);
+    log(`=== ${nm} 로젠등록 (${selectedOrders.length}건) ===`);
 
     try{
         const r = await(await fetch(B+'/api/smartstore/register-logen?warehouse='+wh,{
@@ -737,14 +760,14 @@ async function regLogen(wh){
         })).json();
 
         if(r.success){
-            ss('s-auto','ok',`${nm} ë¡ì  ë±ë¡ ìë£! ì¡ì¥ ${r.tracking_count||0}ê±´`);
-            log('ìë£: '+JSON.stringify({tracking: r.tracking_count, confirm: r.confirm?.confirmed, dispatch: r.dispatch?.dispatched}));
+            ss('s-auto','ok',`${nm} 로젠등록 완료! 송장 ${r.tracking_count||0}건`);
+            log('완료: '+JSON.stringify({tracking: r.tracking_count, confirm: r.confirm?.confirmed, dispatch: r.dispatch?.dispatched}));
             renderLogenResult(r, nm);
         } else {
-            ss('s-auto','err', r.logen?.error || r.detail || 'ë¡ì  ë±ë¡ ì¤í¨');
-            log('ì¤í¨: '+JSON.stringify(r));
+            ss('s-auto','err', r.logen?.error || r.detail || '로젠등록 실패');
+            log('실패: '+JSON.stringify(r));
         }
-    }catch(e){ss('s-auto','err',e.message);log('ì¤ë¥: '+e.message);}
+    }catch(e){ss('s-auto','err',e.message);log('오류: '+e.message);}
     finally{btn.disabled=be.disabled=bo.disabled=false; btn.innerHTML=ot; updateSelCount();}
 }
 
@@ -753,52 +776,52 @@ function renderLogenResult(r, nm){
     const l = r.logen||{}, c = r.confirm||{}, p = r.dispatch||{};
     g.innerHTML = `
         <div class="rc ${l.success&&r.tracking_count>0?'g':'r'}">
-            <h3>${nm} ë¡ì  ë±ë¡</h3>
-            <div class="v">${r.tracking_count||0}ê±´</div>
-            <div class="d">${l.error||('ë±ë¡ '+(l.total_registered||0)+' / ì±ë² '+(l.total_tracking||0))}</div>
+            <h3>${nm} 로젠등록</h3>
+            <div class="v">${r.tracking_count||0}건</div>
+            <div class="d">${l.error||('등록 '+(l.total_registered||0)+' / 채번 '+(l.total_tracking||0))}</div>
         </div>
         <div class="rc ${c.confirmed>0?'g':'y'}">
-            <h3>ë°ì£¼íì¸</h3>
-            <div class="v">${c.confirmed||0}ê±´</div>
+            <h3>발주확인</h3>
+            <div class="v">${c.confirmed||0}건</div>
             <div class="d">${c.message||''}</div>
         </div>
         <div class="rc ${p.dispatched>0?'g':'y'}">
-            <h3>ë°ì¡ì²ë¦¬</h3>
-            <div class="v">${p.dispatched||0}ê±´</div>
-            <div class="d">${p.message||(p.failed>0?'ì¤í¨ '+p.failed+'ê±´':'ìë£')}</div>
+            <h3>발송처리</h3>
+            <div class="v">${p.dispatched||0}건</div>
+            <div class="d">${p.message||(p.failed>0?'실패 '+p.failed+'건':'완료')}</div>
         </div>`;
 }
 
-// ââ ìë ë±ë¡ (ì íë ì£¼ë¬¸ë§) â ê¸°ì¡´ ì ì§ ââ
+// ── 자동 등록 (선택된 주문만) — 기존 유지 ──
 async function autoReg(wh){
     if(!_rawOrders || _checkedSet.size === 0){
-        ss('s-auto','warn','ì íë ì£¼ë¬¸ì´ ììµëë¤. ì²´í¬ë°ì¤ë¡ ì£¼ë¬¸ì ì íí´ì£¼ì¸ì.');
+        ss('s-auto','warn','선택된 주문이 없습니다. 체크박스로 주문을 선택해주세요.');
         document.getElementById('card-result').style.display = 'block';
         return;
     }
 
-    // ì íë ì£¼ë¬¸ë§ íí°
+    // 선택된 주문만 필터
     const selectedOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
-    const nm = wh==='gimpo'?'ê¹í¬':'ì©ì°';
+    const nm = wh==='gimpo'?'김포':'용산';
 
-    // ì£¼ë¬¸ë²í¸ ê¸°ì¤ ê·¸ë£¹ ì ê³ì°
+    // 주문번호 기준 그룹 수 계산
     const groupSet = new Set(selectedOrders.map(o => getOrderId(o)));
 
     if(!confirm(
-        `${nm} ì°½ê³ ë¡ ìëë±ë¡ ì¤í\n\n` +
-        `ì í: ${selectedOrders.length}ê±´ (${groupSet.size}ê·¸ë£¹)\n\n` +
-        `â  ë°ì£¼íì¸\nâ¡ ERP íë§¤ìë ¥ + ë¡ì  ë±ë¡ (ë³ë ¬)\nâ¢ ë°ì¡ì²ë¦¬`
+        `${nm} 창고로 자동등록 실행\n\n` +
+        `선택: ${selectedOrders.length}건 (${groupSet.size}그룹)\n\n` +
+        `① 발주확인\n② ERP 판매입력 + 로젠등록 (병렬)\n③ 발송처리`
     )) return;
 
     const bg=document.getElementById('b-gp'), by=document.getElementById('b-ys');
     bg.disabled=by.disabled=true;
     const ab=wh==='gimpo'?bg:by, ot=ab.innerHTML;
-    ab.innerHTML='<span class="sp"></span> ì²ë¦¬ ì¤...';
+    ab.innerHTML='<span class="sp"></span> 처리 중...';
 
     document.getElementById('card-result').style.display = 'block';
-    ss('s-auto','load',`${nm} ìëë±ë¡ ì²ë¦¬ ì¤... (${selectedOrders.length}ê±´, 1~2ë¶ ìì)`);
+    ss('s-auto','load',`${nm} 자동등록 처리 중... (${selectedOrders.length}건, 1~2분 소요)`);
     document.getElementById('res').style.display='none';
-    log(`=== ${nm} ìëë±ë¡ (${selectedOrders.length}ê±´ ì í) ===`);
+    log(`=== ${nm} 자동등록 (${selectedOrders.length}건 선택) ===`);
 
     try{
         const r = await(await fetch(B+'/api/smartstore/auto-register-logen?warehouse='+wh, {
@@ -808,14 +831,14 @@ async function autoReg(wh){
         })).json();
 
         if(r.success){
-            ss('s-auto','ok',`${nm} ìëë±ë¡ ìë£!`);
-            log('ìë£: '+JSON.stringify(r.summary));
+            ss('s-auto','ok',`${nm} 자동등록 완료!`);
+            log('완료: '+JSON.stringify(r.summary));
             renderRes(r);
         } else {
-            ss('s-auto','err',r.message||r.detail||'ì¤í¨');
-            log('ì¤í¨: '+JSON.stringify(r));
+            ss('s-auto','err',r.message||r.detail||'실패');
+            log('실패: '+JSON.stringify(r));
         }
-    }catch(e){ss('s-auto','err',e.message);log('ì¤ë¥: '+e.message);}
+    }catch(e){ss('s-auto','err',e.message);log('오류: '+e.message);}
     finally{bg.disabled=by.disabled=false;ab.innerHTML=ot;updateSelCount();}
 }
 
@@ -823,16 +846,16 @@ function renderRes(d){
     const g=document.getElementById('res');g.style.display='grid';
     const s=d.summary||{},e=d.step1_erp||{},l=d.step1_logen||{},c=d.step2_confirm||{},p=d.step3_dispatch||{};
 
-    const erpMatchDesc = `ë§¤ì¹­ ${s.erp_matched||0}ê±´ + íë°° ${s.erp_delivery_count||0}ê±´`;
-    const erpUnmatchDesc = s.erp_unmatched > 0 ? `<br><span style="color:#dc2626;">ë¯¸ë§¤ì¹­ ${s.erp_unmatched}ê±´ (ìê¸°ìë ¥)</span>` : '';
+    const erpMatchDesc = `매칭 ${s.erp_matched||0}건 + 택배 ${s.erp_delivery_count||0}건`;
+    const erpUnmatchDesc = s.erp_unmatched > 0 ? `<br><span style="color:#dc2626;">미매칭 ${s.erp_unmatched}건 (수기입력)</span>` : '';
 
     g.innerHTML=`
-        <div class="rc ${e.success?'g':(e.lines>0?'r':'y')}"><h3>â -A ERP íë§¤ìë ¥</h3><div class="v">${e.lines||0}ê±´</div><div class="d">${e.success?erpMatchDesc:(typeof e.error==='object'?JSON.stringify(e.error):e.error||'ì¤í¨')}${erpUnmatchDesc}${e.detail&&e.detail.errors&&e.detail.errors.length?'<br>ìë¬:'+JSON.stringify(e.detail.errors).substring(0,200):''}</div></div>
-        <div class="rc ${l.success&&(l.tracking_numbers||[]).length>0?'g':(l.success?'y':'r')}"><h3>â -B ë¡ì  ë±ë¡</h3><div class="v">${(l.tracking_numbers||[]).length}ê±´</div><div class="d">${l.error||('ë±ë¡ '+(l.total_registered||0)+' / ì±ë² '+(l.total_tracking||0))}</div></div>
-        <div class="rc ${c.confirmed>0?'g':'y'}"><h3>â¡ ë°ì£¼íì¸</h3><div class="v">${c.confirmed||0}ê±´</div><div class="d">${c.message||('ì ì²´ '+(s.total_orders||0)+'ê±´ / ê·¸ë£¹ '+(s.total_groups||0)+'ê±´')}</div></div>
-        <div class="rc ${p.dispatched>0?'g':'y'}"><h3>â¢ ë°ì¡ì²ë¦¬</h3><div class="v">${p.dispatched||0}ê±´</div><div class="d">${p.message||(p.failed>0?'ì¤í¨ '+p.failed+'ê±´':'ìë£')}</div></div>`;
+        <div class="rc ${e.success?'g':(e.lines>0?'r':'y')}"><h3>①-A ERP 판매입력</h3><div class="v">${e.lines||0}건</div><div class="d">${e.success?erpMatchDesc:(typeof e.error==='object'?JSON.stringify(e.error):e.error||'실패')}${erpUnmatchDesc}${e.detail&&e.detail.errors&&e.detail.errors.length?'<br>에러:'+JSON.stringify(e.detail.errors).substring(0,200):''}</div></div>
+        <div class="rc ${l.success&&(l.tracking_numbers||[]).length>0?'g':(l.success?'y':'r')}"><h3>①-B 로젠등록</h3><div class="v">${(l.tracking_numbers||[]).length}건</div><div class="d">${l.error||('등록 '+(l.total_registered||0)+' / 채번 '+(l.total_tracking||0))}</div></div>
+        <div class="rc ${c.confirmed>0?'g':'y'}"><h3>② 발주확인</h3><div class="v">${c.confirmed||0}건</div><div class="d">${c.message||('전체 '+(s.total_orders||0)+'건 / 그룹 '+(s.total_groups||0)+'건')}</div></div>
+        <div class="rc ${p.dispatched>0?'g':'y'}"><h3>③ 발송처리</h3><div class="v">${p.dispatched||0}건</div><div class="d">${p.message||(p.failed>0?'실패 '+p.failed+'건':'완료')}</div></div>`;
 
-    // ë¯¸ë§¤ì¹­ê±´ íì´ë¸ (ë§¤í ì¶ê° ê¸°ë¥ í¬í¨)
+    // 미매칭건 테이블 (매핑 추가 기능 포함)
     const um = d.unmatched_items || [];
     const umSec = document.getElementById('unmatched-section');
     if(um.length > 0) {
@@ -840,9 +863,9 @@ function renderRes(d){
         document.getElementById('unmatched-cnt').textContent = um.length;
         let h = `<table>
             <thead><tr>
-                <th>ìíë²í¸</th><th>ìíëª</th><th>ìµì</th>
-                <th>ìë</th><th>ì ì°ê¸ì¡</th><th>ë°°ì¡ë¹ì í</th><th>ìë ¹ì¸</th>
-                <th>íëª©ì½ë</th><th>ëª¨ë¸ëª</th><th></th>
+                <th>상품번호</th><th>상품명</th><th>옵션</th>
+                <th>수량</th><th>정산금액</th><th>배송비유형</th><th>수령인</th>
+                <th>품목코드</th><th>모델명</th><th></th>
             </tr></thead><tbody>`;
         for(let i=0; i<um.length; i++){
             const u = um[i];
@@ -852,12 +875,12 @@ function renderRes(d){
                 <td>${u.productName||''}</td>
                 <td>${u.optionInfo||''}</td>
                 <td style="text-align:center">${u.quantity||0}</td>
-                <td style="text-align:right">${Number(u.settlementAmount||0).toLocaleString()}ì</td>
-                <td>${({'DELIVERY':'íë°°','QUICK_SVC':'íµìë¹ì¤','VISIT':'ë°©ë¬¸ìë ¹','VISIT_RECEIPT':'ë°©ë¬¸ìë ¹','DIRECT_DELIVERY':'ì§ì ì ë¬','NOTHING':'ë°°ì¡ìì'})[u.deliveryMethod] || u.deliveryMethod || ''}</td>
+                <td style="text-align:right">${Number(u.settlementAmount||0).toLocaleString()}원</td>
+                <td>${({'DELIVERY':'택배','QUICK_SVC':'퀵서비스','VISIT':'방문수령','VISIT_RECEIPT':'방문수령','DIRECT_DELIVERY':'직접전달','NOTHING':'배송없음'})[u.deliveryMethod] || u.deliveryMethod || ''}</td>
                 <td>${u.rcvName||''}</td>
-                <td><input class="inp-sm" id="um-erp-${i}" placeholder="íëª©ì½ë"></td>
-                <td><input class="inp-sm" id="um-model-${i}" placeholder="ëª¨ë¸ëª" style="width:100px;"></td>
-                <td><button class="btn-xs btn-xs-green" onclick="addMapFromUnmatched('${pno}',${i})">ë§¤íì¶ê°</button></td>
+                <td><input class="inp-sm" id="um-erp-${i}" placeholder="품목코드"></td>
+                <td><input class="inp-sm" id="um-model-${i}" placeholder="모델명" style="width:100px;"></td>
+                <td><button class="btn-xs btn-xs-green" onclick="addMapFromUnmatched('${pno}',${i})">매핑추가</button></td>
             </tr>`;
         }
         document.getElementById('unmatched-tbl').innerHTML = h + '</tbody></table>';
@@ -866,31 +889,31 @@ function renderRes(d){
     }
 }
 
-// ââ ë§¤í ê´ë¦¬ ââ
+// ── 매핑 관리 ──
 async function searchMap(q) {
     if(q === undefined) q = document.getElementById('map-q').value;
     const params = q ? '?search='+encodeURIComponent(q) : '';
     try {
         const r = await(await fetch(B+'/api/smartstore/product-map'+params)).json();
-        if(!r.success) { mapMsg('err', r.error||'ì¤í¨'); return; }
+        if(!r.success) { mapMsg('err', r.error||'실패'); return; }
         document.getElementById('map-total').textContent = r.total;
         document.getElementById('map-total').style.display = 'inline';
         const items = r.items || [];
         if(!items.length) {
-            document.getElementById('map-tbl').innerHTML = '<p style="color:#94a3b8; font-size:13px; padding:8px;">ê²ì ê²°ê³¼ ìì</p>';
+            document.getElementById('map-tbl').innerHTML = '<p style="color:#94a3b8; font-size:13px; padding:8px;">검색 결과 없음</p>';
             return;
         }
-        let h = `<table><thead><tr><th>ìíë²í¸</th><th>íëª©ì½ë</th><th>ëª¨ë¸ëª</th><th></th></tr></thead><tbody>`;
+        let h = `<table><thead><tr><th>상품번호</th><th>품목코드</th><th>모델명</th><th></th></tr></thead><tbody>`;
         for(const it of items) {
             h += `<tr>
                 <td class="mono">${it.productNo}</td>
                 <td>${it.erpCode}</td>
                 <td>${it.model||'-'}</td>
-                <td><button class="btn-xs btn-xs-red" onclick="deleteMap('${it.productNo}')">ì­ì </button></td>
+                <td><button class="btn-xs btn-xs-red" onclick="deleteMap('${it.productNo}')">삭제</button></td>
             </tr>`;
         }
         document.getElementById('map-tbl').innerHTML = h + '</tbody></table>';
-        mapMsg('info', `${items.length}ê±´ íì (ì ì²´ ${r.total}ê±´)`);
+        mapMsg('info', `${items.length}건 표시 (전체 ${r.total}건)`);
     } catch(e) { mapMsg('err', e.message); }
 }
 
@@ -898,14 +921,14 @@ async function addMapEntry() {
     const pno = document.getElementById('map-new-pno').value.trim();
     const erp = document.getElementById('map-new-erp').value.trim();
     const model = document.getElementById('map-new-model').value.trim();
-    if(!pno || !erp) { mapMsg('warn', 'ìíë²í¸ì íëª©ì½ëë íììëë¤.'); return; }
+    if(!pno || !erp) { mapMsg('warn', '상품번호와 품목코드는 필수입니다.'); return; }
     try {
         const r = await(await fetch(B+'/api/smartstore/product-map', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({productNo: pno, erpCode: erp, model: model}),
         })).json();
         if(r.success) {
-            mapMsg('ok', `${r.action} ìë£: ${pno} â ${erp} (${model||'-'})`);
+            mapMsg('ok', `${r.action} 완료: ${pno} → ${erp} (${model||'-'})`);
             document.getElementById('map-new-pno').value = '';
             document.getElementById('map-new-erp').value = '';
             document.getElementById('map-new-model').value = '';
@@ -917,8 +940,8 @@ async function addMapEntry() {
 async function addMapFromUnmatched(productNo, idx) {
     const erp = document.getElementById('um-erp-'+idx).value.trim();
     const model = document.getElementById('um-model-'+idx).value.trim();
-    if(!productNo) { alert('ìíë²í¸ê° ììµëë¤.'); return; }
-    if(!erp) { alert('íëª©ì½ëë¥¼ ìë ¥í´ì£¼ì¸ì.'); return; }
+    if(!productNo) { alert('상품번호가 없습니다.'); return; }
+    if(!erp) { alert('품목코드를 입력해주세요.'); return; }
     try {
         const r = await(await fetch(B+'/api/smartstore/product-map', {
             method:'POST', headers:{'Content-Type':'application/json'},
@@ -926,52 +949,52 @@ async function addMapFromUnmatched(productNo, idx) {
         })).json();
         if(r.success) {
             const btn = event.target;
-            btn.textContent = 'ìë£';
+            btn.textContent = '완료';
             btn.disabled = true;
             btn.style.background = '#94a3b8';
-            log(`ë§¤í ${r.action}: ${productNo} â ${erp} (${model||'-'})`);
+            log(`매핑 ${r.action}: ${productNo} → ${erp} (${model||'-'})`);
         } else { alert(r.error); }
     } catch(e) { alert(e.message); }
 }
 
 async function deleteMap(productNo) {
-    if(!confirm(`ë§¤í ì­ì : ${productNo}`)) return;
+    if(!confirm(`매핑 삭제: ${productNo}`)) return;
     try {
         const r = await(await fetch(B+'/api/smartstore/product-map/'+productNo, {method:'DELETE'})).json();
         if(r.success) {
-            mapMsg('ok', `ì­ì  ìë£: ${productNo}`);
+            mapMsg('ok', `삭제 완료: ${productNo}`);
             searchMap(document.getElementById('map-q').value);
         } else { mapMsg('err', r.error); }
     } catch(e) { mapMsg('err', e.message); }
 }
 
 async function exportMapExcel() {
-    mapMsg('ok', 'Excel íì¼ ìì± ì¤...');
+    mapMsg('ok', 'Excel 파일 생성 중...');
     try {
         const res = await fetch(B+'/api/smartstore/product-map/export-excel');
-        if(!res.ok) { mapMsg('err', 'Excel ë¤ì´ë¡ë ì¤í¨'); return; }
+        if(!res.ok) { mapMsg('err', 'Excel 다운로드 실패'); return; }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = 'smartstore_product_map.xlsx';
         document.body.appendChild(a); a.click();
         document.body.removeChild(a); URL.revokeObjectURL(url);
-        mapMsg('ok', 'Excel ë¤ì´ë¡ë ìë£');
+        mapMsg('ok', 'Excel 다운로드 완료');
     } catch(e) { mapMsg('err', e.message); }
 }
 
 async function fetchOptionsExcel(input) {
     if(!input.files || !input.files[0]) return;
     const file = input.files[0];
-    mapMsg('ok', `CSV íì± ì¤...`);
+    mapMsg('ok', `CSV 파싱 중...`);
     try {
         const text = await file.text();
         const lines = text.split('\n');
         const header = lines[0].split(',');
-        const pnoIdx = header.findIndex(h => h.replace(/"/g,'').trim() === 'ìíë²í¸(ì¤ë§í¸ì¤í ì´)');
-        const optIdx = header.findIndex(h => h.replace(/"/g,'').trim() === 'ìµì');
-        const addIdx = header.findIndex(h => h.replace(/"/g,'').trim() === 'ì¶ê°ìí');
-        if(pnoIdx < 0) { mapMsg('err', 'ìíë²í¸(ì¤ë§í¸ì¤í ì´) ì»¬ë¼ì ì°¾ì ì ììµëë¤.'); return; }
+        const pnoIdx = header.findIndex(h => h.replace(/"/g,'').trim() === '상품번호(스마트스토어)');
+        const optIdx = header.findIndex(h => h.replace(/"/g,'').trim() === '옵션');
+        const addIdx = header.findIndex(h => h.replace(/"/g,'').trim() === '추가상품');
+        if(pnoIdx < 0) { mapMsg('err', '상품번호(스마트스토어) 컬럼을 찾을 수 없습니다.'); return; }
 
         const productNos = [];
         for(let i=1; i<lines.length; i++) {
@@ -981,21 +1004,21 @@ async function fetchOptionsExcel(input) {
             const hasAdd = (cols[addIdx] || '').replace(/"/g,'').trim().toUpperCase() === 'Y';
             if(pno && (hasOpt || hasAdd)) productNos.push(pno);
         }
-        if(!productNos.length) { mapMsg('err', 'ìµì/ì¶ê°ìíì´ ìë ìíì´ ììµëë¤.'); return; }
+        if(!productNos.length) { mapMsg('err', '옵션/추가상품이 있는 상품이 없습니다.'); return; }
 
-        mapMsg('ok', `${productNos.length}ê° ìí ìµì ì¡°í ì¤... (ìê°ì´ ê±¸ë¦´ ì ììµëë¤)`);
+        mapMsg('ok', `${productNos.length}개 상품 옵션 조회 중... (시간이 걸릴 수 있습니다)`);
         const res = await fetch(B+'/api/smartstore/product-map/fetch-options-excel', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({productNos}),
         });
-        if(!res.ok) { mapMsg('err', 'ìµì ì¡°í ì¤í¨: '+res.status); return; }
+        if(!res.ok) { mapMsg('err', '옵션 조회 실패: '+res.status); return; }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url;
         a.download = 'smartstore_options.xlsx'; a.click();
         URL.revokeObjectURL(url);
-        mapMsg('ok', `â ìµìì¡°í ìë£ â Excel ë¤ì´ë¡ëë¨`);
+        mapMsg('ok', `✅ 옵션조회 완료 — Excel 다운로드됨`);
     } catch(e) { mapMsg('err', e.message); }
     input.value = '';
 }
@@ -1003,10 +1026,10 @@ async function fetchOptionsExcel(input) {
 async function importMapExcel(input) {
     if(!input.files || !input.files[0]) return;
     const file = input.files[0];
-    if(!confirm(`"${file.name}" íì¼ë¡ ì ì²´ ë§¤íì ë®ì´ìëë¤. ê³ìíìê² ìµëê¹?`)) {
+    if(!confirm(`"${file.name}" 파일로 전체 매핑을 덮어씁니다. 계속하시겠습니까?`)) {
         input.value = ''; return;
     }
-    mapMsg('ok', 'Excel ìë¡ë ì¤...');
+    mapMsg('ok', 'Excel 업로드 중...');
     try {
         const buf = await file.arrayBuffer();
         const res = await fetch(B+'/api/smartstore/product-map/import-excel', {
@@ -1016,10 +1039,10 @@ async function importMapExcel(input) {
         });
         const r = await res.json();
         if(r.success) {
-            mapMsg('ok', `â ${r.message} (ê±´ëë: ${r.skipped}ê±´)`);
+            mapMsg('ok', `✅ ${r.message} (건너뜀: ${r.skipped}건)`);
             searchMap('');
         } else {
-            mapMsg('err', r.error || r.detail || 'ìë¡ë ì¤í¨');
+            mapMsg('err', r.error || r.detail || '업로드 실패');
         }
     } catch(e) { mapMsg('err', e.message); }
     input.value = '';
@@ -1033,58 +1056,58 @@ function mapMsg(t, m) {
 
 setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});},1000);
 
-// ââ ê²½ëíë°° ERP ì ì¡ ââ
+// ── 경동택배 ERP 전송 ──
 async function sendExcludedErp(){
     if(!_rawOrders || _rawOrders.length === 0){
-        ss('s-auto','warn','ë¨¼ì  ì£¼ë¬¸ì ìì§í´ì£¼ì¸ì.');
+        ss('s-auto','warn','먼저 주문을 수집해주세요.');
         document.getElementById('card-result').style.display = 'block';
         return;
     }
-    // ì²´í¬ë°ì¤ ì í ì ì í ì£¼ë¬¸ë§, ë¯¸ì í ì ì ì²´ ì£¼ë¬¸ ì ì¡
+    // 체크박스 선택 시 선택 주문만, 미선택 시 전체 주문 전송
     const targetOrders = _checkedSet.size > 0
         ? _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)))
         : _rawOrders;
     const groupSet = new Set(targetOrders.map(o => getOrderId(o)));
-    const scopeLabel = _checkedSet.size > 0 ? 'ì í' : 'ì ì²´';
-    if(!confirm(`ê²½ëíë°° ERP ì ì¡\n\n${scopeLabel}: ${targetOrders.length}ê±´ (${groupSet.size}ê·¸ë£¹)\n\nê²½ëíë°° ì ì¸ ì£¼ë¬¸ë§ íí°íì¬ ì ì¡ë©ëë¤.`)) return;
+    const scopeLabel = _checkedSet.size > 0 ? '선택' : '전체';
+    if(!confirm(`경동택배 ERP 전송\n\n${scopeLabel}: ${targetOrders.length}건 (${groupSet.size}그룹)\n\n경동택배 제외 주문만 필터하여 전송됩니다.`)) return;
     const btn = document.getElementById('b-exc');
-    btn.disabled = true; btn.textContent = 'ì ì¡ ì¤...';
+    btn.disabled = true; btn.textContent = '전송 중...';
     document.getElementById('card-result').style.display = 'block';
-    ss('s-auto','load',`ê²½ëíë°° ERP ì ì¡ ì¤... (${targetOrders.length}ê±´)`);
-    log(`=== ê²½ëíë°° ERP ì ì¡ (${scopeLabel} ${targetOrders.length}ê±´) ===`);
+    ss('s-auto','load',`경동택배 ERP 전송 중... (${targetOrders.length}건)`);
+    log(`=== 경동택배 ERP 전송 (${scopeLabel} ${targetOrders.length}건) ===`);
     try{
         const r = await(await fetch(B+'/api/smartstore/excluded-send-erp',{
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ orders: targetOrders, emp_cd: getSelectedEmpCd() })
         })).json();
         if(r.success){
-            const msg = `ê²½ëíë°° ERP ì ì¡ ìë£! ${r.erp_matched||r.lines||0}ê±´`;
+            const msg = `경동택배 ERP 전송 완료! ${r.erp_matched||r.lines||0}건`;
             ss('s-auto','ok', msg);
             log(msg);
             if(r.unmatched_items && r.unmatched_items.length > 0){
-                log(`â  ë¯¸ë§¤ì¹­ ${r.unmatched_items.length}ê±´: ` + r.unmatched_items.map(u=>u.productName).join(', '));
+                log(`⚠ 미매칭 ${r.unmatched_items.length}건: ` + r.unmatched_items.map(u=>u.productName).join(', '));
             }
         } else {
-            const errMsg = typeof r.error === 'string' ? r.error : (r.error ? JSON.stringify(r.error) : (r.detail || 'ERP ì ì¡ ì¤í¨'));
+            const errMsg = typeof r.error === 'string' ? r.error : (r.error ? JSON.stringify(r.error) : (r.detail || 'ERP 전송 실패'));
             ss('s-auto','err', errMsg);
-            log('ì¤ë¥: '+errMsg);
+            log('오류: '+errMsg);
         }
     }catch(e){
-        ss('s-auto','err','ì¤ë¥: '+e.message);
+        ss('s-auto','err','오류: '+e.message);
     }finally{
-        btn.disabled=false; btn.textContent='ð ê²½ë ERPì ì¡';
+        btn.disabled=false; btn.textContent='📋 경동 ERP전송';
     }
 }
 
-// ââ ê²½ëíë°° ìì ë¤ì´ë¡ë ââ
+// ── 경동택배 엑셀 다운로드 ──
 async function downloadExcludedExcel(){
     if(!_rawOrders || _rawOrders.length === 0){
-        alert('ë¨¼ì  ì£¼ë¬¸ì ìì§í´ì£¼ì¸ì.');
+        alert('먼저 주문을 수집해주세요.');
         return;
     }
-    // ìì§ë ì ì²´ ì£¼ë¬¸ ì¤ ì ì¸ í¤ìë í¬í¨ ì£¼ë¬¸ ì ì¡
+    // 수집된 전체 주문 중 제외 키워드 포함 주문 전송
     const btn = document.getElementById('b-exc-xl');
-    btn.disabled = true; btn.textContent = 'ë¤ì´ë¡ë ì¤...';
+    btn.disabled = true; btn.textContent = '다운로드 중...';
     try{
         const res = await fetch(B+'/api/smartstore/excluded-export-excel',{
             method:'POST', headers:{'Content-Type':'application/json'},
@@ -1092,38 +1115,38 @@ async function downloadExcludedExcel(){
         });
         if(!res.ok){
             const txt = await res.text().catch(()=>'');
-            let msg = `ë¤ì´ë¡ë ì¤í¨ (HTTP ${res.status})`;
+            let msg = `다운로드 실패 (HTTP ${res.status})`;
             try { const e = JSON.parse(txt); msg = e?.detail || e?.error || msg; } catch(_){}
             alert(msg); return;
         }
         const blob = await res.blob();
         const cd = res.headers.get('Content-Disposition') || '';
         const m = cd.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);
-        const fname = m ? decodeURIComponent(m[1]) : 'ê²½ëíë°°ì í.xlsx';
+        const fname = m ? decodeURIComponent(m[1]) : '경동택배전표.xlsx';
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href=url; a.download=fname; a.click();
         URL.revokeObjectURL(url);
-        log('ê²½ëíë°° ìì ë¤ì´ë¡ë: '+fname);
-    }catch(e){ alert('ì¤ë¥: '+e.message); }
-    finally{ btn.disabled=false; btn.textContent='ð¥ ê²½ë ìì'; }
+        log('경동택배 엑셀 다운로드: '+fname);
+    }catch(e){ alert('오류: '+e.message); }
+    finally{ btn.disabled=false; btn.textContent='📥 경동 엑셀'; }
 }
 
-// ââ ë¡ì   ì¡ì¥ì²ë¦¬ (ë¤ì´ë¡ë â ìë¡ë) ââ
+// ── 로젠 송장처리 (다운로드 → 업로드) ──
 let _trackingWh = '';
 let _trackingOrders = [];
 
 function openTrackingModal(wh) {
     if(!_rawOrders || _checkedSet.size === 0){
-        ss('s-auto','warn','ì íë ì£¼ë¬¸ì´ ììµëë¤.');
+        ss('s-auto','warn','선택된 주문이 없습니다.');
         document.getElementById('card-result').style.display = 'block';
         return;
     }
     _trackingWh = wh;
     _trackingOrders = _rawOrders.filter(o => _checkedSet.has(getProductOrderId(o)));
-    const nm = wh === 'gimpo' ? 'ê¹í¬' : 'ì©ì°';
+    const nm = wh === 'gimpo' ? '김포' : '용산';
     const groupCnt = new Set(_trackingOrders.map(o => getOrderId(o))).size;
-    document.getElementById('modal-title').textContent = `${nm} ì¡ì¥ì²ë¦¬`;
-    document.getElementById('modal-order-cnt').textContent = `ì í: ${_trackingOrders.length}ê±´ (${groupCnt}ê·¸ë£¹)`;
+    document.getElementById('modal-title').textContent = `${nm} 송장처리`;
+    document.getElementById('modal-order-cnt').textContent = `선택: ${_trackingOrders.length}건 (${groupCnt}그룹)`;
     document.getElementById('tracking-upload-input').value = '';
     document.getElementById('tracking-upload-name').textContent = '';
     document.getElementById('tracking-modal').style.display = 'flex';
@@ -1134,15 +1157,15 @@ function closeTrackingModal(){
 }
 
 async function downloadLogenFile(){
-    if(!_trackingOrders.length){ alert('ì íë ì£¼ë¬¸ì´ ììµëë¤.'); return; }
+    if(!_trackingOrders.length){ alert('선택된 주문이 없습니다.'); return; }
     const btn = document.getElementById('btn-logen-dl');
-    btn.disabled = true; btn.textContent = 'ë¤ì´ë¡ë ì¤...';
+    btn.disabled = true; btn.textContent = '다운로드 중...';
     try{
         const res = await fetch(B+'/api/smartstore/logen-export-excel',{
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify(_trackingOrders)
         });
-        if(!res.ok){ alert('ë¤ì´ë¡ë ì¤í¨'); return; }
+        if(!res.ok){ alert('다운로드 실패'); return; }
         const blob = await res.blob();
         const cd = res.headers.get('Content-Disposition') || '';
         const m = cd.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);
@@ -1150,9 +1173,9 @@ async function downloadLogenFile(){
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
         URL.revokeObjectURL(url);
-        log('ë¡ì   ì ì¡íì¼ ë¤ì´ë¡ë: '+fname);
-    }catch(e){ alert('ì¤ë¥: '+e.message); }
-    finally{ btn.disabled=false; btn.textContent='â  ë¡ì   ì ì¡íì¼ ë¤ì´ë¡ë'; }
+        log('로젠 전송파일 다운로드: '+fname);
+    }catch(e){ alert('오류: '+e.message); }
+    finally{ btn.disabled=false; btn.textContent='① 로젠 전송파일 다운로드'; }
 }
 
 function onUploadFileChange(input){
@@ -1162,15 +1185,15 @@ function onUploadFileChange(input){
 
 async function submitTrackingUpload(){
     const input = document.getElementById('tracking-upload-input');
-    if(!input.files[0]){ alert('ì¡ì¥ë²í¸ê° ìë ¥ë íì¼ì ì íí´ì£¼ì¸ì.'); return; }
+    if(!input.files[0]){ alert('송장번호가 입력된 파일을 선택해주세요.'); return; }
 
     const formData = new FormData();
     formData.append('file', input.files[0]);
 
     closeTrackingModal();
     document.getElementById('card-result').style.display = 'block';
-    ss('s-auto','load','ì¡ì¥ ìë¡ë í ë°ì¡ì²ë¦¬ ì¤...');
-    log('=== ìì ë°ì¡ì²ë¦¬ ìë¡ë ===');
+    ss('s-auto','load','송장 업로드 후 발송처리 중...');
+    log('=== 엑셀 발송처리 업로드 ===');
 
     try{
         const r = await(await fetch(B+'/api/smartstore/logen-dispatch-excel',{
@@ -1178,44 +1201,44 @@ async function submitTrackingUpload(){
         })).json();
 
         if(r.success){
-            ss('s-auto','ok',`ë°ì¡ì²ë¦¬ ìë£! ${r.dispatched_count||0}ê±´ (ê±´ëë: ${r.skipped_count||0}ê±´)`);
-            log(`ìë£: ë°ì¡ ${r.dispatched}, ì¤í¨ ${r.failed}, ê±´ëë ${r.skipped_count}`);
+            ss('s-auto','ok',`발송처리 완료! ${r.dispatched_count||0}건 (건너뜀: ${r.skipped_count||0}건)`);
+            log(`완료: 발송 ${r.dispatched}, 실패 ${r.failed}, 건너뜀 ${r.skipped_count}`);
         } else {
-            ss('s-auto','err', r.error || 'ë°ì¡ì²ë¦¬ ì¤í¨');
-            log('ì¤í¨: '+JSON.stringify(r));
+            ss('s-auto','err', r.error || '발송처리 실패');
+            log('실패: '+JSON.stringify(r));
         }
-    }catch(e){ ss('s-auto','err',e.message); log('ì¤ë¥: '+e.message); }
+    }catch(e){ ss('s-auto','err',e.message); log('오류: '+e.message); }
 }
 </script>
 
-<!-- ë¡ì   ì¡ì¥ì²ë¦¬ ëª¨ë¬ -->
+<!-- 로젠 송장처리 모달 -->
 <div id="tracking-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:520px;display:flex;flex-direction:column;gap:20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-            <h2 id="modal-title" style="margin:0;font-size:18px;">ë¡ì   ì¡ì¥ì²ë¦¬</h2>
-            <button onclick="closeTrackingModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;">â</button>
+            <h2 id="modal-title" style="margin:0;font-size:18px;">로젠 송장처리</h2>
+            <button onclick="closeTrackingModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;">✕</button>
         </div>
         <p id="modal-order-cnt" style="margin:0;font-size:13px;color:#64748b;"></p>
 
         <!-- Step 1 -->
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:8px;">
-            <p style="margin:0;font-size:13px;color:#475569;">ë¡ì   ì¬ì´í¸ì ì ì¡í  ì£¼ë¬¸ì ë³´ íì¼ì ë¤ì´ë¡ëí©ëë¤.<br>íì¼ì <b>Hì´(ì¡ì¥ë²í¸)</b>ì ì¡ì¥ë²í¸ë¥¼ ìë ¥í ë¤ ì ì¥íì¸ì.</p>
-            <button id="btn-logen-dl" onclick="downloadLogenFile()" style="padding:10px;border:none;border-radius:6px;background:#1d4ed8;color:#fff;font-weight:600;cursor:pointer;font-size:14px;">â  ë¡ì   ì ì¡íì¼ ë¤ì´ë¡ë</button>
+            <p style="margin:0;font-size:13px;color:#475569;">로젠 사이트에 전송할 주문정보 파일을 다운로드합니다.<br>파일의 <b>H열(송장번호)</b>에 송장번호를 입력한 뒤 저장하세요.</p>
+            <button id="btn-logen-dl" onclick="downloadLogenFile()" style="padding:10px;border:none;border-radius:6px;background:#1d4ed8;color:#fff;font-weight:600;cursor:pointer;font-size:14px;">① 로젠 전송파일 다운로드</button>
         </div>
 
         <!-- Step 2 -->
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:8px;">
-            <p style="margin:0;font-size:13px;color:#475569;">ì¡ì¥ë²í¸ë¥¼ ìë ¥í íì¼ì ìë¡ëíë©´ ë¤ì´ë² ë°ì¡ì²ë¦¬ê° ì§íë©ëë¤.</p>
+            <p style="margin:0;font-size:13px;color:#475569;">송장번호를 입력한 파일을 업로드하면 네이버 발송처리가 진행됩니다.</p>
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
-                <span style="padding:8px 14px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;font-size:13px;white-space:nowrap;">íì¼ ì í</span>
+                <span style="padding:8px 14px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;font-size:13px;white-space:nowrap;">파일 선택</span>
                 <span id="tracking-upload-name" style="font-size:13px;color:#64748b;"></span>
                 <input id="tracking-upload-input" type="file" accept=".xlsx" onchange="onUploadFileChange(this)" style="display:none;">
             </label>
-            <button onclick="submitTrackingUpload()" style="padding:10px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-weight:600;cursor:pointer;font-size:14px;">â¡ ìë¡ë í ë°ì¡ì²ë¦¬</button>
+            <button onclick="submitTrackingUpload()" style="padding:10px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-weight:600;cursor:pointer;font-size:14px;">② 업로드 후 발송처리</button>
         </div>
 
         <div style="display:flex;justify-content:flex-end;">
-            <button onclick="closeTrackingModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">ë«ê¸°</button>
+            <button onclick="closeTrackingModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">닫기</button>
         </div>
     </div>
 </div>
