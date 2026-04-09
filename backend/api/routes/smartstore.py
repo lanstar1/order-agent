@@ -1143,11 +1143,21 @@ async def get_inventory(body: dict = Body(...)):
                     order_erp_map[poid] = code
 
         if not prod_codes:
-            return {"success": True, "inventory": {}, "order_erp_map": {}, "message": "매칭된 품목코드 없음"}
+            return {"success": True, "inventory": {"yongsan": {}, "tongjin": {}}, "order_erp_map": {}, "message": "매칭된 품목코드 없음"}
 
         erp = ERPClientSS()
         await erp.ensure_session()
-        result = await erp.get_inventory_by_warehouses(list(prod_codes))
+        # ECOUNT API PROD_CD 필터가 콤마 구분을 지원하지 않으므로
+        # 전체 재고를 조회한 후 Python에서 필터링
+        result = await erp.get_inventory_by_warehouses(prod_codes=None)
+
+        # 필요한 품목코드만 필터링
+        if result.get("success") and result.get("inventory"):
+            inv = result["inventory"]
+            filtered_yongsan = {k: v for k, v in inv.get("yongsan", {}).items() if k in prod_codes}
+            filtered_tongjin = {k: v for k, v in inv.get("tongjin", {}).items() if k in prod_codes}
+            result["inventory"] = {"yongsan": filtered_yongsan, "tongjin": filtered_tongjin}
+
         result["order_erp_map"] = order_erp_map
 
         return result
