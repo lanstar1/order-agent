@@ -8468,9 +8468,23 @@ function reconcileNewMatch() {
     try {
       const r = await fetch('/api/mail-auto/exchange-rate');
       const d = await r.json();
-      document.getElementById('mail-rate-value').textContent = d.rate ? Math.round(d.rate).toLocaleString() : '-';
-      document.getElementById('mail-rate-input').value = d.rate ? Math.round(d.rate) : '';
-      document.getElementById('mail-rate-updated').textContent = d.updated ? d.updated.substring(0,16) : '';
+      const rate = d.rate ? Math.round(d.rate * 100) / 100 : null;
+      document.getElementById('mail-rate-value').textContent = rate ? rate.toLocaleString() : '-';
+      document.getElementById('mail-rate-input').value = rate || '';
+      const src = d.source || '';
+      let srcLabel = '(소스: ' + src + ')';
+      if (src.includes('hana_tt_sll')) srcLabel = '하나은행 전신환매도율';
+      else if (src.includes('er-api')) srcLabel = '무료API (기준율 근사)';
+      else if (src === '기본값') srcLabel = '기본값 (API 실패)';
+      else if (src === 'manual') srcLabel = '수동 입력';
+      document.getElementById('mail-rate-updated').textContent = 
+        (d.updated ? d.updated.substring(0,16) + ' ' : '') + srcLabel;
+      // 상세 환율 표시
+      const det = d.detail || {};
+      const detDiv = document.getElementById('mail-rate-detail');
+      if (detDiv && det.tt_sll_rt) {
+        detDiv.innerHTML = `<span style="font-size:11px;color:#666">기준율: ${det.deal_basc_rt?.toLocaleString()||'-'} | 매도: <b>${det.tt_sll_rt?.toLocaleString()||'-'}</b> | 매입: ${det.tt_buy_rt?.toLocaleString()||'-'} | 고시: ${det.pbld_sqn||''}</span>`;
+      }
     } catch(e) { console.error('환율 로드 실패:', e); }
   }
 

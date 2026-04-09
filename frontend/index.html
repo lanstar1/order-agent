@@ -1876,7 +1876,7 @@ C규격품 200개
           
           <!-- 환율 -->
           <div class="card" style="padding:20px">
-            <h3 style="margin:0 0 12px">💱 USD/KRW 환율</h3>
+            <h3 style="margin:0 0 12px">💱 USD/KRW 전신환매도율</h3>
             <div style="display:flex;align-items:center;gap:12px">
               <span style="font-size:32px;font-weight:700" id="mail-rate-value">—</span>
               <span style="color:#888;font-size:13px">원</span>
@@ -1888,7 +1888,8 @@ C규격품 200개
               <button onclick="mailSetRate()" class="btn btn-sm">적용</button>
               <button onclick="mailRefreshRate()" class="btn btn-sm" style="background:#f3f4f6">🔄</button>
             </div>
-            <p style="font-size:11px;color:#999;margin-top:8px">단가 = USD × 1.2(관세+부가세) × 환율</p>
+            <p style="font-size:11px;color:#999;margin-top:8px">단가 = USD × 1.2(관세+부가세) × 전신환매도율</p>
+            <div id="mail-rate-detail" style="margin-top:4px"></div>
           </div>
 
           <!-- 실행 컨트롤 -->
@@ -5225,7 +5226,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260409a"></script>
+<script src="/static/js/app.js?v=20260409b"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

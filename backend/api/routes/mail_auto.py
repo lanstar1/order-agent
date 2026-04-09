@@ -246,20 +246,28 @@ async def process_and_download(file: UploadFile = File(...)):
 
 @router.get("/exchange-rate")
 async def get_exchange_rate():
-    """환율 조회 (캐시 + API)"""
+    """환율 조회 (하나은행 TT매도율 우선)"""
     cached = _exchange_rate_cache.get("rate")
-    if cached:
+    if cached and _exchange_rate_cache.get("detail"):
         return {
             "rate": cached,
-            "source": "cache",
+            "source": _exchange_rate_cache.get("source", "cache"),
+            "detail": _exchange_rate_cache.get("detail", {}),
             "updated": _exchange_rate_cache.get("updated"),
         }
     
-    rate = await fetch_exchange_rate()
-    _exchange_rate_cache["rate"] = rate
+    rate_info = await fetch_exchange_rate()
+    _exchange_rate_cache["rate"] = rate_info["rate"]
+    _exchange_rate_cache["source"] = rate_info.get("source", "")
+    _exchange_rate_cache["detail"] = rate_info.get("detail", {})
     _exchange_rate_cache["updated"] = datetime.now(KST).isoformat()
     
-    return {"rate": rate, "source": "api", "updated": _exchange_rate_cache["updated"]}
+    return {
+        "rate": rate_info["rate"],
+        "source": rate_info.get("source", ""),
+        "detail": rate_info.get("detail", {}),
+        "updated": _exchange_rate_cache["updated"],
+    }
 
 
 @router.post("/exchange-rate")
