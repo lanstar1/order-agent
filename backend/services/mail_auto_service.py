@@ -276,6 +276,21 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
     current_category = ""
     stats = {"total": 0, "hs_filled": 0, "skipped": 0, "unknown": 0}
     
+    def _safe_float(val):
+        """수식('=1.62*0.97') 등 변환 불가 셀 안전 처리"""
+        if val is None:
+            return 0.0
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            # 수식 문자열이면 eval 시도
+            if isinstance(val, str) and val.startswith("="):
+                try:
+                    return float(eval(val[1:].replace(",", "")))
+                except Exception:
+                    pass
+            return 0.0
+    
     # I열(9번째) 헤더 확인/추가
     header_row = 13
     if ws.cell(row=header_row, column=9).value not in ("HS CODE", "HS code", "HS Code"):
@@ -333,8 +348,8 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                     if hs_engine.is_erp_target(model):
                         erp_lines.append({
                             "prod_cd": model,
-                            "qty": float(c_val) if c_val else 0,
-                            "price_usd": float(f_val) if f_val else 0,
+                            "qty": _safe_float(c_val),
+                            "price_usd": _safe_float(f_val),
                             "description": combined_desc[:100],
                         })
                     else:
@@ -372,8 +387,8 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                 if hs_engine.is_erp_target(model):
                     erp_lines.append({
                         "prod_cd": model,
-                        "qty": float(c_val) if c_val else 0,
-                        "price_usd": float(f_val) if f_val else 0,
+                        "qty": _safe_float(c_val),
+                        "price_usd": _safe_float(f_val),
                         "description": str(a_val)[:100],
                     })
                 elif not model.startswith(("LS-", "LSP-", "LSN-", "ZOT-")):
