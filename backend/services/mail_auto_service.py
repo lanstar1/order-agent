@@ -695,8 +695,60 @@ def get_auto_state() -> dict:
     return dict(_auto_state)
 
 
+async def _send_telegram_notification(result: dict):
+    """파이프라인 결과를 텔레그램으로 알림"""
+    try:
+        from db.database import get_connection
+        from services.telegram_service import TelegramService
+        
+        conn = get_connection()
+        rows = conn.execute("SELECT key, value FROM inventory_alert_settings").fetchall()
+        settings = {row[0]: row[1] for row in rows}
+        
+        bot_token = settings.get("telegram_bot_token", "")
+        chat_id = settings.get("telegram_chat_id", "")
+        if not bot_token or not chat_id:
+            return
+        
+        telegram = TelegramService(bot_token, chat_id)
+        
+        new_count = result.get("new_processed", 0)
+        rate = result.get("exchange_rate", 0)
+        
+        if result.get("error"):
+            # 오류 알림
+            await telegram.send_message(
+                f"⚠️ <b>BOR 메일 자동화 오류</b>\n\n{result['error']}\n\n"
+                f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}"
+            )
+        elif new_count > 0:
+            # 성공 알림
+            lines = []
+            lines.append("📧 <b>BOR 선적 메일 자동 처리 완료</b>")
+            lines.append("")
+            for r in result.get("results", []):
+                subj = r.get("subject", "")[:40]
+                hs_count = sum(
+                    a.get("stats", {}).get("hs_filled", 0)
+                    for a in r.get("attachments_processed", [])
+                )
+                erp_ok = "✅" if r.get("erp_result", {}).get("success") else "⏭️"
+                reply_ok = "✅" if r.get("reply_sent") else "⏭️"
+                lines.append(f"📋 {subj}")
+                lines.append(f"   HS코드: {hs_count}건 | ERP: {erp_ok} | 회신: {reply_ok}")
+            
+            lines.append("")
+            lines.append(f"💱 환율: {rate:,.2f}원" if rate else "")
+            lines.append(f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}")
+            
+            await telegram.send_message("\n".join(lines))
+        
+    except Exception as e:
+        logger.warning(f"[텔레그램] 알림 발송 실패: {e}")
+
+
 async def _auto_check_and_process():
-    """스케줄러에서 호출: 신규 메일 확인 → 자동 처리"""
+    """스케줄러에서 호출: 신규 메일 확인 → 자동 처리 → 텔레그램 알림"""
     if _auto_state["running"]:
         logger.info("[자동실행] 이전 작업 진행 중, 스킵")
         return
@@ -709,8 +761,8 @@ async def _auto_check_and_process():
         conn = get_connection()
 
         result = await run_mail_automation_pipeline(
-            days_back=7,  # 최근 7일만 확인 (자동 모드)
-            auto_reply=False,  # 자동 회신은 설정에 따라
+            days_back=7,
+            auto_reply=False,
             auto_erp=True,
             db_conn=conn,
         )
@@ -724,12 +776,19 @@ async def _auto_check_and_process():
 
         if result.get("new_processed", 0) > 0:
             logger.info(f"[자동실행] {result['new_processed']}건 신규 처리 완료")
+            # 텔레그램 알림
+            await _send_telegram_notification(result)
         else:
             logger.debug("[자동실행] 신규 메일 없음")
 
     except Exception as e:
         logger.error(f"[자동실행] 오류: {e}")
         _auto_state["last_result"] = {"error": str(e), "timestamp": datetime.now(KST).isoformat()}
+        # 오류 시에도 텔레그램 알림
+        try:
+            await _send_telegram_notification({"new_processed": -1, "error": str(e)})
+        except Exception:
+            pass
     finally:
         _auto_state["running"] = False
 

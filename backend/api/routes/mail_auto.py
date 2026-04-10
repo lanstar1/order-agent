@@ -222,6 +222,11 @@ async def trigger_pipeline(request: Request):
         reply_template=reply_template,
     )
     
+    # 텔레그램 알림 (신규 처리 건이 있을 때)
+    if result.get("new_processed", 0) > 0:
+        from services.mail_auto_service import _send_telegram_notification
+        await _send_telegram_notification(result)
+    
     # 환율 캐시 갱신
     if result.get("exchange_rate"):
         _exchange_rate_cache["rate"] = result["exchange_rate"]
