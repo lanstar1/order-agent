@@ -4617,97 +4617,119 @@ async function csShowDetail(ticketId) {
   try {
     const res = await api.get(`/api/cs/tickets/${ticketId}`);
     const t = res.ticket || res;
-    const logs = res.logs || [];
-    const files = res.files || [];
     const testResult = res.test_result;
+    const files = res.files || [];
+    const logs = res.logs || [];
+    const _e = s => _escHtml(s || '');
     const chColor = CS_CHANNEL_COLORS[t.sales_channel] || "#9ca3af";
 
-    let html = `<div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
-      <div>
-        <h3 style="margin:0">${t.ticket_id}</h3>
-        <div style="font-size:13px;color:#6b7280;margin-top:4px">
-          ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor}">${t.sales_channel}</span>` : ''}
-          ${t.cs_type ? `<span style="margin-left:4px;font-size:12px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:6px">${t.cs_type}</span>` : ''}
-          ${t.reason_category ? `<span style="margin-left:4px">${t.reason_category}</span>` : ''}
+    // 상태 진행 바
+    const steps = ["접수완료","물류수령","기술인계","테스트완료","처리종결"];
+    const curIdx = steps.indexOf(t.current_status);
+    const stepsHtml = steps.map((s,i) => {
+      const done = i <= curIdx;
+      const color = done ? "#2563eb" : "#d1d5db";
+      return `<div style="flex:1;text-align:center">
+        <div style="width:24px;height:24px;border-radius:50%;background:${done?'#2563eb':'#fff'};border:2px solid ${color};margin:0 auto 4px;display:flex;align-items:center;justify-content:center">
+          ${done?'<span style="color:#fff;font-size:11px">✓</span>':''}
         </div>
-      </div>
-      <span class="cs-status-badge cs-status-${t.current_status}" style="font-size:13px">${t.current_status}</span>
-    </div>
-    <div class="cs-modal-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">
-        <div><div class="cs-field-label">고객명</div><div class="cs-field-value">${t.customer_name}</div></div>
-        <div><div class="cs-field-label">연락처</div><div class="cs-field-value">${t.contact_info}</div></div>
-        <div><div class="cs-field-label">상품명</div><div class="cs-field-value">${t.product_name}${t.quantity>1?` x${t.quantity}`:''}</div></div>
-        ${t.serial_number ? `<div><div class="cs-field-label">시리얼</div><div class="cs-field-value">${t.serial_number}</div></div>` : ''}
-        ${t.order_number ? `<div><div class="cs-field-label">주문번호</div><div class="cs-field-value">${t.order_number}</div></div>` : ''}
-        ${t.shipping_cost_status ? `<div><div class="cs-field-label">배송비 처리</div><div class="cs-field-value">${t.shipping_cost_status}</div></div>` : ''}
-        ${t.return_courier||t.return_tracking_no ? `<div><div class="cs-field-label">반품 배송</div><div class="cs-field-value">${t.return_courier||''} ${t.return_tracking_no||''}</div></div>` : ''}
-      </div>
-      <div style="margin-top:4px">
-        <div class="cs-field-label">증상 / 사유</div>
-        <div class="cs-symptom-box">${t.defect_symptom}</div>
+        <div style="font-size:10px;color:${done?'#2563eb':'#9ca3af'};font-weight:${i===curIdx?'600':'400'}">${s}</div>
+        ${i<4?`<div style="position:relative;top:-20px;left:50%;width:100%;height:2px;background:${i<curIdx?'#2563eb':'#e5e7eb'}"></div>`:''}
       </div>`;
+    }).join("");
 
-    // 테스트 결과
-    if (testResult) {
-      html += `<div style="margin-top:12px"><div class="cs-field-label">테스트 결과</div>
-        <span class="cs-test-badge cs-test-${testResult.test_status}">${testResult.test_status}</span>
-        ${testResult.test_comment ? `<span style="margin-left:8px;font-size:13px;color:#4b5563">${testResult.test_comment}</span>` : ''}
+    // 첨부파일 (미리보기)
+    let filesHtml = "";
+    if (files.length > 0) {
+      filesHtml = `<div style="margin-top:16px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px">📎 첨부파일 (${files.length})</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${files.map(f => {
+            const imgSrc = f.file_url && f.file_url.startsWith("/api/cs/files/db/") ? f.file_url : (f.file_url || '/api/cs/files/db/'+f.id);
+            const delBtn = t.current_status !== "처리종결"
+              ? '<button onclick="event.stopPropagation();csDeleteFile('+f.id+',\''+t.ticket_id+'\')" title="삭제" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#ef4444;color:#fff;border:none;font-size:11px;cursor:pointer;line-height:20px;text-align:center">✕</button>'
+              : '';
+            const dlBtn = '<button onclick="event.stopPropagation();csDownloadFile('+f.id+',\''+_e(f.file_name).replace(/'/g,"\\'")+'\')" title="다운로드" style="position:absolute;top:-6px;right:'+( t.current_status!=="처리종결"?'18':'- 6')+'px;width:20px;height:20px;border-radius:50%;background:#2563eb;color:#fff;border:none;font-size:10px;cursor:pointer;line-height:20px;text-align:center">↓</button>';
+            if (f.file_type === "image") {
+              return '<div style="position:relative;display:inline-block">'+delBtn+dlBtn+'<a href="'+imgSrc+'" target="_blank"><img src="'+imgSrc+'" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb" onerror="this.style.display=\'none\'"></a></div>';
+            } else if (f.file_type === "video") {
+              return '<div style="position:relative;display:inline-block">'+delBtn+dlBtn+'<video src="'+imgSrc+'" style="width:120px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb" controls preload="metadata"></video></div>';
+            }
+            return '<div style="position:relative;display:inline-block">'+delBtn+dlBtn+'<a href="'+imgSrc+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:11px;color:#6b7280;text-align:center;text-decoration:none;padding:4px;word-break:break-all">'+_e(f.file_name)+'</a></div>';
+          }).join("")}
+        </div>
       </div>`;
     }
 
     // 타임라인
-    html += `<div style="margin-top:16px"><div class="cs-field-label">처리 이력</div><div class="cs-timeline">`;
-    (logs||[]).forEach(l => {
-      html += `<div class="cs-timeline-item">
+    let timelineHtml = logs.length > 0 ? `<div style="margin-top:16px">
+      <div class="cs-field-label">처리 이력</div><div class="cs-timeline">
+      ${logs.map(l => `<div class="cs-timeline-item">
         <div class="cs-timeline-dot done"></div>
-        <div><strong style="font-size:13px">${l.action_type}</strong>
-          <span style="font-size:12px;color:#6b7280;margin-left:8px">${l.actor_name||''}</span></div>
-        ${l.detail ? `<div style="font-size:12px;color:#4b5563;margin-top:2px">${l.detail}</div>` : ''}
+        <div><strong style="font-size:13px">${_e(l.action_type)}</strong>
+          <span style="font-size:12px;color:#6b7280;margin-left:8px">${_e(l.actor_name)}</span></div>
+        ${l.detail ? `<div style="font-size:12px;color:#4b5563;margin-top:2px">${_e(l.detail)}</div>` : ''}
         <div class="cs-timeline-time">${l.created_at||''}</div>
+      </div>`).join("")}
+      </div></div>` : "";
+
+    // 테스트 결과
+    let testHtml = "";
+    if (testResult) {
+      testHtml = `<div style="margin-top:12px"><div class="cs-field-label">테스트 결과</div>
+        <span class="cs-test-badge cs-test-${testResult.test_status}">${testResult.test_status}</span>
+        ${testResult.test_comment ? `<div style="margin-top:6px;font-size:13px;color:#374151;white-space:pre-wrap">${_e(testResult.test_comment)}</div>` : ''}
       </div>`;
-    });
-    html += `</div></div>`;
-
-    // 파일 업로드 + 기존 파일 목록
-    html += `<div style="margin-top:16px">
-      <div class="cs-field-label">첨부파일</div>
-      <input type="file" multiple onchange="csUploadFile('${t.ticket_id}',this)" style="font-size:12px">
-      <div id="cs-file-list" style="margin-top:8px">`;
-    if (files && files.length > 0) {
-      files.forEach(f => {
-        html += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #f3f4f6">
-          <span style="flex:1;color:#374151">${f.file_name}</span>
-          <span style="color:#9ca3af">${f.file_size ? Math.round(f.file_size/1024)+'KB' : ''}</span>
-          <button onclick="csDownloadFile(${f.id},'${(f.file_name||'').replace(/'/g,"\\'")}')" style="background:none;border:none;color:#2563eb;cursor:pointer;font-size:12px">다운로드</button>
-          <button onclick="csDeleteFile(${f.id},'${t.ticket_id}')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px">삭제</button>
-        </div>`;
-      });
     }
-    html += `</div></div>`;
 
-    // 메모 입력
-    html += `<div style="margin-top:12px;display:flex;gap:8px">
-      <input id="cs-memo-input" placeholder="메모 추가" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-      <button onclick="csAddMemo('${t.ticket_id}')" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer">추가</button>
-    </div>`;
+    let html = `<div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:14px;font-weight:500;color:#111827;margin-bottom:4px">${_e(t.customer_name)} · ${_e(t.contact_info)}</div>
+        <div style="font-size:13px;color:#374151">${_e(t.product_name)}${t.quantity>1?' x'+t.quantity:''}${t.serial_number ? ' (S/N: '+_e(t.serial_number)+')' : ''}</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span>${t.ticket_id}</span>
+          ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor}">${t.sales_channel}</span>` : ''}
+          ${t.cs_type && t.cs_type !== '반품' ? `<span style="background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:6px;font-size:11px">${t.cs_type}</span>` : ''}
+          ${t.reason_category ? `<span>${t.reason_category}</span>` : ''}
+        </div>
+      </div>
+      <div style="text-align:right">
+        <span class="cs-status-badge cs-status-${t.current_status}" style="font-size:13px">${t.current_status}</span>
+        ${t.final_action ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${t.final_action}</div>` : ''}
+        <button onclick="csCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;margin-top:4px">&times;</button>
+      </div>
+    </div>
+    <div class="cs-modal-body">
+      <div style="display:flex;align-items:flex-start;margin-bottom:20px;gap:0">${stepsHtml}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">
+        ${t.order_number ? `<div><div class="cs-field-label">주문번호</div><div class="cs-field-value">${_e(t.order_number)}</div></div>` : ''}
+        ${t.shipping_cost_status ? `<div><div class="cs-field-label">배송비 처리</div><div class="cs-field-value">${_e(t.shipping_cost_status)}</div></div>` : ''}
+        ${t.courier ? `<div><div class="cs-field-label">택배사</div><div class="cs-field-value">${_e(t.courier)}</div></div>` : ''}
+        ${t.tracking_no ? `<div><div class="cs-field-label">송장번호</div><div class="cs-field-value">${_e(t.tracking_no)}</div></div>` : ''}
+        ${t.return_courier||t.return_tracking_no ? `<div><div class="cs-field-label">반품 배송</div><div class="cs-field-value">${_e(t.return_courier)} ${_e(t.return_tracking_no)}</div></div>` : ''}
+      </div>
+      <div style="margin-top:8px"><div class="cs-field-label">불량 증상 / 사유</div><div class="cs-symptom-box">${_e(t.defect_symptom)}</div></div>
+      ${testHtml}
+      ${filesHtml}
+      ${t.current_status !== "처리종결" ? `<div style="margin-top:16px">
+        <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:1px dashed #d1d5db;border-radius:6px;cursor:pointer;font-size:13px;color:#6b7280;transition:all .15s" onmouseover="this.style.borderColor='#93c5fd'" onmouseout="this.style.borderColor='#d1d5db'">
+          📎 파일 첨부
+          <input type="file" multiple style="display:none" onchange="csUploadFile('${t.ticket_id}',this)">
+        </label>
+      </div>` : ''}
+      ${timelineHtml}
+      ${t.current_status !== "처리종결" ? `<div style="margin-top:12px;display:flex;gap:6px">
+        <input type="text" id="cs-memo-input" placeholder="메모 추가..." style="flex:1;padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        <button onclick="csAddMemo('${t.ticket_id}')" style="padding:6px 14px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer">추가</button>
+      </div>` : ''}
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="csEditTicket('${t.ticket_id}')" class="btn" style="font-size:13px">✏️ 수정</button>`;
 
-    // 액션 버튼
-    html += `<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;flex-wrap:wrap">`;
-    html += `<button onclick="csEditTicket('${t.ticket_id}')" class="btn" style="font-size:13px">✏️ 수정</button>`;
     const st = t.current_status;
-    if (st === "접수완료") {
-      html += `<button onclick="csAction('${t.ticket_id}','receive')" class="btn" style="font-size:13px">📦 물류 수령</button>`;
-    }
-    if (st === "물류수령") {
-      html += `<button onclick="csAction('${t.ticket_id}','handover')" class="btn" style="font-size:13px">🔬 기술 인계</button>`;
-    }
-    if (st === "기술인계") {
-      html += `<button onclick="csShowTestForm('${t.ticket_id}')" class="btn" style="font-size:13px">📝 테스트 결과</button>`;
-    }
-    if (st !== "처리종결") {
-      html += `<button onclick="csQuickResolve('${t.ticket_id}')" class="btn" style="font-size:13px;background:#059669;color:#fff;border-color:#059669">🏁 빠른 종결</button>`;
-    }
+    if (st === "접수완료") html += `<button onclick="csAction('${t.ticket_id}','receive')" class="btn" style="font-size:13px">📦 물류 수령</button>`;
+    if (st === "물류수령") html += `<button onclick="csAction('${t.ticket_id}','handover')" class="btn" style="font-size:13px">🔬 기술 인계</button>`;
+    if (st === "기술인계") html += `<button onclick="csShowTestForm('${t.ticket_id}')" class="btn" style="font-size:13px">📝 테스트 결과</button>`;
+    if (st !== "처리종결") html += `<button onclick="csQuickResolve('${t.ticket_id}')" class="btn" style="font-size:13px;background:#059669;color:#fff;border-color:#059669">🏁 빠른 종결</button>`;
     html += `<button onclick="csDeleteTicket('${t.ticket_id}')" class="btn" style="font-size:13px;color:#ef4444;margin-left:auto">🗑 삭제</button>`;
     html += `</div></div>`;
 
