@@ -191,6 +191,7 @@ def get_all_pending_orders_map(conn) -> dict:
     Returns: {"LS-1000H": [{"order_date": "...", "qty": 100, "shipping_date": "...", "arrival_date": "..."}, ...]}
     """
     today = datetime.now(KST).strftime("%Y-%m-%d")
+    cutoff_90d = (datetime.now(KST) - timedelta(days=90)).strftime("%Y-%m-%d")
 
     # 1) shipping_mail_info에서 PI/BOR별 선적일 맵 구축
     ship_rows = conn.execute("""
@@ -226,6 +227,10 @@ def get_all_pending_orders_map(conn) -> dict:
 
         # 선적일이 오늘 이전이면 이미 입고됨 → 제외
         if shipping_date and shipping_date < today:
+            continue
+
+        # 선적정보 없는 오래된 오더 (90일 이상)는 입고 완료로 판단 → 제외
+        if not shipping_date and order_date and order_date < cutoff_90d:
             continue
 
         if model not in order_map:
