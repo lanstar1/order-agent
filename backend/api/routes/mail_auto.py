@@ -26,6 +26,7 @@ from db.database import get_connection
 from services.mail_auto_service import (
     fetch_bor_emails, process_excel_hs_code, create_purchase_slip,
     fetch_exchange_rate, run_mail_automation_pipeline,
+    get_auto_state, start_mail_auto_scheduler, stop_mail_auto_scheduler,
     MAIL_AUTO_PASSWORD,
 )
 
@@ -136,7 +137,32 @@ async def get_dashboard():
         "stats": stats,
         "exchange_rate": rate,
         "exchange_rate_updated": rate_updated,
+        "auto": get_auto_state(),
     }
+
+
+# ─── 자동 실행 스케줄러 제어 ───────────────────────────────
+
+@router.post("/scheduler/start")
+async def scheduler_start(request: Request):
+    """자동 실행 시작"""
+    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    interval = body.get("interval_min", 3)
+    start_mail_auto_scheduler(interval_min=interval)
+    return {"success": True, "state": get_auto_state()}
+
+
+@router.post("/scheduler/stop")
+async def scheduler_stop():
+    """자동 실행 중지"""
+    stop_mail_auto_scheduler()
+    return {"success": True, "state": get_auto_state()}
+
+
+@router.get("/scheduler/status")
+async def scheduler_status():
+    """자동 실행 상태"""
+    return get_auto_state()
 
 
 # ─── 처리 로그 ────────────────────────────────────────────

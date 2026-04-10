@@ -8428,13 +8428,82 @@ function reconcileNewMatch() {
     alert('템플릿이 저장되었습니다.');
   };
 
-  // 페이지 로드 시 저장된 템플릿 복원
   function mailLoadTemplate() {
     const saved = localStorage.getItem('mail_auto_template');
     if (saved) {
       const el = document.getElementById('mail-template-body');
       if (el) el.value = saved;
     }
+  }
+
+  // ─── 자동 실행 제어 ───────────────────
+  let _autoStatusTimer = null;
+
+  window.mailToggleAuto = async function(enabled) {
+    const interval = parseInt(document.getElementById('mail-auto-interval').value) || 3;
+    try {
+      if (enabled) {
+        await fetch('/api/mail-auto/scheduler/start', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({interval_min: interval})
+        });
+        _startAutoStatusPoll();
+      } else {
+        await fetch('/api/mail-auto/scheduler/stop', {method:'POST'});
+        _stopAutoStatusPoll();
+      }
+      _updateAutoUI(enabled);
+    } catch(e) { alert('스케줄러 제어 실패: '+e.message); }
+  };
+
+  function _updateAutoUI(enabled) {
+    const badge = document.getElementById('mail-auto-status-badge');
+    const dot = document.getElementById('mail-auto-toggle-dot');
+    const toggle = document.getElementById('mail-auto-toggle');
+    if (badge) {
+      badge.textContent = enabled ? 'ON' : 'OFF';
+      badge.style.background = enabled ? '#dcfce7' : '#fee2e2';
+      badge.style.color = enabled ? '#16a34a' : '#dc2626';
+    }
+    if (dot) dot.style.transform = enabled ? 'translateX(22px)' : 'translateX(0)';
+    if (toggle) {
+      toggle.checked = enabled;
+      toggle.parentElement.querySelector('span:first-of-type').style.background = enabled ? '#22c55e' : '#cbd5e1';
+    }
+  }
+
+  async function _pollAutoStatus() {
+    try {
+      const r = await fetch('/api/mail-auto/scheduler/status');
+      const s = await r.json();
+      const lastCheck = document.getElementById('mail-auto-last-check');
+      const lastResult = document.getElementById('mail-auto-last-result');
+      if (lastCheck && s.last_check) {
+        lastCheck.textContent = '마지막 확인: ' + s.last_check.substring(11,19);
+      }
+      if (lastResult && s.last_result) {
+        const lr = s.last_result;
+        if (lr.error) {
+          lastResult.innerHTML = '<span style="color:#dc2626">⚠️ 오류: '+lr.error+'</span>';
+        } else if (lr.new_processed > 0) {
+          lastResult.innerHTML = '<span style="color:#16a34a">✅ '+lr.new_processed+'건 처리 완료 ('+lr.timestamp?.substring(11,19)+')</span>';
+          mailLoadDashboard();
+          mailLoadLogs();
+        } else {
+          lastResult.textContent = '신규 메일 없음';
+        }
+      }
+      _updateAutoUI(s.enabled);
+    } catch(e) {}
+  }
+
+  function _startAutoStatusPoll() {
+    if (_autoStatusTimer) clearInterval(_autoStatusTimer);
+    _autoStatusTimer = setInterval(_pollAutoStatus, 10000); // 10초마다 상태 확인
+  }
+
+  function _stopAutoStatusPoll() {
+    if (_autoStatusTimer) { clearInterval(_autoStatusTimer); _autoStatusTimer = null; }
   }
 
   window.initMailAutoPage = async function() {
@@ -8449,6 +8518,13 @@ function reconcileNewMatch() {
     await mailLoadDashboard();
     await mailLoadRate();
     await mailLoadLogs();
+    // 자동 실행 상태 복원
+    try {
+      const r = await fetch('/api/mail-auto/scheduler/status');
+      const s = await r.json();
+      _updateAutoUI(s.enabled);
+      if (s.enabled) _startAutoStatusPoll();
+    } catch(e) {}
   };
 
   window.mailAutoLogin = async function() {

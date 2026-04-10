@@ -1895,12 +1895,40 @@ C규격품 200개
           <!-- 실행 컨트롤 -->
           <div class="card" style="padding:20px">
             <h3 style="margin:0 0 12px">⚡ 파이프라인 실행</h3>
-            <p style="font-size:13px;color:#666;margin-bottom:16px">
+            <p style="font-size:13px;color:#666;margin-bottom:12px">
               guzhiyi@bor-cable.com 메일 → HS코드 입력 → ERP 구매전표
             </p>
+            
+            <!-- 자동 실행 토글 -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                  <span style="font-weight:600;font-size:14px">🔄 자동 실행</span>
+                  <span id="mail-auto-status-badge" style="margin-left:8px;padding:2px 8px;border-radius:10px;font-size:11px;background:#fee2e2;color:#dc2626">OFF</span>
+                </div>
+                <label style="position:relative;display:inline-block;width:48px;height:26px;cursor:pointer">
+                  <input type="checkbox" id="mail-auto-toggle" onchange="mailToggleAuto(this.checked)" style="opacity:0;width:0;height:0">
+                  <span style="position:absolute;inset:0;background:#cbd5e1;border-radius:13px;transition:.3s"></span>
+                  <span id="mail-auto-toggle-dot" style="position:absolute;left:3px;top:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.3s"></span>
+                </label>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:#64748b">
+                <span>폴링 간격</span>
+                <select id="mail-auto-interval" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px">
+                  <option value="2">2분</option>
+                  <option value="3" selected>3분</option>
+                  <option value="5">5분</option>
+                  <option value="10">10분</option>
+                </select>
+                <span style="margin-left:auto;font-size:11px" id="mail-auto-last-check"></span>
+              </div>
+              <div id="mail-auto-last-result" style="margin-top:6px;font-size:11px;color:#64748b"></div>
+            </div>
+
+            <!-- 수동 실행 -->
             <div style="display:flex;gap:8px;margin-bottom:12px">
               <button id="mail-preview-btn" onclick="mailPreviewEmails()" class="btn" style="flex:1;padding:10px">📬 메일 검색</button>
-              <button id="mail-run-btn" onclick="mailRunPipeline()" class="btn btn-primary" style="flex:1;padding:10px">🚀 파이프라인 실행</button>
+              <button id="mail-run-btn" onclick="mailRunPipeline()" class="btn btn-primary" style="flex:1;padding:10px">🚀 수동 실행</button>
             </div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#666">
               <input type="checkbox" id="mail-auto-reply-check" onchange="document.getElementById('mail-template-section').style.display=this.checked?'block':'none'"> 처리 완료 후 자동 회신
@@ -5276,7 +5304,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260409e"></script>
+<script src="/static/js/app.js?v=20260409f"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

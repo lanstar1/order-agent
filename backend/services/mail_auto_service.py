@@ -35,11 +35,25 @@ logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
 hs_engine = HSCodeEngine()
 
+# ─── 메일 설정 ───────────────────────────────────────────
+
 TARGET_SENDER = os.getenv("MAIL_TARGET_SENDER", "guzhiyi@bor-cable.com")
 MAIL_SMTP_HOST = os.getenv("MAIL_SMTP_HOST", "wsmtp.ecount.com")
 MAIL_SMTP_PORT = int(os.getenv("MAIL_SMTP_PORT", "587"))
 ERP_SUPPLIER_CODE = os.getenv("ERP_SUPPLIER_CODE", "1111122222")
 MAIL_AUTO_PASSWORD = os.getenv("MAIL_AUTO_PASSWORD", "lanstar2026")
+
+# 제목 키워드 필터
+SUBJECT_KEYWORDS = ["ship", "final", "shipping", "list"]
+
+# 자동 실행 상태
+_auto_state = {
+    "enabled": False,
+    "interval_min": 3,
+    "last_check": None,
+    "last_result": None,
+    "running": False,
+}
 
 
 # ─── 유틸리티 ────────────────────────────────────────────
@@ -66,6 +80,12 @@ def _parse_email_date(date_str):
         return dt.astimezone(KST)
     except Exception:
         return None
+
+
+def _subject_matches(subject: str) -> bool:
+    """제목에 키워드(ship/final/shipping/list) 포함 여부"""
+    subj_lower = subject.lower()
+    return any(kw in subj_lower for kw in SUBJECT_KEYWORDS)
 
 
 # ─── 환율 조회 (전신환매도율 근사) ─────────────────────────
@@ -193,13 +213,19 @@ def fetch_bor_emails(days_back: int = 30) -> list:
                 date_kst = _parse_email_date(date_str)
                 message_id = msg.get("Message-ID", "")
 
-                # 첨부파일 추출
+                # ★ 제목 키워드 필터 (ship/final/shipping/list)
+                if not _subject_matches(subject):
+                    continue
+
+                # 첨부파일 추출 (BOR*.xlsx만)
                 attachments = []
                 for part in msg.walk():
                     if part.get_content_disposition() != "attachment":
                         continue
                     filename = _decode_header_value(part.get_filename() or "")
                     if not filename.lower().endswith(".xlsx"):
+                        continue
+                    if not filename.upper().startswith("BOR"):
                         continue
                     
                     file_data = part.get_payload(decode=True)
@@ -657,3 +683,98 @@ async def run_mail_automation_pipeline(
         "already_processed": len(processed_ids),
         "results": pipeline_results,
     }
+
+
+# ─── 자동 실행 스케줄러 ───────────────────────────────────
+
+def get_auto_state() -> dict:
+    return dict(_auto_state)
+
+
+async def _auto_check_and_process():
+    """스케줄러에서 호출: 신규 메일 확인 → 자동 처리"""
+    if _auto_state["running"]:
+        logger.info("[자동실행] 이전 작업 진행 중, 스킵")
+        return
+
+    _auto_state["running"] = True
+    _auto_state["last_check"] = datetime.now(KST).isoformat()
+
+    try:
+        from db.database import get_connection
+        conn = get_connection()
+
+        result = await run_mail_automation_pipeline(
+            days_back=7,  # 최근 7일만 확인 (자동 모드)
+            auto_reply=False,  # 자동 회신은 설정에 따라
+            auto_erp=True,
+            db_conn=conn,
+        )
+
+        _auto_state["last_result"] = {
+            "total_emails": result.get("total_emails", 0),
+            "new_processed": result.get("new_processed", 0),
+            "exchange_rate": result.get("exchange_rate", 0),
+            "timestamp": datetime.now(KST).isoformat(),
+        }
+
+        if result.get("new_processed", 0) > 0:
+            logger.info(f"[자동실행] {result['new_processed']}건 신규 처리 완료")
+        else:
+            logger.debug("[자동실행] 신규 메일 없음")
+
+    except Exception as e:
+        logger.error(f"[자동실행] 오류: {e}")
+        _auto_state["last_result"] = {"error": str(e), "timestamp": datetime.now(KST).isoformat()}
+    finally:
+        _auto_state["running"] = False
+
+
+def _auto_sync_wrapper():
+    """APScheduler에서 호출되는 동기 래퍼"""
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(_auto_check_and_process())
+        else:
+            loop.run_until_complete(_auto_check_and_process())
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_auto_check_and_process())
+
+
+_mail_auto_scheduler = None
+
+
+def start_mail_auto_scheduler(interval_min: int = 3):
+    """메일 자동화 스케줄러 시작"""
+    global _mail_auto_scheduler
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    if _mail_auto_scheduler:
+        _mail_auto_scheduler.shutdown(wait=False)
+
+    _mail_auto_scheduler = BackgroundScheduler()
+    _mail_auto_scheduler.add_job(
+        _auto_sync_wrapper,
+        IntervalTrigger(minutes=interval_min),
+        id="mail_auto_check",
+        replace_existing=True,
+    )
+    _mail_auto_scheduler.start()
+    _auto_state["enabled"] = True
+    _auto_state["interval_min"] = interval_min
+    logger.info(f"[메일자동화] 스케줄러 시작 (매 {interval_min}분)")
+
+
+def stop_mail_auto_scheduler():
+    """메일 자동화 스케줄러 중지"""
+    global _mail_auto_scheduler
+    if _mail_auto_scheduler:
+        _mail_auto_scheduler.shutdown(wait=False)
+        _mail_auto_scheduler = None
+    _auto_state["enabled"] = False
+    logger.info("[메일자동화] 스케줄러 중지")
