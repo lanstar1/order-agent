@@ -1492,10 +1492,11 @@ C규격품 200개
         </div>
       </div>
 
-      <!-- 뷰 탭 (칸반 / 리스트) -->
+      <!-- 뷰 탭 (대시보드 / 리스트 / 미출고) -->
       <div style="display:flex;gap:2px;margin-bottom:12px;border-bottom:2px solid #e5e7eb;overflow-x:auto">
-        <button class="cs-pipe-tab active" onclick="csSwitchView(this,'kanban')">📋 칸반 보드</button>
+        <button class="cs-pipe-tab active" onclick="csSwitchView(this,'kanban')">📊 대시보드</button>
         <button class="cs-pipe-tab" onclick="csSwitchView(this,'list')">📄 리스트</button>
+        <button class="cs-pipe-tab" onclick="csSwitchView(this,'backorder')">📦 미출고/지연</button>
       </div>
 
       <!-- 칸반 보드 -->
@@ -1514,6 +1515,16 @@ C규격품 200개
         </div>
         <div id="cs-ticket-list"></div>
         <div id="cs-pagination" style="display:flex;justify-content:center;gap:8px;margin-top:12px"></div>
+      </div>
+
+      <!-- 미출고/지연 뷰 (숨김) -->
+      <div id="cs-backorder-view" style="display:none">
+        <div style="display:flex;gap:2px;margin-bottom:12px;border-bottom:1px solid #e5e7eb;overflow-x:auto">
+          <button class="cs-pipe-tab active" data-bostatus="" onclick="csBackorderTab(this,'')">전체</button>
+          <button class="cs-pipe-tab" data-bostatus="접수완료" onclick="csBackorderTab(this,'접수완료')">대기중</button>
+          <button class="cs-pipe-tab" data-bostatus="처리종결" onclick="csBackorderTab(this,'처리종결')">처리완료</button>
+        </div>
+        <div id="cs-backorder-list"></div>
       </div>
     </div>
 
@@ -5428,7 +5439,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260410h"></script>
+<script src="/static/js/app.js?v=20260410j"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

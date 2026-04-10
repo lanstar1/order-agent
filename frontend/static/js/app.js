@@ -4033,41 +4033,94 @@ function csApplyFilters() {
 
 function csSwitchView(el, view) {
   _csView = view;
-  document.querySelectorAll("#page-cs_rma > div:nth-child(5) .cs-pipe-tab").forEach(t => t.classList.remove("active"));
+  el.parentElement.querySelectorAll(".cs-pipe-tab").forEach(t => t.classList.remove("active"));
   el.classList.add("active");
   document.getElementById("cs-kanban-board").style.display = view === "kanban" ? "flex" : "none";
   document.getElementById("cs-list-view").style.display = view === "list" ? "block" : "none";
+  document.getElementById("cs-backorder-view").style.display = view === "backorder" ? "block" : "none";
   csRenderView();
 }
 
 async function csRenderView() {
   if (_csView === "kanban") {
     await csLoadKanban();
+  } else if (_csView === "backorder") {
+    await csLoadBackorder();
   } else {
     await csLoadTickets();
   }
 }
 
-// ── 칸반 보드 ──
+// ── 미출고/지연 뷰 ──
+let _csBackorderStatus = "";
+function csBackorderTab(el, status) {
+  _csBackorderStatus = status;
+  el.parentElement.querySelectorAll(".cs-pipe-tab").forEach(t => t.classList.remove("active"));
+  el.classList.add("active");
+  csLoadBackorder();
+}
+
+async function csLoadBackorder() {
+  const list = document.getElementById("cs-backorder-list");
+  if (!list) return;
+  const params = new URLSearchParams({ size: "200", cs_type: "미출고" });
+  if (_csBackorderStatus) params.set("status", _csBackorderStatus);
+  if (_csChannel) params.set("channel", _csChannel);
+  if (_csSearch) params.set("search", _csSearch);
+  try {
+    const res = await api.get(`/api/cs/tickets?${params}`);
+    const tickets = res.tickets || [];
+    if (!tickets.length) {
+      list.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af">미출고/지연 건이 없습니다.<br><br><button class="btn btn-primary" onclick="csShowCreateForm()" style="font-size:13px">+ 미출고 접수</button></div>';
+      return;
+    }
+    list.innerHTML = tickets.map(t => {
+      const chColor = CS_CHANNEL_COLORS[t.sales_channel] || "#9ca3af";
+      const isOverdue = _isOverdue(t);
+      return `<div class="cs-ticket-card ${isOverdue?'overdue':''}" onclick="csShowDetail('${t.ticket_id}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div>
+            <span style="font-weight:600;color:#111827">${t.customer_name}</span>
+            <span style="font-size:12px;color:#9ca3af;margin-left:8px">${t.ticket_id}</span>
+            ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor};margin-left:6px">${t.sales_channel}</span>` : ''}
+            <span style="font-size:11px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:6px;margin-left:4px">미출고</span>
+          </div>
+          <span class="cs-status-badge cs-status-${t.current_status}">${t.current_status}</span>
+        </div>
+        <div style="margin-top:6px;font-size:13px;color:#4b5563">${t.product_name}${t.quantity > 1 ? ` x${t.quantity}` : ''}</div>
+        <div style="margin-top:4px;font-size:12px;color:#9ca3af;display:flex;gap:12px">
+          <span>${t.created_at?.slice(0,10) || ''}</span>
+          ${t.reason_category ? `<span>${t.reason_category}</span>` : ''}
+          ${isOverdue ? '<span style="color:#ef4444;font-weight:600">⚠ 지연</span>' : ''}
+        </div>
+      </div>`;
+    }).join("");
+  } catch(e) { list.innerHTML = `<div style="color:red;padding:20px">오류: ${e.message||e}</div>`; }
+}
+
+// ── 대시보드 (칸반) ──
 async function csLoadKanban() {
   const board = document.getElementById("cs-kanban-board");
   if (!board) return;
   const statuses = ["접수완료", "물류수령", "기술인계", "테스트완료", "처리종결"];
   const statusIcons = {"접수완료":"📋","물류수령":"📦","기술인계":"🔬","테스트완료":"✅","처리종결":"🏁"};
 
-  // 각 상태별 티켓 로드
-  let columns = {};
-  for (const st of statuses) {
-    try {
-      const params = new URLSearchParams({ status: st, size: "100" });
-      if (_csChannel) params.set("channel", _csChannel);
-      if (_csType) params.set("cs_type", _csType);
-      if (_csReason) params.set("reason", _csReason);
-      if (_csSearch) params.set("search", _csSearch);
-      const res = await api.get(`/api/cs/tickets?${params}`);
-      columns[st] = res.tickets || [];
-    } catch(e) { columns[st] = []; }
-  }
+  // 단일 API 호출로 전체 로드
+  try {
+    const params = new URLSearchParams({ size: "500" });
+    if (_csChannel) params.set("channel", _csChannel);
+    if (_csType) params.set("cs_type", _csType);
+    if (_csReason) params.set("reason", _csReason);
+    if (_csSearch) params.set("search", _csSearch);
+    const res = await api.get(`/api/cs/tickets?${params}`);
+    const allTickets = res.tickets || [];
+
+    // JS에서 상태별 그룹핑
+    const columns = {};
+    statuses.forEach(s => columns[s] = []);
+    allTickets.forEach(t => {
+      if (columns[t.current_status]) columns[t.current_status].push(t);
+    });
 
   board.innerHTML = statuses.map(st => {
     const tickets = columns[st] || [];
@@ -4094,6 +4147,7 @@ async function csLoadKanban() {
       }
     </div>`;
   }).join("");
+  } catch(e) { board.innerHTML = `<div style="color:red;padding:20px">로딩 오류: ${e.message||e}</div>`; }
 }
 
 function _isOverdue(t) {
@@ -4183,10 +4237,8 @@ function csStatCardClick(filter) {
   if (filter === "처리종결") {
     _csStatus = "처리종결";
     _csView = "list";
-    document.querySelectorAll("#page-cs_rma > div:nth-child(5) .cs-pipe-tab").forEach(t => t.classList.remove("active"));
-    document.querySelectorAll("#page-cs_rma > div:nth-child(5) .cs-pipe-tab")[1]?.classList.add("active");
-    document.getElementById("cs-kanban-board").style.display = "none";
-    document.getElementById("cs-list-view").style.display = "block";
+    const viewTabs = document.querySelectorAll("#page-cs_rma .cs-pipe-tab");
+    viewTabs.forEach(t => { if(t.textContent.includes('리스트')) { csSwitchView(t, 'list'); }});
     csLoadTickets();
   }
 }
@@ -4316,8 +4368,11 @@ async function csSubmitCreate() {
 // ── 상세 보기 (기존 기능 유지 + 신규 필드 표시) ──
 async function csShowDetail(ticketId) {
   try {
-    const t = await api.get(`/api/cs/tickets/${ticketId}`);
-    const logs = await api.get(`/api/cs/tickets/${ticketId}/logs`).catch(()=>({logs:[]}));
+    const res = await api.get(`/api/cs/tickets/${ticketId}`);
+    const t = res.ticket || res;
+    const logs = res.logs || [];
+    const files = res.files || [];
+    const testResult = res.test_result;
     const chColor = CS_CHANNEL_COLORS[t.sales_channel] || "#9ca3af";
 
     let html = `<div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
@@ -4347,16 +4402,16 @@ async function csShowDetail(ticketId) {
       </div>`;
 
     // 테스트 결과
-    if (t.test_status) {
+    if (testResult) {
       html += `<div style="margin-top:12px"><div class="cs-field-label">테스트 결과</div>
-        <span class="cs-test-badge cs-test-${t.test_status}">${t.test_status}</span>
-        ${t.test_comment ? `<span style="margin-left:8px;font-size:13px;color:#4b5563">${t.test_comment}</span>` : ''}
+        <span class="cs-test-badge cs-test-${testResult.test_status}">${testResult.test_status}</span>
+        ${testResult.test_comment ? `<span style="margin-left:8px;font-size:13px;color:#4b5563">${testResult.test_comment}</span>` : ''}
       </div>`;
     }
 
     // 타임라인
     html += `<div style="margin-top:16px"><div class="cs-field-label">처리 이력</div><div class="cs-timeline">`;
-    (logs.logs||[]).forEach(l => {
+    (logs||[]).forEach(l => {
       html += `<div class="cs-timeline-item">
         <div class="cs-timeline-dot done"></div>
         <div><strong style="font-size:13px">${l.action_type}</strong>
@@ -4367,12 +4422,22 @@ async function csShowDetail(ticketId) {
     });
     html += `</div></div>`;
 
-    // 파일 업로드
+    // 파일 업로드 + 기존 파일 목록
     html += `<div style="margin-top:16px">
       <div class="cs-field-label">첨부파일</div>
       <input type="file" multiple onchange="csUploadFile('${t.ticket_id}',this)" style="font-size:12px">
-      <div id="cs-file-list" style="margin-top:8px"></div>
-    </div>`;
+      <div id="cs-file-list" style="margin-top:8px">`;
+    if (files && files.length > 0) {
+      files.forEach(f => {
+        html += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #f3f4f6">
+          <span style="flex:1;color:#374151">${f.file_name}</span>
+          <span style="color:#9ca3af">${f.file_size ? Math.round(f.file_size/1024)+'KB' : ''}</span>
+          <button onclick="csDownloadFile(${f.id},'${(f.file_name||'').replace(/'/g,"\\'")}')" style="background:none;border:none;color:#2563eb;cursor:pointer;font-size:12px">다운로드</button>
+          <button onclick="csDeleteFile(${f.id},'${t.ticket_id}')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px">삭제</button>
+        </div>`;
+      });
+    }
+    html += `</div></div>`;
 
     // 메모 입력
     html += `<div style="margin-top:12px;display:flex;gap:8px">
