@@ -395,66 +395,170 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
 
 
 def analyze_all_targets(conn) -> dict:
-    """전체 관리품목 일괄 분석 (오더리스트 + 선적메일 연동)"""
+    """전체 관리품목 일괄 분석 (배치 최적화 — 2~3개 쿼리로 처리)"""
     targets = get_planning_targets(conn, active_only=True)
     if not targets:
         return {"items": [], "summary": {"total": 0, "urgent": 0, "warning": 0, "ordered": 0, "safe": 0}}
 
-    # 오더리스트 + 선적정보 한 번에 로딩
+    # ── 1. 배치 데이터 로딩 (3개 쿼리) ──
     order_map = get_all_pending_orders_map(conn)
 
-    # 선적 메일 정보 로딩
     try:
         from services.shipping_mail_service import get_shipping_info_map
         shipping_map = get_shipping_info_map(conn)
     except Exception:
         shipping_map = {}
 
+    # 전체 타겟 prod_cd 목록
+    all_prod_cds = [t["prod_cd"] for t in targets]
+    now = datetime.now(KST)
+    start = (now - timedelta(days=181)).strftime("%Y%m%d")
+
+    # 스냅샷 일괄 로딩 (핵심 최적화: N개 쿼리 → 1개 쿼리)
+    placeholders = ",".join("?" for _ in all_prod_cds)
+    snap_rows = conn.execute(f"""
+        SELECT prod_cd, snapshot_date, bal_qty
+        FROM inventory_snapshots
+        WHERE prod_cd IN ({placeholders}) AND snapshot_date >= ?
+        ORDER BY prod_cd, snapshot_date ASC
+    """, all_prod_cds + [start]).fetchall()
+
+    # prod_cd별 스냅샷 그룹핑
+    snapshots_by_prod = {}
+    for r in snap_rows:
+        pc = r[0]
+        if pc not in snapshots_by_prod:
+            snapshots_by_prod[pc] = []
+        snapshots_by_prod[pc].append((r[1], r[2]))  # (date, qty)
+
+    # ── 2. 각 품목 분석 (메모리 내 처리, DB 쿼리 없음) ──
     results = []
     summary = {"total": 0, "urgent": 0, "warning": 0, "ordered": 0, "safe": 0, "no_sales": 0}
 
     for target in targets:
-        analysis = analyze_single_product(conn, target, order_map)
+        prod_cd = target["prod_cd"]
+        model_name = target.get("model_name", "")
+        lead_time = target.get("lead_time_days", 40)
+        safety_days = target.get("safety_stock_days", 10)
 
-        # 선적 정보 매칭: pending_orders에서 먼저, 없으면 shipping_map fallback
-        model_key = (analysis.get("model_name") or "").strip().upper()
+        # 일별 판매량 (메모리에서 계산)
+        snaps = snapshots_by_prod.get(prod_cd, [])
+        daily = []
+        for i in range(1, len(snaps)):
+            prev_date, prev_qty = snaps[i - 1]
+            curr_date, curr_qty = snaps[i]
+            diff = prev_qty - curr_qty
+            daily.append({"date": curr_date, "sales": max(diff, 0), "stock_change": diff, "stock": curr_qty})
+
+        velocity = calc_sales_velocity(daily)
+
+        # 현재고 (마지막 스냅샷)
+        current_stock = snaps[-1][1] if snaps else 0
+        stock_date = snaps[-1][0] if snaps else ""
+
+        # 소진일 예측
+        avg_daily_for_stockout = velocity["avg_30d"] if velocity["avg_30d"] > 0 else velocity["avg_7d"]
+        days_until_stockout = round(current_stock / avg_daily_for_stockout, 1) if avg_daily_for_stockout > 0 else 9999
+
+        # 오더리스트 확인
+        pending_orders = []
+        if order_map and model_name:
+            key = model_name.strip().upper()
+            pending_orders = order_map.get(key, [])
+            if not pending_orders:
+                for k, v in order_map.items():
+                    if key in k or k in key:
+                        pending_orders = v
+                        break
+
+        has_pending_order = len(pending_orders) > 0
+        need_order = days_until_stockout <= (lead_time + safety_days) and not has_pending_order
+
+        # 상태 분류
+        if has_pending_order:
+            status, status_label = "ordered", "발주완료"
+        elif days_until_stockout <= lead_time:
+            status, status_label = "urgent", "긴급발주"
+        elif days_until_stockout <= (lead_time + safety_days):
+            status, status_label = "warning", "발주검토"
+        elif avg_daily_for_stockout == 0:
+            status, status_label = "no_sales", "판매없음"
+        else:
+            status, status_label = "safe", "여유"
+
+        # 권장 발주 수량
+        recommended_qty = 0
+        moq = target.get("moq", 0) or 0
+        avg_for_order = velocity["avg_90d"] or velocity["avg_30d"] or velocity["avg_7d"]
+        if need_order and avg_for_order > 0:
+            required = avg_for_order * (lead_time + safety_days)
+            raw_qty = max(0, round(required - current_stock))
+            if moq > 0 and raw_qty > 0:
+                recommended_qty = max(raw_qty, moq)
+                if recommended_qty > moq:
+                    recommended_qty = ((recommended_qty + moq - 1) // moq) * moq
+            else:
+                recommended_qty = raw_qty
+
+        # 권장 발주일
+        order_deadline = ""
+        if avg_daily_for_stockout > 0 and days_until_stockout < 9999:
+            deadline_days = max(0, days_until_stockout - lead_time)
+            order_deadline = (now + timedelta(days=deadline_days)).strftime("%Y-%m-%d")
+
+        # 선적 정보 매칭
+        model_key = model_name.strip().upper()
         ship_info = shipping_map.get(model_key, {})
-
-        # pending_orders에 포함된 선적 정보 수집
         order_ships = [
             {"shipping_date": o["shipping_date"], "arrival_date": o["arrival_date"]}
-            for o in analysis.get("pending_orders", [])
-            if o.get("shipping_date")
+            for o in pending_orders if o.get("shipping_date")
         ]
 
         if order_ships:
-            analysis["shipping_date"] = order_ships[0]["shipping_date"]
-            analysis["arrival_date"] = order_ships[0]["arrival_date"]
-            analysis["shipping_entries"] = order_ships  # 복수건 표시용
+            shipping_date = order_ships[0]["shipping_date"]
+            arrival_date = order_ships[0]["arrival_date"]
+            shipping_entries = order_ships
         elif ship_info:
-            analysis["shipping_date"] = ship_info.get("shipping_date", "")
-            analysis["arrival_date"] = ship_info.get("arrival_date", "")
-            analysis["shipping_entries"] = [{"shipping_date": ship_info.get("shipping_date", ""), "arrival_date": ship_info.get("arrival_date", "")}] if ship_info.get("shipping_date") else []
+            shipping_date = ship_info.get("shipping_date", "")
+            arrival_date = ship_info.get("arrival_date", "")
+            shipping_entries = [{"shipping_date": shipping_date, "arrival_date": arrival_date}] if shipping_date else []
         else:
-            analysis["shipping_date"] = ""
-            analysis["arrival_date"] = ""
-            analysis["shipping_entries"] = []
+            shipping_date = arrival_date = ""
+            shipping_entries = []
 
-        analysis["shipping_bor"] = ship_info.get("bor_number", "")
-        analysis["shipping_status"] = ship_info.get("status", "")
+        # 선적확인 → 여유 전환
+        if shipping_date and status in ("urgent", "warning"):
+            status, status_label = "safe", "여유"
+            need_order = False
+            recommended_qty = 0
 
-        # 선적일 확인된 제품은 여유 상태로 전환 (미발주→여유)
-        if analysis.get("shipping_date"):
-            if analysis["status"] in ("urgent", "warning"):
-                analysis["status"] = "safe"
-                analysis["status_label"] = "여유"
-                analysis["need_order"] = False
-                analysis["recommended_qty"] = 0
+        analysis = {
+            "id": target["id"], "prod_cd": prod_cd,
+            "model_name": model_name, "prod_name": target.get("prod_name", ""),
+            "current_stock": current_stock, "stock_date": stock_date,
+            "avg_daily_7d": velocity["avg_7d"], "avg_daily_30d": velocity["avg_30d"],
+            "avg_daily_90d": velocity["avg_90d"], "avg_daily_180d": velocity["avg_180d"],
+            "total_sold_30d": velocity.get("total_sold_30d", 0),
+            "total_sold_90d": velocity.get("total_sold_90d", 0),
+            "selling_days": velocity.get("selling_days", 0),
+            "max_daily": velocity.get("max_daily", 0),
+            "days_until_stockout": days_until_stockout,
+            "lead_time_days": lead_time, "safety_stock_days": safety_days,
+            "moq": moq, "supplier_group": target.get("supplier_group", ""),
+            "status": status, "status_label": status_label,
+            "need_order": need_order, "recommended_qty": recommended_qty,
+            "order_deadline": order_deadline,
+            "has_pending_order": has_pending_order, "pending_orders": pending_orders,
+            "shipping_date": shipping_date, "arrival_date": arrival_date,
+            "shipping_entries": shipping_entries,
+            "shipping_bor": ship_info.get("bor_number", ""),
+            "shipping_status": ship_info.get("status", ""),
+        }
 
         results.append(analysis)
         summary["total"] += 1
-        if analysis["status"] in summary:
-            summary[analysis["status"]] += 1
+        if status in summary:
+            summary[status] += 1
 
     # 긴급 → 경고 → 발주완료 → 여유 순 정렬
     status_order = {"urgent": 0, "warning": 1, "ordered": 2, "no_sales": 3, "safe": 4}
