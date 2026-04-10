@@ -91,15 +91,26 @@ def _ensure_tables():
 def _load_product_mapping_from_file(conn):
     """data/product_code_mapping.xlsx에서 품목코드 매핑 로드"""
     import openpyxl
-    mapping_path = Path(__file__).parent.parent.parent.parent / "data" / "product_code_mapping.xlsx"
-    if not mapping_path.exists():
-        # 대체 경로 시도
-        alt_path = Path(__file__).parent.parent.parent / "data" / "product_code_mapping.xlsx"
-        if alt_path.exists():
-            mapping_path = alt_path
-        else:
-            logger.warning(f"[매핑] 파일 없음: {mapping_path} / {alt_path}")
-            return 0
+    import os
+    
+    # 여러 경로 시도
+    candidates = [
+        Path(__file__).parent.parent.parent.parent / "data" / "product_code_mapping.xlsx",
+        Path(__file__).parent.parent.parent / "data" / "product_code_mapping.xlsx",
+        Path(os.getcwd()).parent / "data" / "product_code_mapping.xlsx",
+        Path(os.getcwd()) / "data" / "product_code_mapping.xlsx",
+        Path(os.getcwd()) / ".." / "data" / "product_code_mapping.xlsx",
+    ]
+    
+    mapping_path = None
+    for p in candidates:
+        if p.exists():
+            mapping_path = p
+            break
+    
+    if not mapping_path:
+        logger.warning(f"[매핑] 파일 없음. 시도한 경로: {[str(p) for p in candidates]}")
+        return 0
     
     wb = openpyxl.load_workbook(mapping_path, data_only=True)
     ws = wb.active
@@ -111,7 +122,7 @@ def _load_product_mapping_from_file(conn):
             model_str = str(model).strip()
             try:
                 conn.execute(
-                    "INSERT OR REPLACE INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
+                    "INSERT INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
                     (model_str, str(prod_cd).strip())
                 )
                 count += 1
@@ -606,7 +617,7 @@ async def upload_mapping(file: UploadFile = File(...)):
         model = ws.cell(row=r, column=2).value
         if prod_cd and model:
             conn.execute(
-                "INSERT OR REPLACE INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
+                "INSERT INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
                 (str(model).strip(), str(prod_cd).strip())
             )
             count += 1
