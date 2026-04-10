@@ -313,12 +313,7 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
     if order_map and model_name:
         key = model_name.strip().upper()
         pending_orders = order_map.get(key, [])
-        # 부분 매칭도 시도
-        if not pending_orders:
-            for k, v in order_map.items():
-                if key in k or k in key:
-                    pending_orders = v
-                    break
+        # 정확 매칭만 사용 (부분 매칭 제거 — LS-750H가 LS-750HB에 잘못 매칭되는 문제 방지)
 
     has_pending_order = len(pending_orders) > 0
 
@@ -470,11 +465,7 @@ def analyze_all_targets(conn) -> dict:
         if order_map and model_name:
             key = model_name.strip().upper()
             pending_orders = order_map.get(key, [])
-            if not pending_orders:
-                for k, v in order_map.items():
-                    if key in k or k in key:
-                        pending_orders = v
-                        break
+            # 정확 매칭만 사용 (부분 매칭 제거 — LS-750H가 LS-750HB에 잘못 매칭되는 문제 방지)
 
         has_pending_order = len(pending_orders) > 0
         need_order = days_until_stockout <= (lead_time + safety_days) and not has_pending_order
