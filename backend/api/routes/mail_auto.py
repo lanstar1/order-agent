@@ -611,7 +611,9 @@ async def upload_mapping(file: UploadFile = File(...)):
         
         conn = get_connection()
         
-        # 테이블 생성 보장
+        # 테이블 재생성 (기존 UNIQUE 제약 제거)
+        conn.execute("DROP TABLE IF EXISTS product_code_mapping")
+        conn.commit()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS product_code_mapping (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -619,10 +621,6 @@ async def upload_mapping(file: UploadFile = File(...)):
                 prod_cd TEXT NOT NULL
             )
         """)
-        conn.commit()
-        
-        # 기존 데이터 삭제
-        conn.execute("DELETE FROM product_code_mapping")
         conn.commit()
         
         count = 0
