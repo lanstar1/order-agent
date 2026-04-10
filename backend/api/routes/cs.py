@@ -140,7 +140,7 @@ async def list_tickets(
     cs_type: str = Query("", description="CS유형 필터"),
     reason: str = Query("", description="사유 필터"),
     page: int = Query(1, ge=1),
-    size: int = Query(50, ge=1, le=200),
+    size: int = Query(50, ge=1, le=500),
     user: dict = Depends(get_current_user),
 ):
     conn = get_connection()

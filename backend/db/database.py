@@ -573,13 +573,18 @@ def init_db():
 
     # ── CS/RMA v2 일회성 마이그레이션: 기존 데이터 판매채널 설정 ──
     try:
-        conn.execute("""UPDATE cs_tickets SET sales_channel = '스마트스토어' 
-                        WHERE (sales_channel IS NULL OR sales_channel = '') AND ticket_id LIKE 'CS-%'""")
-        conn.execute("""UPDATE cs_tickets SET cs_type = '반품' 
-                        WHERE (cs_type IS NULL OR cs_type = '') AND ticket_id LIKE 'CS-%'""")
+        conn.execute(
+            "UPDATE cs_tickets SET sales_channel = ? WHERE (sales_channel IS NULL OR sales_channel = '') AND ticket_id LIKE ?",
+            ('스마트스토어', 'CS-%')
+        )
+        conn.execute(
+            "UPDATE cs_tickets SET cs_type = ? WHERE (cs_type IS NULL OR cs_type = '') AND ticket_id LIKE ?",
+            ('반품', 'CS-%')
+        )
         conn.commit()
     except Exception:
-        pass
+        try: conn.rollback()
+        except: pass
 
     # ── 미출고 관리 테이블 ──
     cur_or_conn.execute("""
