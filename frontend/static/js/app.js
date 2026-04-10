@@ -8604,17 +8604,21 @@ function reconcileNewMatch() {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999">처리 이력이 없습니다</td></tr>';
         return;
       }
-      tbody.innerHTML = d.logs.map(l => `
-        <tr>
+      tbody.innerHTML = d.logs.map(l => {
+        const ds = l.result || {};
+        const hsInfo = ds.hs_filled !== undefined ? `${ds.hs_filled}/${ds.total_items||0}` : (l.hs_code_count||0);
+        const erpInfo = ds.erp_success ? '✅' : (ds.erp_lines_sent > 0 ? '❌' : '—');
+        return `
+        <tr onclick="mailShowDetail(${l.id})" style="cursor:pointer">
           <td style="font-size:12px">${(l.processed_at||'').substring(0,16)}</td>
           <td title="${l.subject}" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject||''}</td>
           <td style="text-align:center">${l.attachment_count||0}</td>
-          <td style="text-align:center"><b>${l.hs_code_count||0}</b></td>
+          <td style="text-align:center"><b>${hsInfo}</b></td>
+          <td style="text-align:center">${erpInfo}</td>
           <td style="text-align:center">${l.reply_sent ? '✅' : '—'}</td>
           <td><span class="badge ${l.status==='completed'?'badge-success':'badge-warn'}">${l.status}</span></td>
-          <td><button class="btn btn-sm" onclick="mailShowDetail('${l.message_id}')">상세</button></td>
         </tr>
-      `).join('');
+      `}).join('');
     } catch(e) { console.error('로그 로드 실패:', e); }
   }
 
@@ -8688,8 +8692,40 @@ function reconcileNewMatch() {
     btn.disabled = false; btn.textContent = '🚀 파이프라인 실행';
   };
 
-  window.mailShowDetail = function(msgId) {
-    alert('상세 보기: ' + msgId + '\n(추후 모달로 구현 예정)');
+  window.mailShowDetail = async function(logId) {
+    try {
+      const r = await fetch('/api/mail-auto/logs?limit=100');
+      const d = await r.json();
+      const log = d.logs.find(l => l.id === logId);
+      if (!log) return;
+      
+      const ds = log.result || {};
+      const div = document.getElementById('mail-run-result');
+      let html = `<div class="card" style="padding:16px;margin-top:12px;border:2px solid #2563eb20">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h4 style="margin:0">📋 처리 상세 — ${log.subject?.substring(0,50)}</h4>
+          <button onclick="this.parentElement.parentElement.remove()" class="btn btn-sm">✕ 닫기</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;margin-bottom:12px">
+          <div>📅 처리일시: <b>${(log.processed_at||'').substring(0,16)}</b></div>
+          <div>📨 발신자: ${log.sender}</div>
+          <div>📎 첨부파일: ${ds.filenames?.join(', ') || log.attachment_count+'개'}</div>
+          <div>💱 환율: ${log.result?.exchange_rate || '—'}</div>
+        </div>
+        <table class="table table-sm" style="font-size:13px">
+          <tr><td style="width:150px;color:#64748b">HS코드 총 품목</td><td><b>${ds.total_items||0}</b>개</td></tr>
+          <tr><td style="color:#059669">✅ HS코드 입력</td><td><b>${ds.hs_filled||0}</b>건</td></tr>
+          <tr><td style="color:#64748b">⏭ HS코드 스킵</td><td>${ds.hs_skipped||0}건 (패치코드/케이블 등)</td></tr>
+          <tr><td style="color:#dc2626">⚠️ HS코드 미매칭</td><td>${ds.hs_unknown||0}건</td></tr>
+          <tr><td colspan="2" style="border-top:2px solid #e2e8f0"></td></tr>
+          <tr><td style="color:#7c3aed">📊 ERP 전표</td><td>${ds.erp_success ? '✅ 성공' : (ds.erp_lines_sent > 0 ? '❌ 실패' : '⏭ 미실행')} (${ds.erp_lines_sent||0}건 전송)</td></tr>`;
+      if (ds.erp_unmapped && ds.erp_unmapped.length > 0) {
+        html += `<tr><td style="color:#dc2626">⚠️ 품목코드 미매핑</td><td>${ds.erp_unmapped.length}건: ${ds.erp_unmapped.join(', ')}</td></tr>`;
+      }
+      html += `<tr><td>✉️ 회신 발송</td><td>${ds.reply_sent ? '✅ 발송 완료' : '⏭ 미발송'}</td></tr>
+        </table></div>`;
+      div.innerHTML = html;
+    } catch(e) { console.error('상세 로드 실패:', e); }
   };
 
   // Excel 파일 테스트 업로드

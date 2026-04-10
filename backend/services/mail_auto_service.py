@@ -675,14 +675,36 @@ async def run_mail_automation_pipeline(
         mail_result["exchange_rate"] = exchange_rate
         mail_result["status"] = "completed"
         
-        # DB 로그 저장
+        # 상세 통계 집계
+        total_items = sum(r["stats"]["total"] for r in processed_excels if r.get("success"))
+        hs_filled = sum(r["stats"]["hs_filled"] for r in processed_excels if r.get("success"))
+        hs_skipped = sum(r["stats"]["skipped"] for r in processed_excels if r.get("success"))
+        hs_unknown = sum(r["stats"]["unknown"] for r in processed_excels if r.get("success"))
+        erp_success = mail_result.get("erp_result", {}).get("success", False)
+        erp_skipped = mail_result.get("erp_result", {}).get("skipped", [])
+        
+        mail_result["detail_stats"] = {
+            "total_items": total_items,
+            "hs_filled": hs_filled,
+            "hs_skipped": hs_skipped,
+            "hs_unknown": hs_unknown,
+            "erp_success": erp_success,
+            "erp_lines_sent": mail_result["erp_lines_count"] - len(erp_skipped),
+            "erp_unmapped": erp_skipped,
+            "reply_sent": mail_result.get("reply_sent", False),
+            "filenames": [a["filename"] for a in mail_info["attachments"]],
+        }
+        
+        # DB 로그 저장 (상세 결과 JSON 포함)
         if db_conn:
             try:
+                import json as _json
+                result_json = _json.dumps(mail_result.get("detail_stats", {}), ensure_ascii=False)
                 db_conn.execute("""
                     INSERT OR REPLACE INTO mail_processing_log 
                     (message_id, subject, sender, received_at, attachment_count,
-                     status, hs_code_count, reply_sent, processed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     status, hs_code_count, reply_sent, processed_at, result_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     msg_id,
                     mail_info["subject"],
@@ -690,9 +712,10 @@ async def run_mail_automation_pipeline(
                     str(mail_info.get("date_kst", "")),
                     len(mail_info["attachments"]),
                     "completed",
-                    sum(r["stats"]["hs_filled"] for r in processed_excels if r.get("success")),
-                    mail_result["reply_sent"],
+                    hs_filled,
+                    mail_result.get("reply_sent", False),
                     datetime.now(KST).isoformat(),
+                    result_json,
                 ))
                 db_conn.commit()
             except Exception as e:
@@ -719,7 +742,7 @@ def get_auto_state() -> dict:
 
 
 async def _send_telegram_notification(result: dict):
-    """파이프라인 결과를 텔레그램으로 알림"""
+    """파이프라인 결과를 텔레그램으로 상세 알림"""
     try:
         from db.database import get_connection
         from services.telegram_service import TelegramService
@@ -735,36 +758,75 @@ async def _send_telegram_notification(result: dict):
         
         telegram = TelegramService(bot_token, chat_id)
         
-        new_count = result.get("new_processed", 0)
-        rate = result.get("exchange_rate", 0)
-        
+        # 오류 알림
         if result.get("error"):
-            # 오류 알림
             await telegram.send_message(
-                f"⚠️ <b>BOR 메일 자동화 오류</b>\n\n{result['error']}\n\n"
-                f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}"
+                f"🚨 <b>BOR 메일 자동화 오류</b>\n\n"
+                f"❌ {result['error']}\n\n"
+                f"⏰ {datetime.now(KST).strftime('%m/%d %H:%M')}"
             )
-        elif new_count > 0:
-            # 성공 알림
-            lines = []
-            lines.append("📧 <b>BOR 선적 메일 자동 처리 완료</b>")
-            lines.append("")
-            for r in result.get("results", []):
-                subj = r.get("subject", "")[:40]
-                hs_count = sum(
-                    a.get("stats", {}).get("hs_filled", 0)
-                    for a in r.get("attachments_processed", [])
-                )
-                erp_ok = "✅" if r.get("erp_result", {}).get("success") else "⏭️"
-                reply_ok = "✅" if r.get("reply_sent") else "⏭️"
-                lines.append(f"📋 {subj}")
-                lines.append(f"   HS코드: {hs_count}건 | ERP: {erp_ok} | 회신: {reply_ok}")
+            return
+        
+        new_count = result.get("new_processed", 0)
+        if new_count <= 0:
+            return
+        
+        rate = result.get("exchange_rate", 0)
+        base_rate = result.get("base_rate", 0)
+        spread = result.get("spread", 0)
+        
+        lines = []
+        lines.append("📧 <b>BOR 선적시트 자동 처리 완료</b>")
+        lines.append("")
+        
+        # 환율 정보
+        lines.append(f"💱 <b>환율</b>: {rate:,.2f}원 (기준 {base_rate:,.2f} + {spread}%)")
+        lines.append("")
+        
+        # 각 메일별 상세
+        for r in result.get("results", []):
+            subj = r.get("subject", "")[:50]
+            ds = r.get("detail_stats", {})
+            filenames = ds.get("filenames", [])
             
+            lines.append(f"━━━━━━━━━━━━━━━━━━")
+            lines.append(f"📋 <b>{subj}</b>")
+            if filenames:
+                lines.append(f"📎 {', '.join(filenames)}")
             lines.append("")
-            lines.append(f"💱 환율: {rate:,.2f}원" if rate else "")
-            lines.append(f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}")
             
-            await telegram.send_message("\n".join(lines))
+            # HS코드 통계
+            total = ds.get("total_items", 0)
+            filled = ds.get("hs_filled", 0)
+            skipped = ds.get("hs_skipped", 0)
+            unknown = ds.get("hs_unknown", 0)
+            lines.append(f"🏷 <b>HS코드</b>: 총 {total}개")
+            lines.append(f"   ✅ 입력: {filled} | ⏭ 스킵: {skipped} | ⚠️ 미매칭: {unknown}")
+            
+            # ERP 전표
+            erp_ok = ds.get("erp_success", False)
+            erp_sent = ds.get("erp_lines_sent", 0)
+            erp_unmapped = ds.get("erp_unmapped", [])
+            if erp_ok:
+                lines.append(f"📊 <b>ERP 구매전표</b>: ✅ {erp_sent}건 전송 완료")
+            elif erp_sent > 0:
+                lines.append(f"📊 <b>ERP 구매전표</b>: ❌ 전송 실패")
+            else:
+                lines.append(f"📊 <b>ERP 구매전표</b>: ⏭ 미실행")
+            
+            if erp_unmapped:
+                lines.append(f"   ⚠️ 품목코드 미매핑 {len(erp_unmapped)}건: {', '.join(erp_unmapped[:5])}")
+                if len(erp_unmapped) > 5:
+                    lines.append(f"   ... 외 {len(erp_unmapped)-5}건")
+            
+            # 회신
+            reply = ds.get("reply_sent", False)
+            lines.append(f"✉️ <b>회신</b>: {'✅ 발송 완료' if reply else '⏭ 미발송'}")
+            lines.append("")
+        
+        lines.append(f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}")
+        
+        await telegram.send_message("\n".join(lines))
         
     except Exception as e:
         logger.warning(f"[텔레그램] 알림 발송 실패: {e}")
