@@ -1235,6 +1235,7 @@ def save_bor_rest_to_db(scan_results: list):
     """
     BOR REST 엑셀을 직접 파싱하여 orderlist_items에 저장
     구글시트 경유 없이 DB에 직접 저장하므로 데이터 오염 방지
+    REST 시트 내 복수 오더(No.: BOR-xxxx) 구조 지원
     """
     from db.database import get_connection
     conn = get_connection()
@@ -1242,7 +1243,7 @@ def save_bor_rest_to_db(scan_results: list):
 
     try:
         # 기존 BOR(non-NAM) 오더리스트 전체 삭제
-        conn.execute("DELETE FROM orderlist_items WHERE sheet_tab NOT LIKE 'NAM-%'")
+        conn.execute("DELETE FROM orderlist_items WHERE sheet_tab NOT LIKE 'NAM-%%'")
         conn.commit()
 
         total_saved = 0
@@ -1251,41 +1252,71 @@ def save_bor_rest_to_db(scan_results: list):
             file_data = item.get("file_data")
             filename = item.get("filename", "")
             email_date = item.get("email_date", "")
-            bor_number = item.get("bor_number", "") or filename.split(".")[0]
 
             sheets = _parse_bor_rest_excel(file_data, filename)
 
             for sheet_name, rows in sheets.items():
                 if sheet_name.upper() == "STOCK":
-                    continue  # Stock 시트는 제외
+                    continue
 
-                order_no = bor_number or f"BOR-{sheet_name}"
+                order_no = ""
                 order_date = email_date
 
-                # 행 파싱: col[0]="모델명, 설명", col[2]=수량
                 for row_idx, row in enumerate(rows):
-                    if not row or len(row) < 3:
+                    if not row or len(row) < 1:
                         continue
-                    col0 = str(row[0]).strip()
-                    if not col0 or not ("LS-" in col0.upper() or "LSN-" in col0.upper() or "LSP-" in col0.upper()):
+
+                    col0 = str(row[0] if row[0] is not None else "").strip()
+
+                    # Seller 행 → No. 추출
+                    if col0.startswith("Seller"):
+                        for ci in range(2, min(len(row), 6)):
+                            cell = str(row[ci] if row[ci] is not None else "")
+                            if "No.:" in cell or "No.:" in cell:
+                                no_text = cell.replace("No.:", "").replace("No.:", "").strip()
+                                if not no_text and ci + 1 < len(row):
+                                    no_text = str(row[ci + 1] if row[ci + 1] is not None else "").strip()
+                                if no_text:
+                                    order_no = no_text
                         continue
-                    if col0.upper() in ("ITEM", "NO.", "#"):
+
+                    # Date 행 (Seller 다음 행)
+                    if row_idx > 0:
+                        prev = rows[row_idx - 1] if row_idx < len(rows) else []
+                        if prev and str(prev[0] if prev[0] is not None else "").strip().startswith("Seller"):
+                            for ci in range(2, min(len(row), 6)):
+                                cell = str(row[ci] if row[ci] is not None else "")
+                                if "Date" in cell:
+                                    dt_text = str(row[ci + 1] if ci + 1 < len(row) and row[ci + 1] is not None else "").strip()
+                                    if not dt_text:
+                                        dt_text = cell.replace("Date:", "").replace("Date", "").strip()
+                                    if dt_text:
+                                        order_date = _normalize_order_date(dt_text)
+                            continue
+
+                    # 헤더/카테고리 행 스킵
+                    if col0.upper() in ("ITEM", "NO.", "#", ""):
+                        continue
+
+                    # 모델명 행: LS-/LSN-/LSP- 포함
+                    cu = col0.upper()
+                    if not ("LS-" in cu or "LSN-" in cu or "LSP-" in cu):
                         continue
 
                     # 모델명 추출 (첫 콤마 앞)
-                    parts = col0.split(",", 1)
-                    model = parts[0].strip()
+                    model = col0.split(",", 1)[0].strip()
                     if not model:
                         continue
 
-                    # 수량
-                    qty_str = str(row[2]).replace(",", "").strip() if len(row) > 2 else "0"
-                    try:
-                        qty = int(float(qty_str)) if qty_str else 0
-                    except (ValueError, TypeError):
-                        qty = 0
+                    # 수량 (col[2])
+                    qty = 0
+                    if len(row) > 2 and row[2] is not None:
+                        try:
+                            qty = int(float(str(row[2]).replace(",", "")))
+                        except (ValueError, TypeError):
+                            qty = 0
 
-                    unit = str(row[3]).strip() if len(row) > 3 else "PCS"
+                    unit = str(row[3]).strip() if len(row) > 3 and row[3] else "PCS"
 
                     conn.execute("""
                         INSERT INTO orderlist_items
@@ -1305,11 +1336,26 @@ def save_bor_rest_to_db(scan_results: list):
         logger.info(f"[BOR오더] REST → DB 직접 저장: {total_saved}건")
         return total_saved
     except Exception as e:
-        logger.error(f"[BOR오더] DB 직접 저장 실패: {e}")
+        logger.error(f"[BOR오더] DB 직접 저장 실패: {e}", exc_info=True)
         try:
             conn.rollback()
-        except:
+        except Exception:
             pass
         raise
     finally:
         conn.close()
+
+
+def _normalize_order_date(val: str) -> str:
+    """다양한 날짜 형식을 YYYY-MM-DD로"""
+    if not val:
+        return ""
+    val = val.strip()
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', val):
+        return val
+    for fmt in ["%B %d, %Y", "%b %d, %Y", "%Y/%m/%d", "%m/%d/%Y"]:
+        try:
+            return datetime.strptime(val, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return val
