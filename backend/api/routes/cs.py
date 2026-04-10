@@ -31,6 +31,10 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 CS_STATUSES = ["접수완료", "물류수령", "기술인계", "테스트완료", "처리종결"]
 FINAL_ACTIONS = ["교환발송", "환불처리", "정상반송", "단순변심 반송"]
 TEST_RESULTS = ["정상", "의심", "불량"]
+CS_TYPES = ["반품", "교환", "A/S수리", "미출고"]
+SALES_CHANNELS = ["스마트스토어", "G마켓", "옥션", "쿠팡", "오늘의집", "나비엠알오", "자사몰", "기타"]
+REASON_CATEGORIES = ["파손 및 불량", "단순 변심", "주문 실수", "오배송 및 지연", "재고 부족", "기타"]
+SHIPPING_COST_STATUSES = ["환불금에서 차감", "판매자에게 직접 송금", "추가결제", "무료반품", "해당없음"]
 
 
 # ─── Request 모델 ───────────────────
@@ -43,6 +47,14 @@ class TicketCreate(BaseModel):
     courier: str = ""
     tracking_no: str = ""
     memo: str = ""
+    sales_channel: str = ""
+    order_number: str = ""
+    cs_type: str = "반품"
+    reason_category: str = ""
+    quantity: int = 1
+    shipping_cost_status: str = ""
+    return_courier: str = ""
+    return_tracking_no: str = ""
 
 
 class StatusUpdate(BaseModel):
@@ -94,7 +106,10 @@ def _log_action(conn, ticket_id: str, action_type: str, actor_cd: str, actor_nam
 @router.get("/tickets")
 async def list_tickets(
     status: str = Query("", description="상태 필터"),
-    search: str = Query("", description="검색 (고객명/연락처/접수번호)"),
+    search: str = Query("", description="검색 (고객명/연락처/접수번호/주문번호)"),
+    channel: str = Query("", description="판매채널 필터"),
+    cs_type: str = Query("", description="CS유형 필터"),
+    reason: str = Query("", description="사유 필터"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     user: dict = Depends(get_current_user),
@@ -108,12 +123,24 @@ async def list_tickets(
             where_clauses.append("t.current_status = ?")
             params.append(status)
 
+        if channel:
+            where_clauses.append("t.sales_channel = ?")
+            params.append(channel)
+
+        if cs_type:
+            where_clauses.append("t.cs_type = ?")
+            params.append(cs_type)
+
+        if reason:
+            where_clauses.append("t.reason_category = ?")
+            params.append(reason)
+
         if search:
             search_term = f"%{search}%"
             where_clauses.append(
-                "(t.ticket_id LIKE ? OR t.customer_name LIKE ? OR t.contact_info LIKE ?)"
+                "(t.ticket_id LIKE ? OR t.customer_name LIKE ? OR t.contact_info LIKE ? OR t.order_number LIKE ?)"
             )
-            params.extend([search_term, search_term, search_term])
+            params.extend([search_term, search_term, search_term, search_term])
 
         where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -201,11 +228,15 @@ async def create_ticket(data: TicketCreate, user: dict = Depends(get_current_use
         conn.execute(
             """INSERT INTO cs_tickets
                (ticket_id, customer_name, contact_info, product_name, serial_number,
-                defect_symptom, courier, tracking_no, current_status, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                defect_symptom, courier, tracking_no, current_status, created_by, created_at, updated_at,
+                sales_channel, order_number, cs_type, reason_category, quantity, shipping_cost_status,
+                return_courier, return_tracking_no)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (ticket_id, data.customer_name, data.contact_info, data.product_name,
              data.serial_number, data.defect_symptom, data.courier, data.tracking_no,
-             "접수완료", user["emp_cd"], now, now)
+             "접수완료", user["emp_cd"], now, now,
+             data.sales_channel, data.order_number, data.cs_type, data.reason_category,
+             data.quantity, data.shipping_cost_status, data.return_courier, data.return_tracking_no)
         )
         _log_action(conn, ticket_id, "접수완료", user["emp_cd"], user["name"],
                      data.memo or f"CS 접수: {data.product_name} - {data.defect_symptom[:50]}")
@@ -874,11 +905,77 @@ async def cs_stats(user: dict = Depends(get_current_user)):
                ORDER BY dt DESC LIMIT 7"""
         ).fetchall()
 
+        # 채널별 카운트
+        channel_rows = conn.execute(
+            "SELECT sales_channel, COUNT(*) as cnt FROM cs_tickets WHERE sales_channel != '' GROUP BY sales_channel ORDER BY cnt DESC"
+        ).fetchall()
+        channel_counts = {r["sales_channel"]: r["cnt"] for r in channel_rows}
+
+        # 채널별 미처리(접수완료~테스트완료) 카운트
+        channel_active_rows = conn.execute(
+            """SELECT sales_channel, COUNT(*) as cnt FROM cs_tickets
+               WHERE sales_channel != '' AND current_status != '처리종결'
+               GROUP BY sales_channel ORDER BY cnt DESC"""
+        ).fetchall()
+        channel_active = {r["sales_channel"]: r["cnt"] for r in channel_active_rows}
+
+        # 사유별 카운트
+        reason_rows = conn.execute(
+            "SELECT reason_category, COUNT(*) as cnt FROM cs_tickets WHERE reason_category != '' GROUP BY reason_category ORDER BY cnt DESC"
+        ).fetchall()
+        reason_counts = {r["reason_category"]: r["cnt"] for r in reason_rows}
+
+        # CS유형별 카운트
+        type_rows = conn.execute(
+            "SELECT cs_type, COUNT(*) as cnt FROM cs_tickets WHERE cs_type != '' GROUP BY cs_type ORDER BY cnt DESC"
+        ).fetchall()
+        type_counts = {r["cs_type"]: r["cnt"] for r in type_rows}
+
+        # 배송비 상태별 카운트
+        shipping_cost_rows = conn.execute(
+            "SELECT shipping_cost_status, COUNT(*) as cnt FROM cs_tickets WHERE shipping_cost_status != '' GROUP BY shipping_cost_status ORDER BY cnt DESC"
+        ).fetchall()
+        shipping_cost_counts = {r["shipping_cost_status"]: r["cnt"] for r in shipping_cost_rows}
+
+        # 지연 건수 (접수 후 7일 이상 미처리)
+        overdue_row = conn.execute(
+            """SELECT COUNT(*) as cnt FROM cs_tickets
+               WHERE current_status != '처리종결'
+               AND created_at < datetime('now', '-7 days', 'localtime')"""
+        ).fetchone()
+
+        # 평균 처리일수 (종결된 건만)
+        avg_row = conn.execute(
+            """SELECT AVG(julianday(resolved_at) - julianday(created_at)) as avg_days
+               FROM cs_tickets WHERE current_status = '처리종결' AND resolved_at != ''"""
+        ).fetchone()
+
         return {
             "status_counts": status_counts,
             "today_count": today_row["cnt"] if today_row else 0,
             "trend": [dict(r) for r in trend_rows],
             "total": sum(status_counts.values()),
+            "channel_counts": channel_counts,
+            "channel_active": channel_active,
+            "reason_counts": reason_counts,
+            "type_counts": type_counts,
+            "shipping_cost_counts": shipping_cost_counts,
+            "overdue_count": overdue_row["cnt"] if overdue_row else 0,
+            "avg_resolution_days": round(avg_row["avg_days"], 1) if avg_row and avg_row["avg_days"] else 0,
         }
     finally:
         conn.close()
+
+
+# ── [14] CS 옵션 목록 (프론트 드롭다운용) ──
+@router.get("/options")
+async def cs_options(user: dict = Depends(get_current_user)):
+    return {
+        "statuses": CS_STATUSES,
+        "final_actions": FINAL_ACTIONS,
+        "test_results": TEST_RESULTS,
+        "cs_types": CS_TYPES,
+        "sales_channels": SALES_CHANNELS,
+        "reason_categories": REASON_CATEGORIES,
+        "shipping_cost_statuses": SHIPPING_COST_STATUSES,
+    }

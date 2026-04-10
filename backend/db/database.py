@@ -560,6 +560,16 @@ def init_db():
     # ── CS 마이그레이션: disk_filename 컬럼 추가 (대용량 파일 디스크 저장용) ──
     safe_add_column(conn, 'cs_files', 'disk_filename', "TEXT DEFAULT ''")
 
+    # ── CS/RMA v2 마이그레이션: 판매채널, CS유형, 사유분류 등 ──
+    safe_add_column(conn, 'cs_tickets', 'sales_channel', "TEXT DEFAULT ''")
+    safe_add_column(conn, 'cs_tickets', 'order_number', "TEXT DEFAULT ''")
+    safe_add_column(conn, 'cs_tickets', 'cs_type', "TEXT DEFAULT '반품'")
+    safe_add_column(conn, 'cs_tickets', 'reason_category', "TEXT DEFAULT ''")
+    safe_add_column(conn, 'cs_tickets', 'quantity', "INTEGER DEFAULT 1")
+    safe_add_column(conn, 'cs_tickets', 'shipping_cost_status', "TEXT DEFAULT ''")
+    safe_add_column(conn, 'cs_tickets', 'return_courier', "TEXT DEFAULT ''")
+    safe_add_column(conn, 'cs_tickets', 'return_tracking_no', "TEXT DEFAULT ''")
+
     # ── AICC 마이그레이션: image_id 컬럼 추가 ──
     safe_add_column(conn, 'aicc_messages', 'image_id', "TEXT DEFAULT ''")
 
@@ -824,6 +834,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_status ON cs_tickets(current_status);
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_created ON cs_tickets(created_at);
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_customer ON cs_tickets(customer_name);
+        CREATE INDEX IF NOT EXISTS idx_cs_tickets_channel ON cs_tickets(sales_channel);
+        CREATE INDEX IF NOT EXISTS idx_cs_tickets_cs_type ON cs_tickets(cs_type);
+        CREATE INDEX IF NOT EXISTS idx_cs_tickets_reason ON cs_tickets(reason_category);
         CREATE INDEX IF NOT EXISTS idx_cs_action_logs_ticket ON cs_action_logs(ticket_id);
 
         CREATE INDEX IF NOT EXISTS idx_sr_date ON sales_records(slip_date);

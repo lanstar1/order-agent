@@ -3878,574 +3878,639 @@ function getStatusColor(statNm) {
 }
 
 // ═══════════════════════════════════════════════════
-//  CS / RMA 관리
+//  CS / RMA 관리 v2.0
 // ═══════════════════════════════════════════════════
 let _csStatus = "";
 let _csPage = 1;
 let _csSearch = "";
+let _csChannel = "";
+let _csType = "";
+let _csReason = "";
+let _csView = "kanban";
+let _csOptions = null;
+
+const CS_CHANNEL_COLORS = {
+  "스마트스토어": "#16a34a", "G마켓": "#2563eb", "옥션": "#dc2626",
+  "쿠팡": "#ea580c", "오늘의집": "#7c3aed", "나비엠알오": "#6b7280",
+  "자사몰": "#0891b2", "기타": "#9ca3af"
+};
 
 async function csInit() {
   _csStatus = "";
   _csPage = 1;
   _csSearch = "";
+  _csChannel = "";
+  _csType = "";
+  _csReason = "";
   const searchInput = document.getElementById("cs-search-input");
   if (searchInput) searchInput.value = "";
-  document.querySelectorAll(".cs-pipe-tab").forEach(t => t.classList.remove("active"));
-  const allTab = document.querySelector('.cs-pipe-tab[data-status=""]');
-  if (allTab) allTab.classList.add("active");
-  await csLoadTickets();
-  csLoadStats();
+
+  // What's New 팝업 체크
+  if (!localStorage.getItem("cs_whatsnew_v2_dismissed")) {
+    document.getElementById("cs-whatsnew-overlay").style.display = "block";
+  }
+
+  // 옵션 로드 (드롭다운용)
+  try {
+    _csOptions = await api.get("/api/cs/options");
+    csPopulateFilters();
+  } catch(e) { console.error("CS options load error:", e); }
+
+  await csLoadDashboard();
+  csRenderView();
 }
 
+function csPopulateFilters() {
+  if (!_csOptions) return;
+  const chSel = document.getElementById("cs-filter-channel");
+  const tySel = document.getElementById("cs-filter-type");
+  const reSel = document.getElementById("cs-filter-reason");
+  if (chSel) {
+    chSel.innerHTML = '<option value="">전체 채널</option>' +
+      (_csOptions.sales_channels||[]).map(c => `<option value="${c}">${c}</option>`).join("");
+  }
+  if (tySel) {
+    tySel.innerHTML = '<option value="">전체 유형</option>' +
+      (_csOptions.cs_types||[]).map(c => `<option value="${c}">${c}</option>`).join("");
+  }
+  if (reSel) {
+    reSel.innerHTML = '<option value="">전체 사유</option>' +
+      (_csOptions.reason_categories||[]).map(c => `<option value="${c}">${c}</option>`).join("");
+  }
+}
+
+async function csLoadDashboard() {
+  try {
+    const stats = await api.get("/api/cs/stats");
+    csRenderStatsBar(stats);
+    csRenderChannelPanel(stats);
+    csRenderReasonPanel(stats);
+  } catch(e) { console.error("CS stats error:", e); }
+}
+
+function csRenderStatsBar(stats) {
+  const bar = document.getElementById("cs-stats-bar");
+  if (!bar) return;
+  const sc = stats.status_counts || {};
+  const processing = (sc["접수완료"]||0) + (sc["물류수령"]||0) + (sc["기술인계"]||0) + (sc["테스트완료"]||0);
+  const items = [
+    { label: "전체", num: stats.total||0, color: "#111827", filter: "" },
+    { label: "처리중", num: processing, color: "#2563eb", filter: "active" },
+    { label: "지연 (7일+)", num: stats.overdue_count||0, color: "#ef4444", filter: "overdue" },
+    { label: "오늘 접수", num: stats.today_count||0, color: "#7c3aed", filter: "today" },
+    { label: "종결", num: sc["처리종결"]||0, color: "#6b7280", filter: "처리종결" },
+    { label: "평균 처리일", num: (stats.avg_resolution_days||0)+"일", color: "#0891b2", filter: "" },
+  ];
+  bar.innerHTML = items.map(i => `
+    <div class="cs-stat-card" onclick="csStatCardClick('${i.filter}')">
+      <div class="num" style="color:${i.color}">${i.num}</div>
+      <div class="label">${i.label}</div>
+    </div>`).join("");
+}
+
+function csRenderChannelPanel(stats) {
+  const panel = document.getElementById("cs-channel-panel");
+  if (!panel) return;
+  const ch = stats.channel_counts || {};
+  const active = stats.channel_active || {};
+  if (Object.keys(ch).length === 0) {
+    panel.innerHTML = '<div style="font-size:13px;color:#9ca3af;text-align:center;padding:20px">채널 정보가 등록된 티켓이 없습니다</div>';
+    return;
+  }
+  panel.innerHTML = Object.entries(ch).map(([name, cnt]) => {
+    const color = CS_CHANNEL_COLORS[name] || "#9ca3af";
+    const act = active[name] || 0;
+    return `<div class="cs-ch-row" onclick="csFilterByChannel('${name}')" style="cursor:pointer">
+      <span class="cs-ch-dot" style="background:${color}"></span>
+      <span class="cs-ch-name">${name}</span>
+      ${act > 0 ? `<span class="cs-ch-active">${act}건 처리중</span>` : ''}
+      <span class="cs-ch-cnt">${cnt}</span>
+    </div>`;
+  }).join("");
+}
+
+function csRenderReasonPanel(stats) {
+  const panel = document.getElementById("cs-reason-panel");
+  if (!panel) return;
+  const rc = stats.reason_counts || {};
+  const total = Object.values(rc).reduce((a,b)=>a+b, 0);
+  if (total === 0) {
+    panel.innerHTML = '<div style="font-size:13px;color:#9ca3af;text-align:center;padding:20px">사유 정보가 등록된 티켓이 없습니다</div>';
+    return;
+  }
+  const reasonColors = { "파손 및 불량":"#ef4444", "단순 변심":"#f59e0b", "주문 실수":"#3b82f6", "오배송 및 지연":"#6b7280", "재고 부족":"#8b5cf6", "기타":"#9ca3af" };
+  panel.innerHTML = Object.entries(rc).map(([name, cnt]) => {
+    const pct = total > 0 ? Math.round(cnt/total*100) : 0;
+    return `<div class="cs-ch-row" onclick="csFilterByReason('${name}')" style="cursor:pointer">
+      <span class="cs-ch-dot" style="background:${reasonColors[name]||'#9ca3af'}"></span>
+      <span class="cs-ch-name">${name}</span>
+      <span style="font-size:11px;color:#9ca3af">${pct}%</span>
+      <span class="cs-ch-cnt">${cnt}</span>
+    </div>`;
+  }).join("") +
+  `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;display:flex;justify-content:space-between">
+    <span>평균 처리: ${stats.avg_resolution_days||0}일</span><span>지연: ${stats.overdue_count||0}건</span>
+  </div>`;
+}
+
+function csFilterByChannel(ch) {
+  document.getElementById("cs-filter-channel").value = ch;
+  csApplyFilters();
+}
+function csFilterByReason(r) {
+  document.getElementById("cs-filter-reason").value = r;
+  csApplyFilters();
+}
+
+function csApplyFilters() {
+  _csChannel = document.getElementById("cs-filter-channel")?.value || "";
+  _csType = document.getElementById("cs-filter-type")?.value || "";
+  _csReason = document.getElementById("cs-filter-reason")?.value || "";
+  _csSearch = document.getElementById("cs-search-input")?.value?.trim() || "";
+  _csPage = 1;
+  csRenderView();
+}
+
+function csSwitchView(el, view) {
+  _csView = view;
+  document.querySelectorAll("#page-cs_rma > div:nth-child(5) .cs-pipe-tab").forEach(t => t.classList.remove("active"));
+  el.classList.add("active");
+  document.getElementById("cs-kanban-board").style.display = view === "kanban" ? "flex" : "none";
+  document.getElementById("cs-list-view").style.display = view === "list" ? "block" : "none";
+  csRenderView();
+}
+
+async function csRenderView() {
+  if (_csView === "kanban") {
+    await csLoadKanban();
+  } else {
+    await csLoadTickets();
+  }
+}
+
+// ── 칸반 보드 ──
+async function csLoadKanban() {
+  const board = document.getElementById("cs-kanban-board");
+  if (!board) return;
+  const statuses = ["접수완료", "물류수령", "기술인계", "테스트완료", "처리종결"];
+  const statusIcons = {"접수완료":"📋","물류수령":"📦","기술인계":"🔬","테스트완료":"✅","처리종결":"🏁"};
+
+  // 각 상태별 티켓 로드
+  let columns = {};
+  for (const st of statuses) {
+    try {
+      const params = new URLSearchParams({ status: st, size: "100" });
+      if (_csChannel) params.set("channel", _csChannel);
+      if (_csType) params.set("cs_type", _csType);
+      if (_csReason) params.set("reason", _csReason);
+      if (_csSearch) params.set("search", _csSearch);
+      const res = await api.get(`/api/cs/tickets?${params}`);
+      columns[st] = res.tickets || [];
+    } catch(e) { columns[st] = []; }
+  }
+
+  board.innerHTML = statuses.map(st => {
+    const tickets = columns[st] || [];
+    const cnt = tickets.length;
+    const statusColors = {"접수완료":"#fef3c7","물류수령":"#dbeafe","기술인계":"#e0e7ff","테스트완료":"#d1fae5","처리종결":"#f3f4f6"};
+    return `<div class="cs-kanban-col">
+      <div class="cs-kanban-head">
+        <span>${statusIcons[st]||''} ${st}</span>
+        <span class="cs-kanban-cnt" style="background:${statusColors[st]||'#e5e7eb'}">${cnt}</span>
+      </div>
+      ${cnt === 0 ? '<div style="font-size:12px;color:#9ca3af;text-align:center;padding:20px">없음</div>' :
+        tickets.map(t => {
+          const isOverdue = _isOverdue(t);
+          const chColor = CS_CHANNEL_COLORS[t.sales_channel] || "#9ca3af";
+          return `<div class="cs-kanban-item ${isOverdue?'overdue':''}" onclick="csShowDetail('${t.ticket_id}')">
+            <div class="cust">${t.customer_name}</div>
+            <div class="prod">${t.product_name}</div>
+            <div class="meta">
+              ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor}">${t.sales_channel}</span>` : '<span></span>'}
+              <span>${_csDateShort(t.created_at)}${isOverdue ? ' ⚠️' : ''}</span>
+            </div>
+          </div>`;
+        }).join("")
+      }
+    </div>`;
+  }).join("");
+}
+
+function _isOverdue(t) {
+  if (t.current_status === "처리종결") return false;
+  if (!t.created_at) return false;
+  const created = new Date(t.created_at);
+  const now = new Date();
+  return (now - created) > 7 * 24 * 60 * 60 * 1000;
+}
+function _csDateShort(dt) {
+  if (!dt) return "";
+  try { const d = new Date(dt); return `${d.getMonth()+1}/${d.getDate()}`; } catch { return dt.slice(5,10); }
+}
+
+// ── 리스트 뷰 (기존 기능 유지) ──
 async function csLoadStats() {
   try {
-    const d = await api.get("/api/cs/stats");
-    const bar = document.getElementById("cs-stats-bar");
-    if (!bar) return;
-    const sc = d.status_counts || {};
-    const items = [
-      { label: "전체", num: d.total || 0, color: "#6b7280" },
-      { label: "오늘 접수", num: d.today_count || 0, color: "#2563eb" },
-      { label: "접수완료", num: sc["접수완료"] || 0, color: "#d97706" },
-      { label: "물류수령", num: sc["물류수령"] || 0, color: "#2563eb" },
-      { label: "기술인계", num: sc["기술인계"] || 0, color: "#7c3aed" },
-      { label: "테스트완료", num: sc["테스트완료"] || 0, color: "#059669" },
-      { label: "처리종결", num: sc["처리종결"] || 0, color: "#374151" },
-    ];
-    bar.innerHTML = items.map(i => {
-      // "전체"와 "오늘 접수"는 전체 필터로, 나머지는 해당 상태 필터로
-      const filterStatus = (i.label === "전체" || i.label === "오늘 접수") ? "" : i.label;
-      return `<div class="cs-stat-card" style="cursor:pointer" onclick="csStatCardClick('${filterStatus}')"><div class="num" style="color:${i.color}">${i.num}</div><div class="label">${i.label}</div></div>`;
-    }).join("");
-    // 탭 카운트 업데이트
-    document.querySelectorAll(".cs-pipe-tab").forEach(tab => {
-      const st = tab.getAttribute("data-status");
-      const cnt = st ? (sc[st] || 0) : (d.total || 0);
-      let cntEl = tab.querySelector(".cnt");
-      if (!cntEl) { cntEl = document.createElement("span"); cntEl.className = "cnt"; tab.appendChild(cntEl); }
-      cntEl.textContent = cnt;
-    });
-  } catch(e) { console.error("CS stats error", e); }
+    const data = await api.get("/api/cs/stats");
+    csRenderStatsBar(data);
+  } catch(e) {}
 }
 
 async function csLoadTickets() {
   const list = document.getElementById("cs-ticket-list");
   if (!list) return;
-  list.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af">불러오는 중...</div>';
+  const params = new URLSearchParams({ page: _csPage, size: 50 });
+  if (_csStatus) params.set("status", _csStatus);
+  if (_csChannel) params.set("channel", _csChannel);
+  if (_csType) params.set("cs_type", _csType);
+  if (_csReason) params.set("reason", _csReason);
+  if (_csSearch) params.set("search", _csSearch);
   try {
-    const params = new URLSearchParams({ page: _csPage, size: 50 });
-    if (_csStatus) params.set("status", _csStatus);
-    if (_csSearch) params.set("search", _csSearch);
-    const d = await api.get(`/api/cs/tickets?${params}`);
-    const tickets = d.tickets || [];
-    if (tickets.length === 0) {
-      list.innerHTML = '<div style="text-align:center;padding:60px;color:#9ca3af">' +
-        (_csSearch ? '검색 결과가 없습니다.' : '등록된 CS 티켓이 없습니다.<br><br><button class="btn btn-primary" onclick="csShowCreateForm()">+ 새 접수</button>') +
+    const res = await api.get(`/api/cs/tickets?${params}`);
+    const tickets = res.tickets || [];
+    if (!tickets.length) {
+      list.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af">' +
+        (_csSearch || _csChannel || _csType || _csReason ? '필터 조건에 맞는 결과가 없습니다.' : '등록된 CS 티켓이 없습니다.<br><br><button class="btn btn-primary" onclick="csShowCreateForm()">+ 새 접수</button>') +
         '</div>';
+      document.getElementById("cs-pagination").innerHTML = "";
       return;
     }
     list.innerHTML = tickets.map(t => {
-      const testBadge = t.test_status ? `<span class="cs-test-badge cs-test-${t.test_status}">${{"정상":"🟢 정상","의심":"🟡 의심","불량":"🔴 불량"}[t.test_status] || t.test_status}</span>` : "";
-      const finalBadge = t.final_action ? `<span style="font-size:11px;color:#6b7280;margin-left:6px">${t.final_action}</span>` : "";
-      return `<div class="cs-ticket-card" onclick="csShowDetail('${t.ticket_id}')">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-          <div style="flex:1;min-width:200px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <span style="font-weight:600;color:#2563eb;font-size:13px">${t.ticket_id}</span>
-              <span class="cs-status-badge cs-status-${t.current_status}">${t.current_status}</span>
-              ${testBadge}${finalBadge}
-            </div>
-            <div style="font-size:14px;font-weight:500;color:#111827;margin-bottom:4px">${_esc(t.customer_name)} · ${_esc(t.contact_info)}</div>
-            <div style="font-size:13px;color:#374151">${_esc(t.product_name)}${t.serial_number ? " (S/N: "+_esc(t.serial_number)+")" : ""}</div>
-            <div style="font-size:12px;color:#6b7280;margin-top:4px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(t.defect_symptom)}</div>
+      const isOverdue = _isOverdue(t);
+      const chColor = CS_CHANNEL_COLORS[t.sales_channel] || "#9ca3af";
+      return `<div class="cs-ticket-card ${isOverdue?'overdue':''}" onclick="csShowDetail('${t.ticket_id}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div>
+            <span style="font-weight:600;color:#111827">${t.customer_name}</span>
+            <span style="font-size:12px;color:#9ca3af;margin-left:8px">${t.ticket_id}</span>
+            ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor};margin-left:6px">${t.sales_channel}</span>` : ''}
+            ${t.cs_type && t.cs_type !== '반품' ? `<span style="font-size:11px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:6px;margin-left:4px">${t.cs_type}</span>` : ''}
           </div>
-          <div style="text-align:right;font-size:11px;color:#9ca3af;white-space:nowrap">
-            ${t.created_at ? t.created_at.slice(0,16) : ""}
-          </div>
+          <span class="cs-status-badge cs-status-${t.current_status}">${t.current_status}</span>
+        </div>
+        <div style="margin-top:6px;font-size:13px;color:#4b5563">${t.product_name}${t.quantity > 1 ? ` x${t.quantity}` : ''}</div>
+        <div style="margin-top:4px;font-size:12px;color:#9ca3af;display:flex;gap:12px;flex-wrap:wrap">
+          <span>${t.created_at?.slice(0,10) || ''}</span>
+          ${t.reason_category ? `<span>${t.reason_category}</span>` : ''}
+          ${t.order_number ? `<span>주문: ${t.order_number.slice(-8)}</span>` : ''}
+          ${isOverdue ? '<span style="color:#ef4444;font-weight:600">⚠ 7일+ 지연</span>' : ''}
         </div>
       </div>`;
     }).join("");
+
     // 페이지네이션
-    const totalPages = Math.ceil((d.total || 0) / (d.size || 50));
-    const pgEl = document.getElementById("cs-pagination");
-    if (pgEl && totalPages > 1) {
-      let pgHtml = "";
-      for (let i = 1; i <= totalPages && i <= 10; i++) {
-        pgHtml += `<button onclick="_csPage=${i};csLoadTickets()" style="padding:4px 12px;border:1px solid ${i===_csPage?'#2563eb':'#d1d5db'};border-radius:6px;background:${i===_csPage?'#2563eb':'#fff'};color:${i===_csPage?'#fff':'#374151'};cursor:pointer;font-size:13px">${i}</button>`;
-      }
-      pgEl.innerHTML = pgHtml;
-    } else if (pgEl) pgEl.innerHTML = "";
-  } catch(e) {
-    list.innerHTML = `<div style="text-align:center;padding:40px;color:#ef4444">오류: ${e.message || e}</div>`;
-  }
+    const total = res.total || 0;
+    const pages = Math.ceil(total / 50);
+    const pgDiv = document.getElementById("cs-pagination");
+    if (pages <= 1) { pgDiv.innerHTML = ""; return; }
+    let pgHtml = "";
+    for (let i = 1; i <= pages; i++) {
+      pgHtml += `<button onclick="_csPage=${i};csLoadTickets()" style="padding:4px 12px;border:1px solid ${i===_csPage?'#2563eb':'#d1d5db'};border-radius:6px;background:${i===_csPage?'#2563eb':'#fff'};color:${i===_csPage?'#fff':'#374151'};cursor:pointer;font-size:13px">${i}</button>`;
+    }
+    pgDiv.innerHTML = pgHtml;
+  } catch(e) { list.innerHTML = `<div style="color:red;padding:20px">오류: ${e.message||e}</div>`; }
 }
 
 function csSwitchTab(el, status) {
-  document.querySelectorAll(".cs-pipe-tab").forEach(t => t.classList.remove("active"));
-  el.classList.add("active");
   _csStatus = status;
   _csPage = 1;
+  document.querySelectorAll("#cs-list-view .cs-pipe-tab").forEach(t => t.classList.remove("active"));
+  el.classList.add("active");
   csLoadTickets();
 }
 
-function csStatCardClick(status) {
-  // 대시보드 카드 클릭 → 해당 상태의 탭을 찾아서 활성화
-  const tab = document.querySelector(`.cs-pipe-tab[data-status="${status}"]`);
-  if (tab) csSwitchTab(tab, status);
+function csStatCardClick(filter) {
+  if (filter === "처리종결") {
+    _csStatus = "처리종결";
+    _csView = "list";
+    document.querySelectorAll("#page-cs_rma > div:nth-child(5) .cs-pipe-tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll("#page-cs_rma > div:nth-child(5) .cs-pipe-tab")[1]?.classList.add("active");
+    document.getElementById("cs-kanban-board").style.display = "none";
+    document.getElementById("cs-list-view").style.display = "block";
+    csLoadTickets();
+  }
 }
 
-function csSearch() {
-  _csSearch = (document.getElementById("cs-search-input")?.value || "").trim();
-  _csPage = 1;
-  csLoadTickets();
-}
-
-function _esc(s) { if (!s) return ""; const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
-
-// ── CS 모달 ──
 function csCloseModal() {
   document.getElementById("cs-modal-overlay").style.display = "none";
 }
 
+// ── 새 접수 폼 (확장) ──
 function csShowCreateForm() {
-  const modal = document.getElementById("cs-modal-content");
-  modal.innerHTML = `
-    <div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
-      <h3 style="margin:0;font-size:18px">📋 새 CS/RMA 접수</h3>
-      <button onclick="csCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280">&times;</button>
-    </div>
+  const opts = _csOptions || {};
+  const channels = opts.sales_channels || ["스마트스토어","G마켓","옥션","쿠팡","오늘의집","나비엠알오","자사몰","기타"];
+  const types = opts.cs_types || ["반품","교환","A/S수리","미출고"];
+  const reasons = opts.reason_categories || ["파손 및 불량","단순 변심","주문 실수","오배송 및 지연","재고 부족","기타"];
+  const shipCosts = opts.shipping_cost_statuses || ["환불금에서 차감","판매자에게 직접 송금","추가결제","무료반품","해당없음"];
+
+  document.getElementById("cs-modal-content").innerHTML = `
+    <div class="cs-modal-header"><h3 style="margin:0">📝 새 CS/RMA 접수</h3></div>
     <div class="cs-modal-body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
+          <div class="cs-field-label">판매채널 *</div>
+          <select id="cs-f-channel" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="">선택</option>
+            ${channels.map(c=>`<option value="${c}">${c}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <div class="cs-field-label">CS 유형</div>
+          <select id="cs-f-type" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            ${types.map(c=>`<option value="${c}">${c}</option>`).join("")}
+          </select>
+        </div>
+        <div>
           <div class="cs-field-label">고객명 *</div>
-          <input type="text" id="cs-f-name" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" placeholder="홍길동">
+          <input id="cs-f-name" placeholder="고객명" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
         </div>
         <div>
           <div class="cs-field-label">연락처 *</div>
-          <input type="text" id="cs-f-contact" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" placeholder="010-1234-5678">
+          <input id="cs-f-contact" placeholder="전화번호" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
         </div>
         <div>
-          <div class="cs-field-label">모델명 / 제품명 *</div>
-          <input type="text" id="cs-f-product" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" placeholder="제품명 입력">
+          <div class="cs-field-label">주문번호</div>
+          <input id="cs-f-orderno" placeholder="채널 주문번호" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
         </div>
         <div>
-          <div class="cs-field-label">시리얼 번호</div>
-          <input type="text" id="cs-f-serial" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" placeholder="선택 입력">
+          <div class="cs-field-label">사유 분류</div>
+          <select id="cs-f-reason" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="">선택</option>
+            ${reasons.map(c=>`<option value="${c}">${c}</option>`).join("")}
+          </select>
         </div>
-      </div>
-      <div style="margin-top:12px">
-        <div class="cs-field-label">불량 증상 * <span style="color:#ef4444;font-size:11px">(기술팀에게 전달됩니다. 최대한 상세히 작성)</span></div>
-        <textarea id="cs-f-symptom" rows="4" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;resize:vertical;font-family:inherit" placeholder="고객이 설명한 증상을 정확하게 기록해주세요.\n예: USB 포트 3번에 기기 연결 시 인식 안됨. 다른 포트는 정상."></textarea>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
-        <div>
-          <div class="cs-field-label">택배사</div>
-          <input type="text" id="cs-f-courier" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" placeholder="로젠, CJ 등">
+        <div style="grid-column:1/-1">
+          <div class="cs-field-label">상품명 *</div>
+          <input id="cs-f-product" placeholder="상품명" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
         </div>
         <div>
-          <div class="cs-field-label">송장번호</div>
-          <input type="text" id="cs-f-tracking" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" placeholder="택배 송장번호">
+          <div class="cs-field-label">수량</div>
+          <input id="cs-f-qty" type="number" value="1" min="1" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <div class="cs-field-label">시리얼번호</div>
+          <input id="cs-f-serial" placeholder="선택사항" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div style="grid-column:1/-1">
+          <div class="cs-field-label">불량 증상 / 사유 상세 *</div>
+          <textarea id="cs-f-symptom" rows="3" placeholder="증상 또는 사유를 상세히 기록" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical"></textarea>
+        </div>
+        <div>
+          <div class="cs-field-label">배송비 처리</div>
+          <select id="cs-f-shipcost" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="">선택</option>
+            ${shipCosts.map(c=>`<option value="${c}">${c}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <div class="cs-field-label">반품 택배사</div>
+          <input id="cs-f-retcourier" placeholder="로젠, CJ 등" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <div class="cs-field-label">반품 송장번호</div>
+          <input id="cs-f-rettrack" placeholder="반품 송장" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <div class="cs-field-label">메모</div>
+          <input id="cs-f-memo" placeholder="추가 메모" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
         </div>
       </div>
-      <div style="margin-top:12px">
-        <div class="cs-field-label">메모</div>
-        <input type="text" id="cs-f-memo" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" placeholder="기타 참고사항">
-      </div>
-      <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:8px">
-        <button onclick="csCloseModal()" style="padding:8px 20px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:14px">취소</button>
-        <button onclick="csSubmitCreate()" class="btn btn-primary" style="padding:8px 24px;font-size:14px">접수 완료</button>
+      <div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="csCloseModal()" style="padding:8px 20px;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer">취소</button>
+        <button onclick="csSubmitCreate()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600">접수 등록</button>
       </div>
     </div>`;
   document.getElementById("cs-modal-overlay").style.display = "block";
 }
 
 async function csSubmitCreate() {
-  const name = document.getElementById("cs-f-name")?.value.trim();
-  const contact = document.getElementById("cs-f-contact")?.value.trim();
-  const product = document.getElementById("cs-f-product")?.value.trim();
-  const symptom = document.getElementById("cs-f-symptom")?.value.trim();
-  if (!name || !contact || !product || !symptom) {
-    alert("고객명, 연락처, 제품명, 불량 증상은 필수입니다.");
-    return;
+  const g = id => document.getElementById(id)?.value?.trim() || "";
+  const body = {
+    customer_name: g("cs-f-name"),
+    contact_info: g("cs-f-contact"),
+    product_name: g("cs-f-product"),
+    serial_number: g("cs-f-serial"),
+    defect_symptom: g("cs-f-symptom"),
+    memo: g("cs-f-memo"),
+    sales_channel: g("cs-f-channel"),
+    order_number: g("cs-f-orderno"),
+    cs_type: g("cs-f-type") || "반품",
+    reason_category: g("cs-f-reason"),
+    quantity: parseInt(g("cs-f-qty")) || 1,
+    shipping_cost_status: g("cs-f-shipcost"),
+    return_courier: g("cs-f-retcourier"),
+    return_tracking_no: g("cs-f-rettrack"),
+  };
+  if (!body.customer_name || !body.contact_info || !body.product_name || !body.defect_symptom) {
+    alert("필수 항목(고객명, 연락처, 상품명, 증상)을 입력해주세요."); return;
   }
   try {
-    const res = await api.post("/api/cs/tickets", {
-      customer_name: name,
-      contact_info: contact,
-      product_name: product,
-      serial_number: document.getElementById("cs-f-serial")?.value.trim() || "",
-      defect_symptom: symptom,
-      courier: document.getElementById("cs-f-courier")?.value.trim() || "",
-      tracking_no: document.getElementById("cs-f-tracking")?.value.trim() || "",
-      memo: document.getElementById("cs-f-memo")?.value.trim() || "",
-    });
+    const res = await api.post("/api/cs/tickets", body);
     alert(res.message || "접수 완료");
     csCloseModal();
-    csInit();
-  } catch(e) {
-    alert("접수 실패: " + (e.message || e));
-  }
+    csLoadDashboard();
+    csRenderView();
+  } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
-// ── 상세 보기 ──
+// ── 상세 보기 (기존 기능 유지 + 신규 필드 표시) ──
 async function csShowDetail(ticketId) {
-  const modal = document.getElementById("cs-modal-content");
-  modal.innerHTML = '<div style="padding:40px;text-align:center;color:#9ca3af">불러오는 중...</div>';
-  document.getElementById("cs-modal-overlay").style.display = "block";
   try {
-    const d = await api.get(`/api/cs/tickets/${ticketId}`);
-    const t = d.ticket;
-    const tr = d.test_result;
-    const files = d.files || [];
-    const logs = d.logs || [];
+    const t = await api.get(`/api/cs/tickets/${ticketId}`);
+    const logs = await api.get(`/api/cs/tickets/${ticketId}/logs`).catch(()=>({logs:[]}));
+    const chColor = CS_CHANNEL_COLORS[t.sales_channel] || "#9ca3af";
 
-    // 상태 단계별 진행 바
-    const steps = ["접수완료", "물류수령", "기술인계", "테스트완료", "처리종결"];
-    const curIdx = steps.indexOf(t.current_status);
-    const stepsHtml = steps.map((s, i) => {
-      const done = i <= curIdx;
-      const active = i === curIdx;
-      return `<div style="flex:1;text-align:center">
-        <div style="width:28px;height:28px;border-radius:50%;margin:0 auto 4px;line-height:28px;font-size:12px;font-weight:600;${done?'background:#2563eb;color:#fff':'background:#e5e7eb;color:#9ca3af'};${active?'box-shadow:0 0 0 3px rgba(37,99,235,0.3)':''}">${i+1}</div>
-        <div style="font-size:11px;color:${done?'#2563eb':'#9ca3af'};font-weight:${active?600:400}">${s}</div>
+    let html = `<div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h3 style="margin:0">${t.ticket_id}</h3>
+        <div style="font-size:13px;color:#6b7280;margin-top:4px">
+          ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor}">${t.sales_channel}</span>` : ''}
+          ${t.cs_type ? `<span style="margin-left:4px;font-size:12px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:6px">${t.cs_type}</span>` : ''}
+          ${t.reason_category ? `<span style="margin-left:4px">${t.reason_category}</span>` : ''}
+        </div>
+      </div>
+      <span class="cs-status-badge cs-status-${t.current_status}" style="font-size:13px">${t.current_status}</span>
+    </div>
+    <div class="cs-modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">
+        <div><div class="cs-field-label">고객명</div><div class="cs-field-value">${t.customer_name}</div></div>
+        <div><div class="cs-field-label">연락처</div><div class="cs-field-value">${t.contact_info}</div></div>
+        <div><div class="cs-field-label">상품명</div><div class="cs-field-value">${t.product_name}${t.quantity>1?` x${t.quantity}`:''}</div></div>
+        ${t.serial_number ? `<div><div class="cs-field-label">시리얼</div><div class="cs-field-value">${t.serial_number}</div></div>` : ''}
+        ${t.order_number ? `<div><div class="cs-field-label">주문번호</div><div class="cs-field-value">${t.order_number}</div></div>` : ''}
+        ${t.shipping_cost_status ? `<div><div class="cs-field-label">배송비 처리</div><div class="cs-field-value">${t.shipping_cost_status}</div></div>` : ''}
+        ${t.return_courier||t.return_tracking_no ? `<div><div class="cs-field-label">반품 배송</div><div class="cs-field-value">${t.return_courier||''} ${t.return_tracking_no||''}</div></div>` : ''}
+      </div>
+      <div style="margin-top:4px">
+        <div class="cs-field-label">증상 / 사유</div>
+        <div class="cs-symptom-box">${t.defect_symptom}</div>
       </div>`;
-    }).join('<div style="flex:0.5;display:flex;align-items:center;padding-bottom:18px"><div style="height:2px;width:100%;background:${curIdx>=i?"#2563eb":"#e5e7eb"}"></div></div>'.replace(/\${.*?}/g,'#e5e7eb'));
-
-    // 액션 버튼
-    let actionHtml = "";
-    if (t.current_status === "접수완료") {
-      actionHtml = `<button onclick="csAction('${t.ticket_id}','receive')" class="btn btn-primary" style="font-size:13px">📦 택배 수령</button>`;
-    } else if (t.current_status === "물류수령") {
-      actionHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button onclick="csAction('${t.ticket_id}','handover')" class="btn btn-primary" style="font-size:13px">🔬 기술 담당자 인계</button>
-        <button onclick="csQuickResolve('${t.ticket_id}')" style="padding:6px 16px;border:1px solid #f59e0b;border-radius:6px;background:#fffbeb;color:#b45309;cursor:pointer;font-size:13px;font-weight:500">↩️ 단순변심 처리종결</button>
-      </div>`;
-    } else if (t.current_status === "기술인계") {
-      actionHtml = `<button onclick="csShowTestForm('${t.ticket_id}')" class="btn btn-primary" style="font-size:13px">🧪 테스트 결과 입력</button>`;
-    } else if (t.current_status === "테스트완료") {
-      actionHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button onclick="csResolve('${t.ticket_id}','교환발송')" style="padding:6px 16px;border:1px solid #2563eb;border-radius:6px;background:#eff6ff;color:#2563eb;cursor:pointer;font-size:13px;font-weight:500">🔄 교환 발송</button>
-        <button onclick="csResolve('${t.ticket_id}','환불처리')" style="padding:6px 16px;border:1px solid #dc2626;border-radius:6px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:13px;font-weight:500">💰 환불 처리</button>
-        <button onclick="csResolve('${t.ticket_id}','정상반송')" style="padding:6px 16px;border:1px solid #059669;border-radius:6px;background:#ecfdf5;color:#059669;cursor:pointer;font-size:13px;font-weight:500">📤 정상품 반송</button>
-      </div>`;
-    }
 
     // 테스트 결과
-    let testHtml = "";
-    if (tr) {
-      testHtml = `<div style="margin-top:16px;padding:14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px">
-        <div style="font-weight:600;font-size:13px;margin-bottom:8px">🧪 기술 테스트 결과</div>
-        <div><span class="cs-test-badge cs-test-${tr.test_status}">${{"정상":"🟢 정상","의심":"🟡 의심","불량":"🔴 불량"}[tr.test_status] || tr.test_status}</span></div>
-        ${tr.test_comment ? `<div style="margin-top:8px;font-size:13px;color:#374151;line-height:1.5;white-space:pre-wrap">${_esc(tr.test_comment)}</div>` : ""}
-      </div>`;
-    }
-
-    // 첨부파일
-    let filesHtml = "";
-    if (files.length > 0) {
-      filesHtml = `<div style="margin-top:16px">
-        <div style="font-weight:600;font-size:13px;margin-bottom:8px">📎 첨부파일 (${files.length})</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${files.map(f => {
-            // DB 저장 파일: /api/cs/files/db/{id} 로 서빙
-            const imgSrc = f.file_url && f.file_url.startsWith("/api/cs/files/db/")
-              ? f.file_url
-              : (f.file_url || `/api/cs/files/db/${f.id}`);
-            const viewUrl = imgSrc;
-            const delBtn = t.current_status !== "처리종결"
-              ? `<button onclick="event.stopPropagation();csDeleteFile(${f.id},'${f.ticket_id}')" title="삭제" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#dc2626;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;z-index:10">✕</button>`
-              : "";
-            const dlBtn = `<button onclick="event.stopPropagation();csDownloadFile(${f.id},'${_esc(f.file_name)}')" title="다운로드" style="position:absolute;bottom:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#2563eb;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;z-index:10">⬇</button>`;
-            if (f.file_type === "image") {
-              return `<div style="position:relative;display:inline-block">${delBtn}${dlBtn}<a href="${viewUrl}" target="_blank"><img src="${imgSrc}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span style="display:none;width:80px;height:80px;align-items:center;justify-content:center;background:#f3f4f6;border-radius:6px;font-size:24px;border:1px solid #e5e7eb">🖼️</span></a></div>`;
-            } else if (f.file_type === "video") {
-              return `<div style="position:relative;display:inline-block">${delBtn}${dlBtn}<video src="${imgSrc}" style="width:120px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;cursor:pointer;background:#000" onclick="window.open('${viewUrl}','_blank')" preload="metadata" muted onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"></video><a href="${viewUrl}" target="_blank" style="display:none;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">🎬 ${_esc(f.file_name)}</a></div>`;
-            }
-            return `<div style="position:relative;display:inline-block">${delBtn}${dlBtn}<a href="${viewUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;text-decoration:none">📄 ${_esc(f.file_name)}</a></div>`;
-          }).join("")}
-        </div>
+    if (t.test_status) {
+      html += `<div style="margin-top:12px"><div class="cs-field-label">테스트 결과</div>
+        <span class="cs-test-badge cs-test-${t.test_status}">${t.test_status}</span>
+        ${t.test_comment ? `<span style="margin-left:8px;font-size:13px;color:#4b5563">${t.test_comment}</span>` : ''}
       </div>`;
     }
 
     // 타임라인
-    const timelineHtml = logs.length > 0 ? `<div style="margin-top:16px">
-      <div style="font-weight:600;font-size:13px;margin-bottom:10px">📜 처리 이력</div>
-      <div class="cs-timeline">
-        ${logs.map(l => `<div class="cs-timeline-item">
-          <div class="cs-timeline-dot done"></div>
-          <div style="font-size:13px;font-weight:500;color:#374151">${_esc(l.action_type)}</div>
-          <div style="font-size:12px;color:#6b7280;margin-top:2px">${_esc(l.detail)}</div>
-          <div class="cs-timeline-time">${l.created_at || ""} · ${_esc(l.actor_name)}</div>
-        </div>`).join("")}
-      </div>
-    </div>` : "";
-
-    modal.innerHTML = `
-      <div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <span style="font-weight:600;color:#2563eb;font-size:15px">${t.ticket_id}</span>
-          <span class="cs-status-badge cs-status-${t.current_status}" style="margin-left:8px">${t.current_status}</span>
-          ${t.final_action ? `<span style="margin-left:8px;font-size:12px;color:#6b7280">${t.final_action}</span>` : ""}
-        </div>
-        <button onclick="csCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280">&times;</button>
-      </div>
-      <div class="cs-modal-body">
-        <!-- 진행 단계 -->
-        <div style="display:flex;align-items:flex-start;margin-bottom:20px;gap:0">${stepsHtml}</div>
-
-        <!-- 고객 정보 -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px">
-          <div><div class="cs-field-label">고객명</div><div class="cs-field-value">${_esc(t.customer_name)}</div></div>
-          <div><div class="cs-field-label">연락처</div><div class="cs-field-value">${_esc(t.contact_info)}</div></div>
-          <div><div class="cs-field-label">제품명</div><div class="cs-field-value">${_esc(t.product_name)}</div></div>
-          <div><div class="cs-field-label">시리얼 번호</div><div class="cs-field-value">${_esc(t.serial_number) || "-"}</div></div>
-          ${t.courier ? `<div><div class="cs-field-label">택배사</div><div class="cs-field-value">${_esc(t.courier)}</div></div>` : ""}
-          ${t.tracking_no ? `<div><div class="cs-field-label">송장번호</div><div class="cs-field-value">${_esc(t.tracking_no)}</div></div>` : ""}
-        </div>
-
-        <!-- 불량 증상 (강조) -->
-        <div style="margin-top:8px">
-          <div class="cs-field-label">불량 증상</div>
-          <div class="cs-symptom-box">${_esc(t.defect_symptom)}</div>
-        </div>
-
-        ${testHtml}
-        ${filesHtml}
-
-        <!-- 파일 업로드 -->
-        ${t.current_status !== "처리종결" ? `<div style="margin-top:16px">
-          <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:1px dashed #d1d5db;border-radius:6px;cursor:pointer;font-size:12px;color:#6b7280">
-            📎 파일 첨부
-            <input type="file" accept="image/*,video/*,.pdf" style="display:none" onchange="csUploadFile('${t.ticket_id}',this)">
-          </label>
-        </div>` : ""}
-
-        <!-- 메모 추가 -->
-        ${t.current_status !== "처리종결" ? `<div style="margin-top:12px;display:flex;gap:6px">
-          <input type="text" id="cs-memo-input" placeholder="메모 추가..." style="flex:1;padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-          <button onclick="csAddMemo('${t.ticket_id}')" style="padding:6px 14px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;font-size:13px">추가</button>
-        </div>` : ""}
-
-        <!-- 액션 버튼 -->
-        ${actionHtml ? `<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">${actionHtml}</div>` : ""}
-
-        ${timelineHtml}
-
-        <!-- 삭제 버튼 -->
-        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:right">
-          <button onclick="csDeleteTicket('${t.ticket_id}')" style="padding:6px 16px;border:1px solid #dc2626;border-radius:6px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:13px;font-weight:500">🗑️ 접수 삭제</button>
-        </div>
+    html += `<div style="margin-top:16px"><div class="cs-field-label">처리 이력</div><div class="cs-timeline">`;
+    (logs.logs||[]).forEach(l => {
+      html += `<div class="cs-timeline-item">
+        <div class="cs-timeline-dot done"></div>
+        <div><strong style="font-size:13px">${l.action_type}</strong>
+          <span style="font-size:12px;color:#6b7280;margin-left:8px">${l.actor_name||''}</span></div>
+        ${l.detail ? `<div style="font-size:12px;color:#4b5563;margin-top:2px">${l.detail}</div>` : ''}
+        <div class="cs-timeline-time">${l.created_at||''}</div>
       </div>`;
-  } catch(e) {
-    modal.innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444">오류: ${e.message || e}</div>`;
-  }
-}
+    });
+    html += `</div></div>`;
 
-// ── 티켓 삭제 ──
-async function csDeleteTicket(ticketId) {
-  if (!confirm(`정말로 ${ticketId} 접수를 삭제하시겠습니까?\n\n관련된 첨부파일, 테스트 결과, 처리 이력이 모두 삭제됩니다.`)) return;
-  try {
-    const res = await api.delete(`/api/cs/tickets/${ticketId}`);
-    alert(res.message || "삭제 완료");
-    csCloseModal();
-    csLoadTickets();
-    csLoadStats();
-  } catch(e) {
-    alert("삭제 실패: " + (e.message || e));
-  }
-}
-
-// ── 상태 변경 액션 ──
-async function csAction(ticketId, action) {
-  const memo = document.getElementById("cs-memo-input")?.value.trim() || "";
-  try {
-    const res = await api.put(`/api/cs/tickets/${ticketId}/${action}`, { memo });
-    alert(res.message || "처리 완료");
-    csShowDetail(ticketId);
-    csLoadStats();
-    csLoadTickets();
-  } catch(e) { alert("오류: " + (e.message || e)); }
-}
-
-// ── 테스트 결과 폼 ──
-function csShowTestForm(ticketId) {
-  const modal = document.getElementById("cs-modal-content");
-  const existing = modal.innerHTML;
-  // 모달 내부에 테스트 폼 삽입
-  const formHtml = `
-    <div id="cs-test-form" style="margin-top:16px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
-      <div style="font-weight:600;font-size:14px;margin-bottom:12px">🧪 테스트 결과 입력</div>
-      <div style="display:flex;gap:12px;margin-bottom:12px">
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="cs-test-status" value="정상"> 🟢 정상</label>
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="cs-test-status" value="의심"> 🟡 의심</label>
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="cs-test-status" value="불량" checked> 🔴 불량</label>
-      </div>
-      <textarea id="cs-test-comment" rows="3" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:inherit;resize:vertical" placeholder="작동 테스트 결과 및 소견 (예: USB 포트 3번 물리적 파손 확인)"></textarea>
-      <div style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px">
-        <button onclick="document.getElementById('cs-test-form').remove()" style="padding:6px 14px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px">취소</button>
-        <button onclick="csSubmitTest('${ticketId}')" class="btn btn-primary" style="padding:6px 18px;font-size:13px">테스트 완료 (CS로 이관)</button>
-      </div>
+    // 파일 업로드
+    html += `<div style="margin-top:16px">
+      <div class="cs-field-label">첨부파일</div>
+      <input type="file" multiple onchange="csUploadFile('${t.ticket_id}',this)" style="font-size:12px">
+      <div id="cs-file-list" style="margin-top:8px"></div>
     </div>`;
-  // 액션 버튼 영역 뒤에 삽입
-  const body = modal.querySelector(".cs-modal-body");
-  if (body) body.insertAdjacentHTML("beforeend", formHtml);
+
+    // 메모 입력
+    html += `<div style="margin-top:12px;display:flex;gap:8px">
+      <input id="cs-memo-input" placeholder="메모 추가" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+      <button onclick="csAddMemo('${t.ticket_id}')" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer">추가</button>
+    </div>`;
+
+    // 액션 버튼
+    html += `<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;flex-wrap:wrap">`;
+    const st = t.current_status;
+    if (st === "접수완료") {
+      html += `<button onclick="csAction('${t.ticket_id}','receive')" class="btn" style="font-size:13px">📦 물류 수령</button>`;
+    }
+    if (st === "물류수령") {
+      html += `<button onclick="csAction('${t.ticket_id}','handover')" class="btn" style="font-size:13px">🔬 기술 인계</button>`;
+    }
+    if (st === "기술인계") {
+      html += `<button onclick="csShowTestForm('${t.ticket_id}')" class="btn" style="font-size:13px">📝 테스트 결과</button>`;
+    }
+    if (st !== "처리종결") {
+      html += `<button onclick="csQuickResolve('${t.ticket_id}')" class="btn" style="font-size:13px;background:#059669;color:#fff;border-color:#059669">🏁 빠른 종결</button>`;
+    }
+    html += `<button onclick="csDeleteTicket('${t.ticket_id}')" class="btn" style="font-size:13px;color:#ef4444;margin-left:auto">🗑 삭제</button>`;
+    html += `</div></div>`;
+
+    document.getElementById("cs-modal-content").innerHTML = html;
+    document.getElementById("cs-modal-overlay").style.display = "block";
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+async function csDeleteTicket(ticketId) {
+  if (!confirm(`정말 ${ticketId}을(를) 삭제하시겠습니까?`)) return;
+  try {
+    await api.delete(`/api/cs/tickets/${ticketId}`);
+    csCloseModal();
+    csLoadDashboard();
+    csRenderView();
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+async function csAction(ticketId, action) {
+  const memo = document.getElementById("cs-memo-input")?.value?.trim() || "";
+  try {
+    await api.put(`/api/cs/tickets/${ticketId}/${action}`, { memo });
+    csShowDetail(ticketId);
+    csLoadDashboard();
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+function csShowTestForm(ticketId) {
+  const results = (_csOptions?.test_results) || ["정상","의심","불량"];
+  const div = document.createElement("div");
+  div.id = "cs-test-form";
+  div.style.cssText = "margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb";
+  div.innerHTML = `
+    <div class="cs-field-label">테스트 결과</div>
+    <div style="display:flex;gap:8px;margin:8px 0">
+      ${results.map(r => `<label style="cursor:pointer"><input type="radio" name="cs-test-r" value="${r}"> ${r}</label>`).join("")}
+    </div>
+    <input id="cs-test-comment" placeholder="테스트 코멘트" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:8px">
+    <button onclick="csSubmitTest('${ticketId}')" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer">등록</button>`;
+  const existing = document.getElementById("cs-test-form");
+  if (existing) existing.remove();
+  document.querySelector(".cs-modal-body")?.appendChild(div);
 }
 
 async function csSubmitTest(ticketId) {
-  const status = document.querySelector('input[name="cs-test-status"]:checked')?.value;
-  const comment = document.getElementById("cs-test-comment")?.value.trim() || "";
-  if (!status) { alert("테스트 상태를 선택해주세요."); return; }
+  const status = document.querySelector('input[name="cs-test-r"]:checked')?.value;
+  if (!status) { alert("테스트 결과를 선택해주세요."); return; }
+  const comment = document.getElementById("cs-test-comment")?.value?.trim() || "";
   try {
-    const res = await api.post(`/api/cs/tickets/${ticketId}/test-result`, {
-      test_status: status,
-      test_comment: comment,
-    });
-    alert(res.message || "테스트 결과 등록 완료");
+    await api.post(`/api/cs/tickets/${ticketId}/test-result`, { test_status: status, test_comment: comment });
     csShowDetail(ticketId);
-    csLoadStats();
-    csLoadTickets();
-  } catch(e) { alert("오류: " + (e.message || e)); }
+    csLoadDashboard();
+  } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
-// ── 최종 처리 ──
 async function csResolve(ticketId, action) {
-  if (!confirm(`"${action}" 처리하시겠습니까?`)) return;
-  const memo = document.getElementById("cs-memo-input")?.value.trim() || "";
   try {
-    const res = await api.put(`/api/cs/tickets/${ticketId}/resolve`, { action, memo });
-    alert(res.message || "처리 완료");
+    await api.put(`/api/cs/tickets/${ticketId}/resolve`, { action, memo: "" });
     csShowDetail(ticketId);
-    csLoadStats();
-    csLoadTickets();
-  } catch(e) { alert("오류: " + (e.message || e)); }
+    csLoadDashboard();
+  } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
 async function csQuickResolve(ticketId) {
-  if (!confirm("단순변심으로 즉시 처리종결 하시겠습니까?\n(기술인계/테스트 단계를 건너뜁니다)")) return;
-  const memo = document.getElementById("cs-memo-input")?.value.trim() || "단순변심";
+  const actions = (_csOptions?.final_actions) || ["교환발송","환불처리","정상반송","단순변심 반송"];
+  const action = prompt(`최종 처리 선택:\n${actions.map((a,i)=>`${i+1}. ${a}`).join("\n")}\n\n번호 입력:`);
+  if (!action) return;
+  const idx = parseInt(action) - 1;
+  if (idx < 0 || idx >= actions.length) { alert("올바른 번호를 입력해주세요."); return; }
   try {
-    const res = await api.put(`/api/cs/tickets/${ticketId}/quick-resolve`, { action: "단순변심 반송", memo });
-    alert(res.message || "처리 완료");
-    csShowDetail(ticketId);
-    csLoadStats();
-    csLoadTickets();
-  } catch(e) { alert("오류: " + (e.message || e)); }
+    await api.put(`/api/cs/tickets/${ticketId}/quick-resolve`, { action: actions[idx], memo: "" });
+    csCloseModal();
+    csLoadDashboard();
+    csRenderView();
+  } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
-// ── 파일 업로드 ──
 async function csUploadFile(ticketId, input) {
-  const file = input.files[0];
-  if (!file) return;
-  if (file.size > 50 * 1024 * 1024) { alert("파일 크기가 50MB를 초과합니다."); return; }
-
-  // 진행률 오버레이
-  const overlay = document.createElement("div");
-  overlay.id = "cs-upload-overlay";
-  overlay.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10000">
-    <div style="background:#fff;border-radius:12px;padding:24px 32px;min-width:280px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
-      <div id="cs-upload-title" style="font-size:14px;font-weight:600;margin-bottom:12px">📎 파일 업로드 중...</div>
-      <div style="background:#e5e7eb;border-radius:8px;height:8px;overflow:hidden;margin-bottom:8px">
-        <div id="cs-upload-bar" style="background:#2563eb;height:100%;width:0%;transition:width 0.2s;border-radius:8px"></div>
-      </div>
-      <div id="cs-upload-pct" style="font-size:13px;color:#6b7280">0%</div>
-    </div>
-  </div>`;
-  document.body.appendChild(overlay);
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  try {
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `/api/cs/tickets/${ticketId}/upload`);
-      const token = localStorage.getItem("jwt_token");
-      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const pct = Math.round(e.loaded / e.total * 100);
-          const bar = document.getElementById("cs-upload-bar");
-          const txt = document.getElementById("cs-upload-pct");
-          if (bar) bar.style.width = pct + "%";
-          if (txt) txt.textContent = pct + "% (" + (e.loaded / 1024 / 1024).toFixed(1) + "MB / " + (e.total / 1024 / 1024).toFixed(1) + "MB)";
-          if (pct >= 100) {
-            const title = document.getElementById("cs-upload-title");
-            if (title) title.textContent = "⏳ 서버 처리 중...";
-          }
-        }
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try { resolve(JSON.parse(xhr.responseText)); } catch(_) { resolve({}); }
-        } else {
-          reject(new Error(xhr.responseText || `업로드 실패 (${xhr.status})`));
-        }
-      };
-      xhr.onerror = () => reject(new Error("네트워크 오류"));
-      xhr.timeout = 300000;
-      xhr.ontimeout = () => reject(new Error("업로드 시간 초과 (5분)"));
-      xhr.send(formData);
-    });
-    // 백그라운드 DB 저장 대기 후 새로고침
-    await new Promise(r => setTimeout(r, 1000));
-    csShowDetail(ticketId);
-  } catch(e) { alert("업로드 오류: " + (e.message || e)); }
-  finally { overlay.remove(); }
+  const files = input.files;
+  if (!files.length) return;
+  for (const file of files) {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      await api.postForm(`/api/cs/tickets/${ticketId}/upload`, formData);
+    } catch(e) { alert("업로드 오류: " + (e.message||e)); }
+  }
+  csShowDetail(ticketId);
 }
 
-// ── 파일 삭제 ──
 async function csDeleteFile(fileId, ticketId) {
-  if (!confirm("이 파일을 삭제하시겠습니까?")) return;
+  if (!confirm("파일을 삭제하시겠습니까?")) return;
   try {
     await api.delete(`/api/cs/files/${fileId}`);
     csShowDetail(ticketId);
-  } catch(e) { alert("삭제 오류: " + (e.message || e)); }
+  } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
-// ── Drive 업로드 진단 ──
 async function csDriveCheck() {
   try {
     const res = await api.get("/api/cs/drive-check");
-    const lines = [
-      `Service Account JSON: ${res.service_account_json_set ? "설정됨 (" + res.service_account_json_length + "자)" : "미설정"}`,
-      `JSON 파싱: ${res.json_parse || "-"}`,
-      `서비스 계정: ${res.service_account_email || "-"}`,
-      `프로젝트: ${res.project_id || "-"}`,
-      `CS 폴더 ID: ${res.cs_folder_id || "-"}`,
-      `토큰 발급: ${res.token_status || "-"}`,
-      `폴더 접근: ${res.folder_access || "-"}`,
-      res.folder_files ? `폴더 내 파일: ${res.folder_files.join(", ") || "(없음)"}` : "",
-      `업로드 테스트: ${res.upload_test || "-"}`,
-    ].filter(Boolean);
-    alert("Google Drive 업로드 진단\n\n" + lines.join("\n"));
-  } catch(e) { alert("진단 오류: " + (e.message || e)); }
+    alert(JSON.stringify(res, null, 2));
+  } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
-// ── 파일 다운로드 ──
 async function csDownloadFile(fileId, fileName) {
   try {
-    const token = localStorage.getItem("jwt_token");
-    const res = await fetch(`/api/cs/download/${fileId}`, {
-      headers: { "Authorization": `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `다운로드 실패 (${res.status})`);
-    }
+    const res = await fetch(`/api/cs/download/${fileId}`, { headers: { "Authorization": `Bearer ${api.getToken()}` } });
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName || "download";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = url; a.download = fileName; a.click();
     URL.revokeObjectURL(url);
-  } catch(e) { alert("다운로드 오류: " + (e.message || e)); }
+  } catch(e) { alert("다운로드 오류: " + (e.message||e)); }
 }
 
-// ── 메모 추가 ──
 async function csAddMemo(ticketId) {
   const memo = document.getElementById("cs-memo-input")?.value.trim();
   if (!memo) { alert("메모 내용을 입력해주세요."); return; }
@@ -4454,6 +4519,18 @@ async function csAddMemo(ticketId) {
     csShowDetail(ticketId);
   } catch(e) { alert("오류: " + (e.message || e)); }
 }
+
+// ── What's New 팝업 ──
+function csCloseWhatsNew() {
+  document.getElementById("cs-whatsnew-overlay").style.display = "none";
+  if (document.getElementById("cs-wn-dontshow")?.checked) {
+    localStorage.setItem("cs_whatsnew_v2_dismissed", "1");
+  }
+}
+
+// ── 하위 호환: 기존 csSearch 호출 리다이렉트 ──
+function csSearch() { csApplyFilters(); }
+
 
 // ═══════════════════════════════════════════
 //  (판매에이전트 삭제됨)
