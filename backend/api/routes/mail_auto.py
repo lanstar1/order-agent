@@ -76,8 +76,7 @@ def _ensure_tables():
         CREATE TABLE IF NOT EXISTS product_code_mapping (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             model_name TEXT NOT NULL,
-            prod_cd TEXT NOT NULL,
-            UNIQUE(model_name)
+            prod_cd TEXT NOT NULL
         );
     """)
     conn.commit()
@@ -605,22 +604,41 @@ async def reload_mapping():
 async def upload_mapping(file: UploadFile = File(...)):
     """품목코드 매핑 Excel 업로드"""
     import openpyxl
-    data = await file.read()
-    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
-    ws = wb.active
-    
-    conn = get_connection()
-    conn.execute("DELETE FROM product_code_mapping")
-    count = 0
-    for r in range(2, ws.max_row + 1):
-        prod_cd = ws.cell(row=r, column=1).value
-        model = ws.cell(row=r, column=2).value
-        if prod_cd and model:
-            conn.execute(
-                "INSERT INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
-                (str(model).strip(), str(prod_cd).strip())
+    try:
+        data = await file.read()
+        wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+        ws = wb.active
+        
+        conn = get_connection()
+        
+        # 테이블 생성 보장
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS product_code_mapping (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_name TEXT NOT NULL,
+                prod_cd TEXT NOT NULL
             )
-            count += 1
-    conn.commit()
-    wb.close()
-    return {"success": True, "loaded": count}
+        """)
+        conn.commit()
+        
+        # 기존 데이터 삭제
+        conn.execute("DELETE FROM product_code_mapping")
+        conn.commit()
+        
+        count = 0
+        for r in range(2, ws.max_row + 1):
+            prod_cd = ws.cell(row=r, column=1).value
+            model = ws.cell(row=r, column=2).value
+            if prod_cd and model:
+                conn.execute(
+                    "INSERT INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
+                    (str(model).strip(), str(prod_cd).strip())
+                )
+                count += 1
+        conn.commit()
+        wb.close()
+        return {"success": True, "loaded": count}
+    except Exception as e:
+        import traceback
+        logger.error(f"[매핑 업로드] 오류: {traceback.format_exc()}")
+        return {"success": False, "error": str(e)}
