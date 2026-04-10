@@ -470,19 +470,42 @@ async def create_purchase_slip(
     else:
         io_date = (datetime.now(KST) + timedelta(days=8)).strftime("%Y%m%d")
     
-    # 라인 변환
+    # 라인 변환 (모델명 → 품목코드)
     lines = []
+    skipped = []
     for item in erp_lines:
+        model = item["prod_cd"]
+        # DB에서 품목코드 조회
+        try:
+            from db.database import get_connection as _gc
+            _conn = _gc()
+            row = _conn.execute(
+                "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?", (model,)
+            ).fetchone()
+            prod_cd = row[0] if row else ""
+        except Exception:
+            prod_cd = ""
+        
+        if not prod_cd:
+            skipped.append(model)
+            continue
+        
         price_usd = item.get("price_usd", 0)
-        tax_rate = item.get("tax_rate", 1.18)  # 캐비닛: 1.2, 그 외: 1.18
+        tax_rate = item.get("tax_rate", 1.18)
         price_krw = round(price_usd * tax_rate * exchange_rate)
         
         lines.append({
-            "prod_cd": item["prod_cd"],
+            "prod_cd": prod_cd,
             "qty": item["qty"],
             "unit": "EA",
             "price": price_krw,
         })
+    
+    if skipped:
+        logger.warning(f"[구매전표] 미매핑 품목 {len(skipped)}건 제외: {skipped[:5]}")
+    
+    if not lines:
+        return {"success": False, "error": "매핑된 품목 없음", "skipped": skipped}
     
     logger.info(f"[구매전표] {len(lines)}개 품목, 환율={exchange_rate}, 일자={io_date}")
     

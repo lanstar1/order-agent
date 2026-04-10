@@ -73,8 +73,59 @@ def _ensure_tables():
             source TEXT DEFAULT 'auto',
             created_at TEXT DEFAULT (datetime('now','localtime'))
         );
+        CREATE TABLE IF NOT EXISTS product_code_mapping (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_name TEXT NOT NULL,
+            prod_cd TEXT NOT NULL,
+            UNIQUE(model_name)
+        );
     """)
     conn.commit()
+    
+    # 매핑 데이터 초기 로드 (비어있으면)
+    cnt = conn.execute("SELECT COUNT(*) FROM product_code_mapping").fetchone()[0]
+    if cnt == 0:
+        _load_product_mapping_from_file(conn)
+
+
+def _load_product_mapping_from_file(conn):
+    """data/product_code_mapping.xlsx에서 품목코드 매핑 로드"""
+    import openpyxl
+    mapping_path = Path(__file__).parent.parent.parent / "data" / "product_code_mapping.xlsx"
+    if not mapping_path.exists():
+        logger.warning(f"[매핑] 파일 없음: {mapping_path}")
+        return 0
+    
+    wb = openpyxl.load_workbook(mapping_path, data_only=True)
+    ws = wb.active
+    count = 0
+    for r in range(2, ws.max_row + 1):
+        prod_cd = ws.cell(row=r, column=1).value
+        model = ws.cell(row=r, column=2).value
+        if prod_cd and model:
+            model_str = str(model).strip()
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
+                    (model_str, str(prod_cd).strip())
+                )
+                count += 1
+            except Exception:
+                pass
+    conn.commit()
+    wb.close()
+    logger.info(f"[매핑] {count}건 로드 완료")
+    return count
+
+
+def _lookup_prod_cd(model_name: str) -> str:
+    """모델명 → 품목코드 조회. 없으면 빈 문자열"""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?",
+        (model_name,)
+    ).fetchone()
+    return row[0] if row else ""
 
 
 _ensure_tables()
@@ -292,14 +343,19 @@ async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float =
         rate_info = await fetch_exchange_rate()
         rate = rate_info["rate"]
     
-    # ERP 라인 미리보기 생성
+    # ERP 라인 미리보기 생성 (모델명 → 품목코드 변환)
     erp_preview = []
+    unmapped_models = []
     for item in result["erp_lines"]:
         price_usd = item.get("price_usd", 0)
-        tax_rate = item.get("tax_rate", 1.2)
+        tax_rate = item.get("tax_rate", 1.18)
         price_krw = round(price_usd * tax_rate * rate)
+        model = item["prod_cd"]
+        prod_cd = _lookup_prod_cd(model)
+        
         erp_preview.append({
-            "prod_cd": item["prod_cd"],
+            "model_name": model,
+            "prod_cd": prod_cd,
             "qty": item["qty"],
             "price_usd": price_usd,
             "tax_rate": tax_rate,
@@ -307,6 +363,8 @@ async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float =
             "supply_amt": round(price_krw * item["qty"]),
             "description": item.get("description", ""),
         })
+        if not prod_cd:
+            unmapped_models.append(model)
     
     # 전표일자 (오늘 +8일)
     io_date = (datetime.now(KST) + timedelta(days=8)).strftime("%Y-%m-%d")
@@ -314,6 +372,7 @@ async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float =
     return {
         "erp_lines": erp_preview,
         "oem_items": result["oem_items"],
+        "unmapped_models": unmapped_models,
         "total_lines": len(erp_preview),
         "total_amount": sum(l["supply_amt"] for l in erp_preview),
         "exchange_rate": rate,
@@ -338,16 +397,23 @@ async def submit_erp_purchase(request: Request):
         datetime.now(KST) + timedelta(days=8)
     ).strftime("%Y%m%d")
     
-    # 미리보기에서 이미 KRW 단가가 계산됨
-    lines = [
-        {
-            "prod_cd": item["prod_cd"],
+    # 미리보기에서 이미 KRW 단가가 계산됨 — 품목코드 있는 것만 전송
+    lines = []
+    skipped = []
+    for item in erp_lines:
+        prod_cd = item.get("prod_cd", "")
+        if not prod_cd:
+            skipped.append(item.get("model_name", ""))
+            continue
+        lines.append({
+            "prod_cd": prod_cd,
             "qty": item["qty"],
             "unit": "EA",
             "price": item["price_krw"],
-        }
-        for item in erp_lines
-    ]
+        })
+    
+    if not lines:
+        return {"success": False, "error": "전송 가능한 품목이 없습니다 (모두 미매핑)"}
     
     try:
         result = await erp_client.save_purchase(
@@ -355,6 +421,9 @@ async def submit_erp_purchase(request: Request):
             lines=lines,
             io_date=io_date,
         )
+        if skipped:
+            result["skipped_models"] = skipped
+            result["skipped_count"] = len(skipped)
         return result
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -494,3 +563,48 @@ async def preview_emails(days_back: int = 30):
             for m in emails
         ],
     }
+
+
+# ─── 품목코드 매핑 관리 ────────────────────────────────────
+
+@router.get("/product-mapping/count")
+async def get_mapping_count():
+    """품목코드 매핑 건수"""
+    conn = get_connection()
+    cnt = conn.execute("SELECT COUNT(*) FROM product_code_mapping").fetchone()[0]
+    return {"count": cnt}
+
+
+@router.post("/product-mapping/reload")
+async def reload_mapping():
+    """data/product_code_mapping.xlsx에서 매핑 새로고침"""
+    conn = get_connection()
+    conn.execute("DELETE FROM product_code_mapping")
+    conn.commit()
+    count = _load_product_mapping_from_file(conn)
+    return {"success": True, "loaded": count}
+
+
+@router.post("/product-mapping/upload")
+async def upload_mapping(file: UploadFile = File(...)):
+    """품목코드 매핑 Excel 업로드"""
+    import openpyxl
+    data = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+    ws = wb.active
+    
+    conn = get_connection()
+    conn.execute("DELETE FROM product_code_mapping")
+    count = 0
+    for r in range(2, ws.max_row + 1):
+        prod_cd = ws.cell(row=r, column=1).value
+        model = ws.cell(row=r, column=2).value
+        if prod_cd and model:
+            conn.execute(
+                "INSERT OR REPLACE INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
+                (str(model).strip(), str(prod_cd).strip())
+            )
+            count += 1
+    conn.commit()
+    wb.close()
+    return {"success": True, "loaded": count}

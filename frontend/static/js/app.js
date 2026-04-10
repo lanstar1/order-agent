@@ -8789,12 +8789,15 @@ function reconcileNewMatch() {
           </button>
         </div>
         <table class="table table-sm" style="font-size:12px">
-          <thead><tr><th>품목코드</th><th style="text-align:right">수량</th><th style="text-align:right">USD단가</th><th style="text-align:center">세율</th><th style="text-align:right">KRW단가</th><th style="text-align:right">공급가</th></tr></thead>
+          <thead><tr><th>모델명</th><th>품목코드</th><th style="text-align:right">수량</th><th style="text-align:right">USD단가</th><th style="text-align:center">세율</th><th style="text-align:right">KRW단가</th><th style="text-align:right">공급가</th></tr></thead>
           <tbody>`;
       d.erp_lines.forEach(l => {
         const taxLabel = l.tax_rate === 1.22 ? '<span style="color:#dc2626">×1.22</span>' : '<span style="color:#2563eb">×1.18</span>';
-        html += `<tr>
-          <td><b>${l.prod_cd}</b></td>
+        const prodLabel = l.prod_cd ? l.prod_cd : '<span style="color:#dc2626">⚠️ 미매핑</span>';
+        const rowStyle = l.prod_cd ? '' : 'background:#fef2f2';
+        html += `<tr style="${rowStyle}">
+          <td style="font-size:11px">${l.model_name||l.prod_cd}</td>
+          <td><b>${prodLabel}</b></td>
           <td style="text-align:right">${l.qty?.toLocaleString()}</td>
           <td style="text-align:right">\$${l.price_usd?.toFixed(3)}</td>
           <td style="text-align:center">${taxLabel}</td>
@@ -8804,8 +8807,13 @@ function reconcileNewMatch() {
       });
       html += `</tbody>
         <tfoot><tr style="font-weight:700;border-top:2px solid #e2e8f0">
-          <td>합계 (${d.total_lines}건)</td><td></td><td></td><td></td><td></td>
+          <td colspan="2">합계 (${d.total_lines}건)</td><td></td><td></td><td></td><td></td>
           <td style="text-align:right;color:#7c3aed">₩${d.total_amount?.toLocaleString()}</td>
+        </tr></tfoot></table>`;
+      if (d.unmapped_models && d.unmapped_models.length > 0) {
+        html += `<div style="margin-top:10px;padding:10px 14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:12px">
+          <b style="color:#dc2626">⚠️ 품목코드 미매핑 ${d.unmapped_models.length}건</b> — ERP 전송 시 제외됩니다: ${d.unmapped_models.join(', ')}
+        </div>`;
         </tr></tfoot></table>`;
       if (d.oem_items && d.oem_items.length > 0) {
         html += `<div style="margin-top:10px;padding:8px 12px;background:#fef3c7;border-radius:6px;font-size:12px">
