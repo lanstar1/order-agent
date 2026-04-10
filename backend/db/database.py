@@ -53,6 +53,7 @@ def _sql_to_pg(sql):
                 'activity_log', 'orderlist_items', 'orderlist_sync_log',
                 'shipments',
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
+                'cs_backorders',
                 'aicc_sessions', 'aicc_messages',
                 'aicc_product_knowledge', 'aicc_unanswered',
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',

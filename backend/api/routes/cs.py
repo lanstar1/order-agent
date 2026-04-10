@@ -1144,17 +1144,25 @@ async def cs_stats(user: dict = Depends(get_current_user)):
         shipping_cost_counts = {r["shipping_cost_status"]: r["cnt"] for r in shipping_cost_rows}
 
         # 지연 건수 (접수 후 7일 이상 미처리)
-        overdue_row = conn.execute(
-            """SELECT COUNT(*) as cnt FROM cs_tickets
+        from db.database import USE_PG
+        if USE_PG:
+            overdue_sql = """SELECT COUNT(*) as cnt FROM cs_tickets
+               WHERE current_status != '처리종결'
+               AND created_at::timestamp < NOW() - INTERVAL '7 days'"""
+        else:
+            overdue_sql = """SELECT COUNT(*) as cnt FROM cs_tickets
                WHERE current_status != '처리종결'
                AND created_at < datetime('now', '-7 days', 'localtime')"""
-        ).fetchone()
+        overdue_row = conn.execute(overdue_sql).fetchone()
 
         # 평균 처리일수 (종결된 건만)
-        avg_row = conn.execute(
-            """SELECT AVG(julianday(resolved_at) - julianday(created_at)) as avg_days
+        if USE_PG:
+            avg_sql = """SELECT AVG(EXTRACT(EPOCH FROM (resolved_at::timestamp - created_at::timestamp)) / 86400) as avg_days
+               FROM cs_tickets WHERE current_status = '처리종결' AND resolved_at IS NOT NULL AND resolved_at != ''"""
+        else:
+            avg_sql = """SELECT AVG(julianday(resolved_at) - julianday(created_at)) as avg_days
                FROM cs_tickets WHERE current_status = '처리종결' AND resolved_at != ''"""
-        ).fetchone()
+        avg_row = conn.execute(avg_sql).fetchone()
 
         return {
             "status_counts": status_counts,

@@ -3945,7 +3945,11 @@ async function csLoadDashboard() {
     csRenderStatsBar(stats);
     csRenderChannelPanel(stats);
     csRenderReasonPanel(stats);
-  } catch(e) { console.error("CS stats error:", e); }
+  } catch(e) {
+    console.error("CS stats error:", e);
+    const bar = document.getElementById("cs-stats-bar");
+    if (bar) bar.innerHTML = '<div style="font-size:12px;color:#9ca3af">통계 로딩 실패</div>';
+  }
 }
 
 function csRenderStatsBar(stats) {
@@ -4377,7 +4381,7 @@ async function csLoadKanban() {
       }
     </div>`;
   }).join("");
-  } catch(e) { board.innerHTML = `<div style="color:red;padding:20px">로딩 오류: ${e.message||e}</div>`; }
+  } catch(e) { board.innerHTML = `<div style="color:red;padding:20px">로딩 오류: ${e?.message||e?.detail||String(e)}</div>`; }
 }
 
 function _isOverdue(t) {
