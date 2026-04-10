@@ -571,22 +571,7 @@ def init_db():
     safe_add_column(conn, 'cs_tickets', 'return_courier', "TEXT DEFAULT ''")
     safe_add_column(conn, 'cs_tickets', 'return_tracking_no', "TEXT DEFAULT ''")
 
-    # ── CS/RMA v2 일회성 마이그레이션: 기존 데이터 판매채널 설정 ──
-    try:
-        conn.execute(
-            "UPDATE cs_tickets SET sales_channel = ? WHERE (sales_channel IS NULL OR sales_channel = '') AND ticket_id LIKE ?",
-            ('스마트스토어', 'CS-%')
-        )
-        conn.execute(
-            "UPDATE cs_tickets SET cs_type = ? WHERE (cs_type IS NULL OR cs_type = '') AND ticket_id LIKE ?",
-            ('반품', 'CS-%')
-        )
-        conn.commit()
-    except Exception:
-        try: conn.rollback()
-        except: pass
-
-    # ── 미출고 관리 테이블 ──
+    # ── 미출고 관리 테이블 (마이그레이션 전에 생성) ──
     cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS cs_backorders (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -604,6 +589,22 @@ def init_db():
         created_at      TEXT DEFAULT (datetime('now','localtime')),
         updated_at      TEXT DEFAULT (datetime('now','localtime'))
     )""")
+    conn.commit()
+
+    # ── CS/RMA v2 일회성 마이그레이션: 기존 데이터 판매채널 설정 ──
+    try:
+        conn.execute(
+            "UPDATE cs_tickets SET sales_channel = ? WHERE (sales_channel IS NULL OR sales_channel = '') AND ticket_id LIKE ?",
+            ('스마트스토어', 'CS-%')
+        )
+        conn.execute(
+            "UPDATE cs_tickets SET cs_type = ? WHERE (cs_type IS NULL OR cs_type = '') AND ticket_id LIKE ?",
+            ('반품', 'CS-%')
+        )
+        conn.commit()
+    except Exception:
+        try: conn.rollback()
+        except: pass
 
     # ── AICC 마이그레이션: image_id 컬럼 추가 ──
     safe_add_column(conn, 'aicc_messages', 'image_id', "TEXT DEFAULT ''")
