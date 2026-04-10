@@ -8763,5 +8763,89 @@ function reconcileNewMatch() {
       .catch(e => alert('다운로드 실패: ' + e.message));
   };
 
+  // ─── ERP 구매전표 테스트 ───────────────────
+  window.mailTestERP = async function() {
+    const input = document.getElementById('mail-test-file');
+    if (!input.files.length) return alert('Excel 파일을 선택하세요');
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    const rateInput = document.getElementById('mail-rate-input');
+    if (rateInput && rateInput.value) fd.append('exchange_rate', rateInput.value);
+    
+    const btn = document.getElementById('mail-erp-btn');
+    btn.disabled = true; btn.textContent = '조회 중...';
+    try {
+      const r = await fetch('/api/mail-auto/test-erp', {method:'POST', body: fd});
+      const d = await r.json();
+      const div = document.getElementById('mail-erp-result');
+      let html = `<div class="card" style="padding:16px;margin-top:8px;border:2px solid #7c3aed20">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <h4 style="margin:0;color:#7c3aed">📋 ERP 구매전표 미리보기</h4>
+            <p style="font-size:12px;color:#666;margin:4px 0 0">거래처: ${d.cust_code} | 전표일자: ${d.io_date} | 환율: ${d.exchange_rate?.toLocaleString()}원</p>
+          </div>
+          <button onclick="mailSubmitERP()" class="btn" style="background:#7c3aed;color:#fff;padding:8px 16px" id="mail-erp-submit-btn">
+            ⚡ ERP 전표 전송
+          </button>
+        </div>
+        <table class="table table-sm" style="font-size:12px">
+          <thead><tr><th>품목코드</th><th style="text-align:right">수량</th><th style="text-align:right">USD단가</th><th style="text-align:right">KRW단가</th><th style="text-align:right">공급가</th></tr></thead>
+          <tbody>`;
+      d.erp_lines.forEach(l => {
+        html += `<tr>
+          <td><b>${l.prod_cd}</b></td>
+          <td style="text-align:right">${l.qty?.toLocaleString()}</td>
+          <td style="text-align:right">\$${l.price_usd?.toFixed(3)}</td>
+          <td style="text-align:right">₩${l.price_krw?.toLocaleString()}</td>
+          <td style="text-align:right">₩${l.supply_amt?.toLocaleString()}</td>
+        </tr>`;
+      });
+      html += `</tbody>
+        <tfoot><tr style="font-weight:700;border-top:2px solid #e2e8f0">
+          <td>합계 (${d.total_lines}건)</td><td></td><td></td><td></td>
+          <td style="text-align:right;color:#7c3aed">₩${d.total_amount?.toLocaleString()}</td>
+        </tr></tfoot></table>`;
+      if (d.oem_items && d.oem_items.length > 0) {
+        html += `<div style="margin-top:10px;padding:8px 12px;background:#fef3c7;border-radius:6px;font-size:12px">
+          <b>⚠️ OEM 미매핑 ${d.oem_items.length}건</b> (수동 입력 필요): ${d.oem_items.map(o=>o.description?.substring(0,30)).join(', ')}
+        </div>`;
+      }
+      html += '</div>';
+      div.innerHTML = html;
+      // 전송용 데이터 저장
+      window._erpPreviewData = d;
+    } catch(e) { alert('ERP 미리보기 실패: '+e.message); }
+    btn.disabled = false; btn.textContent = '📋 ERP 전표 미리보기';
+  };
+
+  window.mailSubmitERP = async function() {
+    if (!window._erpPreviewData) return alert('먼저 미리보기를 실행하세요');
+    if (!confirm('ERP에 구매전표를 전송합니다.\n계속하시겠습니까?')) return;
+    const d = window._erpPreviewData;
+    const btn = document.getElementById('mail-erp-submit-btn');
+    btn.disabled = true; btn.textContent = '전송 중...';
+    try {
+      const r = await fetch('/api/mail-auto/submit-erp', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          erp_lines: d.erp_lines,
+          exchange_rate: d.exchange_rate,
+          io_date: d.io_date,
+        })
+      });
+      const result = await r.json();
+      if (result.success) {
+        alert('✅ ERP 전표 전송 완료!');
+        btn.textContent = '✅ 전송 완료';
+      } else {
+        alert('❌ 전송 실패: ' + (result.error || JSON.stringify(result)));
+        btn.disabled = false; btn.textContent = '⚡ ERP 전표 전송';
+      }
+    } catch(e) {
+      alert('전송 오류: '+e.message);
+      btn.disabled = false; btn.textContent = '⚡ ERP 전표 전송';
+    }
+  };
+
   console.log('Mail Auto 모듈 로드 완료');
 })();

@@ -49,7 +49,7 @@ SUBJECT_KEYWORDS = ["ship", "final", "shipping", "list"]
 # 자동 실행 상태
 _auto_state = {
     "enabled": False,
-    "interval_min": 3,
+    "interval_min": 10,
     "last_check": None,
     "last_result": None,
     "running": False,

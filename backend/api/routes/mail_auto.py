@@ -27,7 +27,7 @@ from services.mail_auto_service import (
     fetch_bor_emails, process_excel_hs_code, create_purchase_slip,
     fetch_exchange_rate, run_mail_automation_pipeline,
     get_auto_state, start_mail_auto_scheduler, stop_mail_auto_scheduler,
-    MAIL_AUTO_PASSWORD,
+    MAIL_AUTO_PASSWORD, ERP_SUPPLIER_CODE,
 )
 
 router = APIRouter(prefix="/api/mail-auto", tags=["mail-auto"])
@@ -268,6 +268,89 @@ async def process_and_download(file: UploadFile = File(...)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=HS_{file.filename}"},
     )
+
+
+# ─── ERP 구매전표 테스트 ──────────────────────────────────
+
+@router.post("/test-erp")
+async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float = Form(0)):
+    """업로드 Excel → ERP 구매전표 미리보기 (실제 전송 안함)"""
+    data = await file.read()
+    result = process_excel_hs_code(data, file.filename)
+    
+    if not result["success"]:
+        raise HTTPException(400, result.get("error"))
+    
+    # 환율 조회
+    rate = exchange_rate
+    if rate <= 0:
+        rate_info = await fetch_exchange_rate()
+        rate = rate_info["rate"]
+    
+    # ERP 라인 미리보기 생성
+    erp_preview = []
+    for item in result["erp_lines"]:
+        price_usd = item.get("price_usd", 0)
+        price_krw = round(price_usd * 1.2 * rate)
+        erp_preview.append({
+            "prod_cd": item["prod_cd"],
+            "qty": item["qty"],
+            "price_usd": price_usd,
+            "price_krw": price_krw,
+            "supply_amt": round(price_krw * item["qty"]),
+            "description": item.get("description", ""),
+        })
+    
+    # 전표일자 (오늘 +8일)
+    io_date = (datetime.now(KST) + timedelta(days=8)).strftime("%Y-%m-%d")
+    
+    return {
+        "erp_lines": erp_preview,
+        "oem_items": result["oem_items"],
+        "total_lines": len(erp_preview),
+        "total_amount": sum(l["supply_amt"] for l in erp_preview),
+        "exchange_rate": rate,
+        "io_date": io_date,
+        "cust_code": ERP_SUPPLIER_CODE,
+    }
+
+
+@router.post("/submit-erp")
+async def submit_erp_purchase(request: Request):
+    """ERP 구매전표 실제 전송 (미리보기 데이터 기반)"""
+    from services.erp_client import erp_client
+    
+    body = await request.json()
+    erp_lines = body.get("erp_lines", [])
+    io_date_str = body.get("io_date", "")
+    
+    if not erp_lines:
+        raise HTTPException(400, "전표 항목이 없습니다")
+    
+    io_date = io_date_str.replace("-", "") if io_date_str else (
+        datetime.now(KST) + timedelta(days=8)
+    ).strftime("%Y%m%d")
+    
+    # 미리보기에서 이미 KRW 단가가 계산됨
+    lines = [
+        {
+            "prod_cd": item["prod_cd"],
+            "qty": item["qty"],
+            "unit": "EA",
+            "price": item["price_krw"],
+        }
+        for item in erp_lines
+    ]
+    
+    try:
+        result = await erp_client.save_purchase(
+            cust_code=ERP_SUPPLIER_CODE,
+            lines=lines,
+            io_date=io_date,
+        )
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 # ─── 환율 ─────────────────────────────────────────────────
