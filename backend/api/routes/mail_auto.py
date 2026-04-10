@@ -91,10 +91,15 @@ def _ensure_tables():
 def _load_product_mapping_from_file(conn):
     """data/product_code_mapping.xlsx에서 품목코드 매핑 로드"""
     import openpyxl
-    mapping_path = Path(__file__).parent.parent.parent / "data" / "product_code_mapping.xlsx"
+    mapping_path = Path(__file__).parent.parent.parent.parent / "data" / "product_code_mapping.xlsx"
     if not mapping_path.exists():
-        logger.warning(f"[매핑] 파일 없음: {mapping_path}")
-        return 0
+        # 대체 경로 시도
+        alt_path = Path(__file__).parent.parent.parent / "data" / "product_code_mapping.xlsx"
+        if alt_path.exists():
+            mapping_path = alt_path
+        else:
+            logger.warning(f"[매핑] 파일 없음: {mapping_path} / {alt_path}")
+            return 0
     
     wb = openpyxl.load_workbook(mapping_path, data_only=True)
     ws = wb.active
