@@ -134,13 +134,36 @@ def _load_product_mapping_from_file(conn):
 
 
 def _lookup_prod_cd(model_name: str) -> str:
-    """모델명 → 품목코드 조회. 없으면 빈 문자열"""
+    """모델명 → 품목코드 조회. 정확 매칭 → 전방 매칭 순서"""
     conn = get_connection()
+    # 1. 정확 매칭
     row = conn.execute(
         "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?",
         (model_name,)
     ).fetchone()
-    return row[0] if row else ""
+    if row:
+        return row[0]
+    
+    # 2. 매핑 테이블의 model_name이 검색 모델명으로 시작하는 경우
+    #    예: 매핑에 "LSP-GIC-FJM, STP" → 검색 "LSP-GIC-FJM" 매칭
+    row = conn.execute(
+        "SELECT prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY LENGTH(model_name) LIMIT 1",
+        (model_name + "%",)
+    ).fetchone()
+    if row:
+        return row[0]
+    
+    # 3. 검색 모델명이 매핑 테이블의 model_name으로 시작하는 경우
+    #    예: 검색 "LSP-GIC-FJM" → 매핑에 "LSP-GIC-FJM" 포함
+    rows = conn.execute(
+        "SELECT model_name, prod_cd FROM product_code_mapping"
+    ).fetchall()
+    for mname, pcd in rows:
+        clean = mname.split(",")[0].split("★")[0].strip()
+        if clean == model_name:
+            return pcd
+    
+    return ""
 
 
 _ensure_tables()
@@ -628,9 +651,13 @@ async def upload_mapping(file: UploadFile = File(...)):
             prod_cd = ws.cell(row=r, column=1).value
             model = ws.cell(row=r, column=2).value
             if prod_cd and model:
+                # 모델명 정제: 콤마/★ 이후 제거
+                clean_model = str(model).strip()
+                for sep in [",", "★", "  "]:
+                    clean_model = clean_model.split(sep)[0].strip()
                 conn.execute(
                     "INSERT INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)",
-                    (str(model).strip(), str(prod_cd).strip())
+                    (clean_model, str(prod_cd).strip())
                 )
                 count += 1
         conn.commit()

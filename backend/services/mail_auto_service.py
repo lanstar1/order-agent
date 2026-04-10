@@ -475,13 +475,18 @@ async def create_purchase_slip(
     skipped = []
     for item in erp_lines:
         model = item["prod_cd"]
-        # DB에서 품목코드 조회
+        # DB에서 품목코드 조회 (정확→전방 매칭)
         try:
             from db.database import get_connection as _gc
             _conn = _gc()
             row = _conn.execute(
                 "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?", (model,)
             ).fetchone()
+            if not row:
+                row = _conn.execute(
+                    "SELECT prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY LENGTH(model_name) LIMIT 1",
+                    (model + "%",)
+                ).fetchone()
             prod_cd = row[0] if row else ""
         except Exception:
             prod_cd = ""
