@@ -185,24 +185,61 @@ def get_pending_orders(conn, model_name: str) -> list:
 def get_all_pending_orders_map(conn) -> dict:
     """
     전체 오더리스트를 모델명 기준으로 그룹핑
-    Returns: {"LS-1000H": [{"order_date": "...", "qty": 100, ...}, ...]}
+    - shipping_mail_info와 조인하여 선적일 포함
+    - 선적일이 오늘 이전인 오더는 입고 완료로 판단하여 제외
+    - 모델당 최신 2건만 유지
+    Returns: {"LS-1000H": [{"order_date": "...", "qty": 100, "shipping_date": "...", "arrival_date": "..."}, ...]}
     """
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+
+    # 1) shipping_mail_info에서 PI/BOR별 선적일 맵 구축
+    ship_rows = conn.execute("""
+        SELECT bor_number, shipping_date, arrival_date
+        FROM shipping_mail_info
+        WHERE shipping_date != '' AND shipping_date IS NOT NULL
+    """).fetchall()
+
+    # bor_number → {shipping_date, arrival_date}  (PI단위 + 모델단위 모두)
+    ship_map = {}
+    for sr in ship_rows:
+        ship_map[sr[0]] = {"shipping_date": sr[1] or "", "arrival_date": sr[2] or ""}
+
+    # 2) 오더리스트 전체 조회
     rows = conn.execute("""
         SELECT model_name, sheet_tab, order_no, order_date, qty, unit
         FROM orderlist_items
         WHERE model_name != ''
-        ORDER BY sheet_tab DESC
+        ORDER BY order_date DESC
     """).fetchall()
 
     order_map = {}
     for r in rows:
         model = r[0].strip().upper()
+        order_no = r[2] or ""
+        order_date = _normalize_date(r[3])
+
+        # 선적일 조회: 모델별 키(PI_MODEL) 우선 → PI/BOR 단위 fallback
+        model_key = f"{order_no}_{model}"
+        ship_info = ship_map.get(model_key) or ship_map.get(order_no) or {}
+        shipping_date = ship_info.get("shipping_date", "")
+        arrival_date = ship_info.get("arrival_date", "")
+
+        # 선적일이 오늘 이전이면 이미 입고됨 → 제외
+        if shipping_date and shipping_date < today:
+            continue
+
         if model not in order_map:
             order_map[model] = []
         order_map[model].append({
-            "sheet_tab": r[1], "order_no": r[2],
-            "order_date": _normalize_date(r[3]), "qty": r[4], "unit": r[5],
+            "sheet_tab": r[1], "order_no": order_no,
+            "order_date": order_date, "qty": r[4], "unit": r[5],
+            "shipping_date": shipping_date, "arrival_date": arrival_date,
         })
+
+    # 3) 모델당 최신 2건만 유지 (order_date DESC 이미 정렬됨)
+    for model in order_map:
+        order_map[model] = order_map[model][:2]
+
     return order_map
 
 
@@ -379,13 +416,32 @@ def analyze_all_targets(conn) -> dict:
     for target in targets:
         analysis = analyze_single_product(conn, target, order_map)
 
-        # 선적 정보 매칭
+        # 선적 정보 매칭: pending_orders에서 먼저, 없으면 shipping_map fallback
         model_key = (analysis.get("model_name") or "").strip().upper()
         ship_info = shipping_map.get(model_key, {})
-        analysis["shipping_date"] = ship_info.get("shipping_date", "")
-        analysis["arrival_date"] = ship_info.get("arrival_date", "")
+
+        # pending_orders에 포함된 선적 정보 수집
+        order_ships = [
+            {"shipping_date": o["shipping_date"], "arrival_date": o["arrival_date"]}
+            for o in analysis.get("pending_orders", [])
+            if o.get("shipping_date")
+        ]
+
+        if order_ships:
+            analysis["shipping_date"] = order_ships[0]["shipping_date"]
+            analysis["arrival_date"] = order_ships[0]["arrival_date"]
+            analysis["shipping_entries"] = order_ships  # 복수건 표시용
+        elif ship_info:
+            analysis["shipping_date"] = ship_info.get("shipping_date", "")
+            analysis["arrival_date"] = ship_info.get("arrival_date", "")
+            analysis["shipping_entries"] = [{"shipping_date": ship_info.get("shipping_date", ""), "arrival_date": ship_info.get("arrival_date", "")}] if ship_info.get("shipping_date") else []
+        else:
+            analysis["shipping_date"] = ""
+            analysis["arrival_date"] = ""
+            analysis["shipping_entries"] = []
+
         analysis["shipping_bor"] = ship_info.get("bor_number", "")
-        analysis["shipping_status"] = ship_info.get("status", "")  # shipping / delayed
+        analysis["shipping_status"] = ship_info.get("status", "")
 
         # 선적일 확인된 제품은 여유 상태로 전환 (미발주→여유)
         if analysis.get("shipping_date"):
