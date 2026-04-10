@@ -8850,7 +8850,7 @@ function reconcileNewMatch() {
         html += `<div style="margin-top:10px;padding:10px 14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:12px">
           <b style="color:#dc2626">⚠️ 품목코드 미매핑 ${d.unmapped_models.length}건</b> — ERP 전송 시 제외됩니다: ${d.unmapped_models.join(', ')}
         </div>`;
-        </tr></tfoot></table>`;
+      }
       if (d.oem_items && d.oem_items.length > 0) {
         html += `<div style="margin-top:10px;padding:8px 12px;background:#fef3c7;border-radius:6px;font-size:12px">
           <b>⚠️ OEM 미매핑 ${d.oem_items.length}건</b> (수동 입력 필요): ${d.oem_items.map(o=>o.description?.substring(0,30)).join(', ')}
