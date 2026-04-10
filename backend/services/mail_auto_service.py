@@ -375,7 +375,7 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                     
                     # ERP 라인 (관세면제 품목: ×1.17, 관세 품목: ×1.2)
                     if hs_engine.is_erp_target(model):
-                        tax_rate = 1.2 if result.rule_name in ("rack_cabinet_body", "open_rack", "high_rack") else 1.18
+                        tax_rate = 1.22 if result.rule_name in ("rack_cabinet_body", "open_rack", "high_rack") else 1.18
                         erp_lines.append({
                             "prod_cd": model,
                             "qty": _safe_float(c_val),
@@ -416,7 +416,7 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                 })
                 
                 if hs_engine.is_erp_target(model):
-                    tax_rate = 1.2 if result.rule_name in ("rack_cabinet_body", "open_rack", "high_rack") else 1.18
+                    tax_rate = 1.22 if result.rule_name in ("rack_cabinet_body", "open_rack", "high_rack") else 1.18
                     erp_lines.append({
                         "prod_cd": model,
                         "qty": _safe_float(c_val),
