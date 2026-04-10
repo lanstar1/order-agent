@@ -352,7 +352,7 @@ def analyze_single_product(conn, target: dict, order_map: dict = None) -> dict:
         "recommended_qty": recommended_qty,
         "order_deadline": order_deadline,
         "has_pending_order": has_pending_order,
-        "pending_orders": pending_orders[:3],
+        "pending_orders": pending_orders,
         "daily_sales": daily[-30:],  # 최근 30일만 (차트용)
     }
 
@@ -386,6 +386,14 @@ def analyze_all_targets(conn) -> dict:
         analysis["arrival_date"] = ship_info.get("arrival_date", "")
         analysis["shipping_bor"] = ship_info.get("bor_number", "")
         analysis["shipping_status"] = ship_info.get("status", "")  # shipping / delayed
+
+        # 선적일 확인된 제품은 여유 상태로 전환 (미발주→여유)
+        if analysis.get("shipping_date"):
+            if analysis["status"] in ("urgent", "warning"):
+                analysis["status"] = "safe"
+                analysis["status_label"] = "여유"
+                analysis["need_order"] = False
+                analysis["recommended_qty"] = 0
 
         results.append(analysis)
         summary["total"] += 1

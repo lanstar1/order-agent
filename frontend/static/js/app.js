@@ -5773,9 +5773,17 @@ function ipRenderTable(items) {
   tbody.innerHTML = filtered.map(i => {
     const stockout = i.days_until_stockout >= 9999 ? '-' : `${Math.round(i.days_until_stockout)}일`;
     const stockoutStyle = i.days_until_stockout <= i.lead_time_days ? 'color:#DC2626;font-weight:700' : '';
-    const orderInfo = i.has_pending_order
-      ? `<span style="color:#059669;font-size:11px" title="${(i.pending_orders||[]).map(o=>o.order_no+' '+o.qty+'개').join(', ')}">✅ ${i.pending_orders[0]?.order_date||''} ${(i.pending_orders[0]?.qty||0).toLocaleString()}개</span>`
-      : (i.need_order ? '<span style="color:#DC2626;font-size:11px">❌ 미발주</span>' : '<span style="color:#94a3b8;font-size:11px">여유</span>');
+    const orders = i.pending_orders || [];
+    let orderInfo;
+    if (i.has_pending_order && orders.length > 0) {
+      const totalQty = orders.reduce((s, o) => s + (o.qty || 0), 0);
+      const tags = orders.map(o => `<span style="display:inline-block;padding:2px 6px;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:4px;white-space:nowrap;font-size:10px;color:#065F46">${o.order_date||'-'} ${(o.qty||0).toLocaleString()}</span>`).join(' ');
+      orderInfo = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap"><span style="font-weight:700;color:#059669;font-size:12px;white-space:nowrap">✅ ${totalQty.toLocaleString()}</span>${tags}</div>`;
+    } else if (i.shipping_date) {
+      orderInfo = '<span style="color:#7c3aed;font-size:11px">🚢 선적확인</span>';
+    } else {
+      orderInfo = i.need_order ? '<span style="color:#DC2626;font-size:11px">❌ 미발주</span>' : '<span style="color:#94a3b8;font-size:11px">여유</span>';
+    }
 
     return `<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="ipShowDetail(${i.id})">
       <td style="padding:8px">${statusBadge(i.status, i.status_label)}</td>
