@@ -186,19 +186,8 @@ class HSCodeEngine:
                         note=rule["note"],
                     )
         
-        # ===== 2단계: 설명 키워드로 세부 매칭 =====
-        # "Crimping Tool" 설명 키워드가 NETWORKS 카테고리보다 먼저 잡히도록
-        for rule in self.HS_CODE_RULES:
-            for kw in rule.get("description_keywords", []):
-                if kw in desc_upper or kw in cat_upper:
-                    return HSCodeResult(
-                        hs_code=rule["hs_code"],
-                        rule_name=rule["name"],
-                        confidence="category",
-                        note=f"{rule['note']} (설명 매칭)",
-                    )
-        
-        # ===== 3단계: 카테고리 키워드 매칭 =====
+        # ===== 2단계: 카테고리 키워드 매칭 (설명보다 우선) =====
+        # NETWORKS 카테고리 안 제품은 HDMI/Cable 등이 설명에 있어도 8536.69
         for rule in self.HS_CODE_RULES:
             for kw in rule.get("category_keywords", []):
                 if kw in cat_upper:
@@ -207,6 +196,17 @@ class HSCodeEngine:
                         rule_name=rule["name"],
                         confidence="category",
                         note=rule["note"],
+                    )
+        
+        # ===== 3단계: 설명 키워드 매칭 (카테고리에서 안 잡힌 경우만) =====
+        for rule in self.HS_CODE_RULES:
+            for kw in rule.get("description_keywords", []):
+                if kw in desc_upper or kw in cat_upper:
+                    return HSCodeResult(
+                        hs_code=rule["hs_code"],
+                        rule_name=rule["name"],
+                        confidence="category",
+                        note=f"{rule['note']} (설명 매칭)",
                     )
         
         # ===== 2단계: SKIP 규칙 (HS코드 불필요) =====
