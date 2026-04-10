@@ -612,10 +612,15 @@ def _parse_date_value(val) -> str:
 def save_nam_shipping_info(conn, scan_results: list):
     """NAM 거래처 선적 정보를 shipping_mail_info + orderlist_items 테이블에 저장"""
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+
+    # 최신 2건의 PI만 유지 (email_date 기준 내림차순 정렬)
+    scan_results = sorted(scan_results, key=lambda x: x.get("email_date", ""), reverse=True)[:2]
 
     # 이전 NAM 선적 레코드 정리 후 새로 등록
     try:
         conn.execute("DELETE FROM shipping_mail_info WHERE bor_number LIKE 'LAN-PI%'")
+        conn.execute("DELETE FROM orderlist_items WHERE sheet_tab LIKE 'NAM-%'")
         conn.commit()
     except Exception:
         try:
@@ -628,6 +633,12 @@ def save_nam_shipping_info(conn, scan_results: list):
     for result in scan_results:
         pi = result["pi_number"]
         items = result.get("items", [])
+
+        # 선적일이 오늘 이전인 품목은 이미 입고된 것으로 판단하여 제외
+        items = [it for it in items if not it.get("shipping_date") or it["shipping_date"] >= today]
+        if not items:
+            continue
+
         models_list = [it["model"] for it in items if it.get("model")]
         models_csv = ",".join(models_list)
 
