@@ -3952,13 +3952,14 @@ function csRenderStatsBar(stats) {
   const bar = document.getElementById("cs-stats-bar");
   if (!bar) return;
   const sc = stats.status_counts || {};
+  const tc = stats.type_counts || {};
   const processing = (sc["접수완료"]||0) + (sc["물류수령"]||0) + (sc["기술인계"]||0) + (sc["테스트완료"]||0);
   const items = [
     { label: "전체", num: stats.total||0, color: "#111827", filter: "" },
     { label: "처리중", num: processing, color: "#2563eb", filter: "active" },
+    { label: "미출고", num: tc["미출고"]||0, color: "#ea580c", filter: "backorder" },
     { label: "지연 (7일+)", num: stats.overdue_count||0, color: "#ef4444", filter: "overdue" },
     { label: "오늘 접수", num: stats.today_count||0, color: "#7c3aed", filter: "today" },
-    { label: "종결", num: sc["처리종결"]||0, color: "#6b7280", filter: "처리종결" },
     { label: "평균 처리일", num: (stats.avg_resolution_days||0)+"일", color: "#0891b2", filter: "" },
   ];
   bar.innerHTML = items.map(i => `
@@ -4136,8 +4137,8 @@ async function csLoadKanban() {
           const isOverdue = _isOverdue(t);
           const chColor = CS_CHANNEL_COLORS[t.sales_channel] || "#9ca3af";
           return `<div class="cs-kanban-item ${isOverdue?'overdue':''}" onclick="csShowDetail('${t.ticket_id}')">
-            <div class="cust">${t.customer_name}</div>
-            <div class="prod">${t.product_name}</div>
+            <div class="cust">${t.customer_name}${t.cs_type && t.cs_type !== '반품' ? ` <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:0 4px;border-radius:4px;font-weight:500">${t.cs_type}</span>` : ''}</div>
+            <div class="prod">${t.product_name}${t.quantity>1?` x${t.quantity}`:''}</div>
             <div class="meta">
               ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor}">${t.sales_channel}</span>` : '<span></span>'}
               <span>${_csDateShort(t.created_at)}${isOverdue ? ' ⚠️' : ''}</span>
@@ -4237,9 +4238,22 @@ function csStatCardClick(filter) {
   if (filter === "처리종결") {
     _csStatus = "처리종결";
     _csView = "list";
-    const viewTabs = document.querySelectorAll("#page-cs_rma .cs-pipe-tab");
-    viewTabs.forEach(t => { if(t.textContent.includes('리스트')) { csSwitchView(t, 'list'); }});
+    const tabs = document.querySelectorAll("#page-cs_rma .cs-pipe-tab");
+    tabs.forEach(t => t.classList.remove("active"));
+    tabs.forEach(t => { if(t.textContent.includes('리스트')) t.classList.add("active"); });
+    document.getElementById("cs-kanban-board").style.display = "none";
+    document.getElementById("cs-list-view").style.display = "block";
+    document.getElementById("cs-backorder-view").style.display = "none";
     csLoadTickets();
+  } else if (filter === "backorder") {
+    _csView = "backorder";
+    const tabs = document.querySelectorAll("#page-cs_rma .cs-pipe-tab");
+    tabs.forEach(t => t.classList.remove("active"));
+    tabs.forEach(t => { if(t.textContent.includes('미출고')) t.classList.add("active"); });
+    document.getElementById("cs-kanban-board").style.display = "none";
+    document.getElementById("cs-list-view").style.display = "none";
+    document.getElementById("cs-backorder-view").style.display = "block";
+    csLoadBackorder();
   }
 }
 

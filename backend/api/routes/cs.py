@@ -490,24 +490,35 @@ async def upload_file(
 
     # 파일 검증
     ext = Path(file.filename).suffix.lower() if file.filename else ".bin"
-    allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".avi", ".webm", ".pdf"}
+    video_exts = {".mp4", ".mov", ".avi", ".webm", ".mkv", ".m4v", ".flv", ".wmv", ".3gp", ".ts", ".mts"}
+    image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tiff", ".tif", ".svg"}
+    doc_exts = {".pdf", ".xlsx", ".xls", ".csv", ".doc", ".docx", ".txt", ".zip"}
+    allowed_exts = video_exts | image_exts | doc_exts
     if ext not in allowed_exts:
         raise HTTPException(400, f"허용되지 않는 파일 형식: {ext}")
 
-    video_exts = {".mp4", ".mov", ".avi", ".webm"}
-    image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     file_type = "video" if ext in video_exts else "image" if ext in image_exts else "document"
 
     mime_map = {
         ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-        ".gif": "image/gif", ".webp": "image/webp",
+        ".gif": "image/gif", ".webp": "image/webp", ".heic": "image/heic",
+        ".heif": "image/heif", ".bmp": "image/bmp", ".tiff": "image/tiff",
+        ".tif": "image/tiff", ".svg": "image/svg+xml",
         ".mp4": "video/mp4", ".mov": "video/quicktime",
         ".avi": "video/x-msvideo", ".webm": "video/webm",
+        ".mkv": "video/x-matroska", ".m4v": "video/x-m4v",
+        ".flv": "video/x-flv", ".wmv": "video/x-ms-wmv",
+        ".3gp": "video/3gpp", ".ts": "video/mp2t", ".mts": "video/mp2t",
         ".pdf": "application/pdf",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".xls": "application/vnd.ms-excel", ".csv": "text/csv",
+        ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".txt": "text/plain", ".zip": "application/zip",
     }
     mime_type = mime_map.get(ext, file.content_type or "application/octet-stream")
     original_name = file.filename or f"file{ext}"
-    max_size = 50 * 1024 * 1024  # 50MB
+    max_size = 100 * 1024 * 1024  # 100MB
 
     # ── 1단계: 디스크에 직접 스트리밍 저장 ──
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
