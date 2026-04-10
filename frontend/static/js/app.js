@@ -8792,7 +8792,7 @@ function reconcileNewMatch() {
           <thead><tr><th>품목코드</th><th style="text-align:right">수량</th><th style="text-align:right">USD단가</th><th style="text-align:center">세율</th><th style="text-align:right">KRW단가</th><th style="text-align:right">공급가</th></tr></thead>
           <tbody>`;
       d.erp_lines.forEach(l => {
-        const taxLabel = l.tax_rate === 1.17 ? '<span style="color:#059669">×1.17</span>' : '<span style="color:#2563eb">×1.20</span>';
+        const taxLabel = l.tax_rate === 1.2 ? '<span style="color:#dc2626">×1.20</span>' : '<span style="color:#2563eb">×1.18</span>';
         html += `<tr>
           <td><b>${l.prod_cd}</b></td>
           <td style="text-align:right">${l.qty?.toLocaleString()}</td>
