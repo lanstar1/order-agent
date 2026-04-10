@@ -4788,13 +4788,63 @@ async function csQuickResolve(ticketId) {
 async function csUploadFile(ticketId, input) {
   const files = input.files;
   if (!files.length) return;
-  for (const file of files) {
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (file.size > 100 * 1024 * 1024) { alert(`파일 크기 초과 (100MB): ${file.name}`); continue; }
+
+    // 진행률 오버레이
+    const overlay = document.createElement("div");
+    overlay.id = "cs-upload-overlay";
+    overlay.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10000">
+      <div style="background:#fff;border-radius:12px;padding:24px 32px;min-width:300px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+        <div id="cs-upload-title" style="font-size:14px;font-weight:600;margin-bottom:4px">📎 파일 업로드 중...</div>
+        <div style="font-size:12px;color:#9ca3af;margin-bottom:12px">${file.name}${files.length>1?` (${i+1}/${files.length})`:''}</div>
+        <div style="background:#e5e7eb;border-radius:8px;height:8px;overflow:hidden;margin-bottom:8px">
+          <div id="cs-upload-bar" style="background:#2563eb;height:100%;width:0%;transition:width 0.2s;border-radius:8px"></div>
+        </div>
+        <div id="cs-upload-pct" style="font-size:13px;color:#6b7280">0%</div>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
     const formData = new FormData();
     formData.append("file", file);
+
     try {
-      await api.postForm(`/api/cs/tickets/${ticketId}/upload`, formData);
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/cs/tickets/${ticketId}/upload`);
+        const token = localStorage.getItem("jwt_token");
+        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round(e.loaded / e.total * 100);
+            const bar = document.getElementById("cs-upload-bar");
+            const txt = document.getElementById("cs-upload-pct");
+            if (bar) bar.style.width = pct + "%";
+            if (txt) txt.textContent = pct + "% (" + (e.loaded/1024/1024).toFixed(1) + "MB / " + (e.total/1024/1024).toFixed(1) + "MB)";
+            if (pct >= 100) {
+              const title = document.getElementById("cs-upload-title");
+              if (title) title.textContent = "⏳ 서버 처리 중...";
+            }
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)); } catch(_) { resolve({}); }
+          } else { reject(new Error(xhr.responseText || `업로드 실패 (${xhr.status})`)); }
+        };
+        xhr.onerror = () => reject(new Error("네트워크 오류"));
+        xhr.timeout = 300000;
+        xhr.ontimeout = () => reject(new Error("업로드 시간 초과 (5분)"));
+        xhr.send(formData);
+      });
     } catch(e) { alert("업로드 오류: " + (e.message||e)); }
+    finally { overlay.remove(); }
   }
+  await new Promise(r => setTimeout(r, 500));
   csShowDetail(ticketId);
 }
 
