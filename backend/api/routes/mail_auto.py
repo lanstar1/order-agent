@@ -291,11 +291,13 @@ async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float =
     erp_preview = []
     for item in result["erp_lines"]:
         price_usd = item.get("price_usd", 0)
-        price_krw = round(price_usd * 1.2 * rate)
+        tax_rate = item.get("tax_rate", 1.2)
+        price_krw = round(price_usd * tax_rate * rate)
         erp_preview.append({
             "prod_cd": item["prod_cd"],
             "qty": item["qty"],
             "price_usd": price_usd,
+            "tax_rate": tax_rate,
             "price_krw": price_krw,
             "supply_amt": round(price_krw * item["qty"]),
             "description": item.get("description", ""),

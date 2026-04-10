@@ -8789,20 +8789,22 @@ function reconcileNewMatch() {
           </button>
         </div>
         <table class="table table-sm" style="font-size:12px">
-          <thead><tr><th>품목코드</th><th style="text-align:right">수량</th><th style="text-align:right">USD단가</th><th style="text-align:right">KRW단가</th><th style="text-align:right">공급가</th></tr></thead>
+          <thead><tr><th>품목코드</th><th style="text-align:right">수량</th><th style="text-align:right">USD단가</th><th style="text-align:center">세율</th><th style="text-align:right">KRW단가</th><th style="text-align:right">공급가</th></tr></thead>
           <tbody>`;
       d.erp_lines.forEach(l => {
+        const taxLabel = l.tax_rate === 1.17 ? '<span style="color:#059669">×1.17</span>' : '<span style="color:#2563eb">×1.20</span>';
         html += `<tr>
           <td><b>${l.prod_cd}</b></td>
           <td style="text-align:right">${l.qty?.toLocaleString()}</td>
           <td style="text-align:right">\$${l.price_usd?.toFixed(3)}</td>
+          <td style="text-align:center">${taxLabel}</td>
           <td style="text-align:right">₩${l.price_krw?.toLocaleString()}</td>
           <td style="text-align:right">₩${l.supply_amt?.toLocaleString()}</td>
         </tr>`;
       });
       html += `</tbody>
         <tfoot><tr style="font-weight:700;border-top:2px solid #e2e8f0">
-          <td>합계 (${d.total_lines}건)</td><td></td><td></td><td></td>
+          <td>합계 (${d.total_lines}건)</td><td></td><td></td><td></td><td></td>
           <td style="text-align:right;color:#7c3aed">₩${d.total_amount?.toLocaleString()}</td>
         </tr></tfoot></table>`;
       if (d.oem_items && d.oem_items.length > 0) {

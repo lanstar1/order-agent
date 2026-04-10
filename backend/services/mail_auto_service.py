@@ -373,12 +373,14 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                         "confidence": result.confidence,
                     })
                     
-                    # ERP 라인
+                    # ERP 라인 (관세면제 품목: ×1.17, 관세 품목: ×1.2)
                     if hs_engine.is_erp_target(model):
+                        tax_rate = 1.17 if result.confidence == "skip" else 1.2
                         erp_lines.append({
                             "prod_cd": model,
                             "qty": _safe_float(c_val),
                             "price_usd": _safe_float(f_val),
+                            "tax_rate": tax_rate,
                             "description": combined_desc[:100],
                         })
                     else:
@@ -414,10 +416,12 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                 })
                 
                 if hs_engine.is_erp_target(model):
+                    tax_rate = 1.17 if result.confidence == "skip" else 1.2
                     erp_lines.append({
                         "prod_cd": model,
                         "qty": _safe_float(c_val),
                         "price_usd": _safe_float(f_val),
+                        "tax_rate": tax_rate,
                         "description": str(a_val)[:100],
                     })
                 elif not model.startswith(("LS-", "LSP-", "LSN-", "ZOT-")):
@@ -470,8 +474,8 @@ async def create_purchase_slip(
     lines = []
     for item in erp_lines:
         price_usd = item.get("price_usd", 0)
-        # 단가: USD × 1.2(관세/부가세) × 환율
-        price_krw = round(price_usd * 1.2 * exchange_rate)
+        tax_rate = item.get("tax_rate", 1.2)  # 관세면제: 1.17, 관세: 1.2
+        price_krw = round(price_usd * tax_rate * exchange_rate)
         
         lines.append({
             "prod_cd": item["prod_cd"],
