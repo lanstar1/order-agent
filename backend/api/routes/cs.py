@@ -71,6 +71,35 @@ class FinalAction(BaseModel):
     memo: str = ""
 
 
+class TicketEdit(BaseModel):
+    customer_name: Optional[str] = None
+    contact_info: Optional[str] = None
+    product_name: Optional[str] = None
+    serial_number: Optional[str] = None
+    defect_symptom: Optional[str] = None
+    sales_channel: Optional[str] = None
+    order_number: Optional[str] = None
+    cs_type: Optional[str] = None
+    reason_category: Optional[str] = None
+    quantity: Optional[int] = None
+    shipping_cost_status: Optional[str] = None
+    return_courier: Optional[str] = None
+    return_tracking_no: Optional[str] = None
+
+
+class BackorderCreate(BaseModel):
+    sales_channel: str = ""
+    order_date: str = ""
+    order_number: str = ""
+    recipient_name: str
+    recipient_phone: str = ""
+    product_name: str
+    option_info: str = ""
+    quantity: int = 1
+    status: str = "미출고"
+    memo: str = ""
+
+
 # ─── 티켓 ID 생성 ───────────────────
 def _generate_ticket_id() -> str:
     """고유 접수번호 생성: CS-YYYYMMDD-XXXX"""
@@ -885,6 +914,172 @@ async def delete_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
     except Exception as e:
         conn.rollback()
         raise HTTPException(500, f"삭제 실패: {e}")
+    finally:
+        conn.close()
+
+
+# ── [12-1] 티켓 수정 ──
+@router.put("/tickets/{ticket_id}/edit")
+async def edit_ticket(ticket_id: str, data: TicketEdit, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    try:
+        ticket = conn.execute("SELECT ticket_id FROM cs_tickets WHERE ticket_id = ?", (ticket_id,)).fetchone()
+        if not ticket:
+            raise HTTPException(404, "티켓을 찾을 수 없습니다.")
+
+        updates = []
+        params = []
+        for field in ["customer_name", "contact_info", "product_name", "serial_number",
+                       "defect_symptom", "sales_channel", "order_number", "cs_type",
+                       "reason_category", "quantity", "shipping_cost_status",
+                       "return_courier", "return_tracking_no"]:
+            val = getattr(data, field, None)
+            if val is not None:
+                updates.append(f"{field} = ?")
+                params.append(val)
+
+        if not updates:
+            return {"success": True, "message": "변경 사항 없음"}
+
+        updates.append("updated_at = ?")
+        params.append(now_kst())
+        params.append(ticket_id)
+
+        conn.execute(f"UPDATE cs_tickets SET {', '.join(updates)} WHERE ticket_id = ?", params)
+        _log_action(conn, ticket_id, "내용수정", user["emp_cd"], user["name"],
+                     f"수정 항목: {', '.join(f.split(' = ')[0] for f in updates[:-1])}")
+        conn.commit()
+        return {"success": True, "message": "수정 완료"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, f"수정 실패: {e}")
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════
+#  미출고 관리 API
+# ═══════════════════════════════════════
+BACKORDER_STATUSES = ["미출고", "출고완료", "취소"]
+
+@router.get("/backorders")
+async def list_backorders(
+    status: str = Query("", description="처리상태 필터"),
+    channel: str = Query("", description="채널 필터"),
+    search: str = Query("", description="검색"),
+    page: int = Query(1, ge=1),
+    size: int = Query(100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    conn = get_connection()
+    try:
+        where, params = [], []
+        if status:
+            where.append("status = ?"); params.append(status)
+        if channel:
+            where.append("sales_channel = ?"); params.append(channel)
+        if search:
+            st = f"%{search}%"
+            where.append("(recipient_name LIKE ? OR order_number LIKE ? OR product_name LIKE ?)")
+            params.extend([st, st, st])
+        wsql = (" WHERE " + " AND ".join(where)) if where else ""
+
+        total = conn.execute(f"SELECT COUNT(*) as cnt FROM cs_backorders{wsql}", params).fetchone()["cnt"]
+        offset = (page - 1) * size
+        rows = conn.execute(
+            f"SELECT * FROM cs_backorders{wsql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params + [size, offset]
+        ).fetchall()
+
+        # 통계
+        stats_rows = conn.execute("SELECT status, COUNT(*) as cnt FROM cs_backorders GROUP BY status").fetchall()
+        status_counts = {r["status"]: r["cnt"] for r in stats_rows}
+        ch_rows = conn.execute("SELECT sales_channel, COUNT(*) as cnt FROM cs_backorders WHERE status='미출고' GROUP BY sales_channel ORDER BY cnt DESC").fetchall()
+        channel_counts = {r["sales_channel"]: r["cnt"] for r in ch_rows}
+
+        return {
+            "backorders": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "status_counts": status_counts,
+            "channel_counts": channel_counts,
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/backorders")
+async def create_backorder(data: BackorderCreate, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    try:
+        now = now_kst()
+        conn.execute(
+            """INSERT INTO cs_backorders
+               (sales_channel, order_date, order_number, recipient_name, recipient_phone,
+                product_name, option_info, quantity, status, memo, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (data.sales_channel, data.order_date, data.order_number, data.recipient_name,
+             data.recipient_phone, data.product_name, data.option_info, data.quantity,
+             data.status, data.memo, user["emp_cd"], now, now)
+        )
+        conn.commit()
+        return {"success": True, "message": "미출고 접수 완료"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, f"접수 실패: {e}")
+    finally:
+        conn.close()
+
+
+@router.put("/backorders/{bo_id}")
+async def update_backorder(bo_id: int, data: BackorderCreate, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    try:
+        conn.execute(
+            """UPDATE cs_backorders SET sales_channel=?, order_date=?, order_number=?, recipient_name=?,
+               recipient_phone=?, product_name=?, option_info=?, quantity=?, status=?, memo=?, updated_at=?
+               WHERE id=?""",
+            (data.sales_channel, data.order_date, data.order_number, data.recipient_name,
+             data.recipient_phone, data.product_name, data.option_info, data.quantity,
+             data.status, data.memo, now_kst(), bo_id)
+        )
+        conn.commit()
+        return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        conn.close()
+
+
+@router.delete("/backorders/{bo_id}")
+async def delete_backorder(bo_id: int, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM cs_backorders WHERE id = ?", (bo_id,))
+        conn.commit()
+        return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        conn.close()
+
+
+@router.put("/backorders/{bo_id}/status")
+async def update_backorder_status(bo_id: int, status: str = Query(...), user: dict = Depends(get_current_user)):
+    if status not in BACKORDER_STATUSES:
+        raise HTTPException(400, f"유효하지 않은 상태: {status}")
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE cs_backorders SET status=?, updated_at=? WHERE id=?", (status, now_kst(), bo_id))
+        conn.commit()
+        return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, str(e))
     finally:
         conn.close()
 

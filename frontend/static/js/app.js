@@ -3906,7 +3906,7 @@ async function csInit() {
   if (searchInput) searchInput.value = "";
 
   // What's New 팝업 체크
-  if (!localStorage.getItem("cs_whatsnew_v2_dismissed")) {
+  if (!localStorage.getItem("cs_whatsnew_v22_dismissed")) {
     document.getElementById("cs-whatsnew-overlay").style.display = "block";
   }
 
@@ -4064,39 +4064,268 @@ function csBackorderTab(el, status) {
 async function csLoadBackorder() {
   const list = document.getElementById("cs-backorder-list");
   if (!list) return;
-  const params = new URLSearchParams({ size: "200", cs_type: "미출고" });
+  const params = new URLSearchParams({ size: "200" });
   if (_csBackorderStatus) params.set("status", _csBackorderStatus);
   if (_csChannel) params.set("channel", _csChannel);
   if (_csSearch) params.set("search", _csSearch);
   try {
-    const res = await api.get(`/api/cs/tickets?${params}`);
-    const tickets = res.tickets || [];
-    if (!tickets.length) {
-      list.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af">미출고/지연 건이 없습니다.<br><br><button class="btn btn-primary" onclick="csShowCreateForm()" style="font-size:13px">+ 미출고 접수</button></div>';
+    const res = await api.get(`/api/cs/backorders?${params}`);
+    const items = res.backorders || [];
+    const sc = res.status_counts || {};
+    const cc = res.channel_counts || {};
+
+    // 통계 바
+    let statsHtml = `<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="cs-stat-card" onclick="csBackorderTab(document.querySelector('[data-bostatus=\\'\\']'),'')"><div class="num">${res.total||0}</div><div class="label">전체</div></div>
+      <div class="cs-stat-card"><div class="num" style="color:#ea580c">${sc["미출고"]||0}</div><div class="label">미출고</div></div>
+      <div class="cs-stat-card"><div class="num" style="color:#16a34a">${sc["출고완료"]||0}</div><div class="label">출고완료</div></div>
+      <div class="cs-stat-card"><div class="num" style="color:#6b7280">${sc["취소"]||0}</div><div class="label">취소</div></div>
+    </div>`;
+
+    if (!items.length) {
+      list.innerHTML = statsHtml + '<div style="text-align:center;padding:40px;color:#9ca3af">미출고 내역이 없습니다.<br><br><button class="btn btn-primary" onclick="csShowBackorderForm()" style="font-size:13px">+ 미출고 접수</button></div>';
       return;
     }
-    list.innerHTML = tickets.map(t => {
-      const chColor = CS_CHANNEL_COLORS[t.sales_channel] || "#9ca3af";
-      const isOverdue = _isOverdue(t);
-      return `<div class="cs-ticket-card ${isOverdue?'overdue':''}" onclick="csShowDetail('${t.ticket_id}')">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
-          <div>
-            <span style="font-weight:600;color:#111827">${t.customer_name}</span>
-            <span style="font-size:12px;color:#9ca3af;margin-left:8px">${t.ticket_id}</span>
-            ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor};margin-left:6px">${t.sales_channel}</span>` : ''}
-            <span style="font-size:11px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:6px;margin-left:4px">미출고</span>
-          </div>
-          <span class="cs-status-badge cs-status-${t.current_status}">${t.current_status}</span>
+
+    // 테이블
+    let tbl = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
+        <th style="padding:8px 10px;text-align:left;font-weight:600;color:#374151;white-space:nowrap">사이트</th>
+        <th style="padding:8px 10px;text-align:left;font-weight:600;color:#374151;white-space:nowrap">주문확인일</th>
+        <th style="padding:8px 10px;text-align:left;font-weight:600;color:#374151;white-space:nowrap">주문번호</th>
+        <th style="padding:8px 10px;text-align:left;font-weight:600;color:#374151;white-space:nowrap">수취인명</th>
+        <th style="padding:8px 10px;text-align:left;font-weight:600;color:#374151;white-space:nowrap">상품명</th>
+        <th style="padding:8px 10px;text-align:left;font-weight:600;color:#374151;white-space:nowrap">옵션</th>
+        <th style="padding:8px 6px;text-align:center;font-weight:600;color:#374151">수량</th>
+        <th style="padding:8px 10px;text-align:center;font-weight:600;color:#374151">처리</th>
+        <th style="padding:8px 6px;text-align:center;font-weight:600;color:#374151">관리</th>
+      </tr></thead><tbody>`;
+
+    const statusStyles = {"미출고":"background:#fef3c7;color:#92400e","출고완료":"background:#d1fae5;color:#065f46","취소":"background:#f3f4f6;color:#6b7280"};
+    items.forEach(b => {
+      const chColor = CS_CHANNEL_COLORS[b.sales_channel] || "#9ca3af";
+      tbl += `<tr style="border-bottom:1px solid #f3f4f6;transition:background .1s" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
+        <td style="padding:8px 10px"><span class="cs-ch-badge" style="background:${chColor}15;color:${chColor}">${b.sales_channel||'-'}</span></td>
+        <td style="padding:8px 10px;white-space:nowrap;color:#6b7280">${(b.order_date||'').slice(0,10)}</td>
+        <td style="padding:8px 10px;font-size:12px;color:#374151;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${b.order_number||''}">${b.order_number||'-'}</td>
+        <td style="padding:8px 10px;font-weight:500;color:#111827;white-space:nowrap">${b.recipient_name}</td>
+        <td style="padding:8px 10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${b.product_name}">${b.product_name}</td>
+        <td style="padding:8px 10px;font-size:12px;color:#6b7280;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${b.option_info||''}">${b.option_info||'-'}</td>
+        <td style="padding:8px 6px;text-align:center">${b.quantity}</td>
+        <td style="padding:8px 10px;text-align:center">
+          <select onchange="csUpdateBackorderStatus(${b.id},this.value)" style="padding:2px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-weight:600;${statusStyles[b.status]||''}">
+            <option value="미출고" ${b.status==='미출고'?'selected':''}>미출고</option>
+            <option value="출고완료" ${b.status==='출고완료'?'selected':''}>출고완료</option>
+            <option value="취소" ${b.status==='취소'?'selected':''}>취소</option>
+          </select>
+        </td>
+        <td style="padding:8px 6px;text-align:center">
+          <button onclick="csEditBackorder(${b.id})" style="background:none;border:none;cursor:pointer;font-size:14px" title="수정">✏️</button>
+          <button onclick="csDeleteBackorder(${b.id})" style="background:none;border:none;cursor:pointer;font-size:14px" title="삭제">🗑</button>
+        </td>
+      </tr>`;
+    });
+    tbl += `</tbody></table></div>`;
+
+    list.innerHTML = statsHtml +
+      `<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-primary" onclick="csShowBackorderForm()" style="font-size:13px">+ 미출고 접수</button></div>` + tbl;
+  } catch(e) { list.innerHTML = `<div style="color:red;padding:20px">오류: ${e.message||e}</div>`; }
+}
+
+async function csUpdateBackorderStatus(id, status) {
+  try {
+    await api.put(`/api/cs/backorders/${id}/status?status=${encodeURIComponent(status)}`);
+    csLoadBackorder();
+    csLoadDashboard();
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+async function csDeleteBackorder(id) {
+  if (!confirm("삭제하시겠습니까?")) return;
+  try { await api.delete(`/api/cs/backorders/${id}`); csLoadBackorder(); csLoadDashboard(); }
+  catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+function csShowBackorderForm(editData) {
+  const d = editData || {};
+  const channels = (_csOptions?.sales_channels) || ["스마트스토어","G마켓","옥션","쿠팡","오늘의집","나비엠알오","자사몰","기타"];
+  document.getElementById("cs-modal-content").innerHTML = `
+    <div class="cs-modal-header"><h3 style="margin:0">${d.id ? '✏️ 미출고 수정' : '📦 미출고 접수'}</h3></div>
+    <div class="cs-modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div class="cs-field-label">사이트(채널)</div>
+          <select id="bo-f-channel" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="">선택</option>${channels.map(c=>`<option value="${c}" ${d.sales_channel===c?'selected':''}>${c}</option>`).join("")}
+          </select>
         </div>
-        <div style="margin-top:6px;font-size:13px;color:#4b5563">${t.product_name}${t.quantity > 1 ? ` x${t.quantity}` : ''}</div>
-        <div style="margin-top:4px;font-size:12px;color:#9ca3af;display:flex;gap:12px">
-          <span>${t.created_at?.slice(0,10) || ''}</span>
-          ${t.reason_category ? `<span>${t.reason_category}</span>` : ''}
-          ${isOverdue ? '<span style="color:#ef4444;font-weight:600">⚠ 지연</span>' : ''}
+        <div>
+          <div class="cs-field-label">주문확인일</div>
+          <input id="bo-f-date" type="date" value="${(d.order_date||'').slice(0,10)}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <div class="cs-field-label">주문번호</div>
+          <input id="bo-f-orderno" value="${d.order_number||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <div class="cs-field-label">수취인명 *</div>
+          <input id="bo-f-name" value="${d.recipient_name||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <div class="cs-field-label">수취인 연락처</div>
+          <input id="bo-f-phone" value="${d.recipient_phone||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <div class="cs-field-label">수량</div>
+          <input id="bo-f-qty" type="number" min="1" value="${d.quantity||1}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div style="grid-column:1/-1">
+          <div class="cs-field-label">상품명 *</div>
+          <input id="bo-f-product" value="${d.product_name||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div style="grid-column:1/-1">
+          <div class="cs-field-label">옵션정보</div>
+          <input id="bo-f-option" value="${d.option_info||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <div class="cs-field-label">처리상태</div>
+          <select id="bo-f-status" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="미출고" ${d.status==='미출고'||!d.status?'selected':''}>미출고</option>
+            <option value="출고완료" ${d.status==='출고완료'?'selected':''}>출고완료</option>
+            <option value="취소" ${d.status==='취소'?'selected':''}>취소</option>
+          </select>
+        </div>
+        <div>
+          <div class="cs-field-label">메모</div>
+          <input id="bo-f-memo" value="${d.memo||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        </div>
+      </div>
+      <div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="csCloseModal()" style="padding:8px 20px;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer">취소</button>
+        <button onclick="csSubmitBackorder(${d.id||0})" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600">${d.id?'수정':'등록'}</button>
+      </div>
+    </div>`;
+  document.getElementById("cs-modal-overlay").style.display = "block";
+}
+
+async function csSubmitBackorder(editId) {
+  const g = id => document.getElementById(id)?.value?.trim() || "";
+  const body = {
+    sales_channel: g("bo-f-channel"), order_date: g("bo-f-date"), order_number: g("bo-f-orderno"),
+    recipient_name: g("bo-f-name"), recipient_phone: g("bo-f-phone"), product_name: g("bo-f-product"),
+    option_info: g("bo-f-option"), quantity: parseInt(g("bo-f-qty")) || 1,
+    status: g("bo-f-status") || "미출고", memo: g("bo-f-memo"),
+  };
+  if (!body.recipient_name || !body.product_name) { alert("수취인명과 상품명은 필수입니다."); return; }
+  try {
+    if (editId) { await api.put(`/api/cs/backorders/${editId}`, body); }
+    else { await api.post("/api/cs/backorders", body); }
+    csCloseModal(); csLoadBackorder(); csLoadDashboard();
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+async function csEditBackorder(id) {
+  try {
+    const res = await api.get(`/api/cs/backorders?size=500`);
+    const item = (res.backorders||[]).find(b => b.id === id);
+    if (item) csShowBackorderForm(item);
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+// ── 티켓 수정 ──
+async function csEditTicket(ticketId) {
+  try {
+    const res = await api.get(`/api/cs/tickets/${ticketId}`);
+    const t = res.ticket || res;
+    const opts = _csOptions || {};
+    const channels = opts.sales_channels || [];
+    const types = opts.cs_types || [];
+    const reasons = opts.reason_categories || [];
+    const shipCosts = opts.shipping_cost_statuses || [];
+
+    document.getElementById("cs-modal-content").innerHTML = `
+      <div class="cs-modal-header"><h3 style="margin:0">✏️ 티켓 수정 — ${ticketId}</h3></div>
+      <div class="cs-modal-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <div class="cs-field-label">판매채널</div>
+            <select id="cs-e-channel" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+              <option value="">선택</option>${channels.map(c=>`<option value="${c}" ${t.sales_channel===c?'selected':''}>${c}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <div class="cs-field-label">CS 유형</div>
+            <select id="cs-e-type" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+              ${types.map(c=>`<option value="${c}" ${t.cs_type===c?'selected':''}>${c}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <div class="cs-field-label">고객명</div>
+            <input id="cs-e-name" value="${t.customer_name||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <div class="cs-field-label">연락처</div>
+            <input id="cs-e-contact" value="${t.contact_info||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <div class="cs-field-label">주문번호</div>
+            <input id="cs-e-orderno" value="${t.order_number||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <div class="cs-field-label">사유 분류</div>
+            <select id="cs-e-reason" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+              <option value="">선택</option>${reasons.map(c=>`<option value="${c}" ${t.reason_category===c?'selected':''}>${c}</option>`).join("")}
+            </select>
+          </div>
+          <div style="grid-column:1/-1">
+            <div class="cs-field-label">상품명</div>
+            <input id="cs-e-product" value="${t.product_name||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <div class="cs-field-label">수량</div>
+            <input id="cs-e-qty" type="number" value="${t.quantity||1}" min="1" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <div class="cs-field-label">배송비 처리</div>
+            <select id="cs-e-shipcost" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+              <option value="">선택</option>${shipCosts.map(c=>`<option value="${c}" ${t.shipping_cost_status===c?'selected':''}>${c}</option>`).join("")}
+            </select>
+          </div>
+          <div style="grid-column:1/-1">
+            <div class="cs-field-label">증상 / 사유</div>
+            <textarea id="cs-e-symptom" rows="3" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical">${t.defect_symptom||''}</textarea>
+          </div>
+          <div>
+            <div class="cs-field-label">반품 택배사</div>
+            <input id="cs-e-retcourier" value="${t.return_courier||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <div class="cs-field-label">반품 송장번호</div>
+            <input id="cs-e-rettrack" value="${t.return_tracking_no||''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          </div>
+        </div>
+        <div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="csShowDetail('${ticketId}')" style="padding:8px 20px;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer">취소</button>
+          <button onclick="csSubmitEdit('${ticketId}')" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600">저장</button>
         </div>
       </div>`;
-    }).join("");
-  } catch(e) { list.innerHTML = `<div style="color:red;padding:20px">오류: ${e.message||e}</div>`; }
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+async function csSubmitEdit(ticketId) {
+  const g = id => document.getElementById(id)?.value?.trim();
+  const body = {
+    customer_name: g("cs-e-name"), contact_info: g("cs-e-contact"), product_name: g("cs-e-product"),
+    defect_symptom: g("cs-e-symptom"), sales_channel: g("cs-e-channel"), order_number: g("cs-e-orderno"),
+    cs_type: g("cs-e-type"), reason_category: g("cs-e-reason"), quantity: parseInt(g("cs-e-qty")) || 1,
+    shipping_cost_status: g("cs-e-shipcost"), return_courier: g("cs-e-retcourier"), return_tracking_no: g("cs-e-rettrack"),
+  };
+  try {
+    await api.put(`/api/cs/tickets/${ticketId}/edit`, body);
+    alert("수정 완료");
+    csShowDetail(ticketId);
+    csLoadDashboard();
+  } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
 // ── 대시보드 (칸반) ──
@@ -4461,6 +4690,7 @@ async function csShowDetail(ticketId) {
 
     // 액션 버튼
     html += `<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;flex-wrap:wrap">`;
+    html += `<button onclick="csEditTicket('${t.ticket_id}')" class="btn" style="font-size:13px">✏️ 수정</button>`;
     const st = t.current_status;
     if (st === "접수완료") {
       html += `<button onclick="csAction('${t.ticket_id}','receive')" class="btn" style="font-size:13px">📦 물류 수령</button>`;
@@ -4603,7 +4833,7 @@ async function csAddMemo(ticketId) {
 function csCloseWhatsNew() {
   document.getElementById("cs-whatsnew-overlay").style.display = "none";
   if (document.getElementById("cs-wn-dontshow")?.checked) {
-    localStorage.setItem("cs_whatsnew_v2_dismissed", "1");
+    localStorage.setItem("cs_whatsnew_v22_dismissed", "1");
   }
 }
 

@@ -580,6 +580,25 @@ def init_db():
     except Exception:
         pass
 
+    # ── 미출고 관리 테이블 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS cs_backorders (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        sales_channel   TEXT DEFAULT '',
+        order_date      TEXT DEFAULT '',
+        order_number    TEXT DEFAULT '',
+        recipient_name  TEXT NOT NULL,
+        recipient_phone TEXT DEFAULT '',
+        product_name    TEXT NOT NULL,
+        option_info     TEXT DEFAULT '',
+        quantity        INTEGER DEFAULT 1,
+        status          TEXT DEFAULT '미출고',
+        memo            TEXT DEFAULT '',
+        created_by      TEXT DEFAULT '',
+        created_at      TEXT DEFAULT (datetime('now','localtime')),
+        updated_at      TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
     # ── AICC 마이그레이션: image_id 컬럼 추가 ──
     safe_add_column(conn, 'aicc_messages', 'image_id', "TEXT DEFAULT ''")
 
@@ -847,6 +866,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_channel ON cs_tickets(sales_channel);
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_cs_type ON cs_tickets(cs_type);
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_reason ON cs_tickets(reason_category);
+        CREATE INDEX IF NOT EXISTS idx_cs_backorders_status ON cs_backorders(status);
+        CREATE INDEX IF NOT EXISTS idx_cs_backorders_channel ON cs_backorders(sales_channel);
         CREATE INDEX IF NOT EXISTS idx_cs_action_logs_ticket ON cs_action_logs(ticket_id);
 
         CREATE INDEX IF NOT EXISTS idx_sr_date ON sales_records(slip_date);
