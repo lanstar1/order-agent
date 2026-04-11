@@ -185,29 +185,16 @@ def get_pending_orders(conn, model_name: str) -> list:
 def get_all_pending_orders_map(conn) -> dict:
     """
     전체 오더리스트를 모델명 기준으로 그룹핑
-    - shipping_mail_info와 조인하여 선적일 포함
-    - 선적일이 오늘 이전인 오더는 입고 완료로 판단하여 제외
+    - orderlist_items.shipping_date 직접 사용 (구글시트 F열에서 동기화됨)
+    - 선적일 < 오늘 → 이미 입고 → 제외
+    - 선적일 없고 주문일 90일 초과 → 입고 완료 → 제외
     - 모델당 최신 2건만 유지
-    Returns: {"LS-1000H": [{"order_date": "...", "qty": 100, "shipping_date": "...", "arrival_date": "..."}, ...]}
     """
     today = datetime.now(KST).strftime("%Y-%m-%d")
     cutoff_90d = (datetime.now(KST) - timedelta(days=90)).strftime("%Y-%m-%d")
 
-    # 1) shipping_mail_info에서 PI/BOR별 선적일 맵 구축
-    ship_rows = conn.execute("""
-        SELECT bor_number, shipping_date, arrival_date
-        FROM shipping_mail_info
-        WHERE shipping_date != '' AND shipping_date IS NOT NULL
-    """).fetchall()
-
-    # bor_number → {shipping_date, arrival_date}  (PI단위 + 모델단위 모두)
-    ship_map = {}
-    for sr in ship_rows:
-        ship_map[sr[0]] = {"shipping_date": sr[1] or "", "arrival_date": sr[2] or ""}
-
-    # 2) 오더리스트 전체 조회
     rows = conn.execute("""
-        SELECT model_name, sheet_tab, order_no, order_date, qty, unit
+        SELECT model_name, sheet_tab, order_no, order_date, qty, unit, shipping_date
         FROM orderlist_items
         WHERE model_name != ''
         ORDER BY order_date DESC
@@ -218,12 +205,16 @@ def get_all_pending_orders_map(conn) -> dict:
         model = r[0].strip().upper()
         order_no = r[2] or ""
         order_date = _normalize_date(r[3])
+        shipping_date = r[6] or ""
 
-        # 선적일 조회: 모델별 키(PI_MODEL) 우선 → PI/BOR 단위 fallback
-        model_key = f"{order_no}_{model}"
-        ship_info = ship_map.get(model_key) or ship_map.get(order_no) or {}
-        shipping_date = ship_info.get("shipping_date", "")
-        arrival_date = ship_info.get("arrival_date", "")
+        # 입고예정일 계산 (선적일 + 8일)
+        arrival_date = ""
+        if shipping_date:
+            try:
+                ship_dt = datetime.strptime(shipping_date, "%Y-%m-%d")
+                arrival_date = (ship_dt + timedelta(days=8)).strftime("%Y-%m-%d")
+            except Exception:
+                pass
 
         # 선적일이 오늘 이전이면 이미 입고됨 → 제외
         if shipping_date and shipping_date < today:

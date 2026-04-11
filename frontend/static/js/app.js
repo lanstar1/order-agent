@@ -5676,14 +5676,14 @@ let _ipSortAsc = true;
 
 async function ipRefreshAnalysis() {
   const tbody = document.getElementById('ip-table-body');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="12" style="padding:30px;text-align:center;color:#94a3b8">⏳ 분석 중...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="padding:30px;text-align:center;color:#94a3b8">⏳ 분석 중...</td></tr>';
   try {
     _ipData = await api.get('/api/inventory-planning/analysis');
     ipRenderSummary(_ipData.summary);
     ipRenderTable(_ipData.items);
     ipRenderScanInfo(_ipData.last_scan);
   } catch (err) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="12" style="padding:20px;text-align:center;color:#dc2626">분석 실패: ${err.message||err}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="padding:20px;text-align:center;color:#dc2626">분석 실패: ${err.message||err}</td></tr>`;
   }
 }
 
@@ -5731,7 +5731,7 @@ function ipRenderTable(items) {
   const tbody = document.getElementById('ip-table-body');
   if (!tbody) return;
   if (!items || items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" style="padding:30px;text-align:center;color:#94a3b8">등록된 관리품목이 없습니다. [+ 품목 등록] 버튼으로 추가하세요.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="padding:30px;text-align:center;color:#94a3b8">등록된 관리품목이 없습니다. [+ 품목 등록] 버튼으로 추가하세요.</td></tr>';
     return;
   }
 
@@ -5790,7 +5790,6 @@ function ipRenderTable(items) {
     return `<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="ipShowDetail(${i.id})">
       <td style="padding:8px">${statusBadge(i.status, i.status_label)}</td>
       <td style="padding:8px;font-weight:600;font-size:12px">${i.model_name||i.prod_cd}</td>
-      <td style="padding:8px;font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.prod_name}">${i.prod_name||'-'}</td>
       <td style="padding:8px;text-align:right;font-weight:600">${(i.current_stock||0).toLocaleString()}</td>
       <td style="padding:8px;text-align:right">${i.avg_daily_7d ? i.avg_daily_7d : '<span style="color:#cbd5e1">-</span>'}</td>
       <td style="padding:8px;text-align:right;${stockoutStyle}">${stockout}</td>
@@ -5804,7 +5803,7 @@ function ipRenderTable(items) {
   }).join('');
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" style="padding:20px;text-align:center;color:#94a3b8">해당하는 품목이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="padding:20px;text-align:center;color:#94a3b8">해당하는 품목이 없습니다.</td></tr>';
   }
 }
 
