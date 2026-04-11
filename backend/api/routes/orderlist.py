@@ -20,11 +20,40 @@ router = APIRouter(prefix="/api/orderlist", tags=["orderlist"])
 
 @router.post("/sync")
 def api_sync_orderlist(tab: str = "", user: dict = Depends(get_current_user)):
-    """오더리스트 동기화 (전체 또는 특정 탭)"""
-    result = sync_orderlist(tab_title=tab)
-    if not result.get("success"):
-        raise HTTPException(500, result.get("error", "동기화 실패"))
-    return result
+    """오더리스트 동기화 — REST 엑셀 메일 스캔 → DB 직접 저장"""
+    try:
+        from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+        from services.shipping_mail_service import scan_bor_orderlist_emails, save_bor_rest_to_db, sync_bor_orderlist_to_sheet
+
+        if not MAIL_USER or not MAIL_PASSWORD:
+            raise HTTPException(400, "메일 설정이 없습니다 (MAIL_USER, MAIL_PASSWORD)")
+
+        # 1. Ecount 메일에서 REST 엑셀 스캔
+        ol_results = scan_bor_orderlist_emails(
+            MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
+
+        if not ol_results:
+            return {"success": True, "message": "REST 파일 없음", "total_items": 0}
+
+        # 2. 구글시트 덮어쓰기 (실패해도 계속)
+        try:
+            sync_bor_orderlist_to_sheet([ol_results[0]])
+        except Exception:
+            pass
+
+        # 3. DB 직접 저장
+        saved = save_bor_rest_to_db([ol_results[0]])
+
+        return {
+            "success": True,
+            "message": f"REST → DB 직접 저장 완료",
+            "total_items": saved,
+            "filename": ol_results[0].get("filename", ""),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"동기화 실패: {str(e)[:200]}")
 
 
 @router.get("/autocomplete")

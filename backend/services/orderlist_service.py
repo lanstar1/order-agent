@@ -247,7 +247,7 @@ def sync_orderlist(tab_title: str = "") -> dict:
     # 기존 BOR(non-NAM) 오더리스트 정리 후 최신 탭만 재등록
     if not tab_title:
         try:
-            conn.execute("DELETE FROM orderlist_items WHERE sheet_tab NOT LIKE 'NAM-%'")
+            conn.execute("DELETE FROM orderlist_items WHERE sheet_tab NOT LIKE 'NAM-%%'")
             conn.commit()
         except Exception:
             try:
