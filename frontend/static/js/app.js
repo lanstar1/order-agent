@@ -3359,6 +3359,7 @@ async function loadOrderList(page = 1) {
         <th style="width:60px;text-align:right">수량</th>
         <th style="width:50px">단위</th>
         <th style="width:120px">주문일</th>
+        <th style="width:100px">선적일</th>
       </tr></thead><tbody>`;
 
     data.items.forEach(item => {
@@ -3374,6 +3375,7 @@ async function loadOrderList(page = 1) {
         <td style="text-align:right;font-weight:600">${item.qty ? item.qty.toLocaleString() : ""}</td>
         <td style="font-size:11px">${item.unit || ""}</td>
         <td style="font-size:11px">${dateCell}</td>
+        <td style="font-size:11px;${item.shipping_date?'color:#7c3aed;font-weight:600':''}">${item.shipping_date || '-'}</td>
       </tr>`;
     });
 

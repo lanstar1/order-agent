@@ -14,7 +14,7 @@ import re
 import json
 import logging
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -22,6 +22,7 @@ from db.database import get_connection
 from config import GOOGLE_API_KEY
 
 logger = logging.getLogger(__name__)
+KST = timezone(timedelta(hours=9))
 
 ORDERLIST_SHEET_ID = "1ej0cxyM3NHJKpF-KBXbZ16fH-lZcUrr3Z3eTwFVFSco"
 
@@ -61,6 +62,22 @@ def _ensure_orderlist_tables():
         );
     """)
     conn.close()
+
+# shipping_date 컬럼 마이그레이션
+try:
+    conn = get_connection()
+    from db.database import USE_PG
+    if USE_PG:
+        conn.execute("ALTER TABLE orderlist_items ADD COLUMN IF NOT EXISTS shipping_date TEXT DEFAULT ''")
+    else:
+        try:
+            conn.execute("ALTER TABLE orderlist_items ADD COLUMN shipping_date TEXT DEFAULT ''")
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+except Exception:
+    pass
 
 _ensure_orderlist_tables()
 
@@ -312,10 +329,10 @@ def get_orderlist_data(
 ) -> dict:
     """
     오더리스트 조회/검색
-    query: 모델명/설명/카테고리 검색
-    tab: 특정 탭 필터 (빈 문자열이면 전체)
+    NAM 탭: 선적일 지난 품목 자동 제외 (이미 입고)
     """
     conn = get_connection()
+    today = datetime.now(KST).strftime("%Y-%m-%d")
 
     where_parts = ["1=1"]
     params = []
@@ -331,6 +348,12 @@ def get_orderlist_data(
         )""")
         q = f"%{query}%"
         params.extend([q, q, q, q])
+
+    # NAM 탭: 선적일이 오늘 이전인 품목 제외 (이미 입고)
+    where_parts.append(
+        "(o.shipping_date IS NULL OR o.shipping_date = '' OR o.shipping_date >= ?)"
+    )
+    params.append(today)
 
     where = " AND ".join(where_parts)
 

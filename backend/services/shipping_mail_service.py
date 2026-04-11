@@ -701,13 +701,14 @@ def save_nam_shipping_info(conn, scan_results: list):
                 INSERT INTO orderlist_items
                     (sheet_tab, order_no, seller, order_date, category,
                      model_name, description, qty, unit, unit_price,
-                     total_value, row_index, raw_row, synced_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     total_value, row_index, raw_row, synced_at, shipping_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 tab_name, pi, "NAM/PUSIMA",
                 it.get("order_date", ""), current_category,
                 model, "", it.get("qty", 0), "PCS",
-                "", "", idx + 1, "", now
+                "", "", idx + 1, "", now,
+                it.get("shipping_date", "")
             ))
 
         # 동기화 로그
