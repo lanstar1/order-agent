@@ -349,11 +349,18 @@ def get_orderlist_data(
         q = f"%{query}%"
         params.extend([q, q, q, q])
 
-    # NAM 탭: 선적일이 오늘 이전인 품목 제외 (이미 입고)
-    where_parts.append(
-        "(o.shipping_date IS NULL OR o.shipping_date = '' OR o.shipping_date >= ?)"
-    )
-    params.append(today)
+    # 입고 완료 품목 제외:
+    # 1) 선적일이 오늘 이전 → 이미 입고
+    # 2) NAM 탭: 선적일 없고 주문일이 90일 이상 경과 → 입고 완료로 간주
+    cutoff_90d = (datetime.now(KST) - timedelta(days=90)).strftime("%Y-%m-%d")
+    where_parts.append("""(
+        CASE
+            WHEN o.shipping_date IS NOT NULL AND o.shipping_date != '' THEN o.shipping_date >= ?
+            WHEN o.sheet_tab LIKE 'NAM-%%' THEN o.order_date >= ?
+            ELSE 1=1
+        END
+    )""")
+    params.extend([today, cutoff_90d])
 
     where = " AND ".join(where_parts)
 
@@ -384,15 +391,26 @@ def get_orderlist_data(
 
 
 def get_orderlist_tabs() -> list:
-    """DB에 저장된 오더리스트 탭 목록 (건수 포함)"""
+    """DB에 저장된 오더리스트 탭 목록 (입고완료 품목 제외 건수)"""
     conn = get_connection()
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+    cutoff_90d = (datetime.now(KST) - timedelta(days=90)).strftime("%Y-%m-%d")
+
     rows = conn.execute("""
         SELECT sheet_tab, COUNT(*) as item_count,
                MAX(synced_at) as last_sync
-        FROM orderlist_items
+        FROM orderlist_items o
+        WHERE (
+            CASE
+                WHEN o.shipping_date IS NOT NULL AND o.shipping_date != '' THEN o.shipping_date >= ?
+                WHEN o.sheet_tab LIKE 'NAM-%%' THEN o.order_date >= ?
+                ELSE 1=1
+            END
+        )
         GROUP BY sheet_tab
+        HAVING COUNT(*) > 0
         ORDER BY sheet_tab DESC
-    """).fetchall()
+    """, (today, cutoff_90d)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
