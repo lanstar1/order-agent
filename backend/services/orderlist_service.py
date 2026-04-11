@@ -211,18 +211,35 @@ def _parse_order_rows(rows: list, tab_title: str) -> list:
 
             unit = col3 if col3 else "PCS"
 
-            # 단가/총액 (Stock 시트에 있을 수 있음)
+            # 단가/총액 또는 선적일 (탭에 따라 다름)
             unit_price = ""
             total_value = ""
-            if len(row) > 5:
-                unit_price = str(row[5]).strip() if row[5] else ""
-            if len(row) > 7:
-                total_value = str(row[7]).strip() if row[7] else ""
+            shipping_date = ""
+            is_nam = tab_title.upper().startswith("NAM")
+
+            if is_nam:
+                # NAM 시트: E열=주문일, F열=선적일, G열=입고예정
+                if len(row) > 4 and row[4]:
+                    item_order_date = str(row[4]).strip()
+                    if item_order_date and item_order_date != order_date:
+                        order_date_for_item = item_order_date
+                    else:
+                        order_date_for_item = order_date
+                else:
+                    order_date_for_item = order_date
+                if len(row) > 5 and row[5]:
+                    shipping_date = str(row[5]).strip()
+            else:
+                order_date_for_item = order_date
+                if len(row) > 5:
+                    unit_price = str(row[5]).strip() if row[5] else ""
+                if len(row) > 7:
+                    total_value = str(row[7]).strip() if row[7] else ""
 
             items.append({
                 "sheet_tab": tab_title,
                 "order_no": order_no,
-                "order_date": order_date,
+                "order_date": order_date_for_item if is_nam else order_date,
                 "category": current_category,
                 "model_name": model,
                 "description": desc,
@@ -230,6 +247,7 @@ def _parse_order_rows(rows: list, tab_title: str) -> list:
                 "unit": unit,
                 "unit_price": unit_price,
                 "total_value": total_value,
+                "shipping_date": shipping_date,
                 "row_index": row_idx + 1,
                 "raw_row": json.dumps(row[:10], ensure_ascii=False),
             })
@@ -284,14 +302,15 @@ def sync_orderlist(tab_title: str = "") -> dict:
                     INSERT INTO orderlist_items(
                         sheet_tab, order_no, order_date, category,
                         model_name, description, qty, unit, unit_price,
-                        total_value, row_index, raw_row
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                        total_value, row_index, raw_row, shipping_date
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (
                     item["sheet_tab"], item["order_no"],
                     item["order_date"], item["category"], item["model_name"],
                     item["description"], item["qty"], item["unit"],
                     item["unit_price"], item["total_value"],
                     item["row_index"], item["raw_row"],
+                    item.get("shipping_date", ""),
                 ))
 
             # 동기화 로그
