@@ -302,19 +302,15 @@ async def scan_all_shipping():
         try:
             from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
             if MAIL_USER and MAIL_PASSWORD:
-                from services.shipping_mail_service import scan_bor_orderlist_emails, sync_bor_orderlist_to_sheet, save_bor_rest_to_db
+                from services.shipping_mail_service import scan_bor_orderlist_emails, sync_bor_orderlist_to_sheet
                 yield send("📋 [1/5] Ecount 메일에서 REST 파일 검색 중...", 10, "orderlist_scan")
                 ol_results = scan_bor_orderlist_emails(
                     MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
                 if ol_results:
-                    yield send(f"📋 [1/5] REST 파일 발견 ({ol_results[0]['filename']}) → DB 직접 저장...", 15, "orderlist_write")
-                    try:
-                        sync_bor_orderlist_to_sheet([ol_results[0]])
-                    except Exception:
-                        pass  # 구글시트 쓰기 실패해도 DB 저장은 진행
-                    saved = save_bor_rest_to_db([ol_results[0]])
+                    yield send(f"📋 [1/5] REST 파일 발견 ({ol_results[0]['filename']}) → 구글시트 덮어쓰기...", 15, "orderlist_write")
+                    sync_bor_orderlist_to_sheet([ol_results[0]])
                     _scan_email_dates["orderlist"] = ol_results[0].get("email_date", "")
-                    yield send(f"✅ [1/5] 오더리스트 최신화 완료 ({saved}건)", 20, "orderlist_done")
+                    yield send(f"✅ [1/5] 오더리스트 최신화 완료", 20, "orderlist_done")
                 else:
                     yield send("⏭️ [1/5] REST 파일 없음 → 스킵", 20, "orderlist_skip")
             else:
@@ -370,8 +366,14 @@ async def scan_all_shipping():
             yield send(f"⚠️ [3/5] NAM 오류: {str(e)[:100]}", 70, "nam_error")
 
         # ─── [4/5] 구글시트 → DB 동기화 ───
-        # ─── [4/5] 구글시트 동기화 (스킵 — BOR은 직접 저장, NAM은 step3에서 저장) ───
-        yield send("✅ [4/5] DB 동기화 완료 (직접 저장 완료)", 85, "db_done")
+        # ─── [4/5] 구글시트 → DB 동기화 ───
+        yield send("🔄 [4/5] 오더리스트 DB 동기화 중...", 75, "db_sync")
+        try:
+            from services.orderlist_service import sync_orderlist
+            sync_orderlist()
+            yield send("✅ [4/5] DB 동기화 완료", 85, "db_done")
+        except Exception as e:
+            yield send(f"⚠️ [4/5] DB 동기화 오류: {str(e)[:80]}", 85, "db_error")
 
         # ─── [5/5] 스캔 이력 저장 ───
         yield send("📝 [5/5] 스캔 이력 저장 중...", 90, "log_save")

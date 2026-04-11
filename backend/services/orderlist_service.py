@@ -223,7 +223,7 @@ def _parse_order_rows(rows: list, tab_title: str) -> list:
 def sync_orderlist(tab_title: str = "") -> dict:
     """
     구글시트에서 오더리스트 동기화
-    tab_title이 비어있으면 가장 최근 1개 탭만 동기화 (오래된 오더 방지)
+    전체 탭 동기화 (오래된 오더는 get_all_pending_orders_map의 90일 필터로 제어)
     """
     if not GOOGLE_API_KEY:
         return {"success": False, "error": "GOOGLE_API_KEY 미설정"}
@@ -234,26 +234,10 @@ def sync_orderlist(tab_title: str = "") -> dict:
 
     if tab_title:
         tabs = [t for t in tabs if t["title"] == tab_title]
-    else:
-        # NAM 탭 제외, 최신 1개 탭만 동기화 (탭 이름 내림차순 = 최신 연도 우선)
-        bor_tabs = [t for t in tabs if not t["title"].upper().startswith("NAM")]
-        bor_tabs.sort(key=lambda t: t["title"], reverse=True)
-        tabs = bor_tabs[:1]  # 가장 최근 1개 탭만
 
     conn = get_connection()
     total_items = 0
     synced_tabs = []
-
-    # 기존 BOR(non-NAM) 오더리스트 정리 후 최신 탭만 재등록
-    if not tab_title:
-        try:
-            conn.execute("DELETE FROM orderlist_items WHERE sheet_tab NOT LIKE 'NAM-%%'")
-            conn.commit()
-        except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
     for tab in tabs:
         title = tab["title"]
