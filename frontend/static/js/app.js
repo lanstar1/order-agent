@@ -3350,7 +3350,7 @@ async function loadOrderList(page = 1) {
 
     // 테이블 렌더링
     let html = `<table class="result-table" style="width:100%;font-size:12px">
-      <thead><tr>
+      <thead style="position:sticky;top:0;z-index:10;background:#1e293b"><tr style="background:#1e293b;color:#fff">
         <th style="width:60px">탭</th>
         <th style="width:100px">주문번호</th>
         <th>카테고리</th>
