@@ -161,7 +161,8 @@
                         <option value="">-- 선택 --</option>
                     </select>
                 </div>
-                <button class="btn btn-blue" onclick="sendErp()" id="b-erp">📤 ERP 전송</button>
+                <button class="btn btn-blue" onclick="sendErp('10')" id="b-erp-ys" style="background:#1d4ed8;">🏢 용산 ERP</button>
+                <button class="btn btn-blue" onclick="sendErp('30')" id="b-erp-tj">📦 통진 ERP</button>
                 <button class="btn btn-red" onclick="openTrackingModal('gimpo')" id="b-gp">🚚 김포 송장입력</button>
                 <button class="btn btn-orange" onclick="openTrackingModal('yongsan')" id="b-ys">🚚 용산 송장입력</button>
                 <button class="btn btn-gray" onclick="sendExcludedErp()" id="b-exc">📋 경동 ERP전송</button>
@@ -651,7 +652,7 @@ function renderTbl(orders){
 }
 
 // ── ERP 전송만 ──
-async function sendErp(){
+async function sendErp(whCd){
     if(!_rawOrders || _checkedSet.size === 0){
         ss('s-auto','warn','선택된 주문이 없습니다.');
         document.getElementById('card-result').style.display = 'block';
@@ -661,7 +662,7 @@ async function sendErp(){
     const groupSet = new Set(selectedOrders.map(o => getOrderId(o)));
     if(!confirm(`ERP 판매전표 전송\n\n선택: ${selectedOrders.length}건 (${groupSet.size}그룹)\n\n※ 로젠등록/발송처리는 포함되지 않습니다.`)) return;
 
-    const btn = document.getElementById('b-erp');
+    const btn = document.getElementById('b-erp-ys');
     const bg = document.getElementById('b-gp'), by = document.getElementById('b-ys');
     btn.disabled = bg.disabled = by.disabled = true;
     const ot = btn.innerHTML;
@@ -676,7 +677,7 @@ async function sendErp(){
         const r = await(await fetch(B+'/api/smartstore/send-erp', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ orders: selectedOrders, emp_cd: getSelectedEmpCd() }),
+            body: JSON.stringify({ orders: selectedOrders, emp_cd: getSelectedEmpCd(), wh_cd: whCd || "" }),
         })).json();
 
         if(r.success){
@@ -754,7 +755,7 @@ async function regLogen(wh){
     if(!confirm(`${nm} 로젠택배 등록\n\n선택: ${selectedOrders.length}건 (${groupSet.size}그룹)\n\n발주확인 + 발송처리 포함\n※ ERP 전송은 포함되지 않습니다.`)) return;
 
     const btn = document.getElementById(wh==='gimpo'?'b-gp':'b-ys');
-    const be = document.getElementById('b-erp'), bo = document.getElementById(wh==='gimpo'?'b-ys':'b-gp');
+    const be = document.getElementById('b-erp-ys'), bo = document.getElementById(wh==='gimpo'?'b-ys':'b-gp');
     btn.disabled = be.disabled = bo.disabled = true;
     const ot = btn.innerHTML;
     btn.innerHTML = '<span class="sp"></span> 처리 중...';
