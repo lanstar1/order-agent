@@ -10,8 +10,7 @@ from typing import Optional
 from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Query, HTTPException, Body
-from pydantic import BaseModel, UploadFile, File
+from fastapi import APIRouter, Query, HTTPException, Body, UploadFile, File
 from pydantic import BaseModel
 
 KST = ZoneInfo("Asia/Seoul")
@@ -296,6 +295,7 @@ async def fetch_orders(
 class SendErpRequest(BaseModel):
     orders: list[dict]
     emp_cd: str = ""
+    wh_cd: str = ""  # "10"=용산, "30"=통진, ""=기본값
 
 @router.post("/send-erp")
 async def send_erp_only(
@@ -304,6 +304,7 @@ async def send_erp_only(
     """ERP 판매전표만 전송 (로젠 미포함)"""
     selected_orders = req.orders
     _emp_cd = req.emp_cd or SMARTSTORE_EMP_CODE
+    _wh_cd = req.wh_cd if req.wh_cd else SMARTSTORE_WH_CODE
     from services.erp_client_ss import ERPClientSS
 
     if not selected_orders:
@@ -385,7 +386,7 @@ async def send_erp_only(
     try:
         erp = ERPClientSS()
         await erp.ensure_session()
-        r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, SMARTSTORE_WH_CODE, _emp_cd)
+        r = await erp.save_sale(SMARTSTORE_CUST_CODE, erp_lines, _wh_cd, _emp_cd)
         delivery_count = len(delivery_by_fee)
         r["lines"] = len(erp_lines)
         r["erp_matched"] = len(erp_lines) - delivery_count
