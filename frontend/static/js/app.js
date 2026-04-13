@@ -8952,12 +8952,14 @@ function reconcileNewMatch() {
   let _autoStatusTimer = null;
 
   window.mailToggleAuto = async function(enabled) {
-    const interval = parseInt(document.getElementById('mail-auto-interval').value) || 3;
+    const interval = parseInt(document.getElementById('mail-auto-interval').value) || 10;
     try {
       if (enabled) {
+        const autoReply = document.getElementById('mail-auto-reply-check')?.checked || false;
+        const replyTemplate = document.getElementById('mail-template-body')?.value || '';
         await fetch('/api/mail-auto/scheduler/start', {
           method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({interval_min: interval})
+          body: JSON.stringify({interval_min: interval, auto_reply: autoReply, reply_template: replyTemplate})
         });
         _startAutoStatusPoll();
       } else {
@@ -9018,6 +9020,63 @@ function reconcileNewMatch() {
     if (_autoStatusTimer) { clearInterval(_autoStatusTimer); _autoStatusTimer = null; }
   }
 
+  // ─── 품목코드 매핑 관리 ───────────────────
+  window.mailAddMapping = async function() {
+    const model = document.getElementById('mapping-model').value.trim();
+    const prodcd = document.getElementById('mapping-prodcd').value.trim();
+    if (!model || !prodcd) return alert('모델명과 품목코드를 입력하세요');
+    try {
+      const r = await fetch('/api/mail-auto/product-mapping/add', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model_name: model, prod_cd: prodcd})
+      });
+      const d = await r.json();
+      if (d.success) {
+        alert(`✅ 매핑 추가: ${model} → ${prodcd}`);
+        document.getElementById('mapping-model').value = '';
+        document.getElementById('mapping-prodcd').value = '';
+        mailLoadMappingCount();
+      } else { alert('추가 실패: ' + (d.error || '')); }
+    } catch(e) { alert('오류: '+e.message); }
+  };
+
+  window.mailSearchMapping = async function() {
+    const q = document.getElementById('mapping-search').value.trim();
+    if (!q) return;
+    const r = await fetch('/api/mail-auto/product-mapping/search?q=' + encodeURIComponent(q));
+    const d = await r.json();
+    const div = document.getElementById('mapping-search-result');
+    if (d.results.length === 0) {
+      div.innerHTML = '<span style="color:#999">검색 결과 없음</span>';
+      return;
+    }
+    let html = '<table class="table table-sm" style="font-size:12px"><thead><tr><th>모델명</th><th>품목코드</th></tr></thead><tbody>';
+    d.results.forEach(r => { html += `<tr><td>${r.model_name}</td><td><b>${r.prod_cd}</b></td></tr>`; });
+    html += '</tbody></table>';
+    div.innerHTML = html;
+  };
+
+  window.mailUploadMapping = async function(input) {
+    if (!input.files.length) return;
+    if (!confirm('기존 매핑을 새 파일로 교체합니다. 계속하시겠습니까?')) { input.value=''; return; }
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    const r = await fetch('/api/mail-auto/product-mapping/upload', {method:'POST', body: fd});
+    const d = await r.json();
+    alert(d.success ? `✅ ${d.loaded}건 매핑 업로드 완료` : '❌ 업로드 실패: ' + (d.error||''));
+    input.value = '';
+    mailLoadMappingCount();
+  };
+
+  async function mailLoadMappingCount() {
+    try {
+      const r = await fetch('/api/mail-auto/product-mapping/count');
+      const d = await r.json();
+      const el = document.getElementById('mail-mapping-count');
+      if (el) el.textContent = `(${d.count?.toLocaleString()}건)`;
+    } catch(e) {}
+  }
+
   window.initMailAutoPage = async function() {
     if (!_mailAuth) {
       document.getElementById('mail-auto-content').style.display='none';
@@ -9030,6 +9089,7 @@ function reconcileNewMatch() {
     await mailLoadDashboard();
     await mailLoadRate();
     await mailLoadLogs();
+    mailLoadMappingCount();
     // 자동 실행 상태 복원
     try {
       const r = await fetch('/api/mail-auto/scheduler/status');

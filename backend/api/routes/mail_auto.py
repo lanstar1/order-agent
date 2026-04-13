@@ -236,7 +236,14 @@ async def get_dashboard():
 async def scheduler_start(request: Request):
     """자동 실행 시작"""
     body = await request.json() if request.headers.get("content-type") == "application/json" else {}
-    interval = body.get("interval_min", 3)
+    interval = body.get("interval_min", 10)
+    auto_reply = body.get("auto_reply", False)
+    reply_template = body.get("reply_template", "")
+    
+    from services.mail_auto_service import _auto_state
+    _auto_state["auto_reply"] = auto_reply
+    _auto_state["reply_template"] = reply_template
+    
     start_mail_auto_scheduler(interval_min=interval)
     return {"success": True, "state": get_auto_state()}
 
@@ -667,3 +674,33 @@ async def upload_mapping(file: UploadFile = File(...)):
         import traceback
         logger.error(f"[매핑 업로드] 오류: {traceback.format_exc()}")
         return {"success": False, "error": str(e)}
+
+
+@router.post("/product-mapping/add")
+async def add_mapping(request: Request):
+    """단건 품목코드 매핑 추가"""
+    body = await request.json()
+    model = body.get("model_name", "").strip()
+    prod_cd = body.get("prod_cd", "").strip()
+    if not model or not prod_cd:
+        raise HTTPException(400, "모델명과 품목코드를 입력하세요")
+    
+    conn = get_connection()
+    # 기존 매핑 삭제 후 추가 (업데이트)
+    conn.execute("DELETE FROM product_code_mapping WHERE model_name = ?", (model,))
+    conn.execute("INSERT INTO product_code_mapping (model_name, prod_cd) VALUES (?, ?)", (model, prod_cd))
+    conn.commit()
+    return {"success": True, "model_name": model, "prod_cd": prod_cd}
+
+
+@router.get("/product-mapping/search")
+async def search_mapping(q: str = Query("")):
+    """품목코드 매핑 검색"""
+    if not q.strip():
+        return {"results": []}
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT model_name, prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY model_name LIMIT 20",
+        (f"%{q.strip()}%",)
+    ).fetchall()
+    return {"results": [{"model_name": r[0], "prod_cd": r[1]} for r in rows]}

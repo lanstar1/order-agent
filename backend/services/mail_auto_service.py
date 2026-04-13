@@ -53,6 +53,8 @@ _auto_state = {
     "last_check": None,
     "last_result": None,
     "running": False,
+    "auto_reply": False,
+    "reply_template": "",
 }
 
 
@@ -852,9 +854,10 @@ async def _auto_check_and_process():
 
         result = await run_mail_automation_pipeline(
             days_back=7,
-            auto_reply=False,
+            auto_reply=_auto_state.get("auto_reply", False),
             auto_erp=True,
             db_conn=conn,
+            reply_template=_auto_state.get("reply_template", ""),
         )
 
         _auto_state["last_result"] = {

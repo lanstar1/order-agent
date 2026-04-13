@@ -2162,6 +2162,33 @@ www.lanstar.co.kr</textarea>
           <p style="font-size:11px;color:#999;margin-top:8px">자동 실행 시 위 내용으로 회신됩니다. 수정 후 반드시 💾저장 버튼을 눌러주세요.</p>
         </div>
 
+        <!-- 품목코드 매핑 관리 -->
+        <div class="card" style="padding:20px;margin-bottom:20px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <h3 style="margin:0">🔗 품목코드 매핑 <span id="mail-mapping-count" style="font-size:12px;color:#64748b"></span></h3>
+            <div style="display:flex;gap:8px">
+              <label class="btn btn-sm" style="padding:5px 12px;cursor:pointer">
+                📤 Excel 업로드
+                <input type="file" accept=".xlsx" onchange="mailUploadMapping(this)" style="display:none">
+              </label>
+            </div>
+          </div>
+          
+          <!-- 단건 추가 -->
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <input id="mapping-model" type="text" placeholder="모델명 (예: LS-NEW-001)" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <input id="mapping-prodcd" type="text" placeholder="품목코드 (예: CAB-HD1099)" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <button onclick="mailAddMapping()" class="btn btn-primary" style="padding:8px 16px;white-space:nowrap">➕ 추가</button>
+          </div>
+          
+          <!-- 검색 -->
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <input id="mapping-search" type="text" placeholder="모델명으로 검색..." style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" onkeyup="if(event.key==='Enter')mailSearchMapping()">
+            <button onclick="mailSearchMapping()" class="btn btn-sm" style="padding:8px 12px">🔍 검색</button>
+          </div>
+          <div id="mapping-search-result" style="font-size:13px"></div>
+        </div>
+
         <!-- 처리 로그 -->
         <div class="card" style="padding:20px">
           <h3 style="margin:0 0 12px">📋 처리 이력</h3>
@@ -5466,7 +5493,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260413b"></script>
+<script src="/static/js/app.js?v=20260413c"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>
