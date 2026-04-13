@@ -4731,7 +4731,8 @@ async function csShowDetail(ticketId) {
     if (st === "접수완료") html += `<button onclick="csAction('${t.ticket_id}','receive')" class="btn" style="font-size:13px">📦 물류 수령</button>`;
     if (st === "물류수령") html += `<button onclick="csAction('${t.ticket_id}','handover')" class="btn" style="font-size:13px">🔬 기술 인계</button>`;
     if (st === "기술인계") html += `<button onclick="csShowTestForm('${t.ticket_id}')" class="btn" style="font-size:13px">📝 테스트 결과</button>`;
-    if (st !== "처리종결") html += `<button onclick="csQuickResolve('${t.ticket_id}')" class="btn" style="font-size:13px;background:#059669;color:#fff;border-color:#059669">🏁 빠른 종결</button>`;
+    if (st === "테스트완료") html += `<button onclick="csResolveWithPrompt('${t.ticket_id}')" class="btn" style="font-size:13px;background:#2563eb;color:#fff;border-color:#2563eb">🏁 처리종결</button>`;
+    if (st === "물류수령") html += `<button onclick="csQuickResolve('${t.ticket_id}')" class="btn" style="font-size:13px;background:#059669;color:#fff;border-color:#059669">⚡ 빠른 종결</button>`;
     html += `<button onclick="csDeleteTicket('${t.ticket_id}')" class="btn" style="font-size:13px;color:#ef4444;margin-left:auto">🗑 삭제</button>`;
     html += `</div></div>`;
 
@@ -4792,6 +4793,20 @@ async function csResolve(ticketId, action) {
     await api.put(`/api/cs/tickets/${ticketId}/resolve`, { action, memo: "" });
     csShowDetail(ticketId);
     csLoadDashboard();
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+async function csResolveWithPrompt(ticketId) {
+  const actions = (_csOptions?.final_actions) || ["교환발송","환불처리","정상반송","단순변심 반송"];
+  const action = prompt(`최종 처리 선택:\n${actions.map((a,i)=>`${i+1}. ${a}`).join("\n")}\n\n번호 입력:`);
+  if (!action) return;
+  const idx = parseInt(action) - 1;
+  if (idx < 0 || idx >= actions.length) { alert("올바른 번호를 입력해주세요."); return; }
+  try {
+    await api.put(`/api/cs/tickets/${ticketId}/resolve`, { action: actions[idx], memo: "" });
+    csCloseModal();
+    csLoadDashboard();
+    csRenderView();
   } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
