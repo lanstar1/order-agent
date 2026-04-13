@@ -137,7 +137,10 @@ async def evaluate_source_relevance(source_id: int) -> dict:
         prompt = f'소재 평가. JSON만 출력.\n기준: 관성연결도(0~3),실전연결성(0~3),공감도(0~2),화제성(0~2)\n소재: {row["title"]} - {row.get("summary","")}\n응답: {{"score":0,"reason":"","recommended_pillar":"inertia_break","suggested_hook":""}}'
         txt = await call_claude("소재 평가. JSON만.", prompt)
         try:
-            result = json.loads(txt.strip().strip("```json").strip("```"))
+            import re
+            cleaned = re.sub(r'^```(?:json)?\s*', '', txt.strip())
+            cleaned = re.sub(r'\s*```$', '', cleaned.strip())
+            result = json.loads(cleaned)
             conn.execute("UPDATE content_sources SET relevance_score=?, status='evaluated' WHERE id=?", (result.get("score", 0), source_id))
             conn.commit()
             return {"source_id": source_id, **result}

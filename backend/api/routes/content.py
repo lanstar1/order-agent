@@ -420,7 +420,10 @@ async def generate_reels_script(data: dict, user: dict = Depends(get_current_use
     result = await call_claude("릴스 스크립트 전문가. JSON만 출력.", prompt)
 
     try:
-        script = json.loads(result.strip().strip("```json").strip("```"))
+        import re
+        cleaned = re.sub(r'^```(?:json)?\s*', '', result.strip())
+        cleaned = re.sub(r'\s*```$', '', cleaned.strip())
+        script = json.loads(cleaned)
         conn = get_connection()
         try:
             conn.execute(
