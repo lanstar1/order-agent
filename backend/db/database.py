@@ -1258,6 +1258,53 @@ def init_db():
                 (_n, _c, _l, _p, _s)
             )
 
+    # ── Content Factory 테이블 ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS content_sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT NOT NULL DEFAULT 'manual',
+        title TEXT NOT NULL,
+        summary TEXT,
+        raw_data TEXT,
+        relevance_score REAL DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        source_url TEXT,
+        collected_at TEXT DEFAULT (datetime('now','localtime')),
+        used_at TEXT
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS content_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_id INTEGER,
+        platform TEXT NOT NULL DEFAULT 'threads',
+        content_type TEXT NOT NULL DEFAULT 'inertia_break',
+        title TEXT,
+        body TEXT,
+        image_paths TEXT,
+        hashtags TEXT,
+        version INTEGER DEFAULT 1,
+        status TEXT DEFAULT 'draft',
+        scheduled_at TEXT,
+        published_at TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS content_publish_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content_id INTEGER,
+        platform TEXT NOT NULL,
+        platform_post_id TEXT,
+        published_at TEXT DEFAULT (datetime('now','localtime')),
+        reach INTEGER DEFAULT 0,
+        likes INTEGER DEFAULT 0,
+        saves INTEGER DEFAULT 0,
+        shares INTEGER DEFAULT 0,
+        comments INTEGER DEFAULT 0
+    )""")
+
     conn.commit()
     conn.close()
     db_type = "PostgreSQL" if USE_PG else f"SQLite ({DB_PATH})"

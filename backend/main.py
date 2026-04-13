@@ -40,6 +40,7 @@ from api.routes.map_monitor import router as map_monitor_router
 from api.routes.naver_datalab import router as naver_datalab_router
 from api.routes.mail_auto import router as mail_auto_router
 from api.routes.telegram_bot import router as telegram_bot_router
+from api.routes.content import router as content_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -282,6 +283,7 @@ app.include_router(map_monitor_router)
 app.include_router(naver_datalab_router)
 app.include_router(mail_auto_router)
 app.include_router(telegram_bot_router)
+app.include_router(content_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:

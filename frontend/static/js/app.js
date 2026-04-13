@@ -161,6 +161,8 @@ function navigateTo(pageId) {
   if (pageId === "map_monitor") initMapMonitor();
   // 메일 자동화 페이지 진입 시 초기화
   if (pageId === "mail_agent") initMailAutoPage();
+  // 콘텐츠 팩토리 페이지 진입 시 초기화
+  if (pageId === "content_factory") renderContentPage();
   // 재고모니터 페이지 진입 시 초기화
   if (pageId === "inventory_monitor") initInventoryMonitor();
   // 택배조회 페이지 진입 시 통계 로드

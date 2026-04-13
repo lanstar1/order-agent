@@ -165,3 +165,10 @@ MAIL2_IMAP_PORT = int(os.getenv("MAIL2_IMAP_PORT", "993"))
 MAIL2_USER = os.getenv("MAIL2_USER", "")
 MAIL2_PASSWORD = os.getenv("MAIL2_PASSWORD", "")
 MAIL2_SENDER_FILTER = os.getenv("MAIL2_SENDER_FILTER", "13428934642@163.com")
+
+# ─── Content Factory (SNS 콘텐츠 자동화) ──────────────────
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+THREADS_USER_ID = os.getenv("THREADS_USER_ID", "")
+THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
+IG_USER_ID = os.getenv("IG_USER_ID", "")
+IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")
