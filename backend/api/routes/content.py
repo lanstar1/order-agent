@@ -399,3 +399,65 @@ async def reset_prompt(prompt_id: int, user: dict = Depends(get_current_user)):
     from db.database import init_db
     init_db()
     return {"message": "초기화 완료"}
+
+
+# ── 릴스 생성 ──
+
+@router.post("/reels/generate-script")
+async def generate_reels_script(data: dict, user: dict = Depends(get_current_user)):
+    """에피소드 소재 → 릴스 스크립트 JSON 자동 생성"""
+    from services.content_service import call_claude, get_prompt
+
+    source_text = data.get("source_text", "")
+    episode_num = data.get("episode_num", 1)
+
+    reels_prompt = get_prompt("story", "reels_script")
+    if "{source_data}" in reels_prompt and "{episode_num}" in reels_prompt:
+        prompt = reels_prompt.format(source_data=source_text, episode_num=f"EP.{episode_num:02d}")
+    else:
+        prompt = reels_prompt + f"\n소재: {source_text}\n에피소드: EP.{episode_num:02d}"
+
+    result = await call_claude("릴스 스크립트 전문가. JSON만 출력.", prompt)
+
+    try:
+        script = json.loads(result.strip().strip("```json").strip("```"))
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO content_items (platform, content_type, title, body, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'draft', datetime('now','localtime'), datetime('now','localtime'))",
+                ("instagram", "reels", f"EP.{episode_num:02d}", json.dumps(script, ensure_ascii=False))
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"script": script, "threads_text": script.get("threads_text", "")}
+    except json.JSONDecodeError:
+        return {"error": "JSON 파싱 실패", "raw": result[:500]}
+
+
+@router.post("/reels/to-threads")
+async def reels_to_threads(data: dict, user: dict = Depends(get_current_user)):
+    """릴스 스크립트에서 쓰레드 텍스트 추출"""
+    item_id = data.get("item_id")
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT body, content_type FROM content_items WHERE id = ?", (item_id,)).fetchone()
+        if not row:
+            return {"error": "콘텐츠 없음"}
+        row = dict(row)
+        if row["content_type"] != "reels":
+            return {"error": "릴스 콘텐츠가 아님"}
+        script = json.loads(row["body"])
+        threads_text = script.get("threads_text", "")
+        if not threads_text:
+            parts = [s.get("tts_text", "") for s in script.get("scenes", []) if s.get("tts_text")]
+            hashtags = " ".join(f"#{h}" for h in script.get("hashtags", []))
+            threads_text = "\n\n".join(parts) + f"\n\n{hashtags}"
+        conn.execute(
+            "INSERT INTO content_items (source_id, platform, content_type, title, body, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'draft', datetime('now','localtime'), datetime('now','localtime'))",
+            (item_id, "threads", "inertia_break", script.get("title", ""), threads_text)
+        )
+        conn.commit()
+        return {"threads_text": threads_text, "message": "쓰레드 콘텐츠 생성됨"}
+    finally:
+        conn.close()
