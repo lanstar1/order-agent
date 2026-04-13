@@ -270,3 +270,104 @@ async def get_analytics(user: dict = Depends(get_current_user)):
         return {"analytics": [dict(r) for r in rows]}
     finally:
         conn.close()
+
+
+# ── 프롬프트 관리 ──
+
+@router.get("/prompts")
+async def list_prompts(
+    category: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+):
+    """프롬프트 템플릿 목록 (카테고리별 필터)"""
+    conn = get_connection()
+    try:
+        if category:
+            rows = conn.execute("SELECT * FROM prompt_templates WHERE category = ? ORDER BY category, key", (category,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM prompt_templates ORDER BY category, key").fetchall()
+        return {"prompts": [dict(r) for r in rows], "total": len(rows)}
+    finally:
+        conn.close()
+
+
+@router.get("/prompts/{prompt_id}")
+async def get_prompt(prompt_id: int, user: dict = Depends(get_current_user)):
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM prompt_templates WHERE id = ?", (prompt_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "프롬프트 없음")
+        return dict(row)
+    finally:
+        conn.close()
+
+
+@router.put("/prompts/{prompt_id}")
+async def update_prompt(prompt_id: int, data: dict, user: dict = Depends(get_current_user)):
+    """프롬프트 내용 수정 (버전 자동 증가)"""
+    conn = get_connection()
+    try:
+        content = data.get("content")
+        name = data.get("name")
+        if not content:
+            raise HTTPException(400, "content 필요")
+        sets = ["content = ?", "version = version + 1", "updated_at = datetime('now','localtime')"]
+        params = [content]
+        if name:
+            sets.append("name = ?")
+            params.append(name)
+        params.append(prompt_id)
+        conn.execute(f"UPDATE prompt_templates SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+        return {"message": "프롬프트 수정 완료"}
+    finally:
+        conn.close()
+
+
+@router.post("/prompts")
+async def create_prompt(data: dict, user: dict = Depends(get_current_user)):
+    """새 프롬프트 추가"""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO prompt_templates (category, key, name, content, is_default) VALUES (?, ?, ?, ?, 0)",
+            (data.get("category", "story"), data.get("key", ""), data.get("name", ""), data.get("content", "")),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "message": "프롬프트 추가됨"}
+    finally:
+        conn.close()
+
+
+@router.delete("/prompts/{prompt_id}")
+async def delete_prompt(prompt_id: int, user: dict = Depends(get_current_user)):
+    """커스텀 프롬프트 삭제 (기본 프롬프트는 삭제 불가)"""
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT is_default FROM prompt_templates WHERE id = ?", (prompt_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "프롬프트 없음")
+        if dict(row).get("is_default") == 1:
+            raise HTTPException(400, "기본 프롬프트는 삭제할 수 없습니다. 내용을 수정해주세요.")
+        conn.execute("DELETE FROM prompt_templates WHERE id = ?", (prompt_id,))
+        conn.commit()
+        return {"message": "삭제 완료"}
+    finally:
+        conn.close()
+
+
+@router.post("/prompts/reset/{prompt_id}")
+async def reset_prompt(prompt_id: int, user: dict = Depends(get_current_user)):
+    """기본 프롬프트를 초기값으로 복원 (DB 재시드)"""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM prompt_templates WHERE id = ?", (prompt_id,))
+        conn.execute("DELETE FROM prompt_templates WHERE is_default = 1")
+        conn.commit()
+    finally:
+        conn.close()
+    # init_db가 시드를 다시 넣음
+    from db.database import init_db
+    init_db()
+    return {"message": "초기화 완료"}

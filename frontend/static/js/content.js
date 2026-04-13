@@ -23,6 +23,7 @@ function renderContentPage() {
                 <button class="btn btn-sm" onclick="contentTab('cardnews')" id="ct-btn-cardnews">카드뉴스</button>
                 <button class="btn btn-sm" onclick="contentTab('sources')" id="ct-btn-sources">소재함</button>
                 <button class="btn btn-sm" onclick="contentTab('schedule')" id="ct-btn-schedule">발행 스케줄</button>
+                <button class="btn btn-sm" onclick="contentTab('prompts')" id="ct-btn-prompts">프롬프트 설정</button>
                 <button class="btn btn-sm" onclick="contentTab('settings')" id="ct-btn-settings">SNS 연동</button>
             </div>
         </div>
@@ -44,6 +45,7 @@ function contentTab(tab) {
         case 'cardnews': renderCardnewsEditor(area); break;
         case 'sources': renderSourcesManager(area); break;
         case 'schedule': renderScheduleView(area); break;
+        case 'prompts': renderPromptsManager(area); break;
         case 'settings': renderSNSSettings(area); break;
     }
 }
@@ -610,4 +612,112 @@ function showToast(msg, type) {
     } else {
         alert(msg);
     }
+}
+
+
+// ============================================================
+// 프롬프트 관리 — 카테고리별 편집/저장
+// ============================================================
+
+async function renderPromptsManager(area) {
+    area.innerHTML = '<div class="card"><p>프롬프트 로딩 중...</p></div>';
+
+    try {
+        const data = await api.get('/api/content/prompts');
+        const prompts = data.prompts || [];
+
+        const categories = {
+            story: {label: '스토리 생성', desc: 'Claude AI가 쓰레드/릴스 스크립트를 생성할 때 사용'},
+            image: {label: '이미지 생성', desc: '나노바나나에서 캐릭터/장면 이미지를 생성할 때 사용'},
+            video: {label: '영상 변환', desc: 'Kling/MiniMAX에서 이미지를 영상으로 변환할 때 사용'},
+            threads: {label: '쓰레드 변환', desc: '릴스 스크립트를 쓰레드 텍스트로 변환할 때 사용'},
+        };
+
+        let html = `<div class="card" style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <h3>프롬프트 설정</h3>
+                <button class="btn btn-sm" onclick="addNewPrompt()">새 프롬프트 추가</button>
+            </div>
+            <p style="font-size:13px;color:#64748B;margin-top:4px">
+                프롬프트를 수정하면 즉시 반영됩니다. 재배포 필요 없음.</p>
+        </div>`;
+
+        for (const [cat, info] of Object.entries(categories)) {
+            const catPrompts = prompts.filter(p => p.category === cat);
+            if (catPrompts.length === 0) continue;
+
+            html += `<div class="card" style="margin-bottom:12px">
+                <h4 style="margin:0 0 4px">${info.label}</h4>
+                <p style="font-size:12px;color:#94A3B8;margin:0 0 12px">${info.desc}</p>`;
+
+            for (const p of catPrompts) {
+                html += `<div style="margin-bottom:12px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0" id="prompt-${p.id}">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                        <div>
+                            <span style="font-weight:600;font-size:13px">${p.name}</span>
+                            <span style="font-size:11px;color:#94A3B8;margin-left:8px">key: ${p.key}</span>
+                            <span style="font-size:11px;color:#94A3B8;margin-left:4px">v${p.version || 1}</span>
+                            ${p.is_default ? '<span style="font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;margin-left:6px">기본</span>' : '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;margin-left:6px">커스텀</span>'}
+                        </div>
+                        <div style="display:flex;gap:4px">
+                            <button class="btn btn-xs" onclick="savePrompt(${p.id})">저장</button>
+                            ${!p.is_default ? '<button class="btn btn-xs btn-danger" onclick="deletePrompt(' + p.id + ')">삭제</button>' : ''}
+                        </div>
+                    </div>
+                    <textarea id="prompt-content-${p.id}" rows="${Math.min(Math.max(p.content.split('\\n').length, 3), 12)}"
+                        style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;
+                        font-family:monospace;line-height:1.6;resize:vertical">${escapeHtml(p.content)}</textarea>
+                </div>`;
+            }
+
+            html += '</div>';
+        }
+
+        area.innerHTML = html;
+    } catch (e) {
+        area.innerHTML = `<div class="card"><p style="color:red">로딩 실패: ${e.message}</p></div>`;
+    }
+}
+
+async function savePrompt(id) {
+    const textarea = document.getElementById(`prompt-content-${id}`);
+    if (!textarea) return;
+    try {
+        await api.put(`/api/content/prompts/${id}`, { content: textarea.value });
+        showToast('프롬프트 저장 완료');
+        renderPromptsManager(document.getElementById('content-tab-area'));
+    } catch (e) {
+        showToast('저장 실패: ' + e.message, 'error');
+    }
+}
+
+async function deletePrompt(id) {
+    if (!confirm('이 프롬프트를 삭제하시겠습니까?')) return;
+    try {
+        await api.delete(`/api/content/prompts/${id}`);
+        showToast('삭제 완료');
+        renderPromptsManager(document.getElementById('content-tab-area'));
+    } catch (e) {
+        showToast('삭제 실패: ' + e.message, 'error');
+    }
+}
+
+async function addNewPrompt() {
+    const cat = prompt('카테고리 (story / image / video / threads):') || 'story';
+    const key = prompt('키 (영문, 예: my_custom_prompt):');
+    const name = prompt('이름 (표시용, 예: 내 커스텀 프롬프트):');
+    if (!key || !name) return;
+    try {
+        await api.post('/api/content/prompts', { category: cat, key: key, name: name, content: '여기에 프롬프트를 작성하세요.' });
+        showToast('프롬프트 추가됨');
+        renderPromptsManager(document.getElementById('content-tab-area'));
+    } catch (e) {
+        showToast('추가 실패: ' + e.message, 'error');
+    }
+}
+
+function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
 }

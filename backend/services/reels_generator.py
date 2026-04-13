@@ -37,6 +37,20 @@ KLING_API_KEY = os.getenv("KLING_API_KEY", "")
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 
 
+def _get_default_motion_prompt() -> str:
+    """DB에서 기본 모션 프롬프트 로드"""
+    try:
+        from db.database import get_connection
+        conn = get_connection()
+        row = conn.execute("SELECT content FROM prompt_templates WHERE category = 'video' AND key = 'motion_default'").fetchone()
+        conn.close()
+        if row:
+            return dict(row)["content"]
+    except Exception:
+        pass
+    return "subtle breathing motion, slight head movement, natural idle animation"
+
+
 # ── 메인 생성 함수 ──
 
 async def generate_reels(
@@ -95,7 +109,7 @@ async def generate_reels(
                     image_path=image_file,
                     output_path=i2v_clip,
                     duration=min(duration, 5),  # AI 영상은 최대 5초
-                    motion_prompt=scene.get("motion_prompt", "subtle breathing motion, slight head movement"),
+                    motion_prompt=scene.get("motion_prompt", _get_default_motion_prompt()),
                     provider=I2V_PROVIDER,
                 )
                 if i2v_success:

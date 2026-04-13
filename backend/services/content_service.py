@@ -19,43 +19,37 @@ THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
 IG_USER_ID = os.getenv("IG_USER_ID", "")
 IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")
 
-SYSTEM_PROMPT = """당신은 20인 유통회사 부사장의 쓰레드 계정 글을 작성합니다.
-반말, 담백한 톤, 관성을 깨는 서사. 회사명/제품명/직원실명 절대 노출 금지.
-200~400자. 첫 두 줄이 핵심. 마지막에 해시태그 3~4개."""
+# ── 프롬프트 로더 (DB 우선, 하드코딩 폴백) ──
 
-PILLAR_PROMPTS = {
-    "inertia_break": """소재를 기반으로 "관성 깨기" 글을 쓰세요.
-구조: 관성 장면 → 왜 안 바꿨는지 → AI 적용 → before/after 수치 → 통찰.
-첫 줄: "우리 회사에서 ___는 원래 ___이었다." 해시태그: #관성깨기
-소재: {source_data}""",
+_FB_SYS = "당신은 20인 유통회사 부사장의 SNS 콘텐츠를 작성합니다. 반말, 담백한 톤. 회사명 노출 금지. 200~400자."
+_FB_PIL = {"inertia_break": "관성 깨기 글. 소재: {source_data}", "trend_apply": "트렌드 적용. 소재: {source_data}",
+           "vp_coding": "코딩 경험. 소재: {source_data}", "news_20people": "뉴스 해석. 뉴스: {source_data}",
+           "employee_reaction": "직원 반응. 소재: {source_data}", "weekly_ax": "주간 회고. 데이터: {source_data}"}
 
-    "news_20people": """AI 뉴스를 20인 회사 관점으로 해석하세요.
-구조: 뉴스 핵심 → 대기업이라면 → 20인 회사라면 → 시사점.
-해시태그: #AI뉴스 #중소기업AI
-뉴스: {source_data}""",
 
-    "trend_apply": """AI 트렌드를 실제 업무에 적용한 결과를 기록하세요.
-구조: 트렌드 소개(한 줄) → 내 업무에 어떻게 적용했는지 → 적용 결과/수치 → 다음에 시도할 것.
-핵심: "해봤다. 결과는 이렇다." 톤. 추측이 아닌 실전 기록.
-해시태그: #AI트렌드적용 #중소기업AI #관성깨기
-소재: {source_data}""",
+def get_prompt(category: str, key: str) -> str:
+    """DB에서 프롬프트 로드, 없으면 폴백"""
+    try:
+        conn = get_connection()
+        row = conn.execute("SELECT content FROM prompt_templates WHERE category = ? AND key = ?", (category, key)).fetchone()
+        conn.close()
+        if row:
+            return dict(row)["content"]
+    except Exception:
+        pass
+    if category == "story" and key == "system":
+        return _FB_SYS
+    if category == "story":
+        return _FB_PIL.get(key, _FB_PIL["inertia_break"])
+    return ""
 
-    "vp_coding": """비개발자 부사장의 코딩 경험 글을 쓰세요.
-구조: 오늘 만든 것 → 삽질 → Claude와 대화 → 자조적 마무리.
-해시태그: #부사장코딩 #비개발자코딩
-소재: {source_data}""",
 
-    "employee_reaction": """AI 도입 시 직원 반응 글을 쓰세요.
-직원은 역할로만 언급. 저항에 공감하는 톤.
-구조: 전달 장면+대사 → 첫 반응 → 변화 과정 → 교훈.
-해시태그: #AI도입 #조직변화
-소재: {source_data}""",
+def get_system_prompt():
+    return get_prompt("story", "system")
 
-    "weekly_ax": """이번 주 AI 전환 회고.
-구조: 핵심 1가지 → 수치 → 발견 → 다음 주 타겟.
-해시태그: #주간AX리포트 #관성깨기
-데이터: {source_data}""",
-}
+
+def get_pillar_prompt(ct):
+    return get_prompt("story", ct)
 
 RSS_FEEDS = [
     {"name": "TechCrunch AI", "url": "https://techcrunch.com/category/artificial-intelligence/feed/"},
@@ -168,8 +162,8 @@ async def generate_content_from_source(source_id: Optional[int], platform: str, 
             return {"error": "소재 ID 또는 수동 텍스트 필요"}
 
         if platform == "threads":
-            tmpl = PILLAR_PROMPTS.get(content_type, PILLAR_PROMPTS["inertia_break"])
-            body = await call_claude(SYSTEM_PROMPT, tmpl.format(source_data=source_data))
+            tmpl = get_pillar_prompt(content_type)
+            body = await call_claude(get_system_prompt(), tmpl.format(source_data=source_data))
         elif platform == "instagram":
             body = await call_claude("카드뉴스 JSON. JSON만 출력.", f'인스타 카드뉴스 JSON. 회사명 금지. 5~6장. 관성→전환.\n소재: {source_data}\n응답: {{"slides":[{{"type":"cover","text":"","subtext":""}}],"caption":"","hashtags":[]}}')
         else:
