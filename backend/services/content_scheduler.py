@@ -230,10 +230,13 @@ async def _generate_reels_script(source_data: dict, pillar: str) -> dict:
         conn.close()
 
     prompt = reels_prompt.format(source_data=source_text, episode_num=f"EP.{ep_num:02d}")
-    result_text = await call_claude("릴스 스크립트 전문가. JSON만 출력.", prompt)
+    result_text = await call_claude("릴스 스크립트 전문가. JSON만 출력.", prompt, max_tokens=4096)
 
     try:
-        script = json.loads(result_text.strip().strip("```json").strip("```"))
+        import re
+        cleaned = re.sub(r'^\s*```(?:json)?\s*\n?', '', result_text.strip())
+        cleaned = re.sub(r'\n?\s*```\s*$', '', cleaned.strip())
+        script = json.loads(cleaned)
         conn = get_connection()
         try:
             cur = conn.execute(
