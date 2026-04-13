@@ -951,11 +951,28 @@ async def _send_telegram_scan_alert(new_mails: list):
             lines.append("")
         lines.append(f"📨 총 {len(new_mails)}건 승인 대기 중")
         lines.append("")
-        lines.append("👉 대시보드에서 [승인] 후 자동 처리됩니다")
-        lines.append("🔗 order-agent → AI 메일")
+        lines.append("👉 <b>승인</b> 입력 시 자동 처리됩니다")
         lines.append(f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}")
         
-        await telegram.send_message("\n".join(lines))
+        # 인라인 버튼 포함 메시지
+        import httpx
+        url = f"{telegram.api_base}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": "\n".join(lines),
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "reply_markup": {
+                "inline_keyboard": [
+                    [
+                        {"text": "✅ 승인 → 자동 처리", "callback_data": "승인"},
+                        {"text": "⏭ 나중에", "callback_data": "상태"},
+                    ]
+                ]
+            }
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.post(url, json=payload)
     except Exception as e:
         logger.warning(f"[텔레그램] 스캔 알림 실패: {e}")
 
