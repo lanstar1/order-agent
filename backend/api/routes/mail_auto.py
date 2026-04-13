@@ -781,3 +781,27 @@ async def reject_pending(request: Request):
         )
     conn.commit()
     return {"success": True, "skipped": len(message_ids)}
+
+
+@router.post("/scan-now")
+async def scan_now():
+    """즉시 메일 스캔 (승인 대기 생성)"""
+    from services.mail_auto_service import _auto_check_and_process
+    await _auto_check_and_process()
+    
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT id, message_id, subject, received_at, attachment_count
+        FROM mail_processing_log WHERE status = 'pending'
+        ORDER BY received_at DESC
+    """).fetchall()
+    
+    return {
+        "scanned": True,
+        "pending_count": len(rows),
+        "pending": [
+            {"id": r[0], "message_id": r[1], "subject": r[2],
+             "received_at": r[3], "attachment_count": r[4]}
+            for r in rows
+        ],
+    }
