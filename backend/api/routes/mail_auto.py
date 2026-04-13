@@ -134,7 +134,7 @@ def _load_product_mapping_from_file(conn):
 
 
 def _lookup_prod_cd(model_name: str) -> str:
-    """모델명 → 품목코드 조회. 정확 매칭 → 전방 매칭 순서"""
+    """모델명 → 품목코드 조회. 정확→전방→역방→클린 순서"""
     conn = get_connection()
     # 1. 정확 매칭
     row = conn.execute(
@@ -144,8 +144,8 @@ def _lookup_prod_cd(model_name: str) -> str:
     if row:
         return row[0]
     
-    # 2. 매핑 테이블의 model_name이 검색 모델명으로 시작하는 경우
-    #    예: 매핑에 "LSP-GIC-FJM, STP" → 검색 "LSP-GIC-FJM" 매칭
+    # 2. 매핑 model_name이 검색어로 시작 (매핑에 추가 텍스트 있는 경우)
+    #    예: 매핑 "LSP-GIC-FJM, STP" → 검색 "LSP-GIC-FJM"
     row = conn.execute(
         "SELECT prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY LENGTH(model_name) LIMIT 1",
         (model_name + "%",)
@@ -153,15 +153,14 @@ def _lookup_prod_cd(model_name: str) -> str:
     if row:
         return row[0]
     
-    # 3. 검색 모델명이 매핑 테이블의 model_name으로 시작하는 경우
-    #    예: 검색 "LSP-GIC-FJM" → 매핑에 "LSP-GIC-FJM" 포함
-    rows = conn.execute(
-        "SELECT model_name, prod_cd FROM product_code_mapping"
-    ).fetchall()
-    for mname, pcd in rows:
-        clean = mname.split(",")[0].split("★")[0].strip()
-        if clean == model_name:
-            return pcd
+    # 3. 검색어가 매핑 model_name으로 시작 (색상 접미사 등)
+    #    예: 검색 "LS-5STPD-2MG" → 매핑 "LS-5STPD-2M" (가장 긴 매칭 우선)
+    row = conn.execute(
+        "SELECT prod_cd FROM product_code_mapping WHERE ? LIKE model_name || '%' ORDER BY LENGTH(model_name) DESC LIMIT 1",
+        (model_name,)
+    ).fetchone()
+    if row:
+        return row[0]
     
     return ""
 
