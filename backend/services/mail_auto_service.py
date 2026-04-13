@@ -490,10 +490,19 @@ async def create_purchase_slip(
                     (model + "%",)
                 ).fetchone()
             if not row:
-                row = _conn.execute(
-                    "SELECT prod_cd FROM product_code_mapping WHERE ? LIKE model_name || '%' ORDER BY LENGTH(model_name) DESC LIMIT 1",
-                    (model,)
-                ).fetchone()
+                # 역방향: LS-5STPD-2MG → LS-5STPD-2M
+                prefix = model[:-1] if len(model) > 3 else model
+                cands = _conn.execute(
+                    "SELECT model_name, prod_cd FROM product_code_mapping WHERE model_name LIKE ?",
+                    (prefix + "%",)
+                ).fetchall()
+                best = ("", "")
+                for mname, pcd in cands:
+                    clean = mname.split(",")[0].strip()
+                    if model.startswith(clean) and len(clean) > len(best[0]):
+                        best = (clean, pcd)
+                if best[1]:
+                    row = (best[1],)
             prod_cd = row[0] if row else ""
         except Exception:
             prod_cd = ""
@@ -845,9 +854,8 @@ async def _send_telegram_notification(result: dict):
 
 
 async def _auto_check_and_process():
-    """스케줄러에서 호출: 신규 메일 확인 → 자동 처리 → 텔레그램 알림"""
+    """스케줄러: 신규 메일 스캔 → 텔레그램 알림 (처리는 승인 후)"""
     if _auto_state["running"]:
-        logger.info("[자동실행] 이전 작업 진행 중, 스킵")
         return
 
     _auto_state["running"] = True
@@ -856,39 +864,100 @@ async def _auto_check_and_process():
     try:
         from db.database import get_connection
         conn = get_connection()
-
-        result = await run_mail_automation_pipeline(
-            days_back=7,
-            auto_reply=_auto_state.get("auto_reply", False),
-            auto_erp=True,
-            db_conn=conn,
-            reply_template=_auto_state.get("reply_template", ""),
-        )
-
-        _auto_state["last_result"] = {
-            "total_emails": result.get("total_emails", 0),
-            "new_processed": result.get("new_processed", 0),
-            "exchange_rate": result.get("exchange_rate", 0),
-            "timestamp": datetime.now(KST).isoformat(),
-        }
-
-        if result.get("new_processed", 0) > 0:
-            logger.info(f"[자동실행] {result['new_processed']}건 신규 처리 완료")
-            # 텔레그램 알림
-            await _send_telegram_notification(result)
-        else:
-            logger.debug("[자동실행] 신규 메일 없음")
-
-    except Exception as e:
-        logger.error(f"[자동실행] 오류: {e}")
-        _auto_state["last_result"] = {"error": str(e), "timestamp": datetime.now(KST).isoformat()}
-        # 오류 시에도 텔레그램 알림
+        
+        # 이미 처리/대기 중인 메일 제외
+        processed_ids = set()
         try:
-            await _send_telegram_notification({"new_processed": -1, "error": str(e)})
+            cursor = conn.execute(
+                "SELECT message_id FROM mail_processing_log WHERE status IN ('completed','pending')"
+            )
+            processed_ids = {row[0] for row in cursor.fetchall()}
         except Exception:
             pass
+        
+        emails = fetch_bor_emails(days_back=7)
+        
+        new_mails = []
+        for mail_info in emails:
+            msg_id = mail_info["message_id"]
+            if msg_id in processed_ids:
+                continue
+            
+            # pending 상태로 DB 저장
+            try:
+                conn.execute("""
+                    INSERT OR IGNORE INTO mail_processing_log
+                    (message_id, subject, sender, received_at, attachment_count, status, processed_at)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?)
+                """, (
+                    msg_id,
+                    mail_info["subject"],
+                    TARGET_SENDER,
+                    str(mail_info.get("date_kst", "")),
+                    len(mail_info["attachments"]),
+                    datetime.now(KST).isoformat(),
+                ))
+                conn.commit()
+            except Exception:
+                pass
+            
+            new_mails.append({
+                "message_id": msg_id,
+                "subject": mail_info["subject"],
+                "date": str(mail_info.get("date_kst", ""))[:16],
+                "attachments": [a["filename"] for a in mail_info["attachments"]],
+            })
+        
+        _auto_state["last_result"] = {
+            "new_found": len(new_mails),
+            "timestamp": datetime.now(KST).isoformat(),
+        }
+        
+        if new_mails:
+            logger.info(f"[자동스캔] 신규 선적 메일 {len(new_mails)}건 발견")
+            await _send_telegram_scan_alert(new_mails)
+        
+    except Exception as e:
+        logger.error(f"[자동스캔] 오류: {e}")
+        _auto_state["last_result"] = {"error": str(e), "timestamp": datetime.now(KST).isoformat()}
     finally:
         _auto_state["running"] = False
+
+
+async def _send_telegram_scan_alert(new_mails: list):
+    """신규 메일 발견 텔레그램 알림"""
+    try:
+        from db.database import get_connection
+        from services.telegram_service import TelegramService
+        
+        conn = get_connection()
+        rows = conn.execute("SELECT key, value FROM inventory_alert_settings").fetchall()
+        settings = {row[0]: row[1] for row in rows}
+        
+        bot_token = settings.get("telegram_bot_token", "")
+        chat_id = settings.get("telegram_chat_id", "")
+        if not bot_token or not chat_id:
+            return
+        
+        telegram = TelegramService(bot_token, chat_id)
+        
+        lines = []
+        lines.append("📬 <b>BOR 신규 선적 메일 감지!</b>")
+        lines.append("")
+        for m in new_mails:
+            lines.append(f"📋 <b>{m['subject'][:50]}</b>")
+            lines.append(f"   📎 {', '.join(m['attachments'])}")
+            lines.append(f"   📅 {m['date']}")
+            lines.append("")
+        lines.append(f"📨 총 {len(new_mails)}건 승인 대기 중")
+        lines.append("")
+        lines.append("👉 대시보드에서 [승인] 후 자동 처리됩니다")
+        lines.append("🔗 order-agent → AI 메일")
+        lines.append(f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}")
+        
+        await telegram.send_message("\n".join(lines))
+    except Exception as e:
+        logger.warning(f"[텔레그램] 스캔 알림 실패: {e}")
 
 
 def _auto_sync_wrapper():

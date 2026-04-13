@@ -9003,6 +9003,10 @@ function reconcileNewMatch() {
           lastResult.innerHTML = '<span style="color:#16a34a">✅ '+lr.new_processed+'건 처리 완료 ('+lr.timestamp?.substring(11,19)+')</span>';
           mailLoadDashboard();
           mailLoadLogs();
+          mailLoadPending();
+        } else if (lr.new_found > 0) {
+          lastResult.innerHTML = '<span style="color:#d97706">📬 '+lr.new_found+'건 신규 발견 — 승인 대기</span>';
+          mailLoadPending();
         } else {
           lastResult.textContent = '신규 메일 없음';
         }
@@ -9019,6 +9023,79 @@ function reconcileNewMatch() {
   function _stopAutoStatusPoll() {
     if (_autoStatusTimer) { clearInterval(_autoStatusTimer); _autoStatusTimer = null; }
   }
+
+  // ─── 승인 대기 관리 ───────────────────────
+  async function mailLoadPending() {
+    try {
+      const r = await fetch('/api/mail-auto/pending');
+      const d = await r.json();
+      const section = document.getElementById('mail-pending-section');
+      const list = document.getElementById('mail-pending-list');
+      const count = document.getElementById('mail-pending-count');
+      
+      if (d.pending && d.pending.length > 0) {
+        section.style.display = 'block';
+        count.textContent = d.pending.length + '건';
+        let html = '<table class="table table-sm" style="font-size:13px"><thead><tr><th><input type="checkbox" id="pending-check-all" onchange="mailTogglePendingAll(this.checked)" checked></th><th>수신일</th><th>제목</th><th>첨부</th></tr></thead><tbody>';
+        d.pending.forEach(p => {
+          html += `<tr>
+            <td><input type="checkbox" class="pending-check" value="${p.message_id}" checked></td>
+            <td style="font-size:12px;white-space:nowrap">${(p.received_at||'').substring(0,16)}</td>
+            <td>${p.subject||''}</td>
+            <td style="text-align:center">${p.attachment_count}개</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+        list.innerHTML = html;
+      } else {
+        section.style.display = 'none';
+      }
+    } catch(e) {}
+  }
+
+  window.mailTogglePendingAll = function(checked) {
+    document.querySelectorAll('.pending-check').forEach(cb => cb.checked = checked);
+  };
+
+  window.mailApproveAll = async function() {
+    const checks = document.querySelectorAll('.pending-check:checked');
+    if (!checks.length) return alert('승인할 메일을 선택하세요');
+    
+    const ids = Array.from(checks).map(cb => cb.value);
+    const autoReply = document.getElementById('mail-auto-reply-check')?.checked || false;
+    const template = document.getElementById('mail-template-body')?.value || '';
+    
+    if (!confirm(`${ids.length}건 승인 → HS코드 입력 + ERP 전표 전송을 시작합니다.\n계속하시겠습니까?`)) return;
+    
+    const btn = event.target;
+    btn.disabled = true; btn.textContent = '⏳ 처리 중...';
+    
+    try {
+      const r = await fetch('/api/mail-auto/approve', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({message_ids: ids, auto_reply: autoReply, reply_template: template})
+      });
+      const d = await r.json();
+      alert(`✅ ${d.new_processed||0}건 처리 완료!`);
+      mailLoadPending();
+      mailLoadDashboard();
+      mailLoadLogs();
+    } catch(e) { alert('처리 실패: '+e.message); }
+    btn.disabled = false; btn.textContent = '✅ 전체 승인 → 자동 처리';
+  };
+
+  window.mailRejectAll = async function() {
+    const checks = document.querySelectorAll('.pending-check:checked');
+    if (!checks.length) return;
+    if (!confirm(`${checks.length}건을 스킵합니다.`)) return;
+    
+    const ids = Array.from(checks).map(cb => cb.value);
+    await fetch('/api/mail-auto/reject', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message_ids: ids})
+    });
+    mailLoadPending();
+  };
 
   // ─── 품목코드 매핑 관리 ───────────────────
   window.mailAddMapping = async function() {
@@ -9090,6 +9167,7 @@ function reconcileNewMatch() {
     await mailLoadRate();
     await mailLoadLogs();
     mailLoadMappingCount();
+    mailLoadPending();
     // 자동 실행 상태 복원
     try {
       const r = await fetch('/api/mail-auto/scheduler/status');

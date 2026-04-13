@@ -2103,6 +2103,16 @@ C규격품 200개
         </div>
 
         <!-- 메일 미리보기 / 실행 결과 -->
+        <div id="mail-pending-section" class="card" style="padding:20px;margin-bottom:16px;display:none;border:2px solid #f59e0b20">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3 style="margin:0;color:#d97706">📬 승인 대기 <span id="mail-pending-count" class="badge" style="background:#fef3c7;color:#d97706"></span></h3>
+            <div style="display:flex;gap:8px">
+              <button onclick="mailApproveAll()" class="btn btn-primary" style="padding:8px 16px">✅ 전체 승인 → 자동 처리</button>
+              <button onclick="mailRejectAll()" class="btn btn-sm" style="padding:8px 12px;color:#999">⏭ 전체 스킵</button>
+            </div>
+          </div>
+          <div id="mail-pending-list"></div>
+        </div>
         <div id="mail-preview-result" style="margin-bottom:16px"></div>
         <div id="mail-run-result" style="margin-bottom:16px"></div>
 
@@ -5493,7 +5503,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 </script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260413c"></script>
+<script src="/static/js/app.js?v=20260413d"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

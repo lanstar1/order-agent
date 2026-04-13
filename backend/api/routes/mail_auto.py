@@ -155,12 +155,18 @@ def _lookup_prod_cd(model_name: str) -> str:
     
     # 3. 검색어가 매핑 model_name으로 시작 (색상 접미사 등)
     #    예: 검색 "LS-5STPD-2MG" → 매핑 "LS-5STPD-2M" (가장 긴 매칭 우선)
-    row = conn.execute(
-        "SELECT prod_cd FROM product_code_mapping WHERE ? LIKE model_name || '%' ORDER BY LENGTH(model_name) DESC LIMIT 1",
-        (model_name,)
-    ).fetchone()
-    if row:
-        return row[0]
+    prefix = model_name[:-1] if len(model_name) > 3 else model_name
+    rows = conn.execute(
+        "SELECT model_name, prod_cd FROM product_code_mapping WHERE model_name LIKE ?",
+        (prefix + "%",)
+    ).fetchall()
+    best = ("", "")
+    for mname, pcd in rows:
+        clean = mname.split(",")[0].strip()
+        if model_name.startswith(clean) and len(clean) > len(best[0]):
+            best = (clean, pcd)
+    if best[1]:
+        return best[1]
     
     return ""
 
@@ -703,3 +709,75 @@ async def search_mapping(q: str = Query("")):
         (f"%{q.strip()}%",)
     ).fetchall()
     return {"results": [{"model_name": r[0], "prod_cd": r[1]} for r in rows]}
+
+
+# ─── 승인 기반 처리 ────────────────────────────────────────
+
+@router.get("/pending")
+async def get_pending_mails():
+    """승인 대기 중인 메일 목록"""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT id, message_id, subject, received_at, attachment_count, status
+        FROM mail_processing_log WHERE status = 'pending'
+        ORDER BY received_at DESC
+    """).fetchall()
+    return {"pending": [
+        {"id": r[0], "message_id": r[1], "subject": r[2], 
+         "received_at": r[3], "attachment_count": r[4], "status": r[5]}
+        for r in rows
+    ]}
+
+
+@router.post("/approve")
+async def approve_pending(request: Request):
+    """pending 메일 승인 → 파이프라인 실행"""
+    body = await request.json()
+    message_ids = body.get("message_ids", [])
+    auto_reply = body.get("auto_reply", False)
+    reply_template = body.get("reply_template", "")
+    
+    if not message_ids:
+        raise HTTPException(400, "승인할 메일을 선택하세요")
+    
+    conn = get_connection()
+    
+    # pending → processing
+    for mid in message_ids:
+        conn.execute(
+            "UPDATE mail_processing_log SET status = 'processing' WHERE message_id = ?",
+            (mid,)
+        )
+    conn.commit()
+    
+    # 파이프라인 실행
+    result = await run_mail_automation_pipeline(
+        days_back=30,
+        auto_reply=auto_reply,
+        auto_erp=True,
+        db_conn=conn,
+        reply_template=reply_template,
+    )
+    
+    # 텔레그램 결과 알림
+    if result.get("new_processed", 0) > 0:
+        from services.mail_auto_service import _send_telegram_notification
+        await _send_telegram_notification(result)
+    
+    return result
+
+
+@router.post("/reject")
+async def reject_pending(request: Request):
+    """pending 메일 거부 (스킵)"""
+    body = await request.json()
+    message_ids = body.get("message_ids", [])
+    
+    conn = get_connection()
+    for mid in message_ids:
+        conn.execute(
+            "UPDATE mail_processing_log SET status = 'skipped' WHERE message_id = ?",
+            (mid,)
+        )
+    conn.commit()
+    return {"success": True, "skipped": len(message_ids)}
