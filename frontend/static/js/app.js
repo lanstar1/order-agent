@@ -4616,6 +4616,26 @@ async function csSubmitCreate() {
 
 // ── 상세 보기 (기존 기능 유지 + 신규 필드 표시) ──
 async function csShowDetail(ticketId) {
+  // ── Phase 1: 즉시 모달 표시 (로딩 스켈레톤) ──
+  document.getElementById("cs-modal-content").innerHTML = `
+    <div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="width:180px;height:16px;background:#e5e7eb;border-radius:4px;margin-bottom:8px" class="cs-skel"></div>
+        <div style="width:120px;height:14px;background:#e5e7eb;border-radius:4px" class="cs-skel"></div>
+      </div>
+      <button onclick="csCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280">&times;</button>
+    </div>
+    <div class="cs-modal-body">
+      <div style="display:flex;gap:12px;margin-bottom:20px">${[1,2,3,4,5].map(()=>'<div style="flex:1;text-align:center"><div style="width:24px;height:24px;border-radius:50%;background:#e5e7eb;margin:0 auto 4px" class="cs-skel"></div><div style="width:40px;height:10px;background:#e5e7eb;border-radius:3px;margin:0 auto" class="cs-skel"></div></div>').join("")}</div>
+      <div style="width:100%;height:60px;background:#fef2f2;border-radius:8px;margin-bottom:16px" class="cs-skel"></div>
+      <div style="width:70%;height:14px;background:#e5e7eb;border-radius:4px;margin-bottom:10px" class="cs-skel"></div>
+      <div style="width:50%;height:14px;background:#e5e7eb;border-radius:4px;margin-bottom:10px" class="cs-skel"></div>
+      <div style="width:60%;height:14px;background:#e5e7eb;border-radius:4px" class="cs-skel"></div>
+    </div>
+    <style>.cs-skel{animation:csPulse 1.2s ease-in-out infinite}@keyframes csPulse{0%,100%{opacity:1}50%{opacity:.4}}</style>`;
+  document.getElementById("cs-modal-overlay").style.display = "block";
+
+  // ── Phase 2: API 데이터 로드 후 실제 내용 교체 ──
   try {
     const res = await api.get(`/api/cs/tickets/${ticketId}`);
     const t = res.ticket || res;
@@ -4737,8 +4757,17 @@ async function csShowDetail(ticketId) {
     html += `</div></div>`;
 
     document.getElementById("cs-modal-content").innerHTML = html;
-    document.getElementById("cs-modal-overlay").style.display = "block";
-  } catch(e) { alert("오류: " + (e.message||e)); }
+  } catch(e) {
+    document.getElementById("cs-modal-content").innerHTML = `
+      <div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span style="color:#ef4444;font-weight:600">⚠️ 로딩 실패</span>
+        <button onclick="csCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280">&times;</button>
+      </div>
+      <div class="cs-modal-body" style="text-align:center;padding:40px;color:#6b7280">
+        <p>${e.message||e}</p>
+        <button onclick="csShowDetail('${ticketId}')" class="btn btn-primary" style="margin-top:12px;font-size:13px">다시 시도</button>
+      </div>`;
+  }
 }
 
 async function csDeleteTicket(ticketId) {

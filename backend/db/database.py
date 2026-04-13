@@ -876,6 +876,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cs_backorders_status ON cs_backorders(status);
         CREATE INDEX IF NOT EXISTS idx_cs_backorders_channel ON cs_backorders(sales_channel);
         CREATE INDEX IF NOT EXISTS idx_cs_action_logs_ticket ON cs_action_logs(ticket_id);
+        CREATE INDEX IF NOT EXISTS idx_cs_test_results_ticket ON cs_test_results(ticket_id);
+        CREATE INDEX IF NOT EXISTS idx_cs_files_ticket ON cs_files(ticket_id);
 
         CREATE INDEX IF NOT EXISTS idx_sr_date ON sales_records(slip_date);
         CREATE INDEX IF NOT EXISTS idx_sr_customer ON sales_records(customer_name);
