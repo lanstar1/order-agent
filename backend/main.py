@@ -681,6 +681,14 @@ async def startup():
     except Exception as e:
         logger.warning(f"판매현황 스케줄러 시작 실패: {e}")
 
+    # 콘텐츠 팩토리 자동 생성 스케줄러 (소재수집 06:00, 콘텐츠생성 07:00, 예약발행 매분)
+    try:
+        from services.content_scheduler import setup_content_scheduler
+        setup_content_scheduler()
+        logger.info("콘텐츠 팩토리 자동 생성 스케줄러 등록 완료")
+    except Exception as e:
+        logger.warning(f"콘텐츠 스케줄러 시작 실패 (서비스는 계속): {e}")
+
 
 # ─────────────────────────────────────────
 #  자료관리 자동 동기화 (서버 시작 시)

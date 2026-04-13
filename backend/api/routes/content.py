@@ -97,6 +97,34 @@ async def trigger_collection(user: dict = Depends(get_current_user)):
     return {"message": "수집 완료", "collected": result}
 
 
+@router.post("/auto-generate")
+async def trigger_auto_generate(user: dict = Depends(get_current_user)):
+    """수동으로 오늘의 콘텐츠 자동 생성 실행"""
+    from services.content_scheduler import auto_collect_and_evaluate, auto_generate_daily_content
+    await auto_collect_and_evaluate()
+    await auto_generate_daily_content()
+    return {"message": "자동 수집 + 생성 완료. 대시보드에서 확인하세요."}
+
+
+@router.get("/scheduler/status")
+async def get_scheduler_status(user: dict = Depends(get_current_user)):
+    """스케줄러 상태 조회"""
+    from services.content_scheduler import WEEKLY_SCHEDULE
+    from datetime import datetime, timezone, timedelta
+    KST = timezone(timedelta(hours=9))
+    now = datetime.now(KST)
+    weekday = now.weekday()
+    today_schedule = WEEKLY_SCHEDULE.get(weekday, [])
+    return {
+        "current_time_kst": now.strftime("%Y-%m-%d %H:%M"),
+        "today_weekday": ["월","화","수","목","금","토","일"][weekday],
+        "today_schedule": today_schedule,
+        "next_collect": "매일 06:00 KST",
+        "next_generate": "매일 07:00 KST",
+        "publish_check": "매분",
+    }
+
+
 @router.post("/sources/{source_id}/evaluate")
 async def evaluate_source(source_id: int, user: dict = Depends(get_current_user)):
     from services.content_service import evaluate_source_relevance
