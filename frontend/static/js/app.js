@@ -161,8 +161,18 @@ function navigateTo(pageId) {
   if (pageId === "map_monitor") initMapMonitor();
   // 메일 자동화 페이지 진입 시 초기화
   if (pageId === "mail_agent") initMailAutoPage();
-  // 콘텐츠 팩토리 페이지 진입 시 초기화
-  if (pageId === "content_factory") renderContentPage();
+  // 콘텐츠 팩토리 페이지 진입 시 비밀번호 확인
+  if (pageId === "content_factory") {
+    if (sessionStorage.getItem("cf_auth") !== "1") {
+      const pw = prompt("콘텐츠 팩토리 접근 비밀번호를 입력하세요:");
+      if (pw !== "lanstar2026") {
+        alert("비밀번호가 틀렸습니다.");
+        return;
+      }
+      sessionStorage.setItem("cf_auth", "1");
+    }
+    renderContentPage();
+  }
   // 재고모니터 페이지 진입 시 초기화
   if (pageId === "inventory_monitor") initInventoryMonitor();
   // 택배조회 페이지 진입 시 통계 로드
