@@ -179,6 +179,7 @@
                 <button id="b-ys" style="display:none;"></button>
                 <button class="btn btn-gray" onclick="sendExcludedErp()" id="b-exc">📋 경동 ERP전송</button>
                 <button class="btn btn-gray" onclick="downloadExcludedExcel()" id="b-exc-xl">📥 경동 엑셀</button>
+                <button class="btn btn-sm" onclick="openKdDispatchModal()" style="background:#7c3aed;color:#fff;">🚛 경동 발송처리</button>
             </div>
 
             <div style="margin-top:12px;">
@@ -1240,6 +1241,44 @@ async function submitTrackingUpload(){
         }
     }catch(e){ ss('s-auto','err',e.message); log('오류: '+e.message); }
 }
+
+// ── 경동택배 발송처리 (엑셀 업로드) ──
+function openKdDispatchModal(){
+    document.getElementById('kd-upload-input').value = '';
+    document.getElementById('kd-upload-name').textContent = '';
+    document.getElementById('kd-modal').style.display = 'flex';
+}
+function closeKdModal(){ document.getElementById('kd-modal').style.display = 'none'; }
+function onKdFileChange(input){
+    document.getElementById('kd-upload-name').textContent = input.files[0] ? input.files[0].name : '';
+}
+async function submitKdDispatch(){
+    const input = document.getElementById('kd-upload-input');
+    if(!input.files[0]){ alert('송장번호가 입력된 엑셀 파일을 선택해주세요.'); return; }
+
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    formData.append('carrier', 'KDEXP');
+
+    closeKdModal();
+    document.getElementById('card-result').style.display = 'block';
+    ss('s-auto','load','경동택배 발송처리 중...');
+    log('=== 경동택배 엑셀 발송처리 ===');
+
+    try{
+        const r = await(await fetch(B+'/api/smartstore/logen-dispatch-excel',{
+            method:'POST', body: formData
+        })).json();
+
+        if(r.success){
+            ss('s-auto','ok',`경동 발송처리 완료! ${r.dispatched_count||0}건 (건너뜀: ${r.skipped_count||0}건)`);
+            log(`완료: 발송 ${r.dispatched_count}, 건너뜀 ${r.skipped_count}`);
+        } else {
+            ss('s-auto','err', r.error || '경동 발송처리 실패');
+            log('실패: '+JSON.stringify(r));
+        }
+    }catch(e){ ss('s-auto','err',e.message); log('오류: '+e.message); }
+}
 </script>
 
 <!-- 로젠 송장처리 모달 -->
@@ -1270,6 +1309,31 @@ async function submitTrackingUpload(){
 
         <div style="display:flex;justify-content:flex-end;">
             <button onclick="closeTrackingModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">닫기</button>
+        </div>
+    </div>
+</div>
+
+<!-- 경동택배 발송처리 모달 -->
+<div id="kd-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:520px;display:flex;flex-direction:column;gap:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h2 style="margin:0;font-size:18px;">🚛 경동택배 발송처리</h2>
+            <button onclick="closeKdModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;">✕</button>
+        </div>
+        <p style="margin:0;font-size:13px;color:#64748b;">경동택배 송장번호가 포함된 엑셀 파일을 업로드하면<br>네이버 스마트스토어 주문만 자동으로 매칭하여 발송처리(배송중)합니다.</p>
+
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:10px;">
+            <p style="margin:0;font-size:13px;color:#475569;">엑셀 구조: <b>D열</b>=운송장번호, <b>S열</b>=주문번호 (플레이오토 출력파일 호환)</p>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                <span style="padding:8px 14px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;font-size:13px;white-space:nowrap;">파일 선택</span>
+                <span id="kd-upload-name" style="font-size:13px;color:#64748b;"></span>
+                <input id="kd-upload-input" type="file" accept=".xlsx" onchange="onKdFileChange(this)" style="display:none;">
+            </label>
+            <button onclick="submitKdDispatch()" style="padding:10px;border:none;border-radius:6px;background:#7c3aed;color:#fff;font-weight:600;cursor:pointer;font-size:14px;">경동택배 발송처리</button>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;">
+            <button onclick="closeKdModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">닫기</button>
         </div>
     </div>
 </div>

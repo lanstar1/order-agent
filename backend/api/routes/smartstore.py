@@ -761,6 +761,7 @@ async def logen_export_excel(
 @router.post("/logen-dispatch-excel")
 async def logen_dispatch_excel(
     file: UploadFile = File(...),
+    carrier: str = Form("LOGEN"),
 ):
     """ì¡ì¥ë²í¸ ê¸°ìë ìì ìë¡ë â ë¤ì´ë² ë°ì¡ì²ë¦¬.
     Hì´(8ë²ì§¸)ì ì¡ì¥ë²í¸, Aì´(1ë²ì§¸)ì ì£¼ë¬¸ë²í¸, Bì´(2ë²ì§¸)ì ìíì£¼ë¬¸ë²í¸
@@ -789,7 +790,7 @@ async def logen_dispatch_excel(
             continue
         dispatch_list.append({
             "productOrderId": poid,
-            "deliveryCompanyCode": "LOGEN",
+            "deliveryCompanyCode": carrier,
             "trackingNumber": tracking,
         })
 
