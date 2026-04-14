@@ -277,7 +277,7 @@ async function testConn(){
         else{sd('d-nv','r');log('네이버: '+r.error);}
     }catch(e){sd('d-nv','r');log('네이버 연결실패: '+e.message);}
     try{
-        const r=await(await fetch(B+'/health')).json();
+        const r=await(await fetch(B+'/api/health')).json();
         if(r.status==='ok'){sd('d-erp','g');log('서버 OK');}else{sd('d-erp','y');}
     }catch(e){sd('d-erp','r');log('서버 연결실패');}
     sd('d-lg','g');log('iLogen은 실제 등록시 확인');
