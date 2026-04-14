@@ -74,6 +74,7 @@
 
         .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
         .dot-g { background: #22c55e; } .dot-r { background: #ef4444; } .dot-y { background: #f59e0b; }
+        .dropdown-menu.show { display:block !important; }
         .ec { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 4px 0; }
         .sp { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -161,10 +162,20 @@
                         <option value="">-- 선택 --</option>
                     </select>
                 </div>
-                <button class="btn btn-blue" onclick="sendErp('10')" id="b-erp-ys" style="background:#1d4ed8;">🏢 용산 ERP</button>
-                <button class="btn btn-blue" onclick="sendErp('30')" id="b-erp-tj">📦 통진 ERP</button>
-                <button class="btn btn-red" onclick="openTrackingModal('gimpo')" id="b-gp">🚚 김포 송장입력</button>
-                <button class="btn btn-orange" onclick="openTrackingModal('yongsan')" id="b-ys">🚚 용산 송장입력</button>
+                <div style="position:relative;display:inline-block;">
+                    <button class="btn btn-blue" onclick="this.nextElementSibling.classList.toggle('show')" style="background:#1d4ed8;">🏢 ERP 전송 ▾</button>
+                    <div class="dropdown-menu" style="display:none;position:absolute;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:10;min-width:140px;overflow:hidden;">
+                        <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');sendErp('10')">🏢 용산 ERP</div>
+                        <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');sendErp('30')">📦 통진 ERP</div>
+                    </div>
+                </div>
+                <div style="position:relative;display:inline-block;">
+                    <button class="btn btn-red" onclick="this.nextElementSibling.classList.toggle('show')">🚚 송장입력 ▾</button>
+                    <div class="dropdown-menu" style="display:none;position:absolute;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:10;min-width:140px;overflow:hidden;">
+                        <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');openTrackingModal('gimpo')">🚚 김포 송장입력</div>
+                        <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#fff7ed'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');openTrackingModal('yongsan')">🚚 용산 송장입력</div>
+                    </div>
+                </div>
                 <button class="btn btn-gray" onclick="sendExcludedErp()" id="b-exc">📋 경동 ERP전송</button>
                 <button class="btn btn-gray" onclick="downloadExcludedExcel()" id="b-exc-xl">📥 경동 엑셀</button>
             </div>
@@ -248,6 +259,13 @@ let _orderErpMap = {};   // 상품주문번호 → ERP 품목코드
 function getSelectedEmpCd() {
     return document.getElementById('sel-emp')?.value || '';
 }
+
+// 바깥 클릭 시 드롭다운 닫기
+document.addEventListener('click', function(e) {
+    document.querySelectorAll('.dropdown-menu.show').forEach(function(m) {
+        if (!m.parentElement.contains(e.target)) m.classList.remove('show');
+    });
+});
 
 // 날짜 기본값
 (function initDates(){
