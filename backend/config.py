@@ -168,6 +168,7 @@ MAIL2_SENDER_FILTER = os.getenv("MAIL2_SENDER_FILTER", "13428934642@163.com")
 
 # ─── Content Factory (SNS 콘텐츠 자동화) ──────────────────
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 THREADS_USER_ID = os.getenv("THREADS_USER_ID", "")
 THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
 IG_USER_ID = os.getenv("IG_USER_ID", "")

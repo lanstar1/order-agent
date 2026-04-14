@@ -106,7 +106,20 @@ async def auto_generate_daily_content():
                 # 릴스 스크립트 생성
                 result = await _generate_reels_script(source_data, item.get("pillar", "inertia_break"))
                 if result:
-                    generated.append({"type": "릴스", "desc": item["desc"], "id": result.get("item_id")})
+                    generated.append({"type": "릴스 스크립트", "desc": item["desc"], "id": result.get("item_id")})
+                    # 이미지 자동 생성 (나노바나나)
+                    try:
+                        from services.reels_generator import generate_scene_images
+                        script_data = json.loads(
+                            get_connection().execute("SELECT body FROM content_items WHERE id=?", (result["item_id"],)).fetchone()["body"]
+                        ) if result.get("item_id") else {}
+                        if script_data:
+                            ep = script_data.get("episode", "XX").replace("EP.", "")
+                            img_result = await generate_scene_images(script_data, f"/home/claude/data/reels/ep{ep}")
+                            if img_result.get("generated", 0) > 0:
+                                generated.append({"type": "릴스 이미지", "desc": f"{img_result['generated']}장 생성", "id": result.get("item_id")})
+                    except Exception as e:
+                        logger.warning(f"[콘텐츠 스케줄러] 이미지 자동 생성 실패: {e}")
                     # 쓰레드 텍스트도 자동 생성
                     threads_text = result.get("threads_text", "")
                     if threads_text:

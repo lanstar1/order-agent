@@ -20,7 +20,6 @@ function renderContentPage() {
             <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button class="btn btn-sm" onclick="contentTab('dashboard')" id="ct-btn-dashboard">대시보드</button>
                 <button class="btn btn-sm" onclick="contentTab('writer')" id="ct-btn-writer">글쓰기</button>
-                <button class="btn btn-sm" onclick="contentTab('cardnews')" id="ct-btn-cardnews">카드뉴스</button>
                 <button class="btn btn-sm" onclick="contentTab('sources')" id="ct-btn-sources">소재함</button>
                 <button class="btn btn-sm" onclick="contentTab('schedule')" id="ct-btn-schedule">발행 스케줄</button>
                 <button class="btn btn-sm" onclick="contentTab('prompts')" id="ct-btn-prompts">프롬프트 설정</button>
@@ -42,7 +41,6 @@ function contentTab(tab) {
     switch(tab) {
         case 'dashboard': renderContentDashboard(area); break;
         case 'writer': renderContentWriter(area); break;
-        case 'cardnews': renderCardnewsEditor(area); break;
         case 'sources': renderSourcesManager(area); break;
         case 'schedule': renderScheduleView(area); break;
         case 'prompts': renderPromptsManager(area); break;
@@ -280,143 +278,6 @@ async function publishWriterContent() {
     } catch (e) {
         showToast('발행 실패: ' + e.message, 'error');
     }
-}
-
-
-// ============================================================
-// 카드뉴스 편집기 — 프론트엔드에서 실시간 미리보기
-// ============================================================
-
-function renderCardnewsEditor(area) {
-    area.innerHTML = `
-        <div class="card" style="margin-bottom:12px">
-            <h3>카드뉴스 편집기</h3>
-            <p style="font-size:13px;color:#888;margin:8px 0">
-                JSON을 수정하면 미리보기가 실시간 반영됩니다. "AI 생성"으로 자동 생성도 가능.
-            </p>
-            <div style="display:flex;gap:8px;margin-bottom:12px">
-                <textarea id="cardnews-source" rows="2" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ddd;font-size:13px"
-                    placeholder="소재 입력 (예: 발주서 자동화 2시간→10분)"></textarea>
-                <button class="btn btn-primary" onclick="generateCardnews()" style="white-space:nowrap">AI 생성</button>
-            </div>
-        </div>
-
-        <div style="display:flex;gap:12px">
-            <div class="card" style="flex:1;min-width:0">
-                <h4>JSON 편집</h4>
-                <textarea id="cardnews-json" rows="20"
-                    style="width:100%;padding:10px;border-radius:6px;border:1px solid #ddd;font-family:monospace;font-size:12px;resize:vertical"
-                    oninput="updateCardnewsPreview()">${getDefaultCardnewsJSON()}</textarea>
-            </div>
-            <div class="card" style="width:280px;flex-shrink:0">
-                <h4>미리보기</h4>
-                <div id="cardnews-preview" style="margin-top:8px"></div>
-                <div style="margin-top:8px;display:flex;gap:6px">
-                    <button class="btn btn-xs" onclick="prevCardSlide()">이전</button>
-                    <span id="cardnews-slide-num" style="font-size:12px;line-height:28px;flex:1;text-align:center">1/5</span>
-                    <button class="btn btn-xs" onclick="nextCardSlide()">다음</button>
-                </div>
-                <button class="btn btn-sm btn-primary" style="width:100%;margin-top:8px" onclick="exportCardnewsPNG()">
-                    PNG 내보내기
-                </button>
-            </div>
-        </div>
-    `;
-
-    window._cardSlideIndex = 0;
-    updateCardnewsPreview();
-}
-
-function getDefaultCardnewsJSON() {
-    return JSON.stringify({
-        slides: [
-            {type:"cover", text:"발주서 처리에\n매일 2시간?", subtext:"관성 리포트 EP.01"},
-            {type:"inertia", text:"PDF → 수동 확인 → ERP 입력 → 송장 등록", subtext:"10년간 같은 방식"},
-            {type:"transformation", text:"PDF 업로드 → AI 분석 → 자동 처리", subtext:"전체 10분"},
-            {type:"stats", text:"2시간 → 10분", subtext:"월 40시간 절약"},
-            {type:"cta", text:"다음: 직원의 첫 반응은?", subtext:"팔로우하고 다음 편 받기"}
-        ],
-        caption:"관성을 깨는 부사장의 AI 전환 실전기",
-        hashtags:["관성깨기","AI자동화","중소기업AI"]
-    }, null, 2);
-}
-
-function updateCardnewsPreview() {
-    const preview = document.getElementById('cardnews-preview');
-    try {
-        const data = JSON.parse(document.getElementById('cardnews-json').value);
-        const slides = data.slides || [];
-        const idx = window._cardSlideIndex || 0;
-        const slide = slides[idx];
-
-        if (!slide) {
-            preview.innerHTML = '<p style="color:#888">슬라이드 없음</p>';
-            return;
-        }
-
-        const colors = {
-            cover: {bg:'#0C0F1D', accent:'#97C459'},
-            inertia: {bg:'#0C0F1D', accent:'#D85A30'},
-            transformation: {bg:'#0C0F1D', accent:'#1D9E75'},
-            stats: {bg:'#0C0F1D', accent:'#06B6D4'},
-            insight: {bg:'#0C0F1D', accent:'#94A3B8'},
-            cta: {bg:'#0C0F1D', accent:'#97C459'}
-        };
-        const c = colors[slide.type] || colors.cover;
-
-        preview.innerHTML = `
-            <div style="width:252px;height:315px;background:${c.bg};border-radius:12px;padding:24px;display:flex;flex-direction:column;justify-content:center;color:white;position:relative;overflow:hidden">
-                <div style="position:absolute;inset:0;background-image:linear-gradient(90deg,rgba(99,153,34,0.06)1px,transparent 1px),linear-gradient(0deg,rgba(99,153,34,0.06)1px,transparent 1px);background-size:24px 24px;opacity:0.4"></div>
-                <div style="position:relative;z-index:1">
-                    <div style="font-size:10px;color:${c.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">${slide.type}</div>
-                    <div style="font-size:18px;font-weight:700;line-height:1.4;white-space:pre-line;margin-bottom:8px">${escapeHtml(slide.text || '')}</div>
-                    <div style="font-size:11px;color:#94A3B8">${escapeHtml(slide.subtext || '')}</div>
-                </div>
-            </div>
-        `;
-
-        document.getElementById('cardnews-slide-num').textContent = `${idx+1}/${slides.length}`;
-    } catch (e) {
-        preview.innerHTML = '<p style="color:#EF4444;font-size:12px">JSON 파싱 오류</p>';
-    }
-}
-
-function prevCardSlide() {
-    window._cardSlideIndex = Math.max(0, (window._cardSlideIndex || 0) - 1);
-    updateCardnewsPreview();
-}
-function nextCardSlide() {
-    try {
-        const data = JSON.parse(document.getElementById('cardnews-json').value);
-        window._cardSlideIndex = Math.min(data.slides.length - 1, (window._cardSlideIndex || 0) + 1);
-    } catch(e) {}
-    updateCardnewsPreview();
-}
-
-async function generateCardnews() {
-    const source = document.getElementById('cardnews-source').value;
-    if (!source.trim()) { alert('소재를 입력해주세요'); return; }
-
-    try {
-        const result = await api.post('/api/content/items/generate', {
-            platform: 'instagram',
-            content_type: 'inertia_break',
-            manual_text: source
-        });
-        // AI가 JSON으로 응답하면 에디터에 삽입
-        document.getElementById('cardnews-json').value =
-            typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2);
-        window._cardSlideIndex = 0;
-        updateCardnewsPreview();
-    } catch (e) {
-        alert('생성 실패: ' + e.message);
-    }
-}
-
-function exportCardnewsPNG() {
-    // html2canvas를 사용한 클라이언트 사이드 PNG 내보내기
-    // CDN: <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    alert('html2canvas 라이브러리 로드 후 사용 가능.\nindex.html에 CDN 스크립트 추가 필요.');
 }
 
 

@@ -464,3 +464,29 @@ async def reels_to_threads(data: dict, user: dict = Depends(get_current_user)):
         return {"threads_text": threads_text, "message": "쓰레드 콘텐츠 생성됨"}
     finally:
         conn.close()
+
+
+# ── 릴스 이미지 생성 ──
+
+@router.post("/reels/generate-images")
+async def generate_reels_images(data: dict, user: dict = Depends(get_current_user)):
+    """릴스 스크립트의 장면별 이미지를 나노바나나로 자동 생성"""
+    from services.reels_generator import generate_scene_images
+
+    item_id = data.get("item_id")
+    if not item_id:
+        raise HTTPException(400, "item_id 필요")
+
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT body FROM content_items WHERE id = ? AND content_type = 'reels'", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "릴스 콘텐츠 없음")
+        script = json.loads(dict(row)["body"])
+    finally:
+        conn.close()
+
+    ep = script.get("episode", "XX").replace("EP.", "")
+    output_dir = f"/home/claude/data/reels/ep{ep}"
+    result = await generate_scene_images(script, output_dir)
+    return result

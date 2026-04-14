@@ -51,6 +51,127 @@ def _get_default_motion_prompt() -> str:
     return "subtle breathing motion, slight head movement, natural idle animation"
 
 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+
+# ── 이미지 자동 생성 (나노바나나 / Gemini API) ──
+
+async def generate_scene_images(script: dict, output_dir: str) -> dict:
+    """스크립트의 각 장면에 대해 Gemini API로 이미지 자동 생성"""
+    if not GEMINI_API_KEY:
+        return {"success": False, "error": "GEMINI_API_KEY 미설정", "generated": 0}
+
+    import httpx, base64
+    os.makedirs(output_dir, exist_ok=True)
+
+    generated = 0
+    errors = []
+
+    # DB에서 캐릭터 프롬프트 로드
+    character_prompts = _load_character_prompts()
+
+    for scene in script.get("scenes", []):
+        scene_id = scene.get("id", 0)
+        image_file = os.path.join(output_dir, scene.get("image", f"scene_{scene_id:02d}.png"))
+
+        # 이미 존재하면 스킵
+        if os.path.exists(image_file):
+            generated += 1
+            continue
+
+        # 이미지 프롬프트 구성
+        image_prompt = scene.get("image_prompt", "")
+        if not image_prompt:
+            image_prompt = f"Pixar-style 3D animation scene: {scene.get('subtitle', '')}"
+
+        # 캐릭터 프롬프트 치환 (@부사장 → 실제 프롬프트)
+        for char_key, char_prompt in character_prompts.items():
+            image_prompt = image_prompt.replace(f"@{char_key}", char_prompt)
+
+        # 공통 스타일 suffix
+        image_prompt += ". Pixar/Disney animation quality, soft studio lighting, 9:16 vertical aspect ratio, 4K render."
+
+        try:
+            result = await _gemini_generate_image(image_prompt, image_file)
+            if result:
+                generated += 1
+                logger.info(f"[이미지생성] Scene {scene_id} 완료: {image_file}")
+            else:
+                errors.append(f"Scene {scene_id}: 생성 실패")
+        except Exception as e:
+            errors.append(f"Scene {scene_id}: {str(e)}")
+            logger.warning(f"[이미지생성] Scene {scene_id} 실패: {e}")
+
+    return {
+        "success": generated > 0,
+        "generated": generated,
+        "total": len(script.get("scenes", [])),
+        "errors": errors,
+        "output_dir": output_dir,
+    }
+
+
+async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
+    """Gemini API (나노바나나)로 이미지 생성"""
+    import httpx, base64
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}",
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "responseModalities": ["IMAGE", "TEXT"],
+                    "imageMimeType": "image/png",
+                },
+            },
+        )
+
+        if resp.status_code != 200:
+            logger.warning(f"Gemini API 오류: {resp.status_code} {resp.text[:200]}")
+            return False
+
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return False
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+        for part in parts:
+            inline_data = part.get("inlineData")
+            if inline_data and inline_data.get("mimeType", "").startswith("image/"):
+                image_bytes = base64.b64decode(inline_data["data"])
+                with open(output_path, "wb") as f:
+                    f.write(image_bytes)
+                return True
+
+    return False
+
+
+def _load_character_prompts() -> dict:
+    """DB에서 image 카테고리 프롬프트 로드 → {key: content} 딕셔너리"""
+    prompts = {}
+    try:
+        from db.database import get_connection
+        conn = get_connection()
+        rows = conn.execute("SELECT key, content FROM prompt_templates WHERE category = 'image'").fetchall()
+        conn.close()
+        for row in rows:
+            r = dict(row)
+            # character_vp → 부사장, character_logistics → 물류 등 매핑
+            key_map = {
+                "character_vp": "부사장",
+                "character_logistics": "물류",
+                "character_accountant": "경리",
+                "character_junior": "막내",
+            }
+            mapped = key_map.get(r["key"], r["key"])
+            prompts[mapped] = r["content"]
+    except Exception:
+        pass
+    return prompts
+
+
 # ── 메인 생성 함수 ──
 
 async def generate_reels(
@@ -77,7 +198,11 @@ async def generate_reels(
         if not scenes:
             return {"success": False, "error": "장면 없음"}
 
-        # Step 1: 장면별 TTS 생성
+        # Step 1: 장면 이미지 자동 생성 (나노바나나)
+        img_result = await generate_scene_images(script, images_dir)
+        logger.info(f"[릴스] 이미지 생성: {img_result.get('generated', 0)}/{img_result.get('total', 0)}")
+
+        # Step 2: 장면별 TTS 생성
         tts_files = []
         for scene in scenes:
             tts_text = scene.get("tts_text", "")
@@ -86,10 +211,10 @@ async def generate_reels(
                 await generate_tts(tts_text, tts_file)
                 tts_files.append({"id": scene["id"], "file": tts_file})
 
-        # Step 2: TTS 길이 측정 → 장면 타이밍 자동 조정
+        # Step 3: TTS 길이 측정 → 장면 타이밍 자동 조정
         scene_timings = calculate_timings(scenes, tts_files)
 
-        # Step 3: 장면별 비디오 클립 생성 (AI 영상변환 or Ken Burns)
+        # Step 4: 장면별 비디오 클립 생성 (AI 영상변환 or Ken Burns)
         clip_files = []
         for i, scene in enumerate(scenes):
             image_file = os.path.join(images_dir, scene.get("image", f"scene_{scene['id']:02d}.png"))
@@ -132,7 +257,7 @@ async def generate_reels(
         if not clip_files:
             return {"success": False, "error": "생성된 클립 없음"}
 
-        # Step 4: 클립 연결 (concat)
+        # Step 5: 클립 연결 (concat)
         concat_file = os.path.join(work_dir, "concat.txt")
         with open(concat_file, "w") as f:
             for clip in clip_files:
@@ -147,14 +272,14 @@ async def generate_reels(
             video_only
         ], capture_output=True)
 
-        # Step 5: TTS 오디오 합성 (장면별 타이밍에 맞춰 배치)
+        # Step 6: TTS 오디오 합성 (장면별 타이밍에 맞춰 배치)
         tts_combined = os.path.join(work_dir, "tts_combined.mp3")
         combine_tts_audio(tts_files, scene_timings, tts_combined, script.get("duration_sec", 45))
 
-        # Step 6: 최종 믹싱 (영상 + TTS + BGM)
+        # Step 7: 최종 믹싱 (영상 + TTS + BGM)
         mix_final(video_only, tts_combined, bgm_path, output_path)
 
-        # Step 7: 쓰레드 텍스트 자동 생성
+        # Step 8: 쓰레드 텍스트 자동 생성
         threads_text = generate_threads_text(script)
 
         total_duration = get_duration(output_path)
