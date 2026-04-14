@@ -18,7 +18,7 @@ async def generate_reels_script(data: dict, user: dict = Depends(get_current_use
 
 설정:
 - 주인공: 30대 후반 경영학과 출신 부사장, 코딩 제로 → Claude로 AI 개발
-- Pixar 3D 애니메이션 스타일
+- 고퀄리티 3D CGI 애니메이션 스타일 (큰 눈, 부드러운 피부, 따뜻한 조명)
 - 35~45초, 7개 장면
 - 각 장면: id, start, end, image(파일명), motion(zoom_in/zoom_out/pan_left_to_right/static), subtitle(자막), tts_text(나레이션), image_prompt(나노바나나용)
 - 마지막 장면은 반전 또는 유머

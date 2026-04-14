@@ -82,14 +82,14 @@ async def generate_scene_images(script: dict, output_dir: str) -> dict:
         # 이미지 프롬프트 구성
         image_prompt = scene.get("image_prompt", "")
         if not image_prompt:
-            image_prompt = f"Pixar-style 3D animation scene: {scene.get('subtitle', '')}"
+            image_prompt = f"Stylized 3D CGI animated scene: {scene.get('subtitle', '')}"
 
         # 캐릭터 프롬프트 치환 (@부사장 → 실제 프롬프트)
         for char_key, char_prompt in character_prompts.items():
             image_prompt = image_prompt.replace(f"@{char_key}", char_prompt)
 
         # 공통 스타일 suffix
-        image_prompt += ". Pixar/Disney animation quality, soft studio lighting, 9:16 vertical aspect ratio, 4K render."
+        image_prompt += ". High-quality stylized 3D CGI, soft cinematic studio lighting, smooth rounded features, large expressive eyes with light reflections, subsurface scattering skin, 9:16 vertical aspect ratio, 4K render."
 
         try:
             result = await _gemini_generate_image(image_prompt, image_file)
