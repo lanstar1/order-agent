@@ -40,7 +40,6 @@ from api.routes.map_monitor import router as map_monitor_router
 from api.routes.naver_datalab import router as naver_datalab_router
 from api.routes.mail_auto import router as mail_auto_router
 from api.routes.telegram_bot import router as telegram_bot_router
-from api.routes.content import router as content_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -283,7 +282,6 @@ app.include_router(map_monitor_router)
 app.include_router(naver_datalab_router)
 app.include_router(mail_auto_router)
 app.include_router(telegram_bot_router)
-app.include_router(content_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -680,14 +678,6 @@ async def startup():
             logger.info("판매현황 스케줄러 등록 완료 (매시간 자동수집 + 에이전트)")
     except Exception as e:
         logger.warning(f"판매현황 스케줄러 시작 실패: {e}")
-
-    # 콘텐츠 팩토리 자동 생성 스케줄러 (소재수집 06:00, 콘텐츠생성 07:00, 예약발행 매분)
-    try:
-        from services.content_scheduler import setup_content_scheduler
-        setup_content_scheduler()
-        logger.info("콘텐츠 팩토리 자동 생성 스케줄러 등록 완료")
-    except Exception as e:
-        logger.warning(f"콘텐츠 스케줄러 시작 실패 (서비스는 계속): {e}")
 
 
 # ─────────────────────────────────────────
