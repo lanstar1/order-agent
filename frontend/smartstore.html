@@ -163,19 +163,20 @@
                     </select>
                 </div>
                 <div style="position:relative;display:inline-block;">
-                    <button class="btn btn-blue" onclick="this.nextElementSibling.classList.toggle('show')" style="background:#1d4ed8;">🏢 ERP 전송 ▾</button>
+                    <button class="btn btn-blue" id="b-erp-ys" onclick="this.nextElementSibling.classList.toggle('show')" style="background:#1d4ed8;">🏢 ERP 전송 ▾</button>
                     <div class="dropdown-menu" style="display:none;position:absolute;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:10;min-width:140px;overflow:hidden;">
                         <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');sendErp('10')">🏢 용산 ERP</div>
                         <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');sendErp('30')">📦 통진 ERP</div>
                     </div>
                 </div>
                 <div style="position:relative;display:inline-block;">
-                    <button class="btn btn-red" onclick="this.nextElementSibling.classList.toggle('show')">🚚 송장입력 ▾</button>
+                    <button class="btn btn-red" id="b-gp" onclick="this.nextElementSibling.classList.toggle('show')">🚚 송장입력 ▾</button>
                     <div class="dropdown-menu" style="display:none;position:absolute;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:10;min-width:140px;overflow:hidden;">
                         <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');openTrackingModal('gimpo')">🚚 김포 송장입력</div>
                         <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#fff7ed'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');openTrackingModal('yongsan')">🚚 용산 송장입력</div>
                     </div>
                 </div>
+                <button id="b-ys" style="display:none;"></button>
                 <button class="btn btn-gray" onclick="sendExcludedErp()" id="b-exc">📋 경동 ERP전송</button>
                 <button class="btn btn-gray" onclick="downloadExcludedExcel()" id="b-exc-xl">📥 경동 엑셀</button>
             </div>
