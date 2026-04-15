@@ -63,11 +63,12 @@ class ERPClientSS:
                 "WH_CD": wh_cd,
             }
             rcv = line.get("rcv_name", "")
-            if rcv:
-                bulk["DES"] = rcv
             remark = line.get("remark", "")
             if remark:
+                bulk["DES"] = remark
                 bulk["REMARK1"] = remark
+            elif rcv:
+                bulk["DES"] = rcv
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
             price = float(line.get("price", 0) or 0)
