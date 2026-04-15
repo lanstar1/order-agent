@@ -100,12 +100,6 @@ ALLOWED_ORIGINS = [
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
 
 # ─────────────────────────────────────────
-#  네이버 검색/데이터랩 API (MAP 감시 + 트렌드 분석)
-# ─────────────────────────────────────────
-NAVER_SEARCH_ID     = os.getenv("NAVER_SEARCH_ID", "")
-NAVER_SEARCH_SECRET = os.getenv("NAVER_SEARCH_SECRET", "")
-
-# ─────────────────────────────────────────
 #  네이버 커머스 API (스마트스토어)
 # ─────────────────────────────────────────
 NAVER_CLIENT_ID     = os.getenv("NAVER_CLIENT_ID", "")
@@ -134,8 +128,14 @@ SENDER_YONGSAN_TEL   = os.getenv("SENDER_YONGSAN_TEL", "")
 SENDER_YONGSAN_ADDR  = os.getenv("SENDER_YONGSAN_ADDR", "")
 
 # 스마트스토어 상품매핑 경로
-SMARTSTORE_PRODUCT_MAP_PATH = BASE_DIR / "data" / "smartstore" / "smartstore_product_map.json"
-SMARTSTORE_MODEL_MAP_PATH   = BASE_DIR / "data" / "smartstore" / "smartstore_model_map.json"
+SMARTSTORE_PRODUCT_MAP_PATH    = BASE_DIR / "data" / "smartstore" / "smartstore_product_map.json"      # 시트1: 메인상품
+SMARTSTORE_MODEL_MAP_PATH      = BASE_DIR / "data" / "smartstore" / "smartstore_model_map.json"
+SMARTSTORE_OPTION_MAP_PATH     = BASE_DIR / "data" / "smartstore" / "smartstore_option_map.json"     # 시트2: 옵션상품 오버라이드
+SMARTSTORE_ADDON_MAP_PATH      = BASE_DIR / "data" / "smartstore" / "smartstore_addon_map.json"      # 시트3: 추가상품
+SMARTSTORE_OPTION_TEXT_MAP_PATH = BASE_DIR / "data" / "smartstore" / "smartstore_option_text_map.json"  # 옵션텍스트 직접매핑
+SMARTSTORE_ADDON_TEXT_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_addon_text_map.json"   # 추가상품텍스트 직접매핑
+SMARTSTORE_CODE_ALIAS_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_code_alias_map.json"   # 추출코드 별칭맵
+SMARTSTORE_KD_DELIVERY_MAP_PATH = BASE_DIR / "data" / "smartstore" / "kd_delivery_fee_map.json"        # 경동택배 배송비 매핑
 
 # ─────────────────────────────────────────
 #  바코드 ERP Bridge (쿠팡 PO → 이카운트)
@@ -144,24 +144,3 @@ SMARTSTORE_MODEL_MAP_PATH   = BASE_DIR / "data" / "smartstore" / "smartstore_mod
 BARCODE_CUST_CODE = os.getenv("BARCODE_CUST_CODE", "202308091")  # 바코드서버 거래처코드
 BARCODE_WH_CD     = os.getenv("BARCODE_WH_CD", "30")             # 바코드서버 출하창고
 BARCODE_MASTER_PATH = os.getenv("BARCODE_MASTER_PATH", "")       # master_data.xlsx 경로 (빈값이면 data/barcode/master_data.xlsx)
-
-# ─── 선적 메일 (IMAP) ──────────────────────────────────
-MAIL_IMAP_SERVER = os.getenv("MAIL_IMAP_SERVER", "wmbox3.ecount.com")
-MAIL_IMAP_PORT = int(os.getenv("MAIL_IMAP_PORT", "993"))
-MAIL_USER = os.getenv("MAIL_USER", "")
-MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
-
-# ─── 메일 자동화 (SMTP 회신) ──────────────────────────────
-MAIL_SMTP_HOST = os.getenv("MAIL_SMTP_HOST", "wsmtp.ecount.com")
-MAIL_SMTP_PORT = int(os.getenv("MAIL_SMTP_PORT", "587"))
-MAIL_TARGET_SENDER = os.getenv("MAIL_TARGET_SENDER", "guzhiyi@bor-cable.com")
-MAIL_AUTO_PASSWORD = os.getenv("MAIL_AUTO_PASSWORD", "lanstar2026")
-ERP_SUPPLIER_CODE = os.getenv("ERP_SUPPLIER_CODE", "1111122222")
-TT_SELL_SPREAD = float(os.getenv("TT_SELL_SPREAD", "1.75"))  # 전신환매도율 스프레드 %
-
-# ─── 선적 메일 2 (네이버 IMAP) ────────────────────────────
-MAIL2_IMAP_SERVER = os.getenv("MAIL2_IMAP_SERVER", "imap.naver.com")
-MAIL2_IMAP_PORT = int(os.getenv("MAIL2_IMAP_PORT", "993"))
-MAIL2_USER = os.getenv("MAIL2_USER", "")
-MAIL2_PASSWORD = os.getenv("MAIL2_PASSWORD", "")
-MAIL2_SENDER_FILTER = os.getenv("MAIL2_SENDER_FILTER", "13428934642@163.com")

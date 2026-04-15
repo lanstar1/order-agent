@@ -24,6 +24,16 @@ USE_PG = bool(DATABASE_URL)
 if USE_PG:
     import psycopg2
     import psycopg2.extras
+    from psycopg2 import pool as _pg_pool
+    _pg_connection_pool = None
+
+def _get_pg_pool():
+    global _pg_connection_pool
+    if _pg_connection_pool is None:
+        _pg_connection_pool = _pg_pool.ThreadedConnectionPool(
+            minconn=1, maxconn=8, dsn=DATABASE_URL
+        )
+    return _pg_connection_pool
 
 
 # ─── SQL 변환 유틸 (SQLite → PostgreSQL) ───────────────
@@ -53,7 +63,6 @@ def _sql_to_pg(sql):
                 'activity_log', 'orderlist_items', 'orderlist_sync_log',
                 'shipments',
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
-                'cs_backorders',
                 'aicc_sessions', 'aicc_messages',
                 'aicc_product_knowledge', 'aicc_unanswered',
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
@@ -68,13 +77,6 @@ def _sql_to_pg(sql):
             _ALLOWED_TABLES.update({
                 'inventory_snapshots', 'inventory_alert_history',
                 'inventory_exclude_keywords', 'inventory_alert_settings',
-                'inventory_planning_targets', 'shipping_mail_info',
-            })
-            # MAP 감시 테이블 추가
-            _ALLOWED_TABLES.update({
-                'map_settings', 'map_products', 'map_sellers',
-                'map_price_records', 'map_violations', 'map_collection_logs',
-                'map_price_history', 'map_warning_emails',
             })
             if table.lower() not in _ALLOWED_TABLES:
                 logger.warning(f"[DB] PRAGMA table_info 거부: 미허용 테이블 '{table}'")
@@ -162,8 +164,9 @@ class _PgCursorWrapper:
 class _PgConnectionWrapper:
     """SQLite connection 호환 인터페이스를 제공하는 PostgreSQL connection 래퍼"""
 
-    def __init__(self, conn):
+    def __init__(self, conn, pool=None):
         self._conn = conn
+        self._pool = pool  # 반납할 풀 참조
 
     def execute(self, sql, params=None):
         pg_sql = _sql_to_pg(sql)
@@ -233,7 +236,16 @@ class _PgConnectionWrapper:
         self._conn.rollback()
 
     def close(self):
-        self._conn.close()
+        if self._pool:
+            try:
+                self._pool.putconn(self._conn)
+            except Exception:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+        else:
+            self._conn.close()
 
     def cursor(self):
         return self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -264,29 +276,13 @@ def column_exists(conn, table_name, column_name):
         return column_name in cols
 
 
-def safe_add_column(conn, table_name, column_name, column_def):
-    """ALTER TABLE ADD COLUMN 안전 실행 (SQLite/PostgreSQL 호환)
-
-    PostgreSQL에서 ALTER TABLE 실패 시 트랜잭션이 abort 상태가 되므로
-    반드시 rollback 후 다음 작업을 수행해야 한다.
-    """
-    try:
-        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
-        conn.commit()
-        logger.info(f"[DB] {table_name}.{column_name} 컬럼 추가 완료")
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-
-
 # ─── 연결 함수 ──────────────────────────────────
 def get_connection():
     """데이터베이스 연결 반환 (PG 또는 SQLite 자동 선택)"""
     if USE_PG:
-        conn = psycopg2.connect(DATABASE_URL)
-        return _PgConnectionWrapper(conn)
+        pg_pool = _get_pg_pool()
+        conn = pg_pool.getconn()
+        return _PgConnectionWrapper(conn, pool=pg_pool)
     else:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(DB_PATH))
@@ -552,66 +548,56 @@ def init_db():
 
 
     # ── CS 마이그레이션: drive_file_id 컬럼 추가 ──
-    safe_add_column(conn, 'cs_files', 'drive_file_id', "TEXT DEFAULT ''")
+    if not column_exists(conn, 'cs_files', 'drive_file_id'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN drive_file_id TEXT DEFAULT ''")
+            logger.info("[DB] cs_files.drive_file_id 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_files.drive_file_id 추가 스킵: {e}")
 
     # ── CS 마이그레이션: file_data (바이너리) + mime_type 컬럼 추가 ──
-    safe_add_column(conn, 'cs_files', 'file_data', "BLOB")
-    safe_add_column(conn, 'cs_files', 'mime_type', "TEXT DEFAULT ''")
+    if not column_exists(conn, 'cs_files', 'file_data'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN file_data BLOB")
+            logger.info("[DB] cs_files.file_data 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_files.file_data 추가 스킵: {e}")
+    if not column_exists(conn, 'cs_files', 'mime_type'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN mime_type TEXT DEFAULT ''")
+            logger.info("[DB] cs_files.mime_type 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_files.mime_type 추가 스킵: {e}")
 
     # ── CS 마이그레이션: disk_filename 컬럼 추가 (대용량 파일 디스크 저장용) ──
-    safe_add_column(conn, 'cs_files', 'disk_filename', "TEXT DEFAULT ''")
-
-    # ── CS/RMA v2 마이그레이션: 판매채널, CS유형, 사유분류 등 ──
-    safe_add_column(conn, 'cs_tickets', 'sales_channel', "TEXT DEFAULT ''")
-    safe_add_column(conn, 'cs_tickets', 'order_number', "TEXT DEFAULT ''")
-    safe_add_column(conn, 'cs_tickets', 'cs_type', "TEXT DEFAULT '반품'")
-    safe_add_column(conn, 'cs_tickets', 'reason_category', "TEXT DEFAULT ''")
-    safe_add_column(conn, 'cs_tickets', 'quantity', "INTEGER DEFAULT 1")
-    safe_add_column(conn, 'cs_tickets', 'shipping_cost_status', "TEXT DEFAULT ''")
-    safe_add_column(conn, 'cs_tickets', 'return_courier', "TEXT DEFAULT ''")
-    safe_add_column(conn, 'cs_tickets', 'return_tracking_no', "TEXT DEFAULT ''")
-
-    # ── 미출고 관리 테이블 (마이그레이션 전에 생성) ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS cs_backorders (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        sales_channel   TEXT DEFAULT '',
-        order_date      TEXT DEFAULT '',
-        order_number    TEXT DEFAULT '',
-        recipient_name  TEXT NOT NULL,
-        recipient_phone TEXT DEFAULT '',
-        product_name    TEXT NOT NULL,
-        option_info     TEXT DEFAULT '',
-        quantity        INTEGER DEFAULT 1,
-        status          TEXT DEFAULT '미출고',
-        memo            TEXT DEFAULT '',
-        created_by      TEXT DEFAULT '',
-        created_at      TEXT DEFAULT (datetime('now','localtime')),
-        updated_at      TEXT DEFAULT (datetime('now','localtime'))
-    )""")
-    conn.commit()
-
-    # ── CS/RMA v2 일회성 마이그레이션: 기존 데이터 판매채널 설정 ──
-    try:
-        conn.execute(
-            "UPDATE cs_tickets SET sales_channel = ? WHERE (sales_channel IS NULL OR sales_channel = '') AND ticket_id LIKE ?",
-            ('스마트스토어', 'CS-%')
-        )
-        conn.execute(
-            "UPDATE cs_tickets SET cs_type = ? WHERE (cs_type IS NULL OR cs_type = '') AND ticket_id LIKE ?",
-            ('반품', 'CS-%')
-        )
-        conn.commit()
-    except Exception:
-        try: conn.rollback()
-        except: pass
+    if not column_exists(conn, 'cs_files', 'disk_filename'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_files ADD COLUMN disk_filename TEXT DEFAULT ''")
+            logger.info("[DB] cs_files.disk_filename 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_files.disk_filename 추가 스킵: {e}")
 
     # ── AICC 마이그레이션: image_id 컬럼 추가 ──
-    safe_add_column(conn, 'aicc_messages', 'image_id', "TEXT DEFAULT ''")
+    if not column_exists(conn, 'aicc_messages', 'image_id'):
+        try:
+            cur_or_conn.execute("ALTER TABLE aicc_messages ADD COLUMN image_id TEXT DEFAULT ''")
+            logger.info("[DB] aicc_messages.image_id 컬럼 추가")
+        except Exception:
+            pass
 
     # ── AICC 마이그레이션: channel, source 컬럼 추가 ──
-    safe_add_column(conn, 'aicc_sessions', 'channel', "TEXT DEFAULT 'shop'")
-    safe_add_column(conn, 'aicc_sessions', 'source', "TEXT DEFAULT ''")
+    if not column_exists(conn, 'aicc_sessions', 'channel'):
+        try:
+            cur_or_conn.execute("ALTER TABLE aicc_sessions ADD COLUMN channel TEXT DEFAULT 'shop'")
+            logger.info("[DB] aicc_sessions.channel 컬럼 추가")
+        except Exception:
+            pass
+    if not column_exists(conn, 'aicc_sessions', 'source'):
+        try:
+            cur_or_conn.execute("ALTER TABLE aicc_sessions ADD COLUMN source TEXT DEFAULT ''")
+            logger.info("[DB] aicc_sessions.source 컬럼 추가")
+        except Exception:
+            pass
 
     # ── 판매에이전트: 업로드 파일 + 분석 작업 ──
     _sa_init_tables(conn, cur_or_conn)
@@ -784,64 +770,6 @@ def init_db():
             "INSERT OR IGNORE INTO inventory_alert_settings (key, value) VALUES (?, ?)", (_k, _v)
         )
 
-    # ── 적정재고 관리품목 (온라인관리품목) ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS inventory_planning_targets (
-        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-        prod_cd             TEXT NOT NULL UNIQUE,
-        model_name          TEXT DEFAULT '',
-        prod_name           TEXT DEFAULT '',
-        lead_time_days      INTEGER DEFAULT 40,
-        safety_stock_days   INTEGER DEFAULT 10,
-        moq                 INTEGER DEFAULT 0,
-        supplier_group      TEXT DEFAULT '',
-        is_active           INTEGER DEFAULT 1,
-        created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
-    )""")
-
-    # MOQ, supplier_group 컬럼 마이그레이션 (기존 테이블용)
-    try:
-        if USE_PG:
-            cur_or_conn.execute("ALTER TABLE inventory_planning_targets ADD COLUMN IF NOT EXISTS moq INTEGER DEFAULT 0")
-            cur_or_conn.execute("ALTER TABLE inventory_planning_targets ADD COLUMN IF NOT EXISTS supplier_group TEXT DEFAULT ''")
-        else:
-            for _col, _type, _default in [("moq", "INTEGER", "0"), ("supplier_group", "TEXT", "''")]:
-                try:
-                    cur_or_conn.execute(f"ALTER TABLE inventory_planning_targets ADD COLUMN {_col} {_type} DEFAULT {_default}")
-                except Exception:
-                    pass
-        conn.commit()
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-
-    # ── 선적 메일 정보 ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS shipping_mail_info (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        bor_number      TEXT NOT NULL UNIQUE,
-        subject         TEXT DEFAULT '',
-        email_date      TEXT DEFAULT '',
-        shipping_date   TEXT DEFAULT '',
-        arrival_date    TEXT DEFAULT '',
-        filename        TEXT DEFAULT '',
-        models          TEXT DEFAULT '',
-        model_count     INTEGER DEFAULT 0,
-        updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
-    )""")
-
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS shipping_scan_log (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        scan_type       TEXT NOT NULL,
-        executed_at     TEXT NOT NULL,
-        result_summary  TEXT DEFAULT '',
-        email_dates     TEXT DEFAULT ''
-    )""")
-
     # ── ERP 캐시 (매입정산용 구매/판매현황 영속 캐시) ──
     cur_or_conn.execute("""
     CREATE TABLE IF NOT EXISTS erp_cache (
@@ -850,6 +778,24 @@ def init_db():
         total       INTEGER NOT NULL DEFAULT 0,
         data_json   TEXT NOT NULL DEFAULT '[]',
         updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+    # ── 경동택배 주문 매핑 (네이버 자동발송처리용) ──
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS kd_order_map (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_order_id TEXT NOT NULL,
+        order_id        TEXT NOT NULL DEFAULT '',
+        rcv_name        TEXT NOT NULL DEFAULT '',
+        tel             TEXT NOT NULL DEFAULT '',
+        address         TEXT NOT NULL DEFAULT '',
+        product_name    TEXT NOT NULL DEFAULT '',
+        prod_cd         TEXT NOT NULL DEFAULT '',
+        tracking_no     TEXT NOT NULL DEFAULT '',
+        status          TEXT NOT NULL DEFAULT 'pending',
+        erp_date        TEXT NOT NULL DEFAULT '',
+        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        dispatched_at   TIMESTAMP
     )""")
 
     # ── 인덱스 추가 (성능 최적화) ──
@@ -870,14 +816,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_status ON cs_tickets(current_status);
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_created ON cs_tickets(created_at);
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_customer ON cs_tickets(customer_name);
-        CREATE INDEX IF NOT EXISTS idx_cs_tickets_channel ON cs_tickets(sales_channel);
-        CREATE INDEX IF NOT EXISTS idx_cs_tickets_cs_type ON cs_tickets(cs_type);
-        CREATE INDEX IF NOT EXISTS idx_cs_tickets_reason ON cs_tickets(reason_category);
-        CREATE INDEX IF NOT EXISTS idx_cs_backorders_status ON cs_backorders(status);
-        CREATE INDEX IF NOT EXISTS idx_cs_backorders_channel ON cs_backorders(sales_channel);
         CREATE INDEX IF NOT EXISTS idx_cs_action_logs_ticket ON cs_action_logs(ticket_id);
-        CREATE INDEX IF NOT EXISTS idx_cs_test_results_ticket ON cs_test_results(ticket_id);
-        CREATE INDEX IF NOT EXISTS idx_cs_files_ticket ON cs_files(ticket_id);
 
         CREATE INDEX IF NOT EXISTS idx_sr_date ON sales_records(slip_date);
         CREATE INDEX IF NOT EXISTS idx_sr_customer ON sales_records(customer_name);
@@ -894,369 +833,12 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_aicc_unans_resolved ON aicc_unanswered(resolved);
         CREATE INDEX IF NOT EXISTS idx_inv_snapshots_date ON inventory_snapshots(snapshot_date);
         CREATE INDEX IF NOT EXISTS idx_inv_alert_date ON inventory_alert_history(check_date);
+
+        CREATE INDEX IF NOT EXISTS idx_kd_order_poid ON kd_order_map(product_order_id);
+        CREATE INDEX IF NOT EXISTS idx_kd_order_rcv ON kd_order_map(rcv_name);
+        CREATE INDEX IF NOT EXISTS idx_kd_order_tel ON kd_order_map(tel);
+        CREATE INDEX IF NOT EXISTS idx_kd_order_status ON kd_order_map(status);
     """)
-
-    # ── 재고 알림 중복 데이터 정리 (같은 날짜+품목코드 중 최신 1건만 유지) ──
-    try:
-        if USE_PG:
-            cur_or_conn.execute("""
-                DELETE FROM inventory_alert_history
-                WHERE id NOT IN (
-                    SELECT MAX(id) FROM inventory_alert_history
-                    GROUP BY check_date, prod_cd
-                )
-            """)
-        else:
-            cur_or_conn.execute("""
-                DELETE FROM inventory_alert_history
-                WHERE rowid NOT IN (
-                    SELECT MAX(rowid) FROM inventory_alert_history
-                    GROUP BY check_date, prod_cd
-                )
-            """)
-        conn.commit()
-    except Exception as _dedup_err:
-        logger.debug(f"재고 알림 중복 정리: {_dedup_err}")
-
-    # ── MAP 감시 테이블 ────────────────────────────────
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS map_settings (
-        id INTEGER PRIMARY KEY,
-        min_price INTEGER DEFAULT 5000,
-        tolerance_pct REAL DEFAULT 5.0,
-        schedules TEXT DEFAULT '["00:00","12:00"]',
-        watch_interval_hours INTEGER DEFAULT 2,
-        platforms TEXT DEFAULT '["네이버 쇼핑","쿠팡","G마켓","옥션","11번가"]',
-        alert_email INTEGER DEFAULT 1,
-        alert_kakao INTEGER DEFAULT 0,
-        alert_nateon INTEGER DEFAULT 1,
-        alert_email_address TEXT DEFAULT '',
-        updated_at TEXT DEFAULT (datetime('now','localtime'))
-    )""")
-    cur_or_conn.execute(
-        "INSERT OR IGNORE INTO map_settings(id) VALUES(1)"
-    )
-
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS map_products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT NOT NULL UNIQUE,
-        product_name TEXT NOT NULL,
-        brand TEXT DEFAULT 'LANstar',
-        features TEXT DEFAULT '',
-        map_price INTEGER NOT NULL DEFAULT 0,
-        tolerance_pct REAL DEFAULT NULL,
-        search_keywords TEXT DEFAULT '',
-        is_active INTEGER DEFAULT 1,
-        is_watched INTEGER DEFAULT 0,
-        watch_interval_hours INTEGER DEFAULT NULL,
-        created_at TEXT DEFAULT (datetime('now','localtime')),
-        updated_at TEXT DEFAULT (datetime('now','localtime'))
-    )""")
-
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS map_sellers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        seller_name TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        seller_url TEXT DEFAULT '',
-        risk_level TEXT DEFAULT 'low',
-        total_violations INTEGER DEFAULT 0,
-        last_violation_at TEXT DEFAULT NULL,
-        is_blacklisted INTEGER DEFAULT 0,
-        notes TEXT DEFAULT '',
-        created_at TEXT DEFAULT (datetime('now','localtime')),
-        updated_at TEXT DEFAULT (datetime('now','localtime')),
-        UNIQUE(seller_name, platform)
-    )""")
-
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS map_price_records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL,
-        seller_id INTEGER,
-        platform TEXT NOT NULL,
-        seller_name TEXT NOT NULL,
-        product_url TEXT DEFAULT '',
-        display_price INTEGER NOT NULL,
-        sale_price INTEGER DEFAULT NULL,
-        coupon_name TEXT DEFAULT '',
-        coupon_discount INTEGER DEFAULT 0,
-        coupon_price INTEGER DEFAULT NULL,
-        point_reward INTEGER DEFAULT 0,
-        effective_price INTEGER NOT NULL,
-        free_shipping INTEGER DEFAULT 0,
-        screenshot_path TEXT DEFAULT '',
-        page_html_path TEXT DEFAULT '',
-        is_violation INTEGER DEFAULT 0,
-        collected_at TEXT DEFAULT (datetime('now','localtime')),
-        FOREIGN KEY (product_id) REFERENCES map_products(id)
-    )""")
-
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS map_violations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        price_record_id INTEGER,
-        product_id INTEGER NOT NULL,
-        seller_id INTEGER,
-        platform TEXT NOT NULL,
-        seller_name TEXT NOT NULL,
-        violation_type TEXT NOT NULL,
-        severity TEXT NOT NULL DEFAULT 'MEDIUM',
-        map_price INTEGER NOT NULL,
-        violated_price INTEGER NOT NULL,
-        deviation_pct REAL NOT NULL,
-        evidence_screenshot TEXT DEFAULT '',
-        evidence_url TEXT DEFAULT '',
-        is_notified INTEGER DEFAULT 0,
-        notified_at TEXT DEFAULT NULL,
-        is_resolved INTEGER DEFAULT 0,
-        resolved_at TEXT DEFAULT NULL,
-        resolution_note TEXT DEFAULT '',
-        detected_at TEXT DEFAULT (datetime('now','localtime')),
-        FOREIGN KEY (price_record_id) REFERENCES map_price_records(id),
-        FOREIGN KEY (product_id) REFERENCES map_products(id)
-    )""")
-
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS map_collection_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        collection_type TEXT NOT NULL DEFAULT 'scheduled',
-        platforms_searched TEXT DEFAULT '',
-        products_checked INTEGER DEFAULT 0,
-        prices_collected INTEGER DEFAULT 0,
-        violations_found INTEGER DEFAULT 0,
-        errors TEXT DEFAULT '',
-        started_at TEXT DEFAULT (datetime('now','localtime')),
-        finished_at TEXT DEFAULT NULL,
-        status TEXT DEFAULT 'running'
-    )""")
-
-    conn.executescript("""
-        CREATE INDEX IF NOT EXISTS idx_map_pr_product ON map_price_records(product_id);
-        CREATE INDEX IF NOT EXISTS idx_map_pr_collected ON map_price_records(collected_at);
-        CREATE INDEX IF NOT EXISTS idx_map_pr_violation ON map_price_records(is_violation);
-        CREATE INDEX IF NOT EXISTS idx_map_vio_product ON map_violations(product_id);
-        CREATE INDEX IF NOT EXISTS idx_map_vio_severity ON map_violations(severity);
-        CREATE INDEX IF NOT EXISTS idx_map_vio_detected ON map_violations(detected_at);
-        CREATE INDEX IF NOT EXISTS idx_map_vio_resolved ON map_violations(is_resolved);
-    """)
-
-    # ── MAP 지도가 변경 이력
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS map_price_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL,
-        old_price INTEGER NOT NULL,
-        new_price INTEGER NOT NULL,
-        changed_by TEXT DEFAULT '',
-        reason TEXT DEFAULT '',
-        changed_at TEXT DEFAULT (datetime('now','localtime')),
-        FOREIGN KEY (product_id) REFERENCES map_products(id)
-    )""")
-
-    # ── MAP 경고 메일 이력
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS map_warning_emails (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        violation_id INTEGER,
-        seller_name TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        product_name TEXT DEFAULT '',
-        model_name TEXT DEFAULT '',
-        email_to TEXT DEFAULT '',
-        email_subject TEXT DEFAULT '',
-        email_body TEXT DEFAULT '',
-        status TEXT DEFAULT 'draft',
-        sent_at TEXT DEFAULT NULL,
-        created_at TEXT DEFAULT (datetime('now','localtime')),
-        FOREIGN KEY (violation_id) REFERENCES map_violations(id)
-    )""")
-
-    # ── 네이버 데이터랩 테이블 ──────────────────────────
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS datalab_keywords (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL,
-        keyword TEXT NOT NULL,
-        category_hint TEXT DEFAULT '',
-        created_at TEXT DEFAULT (datetime('now','localtime')),
-        FOREIGN KEY (product_id) REFERENCES map_products(id)
-    )""")
-
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS datalab_trend_results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL,
-        trend_type TEXT NOT NULL,
-        result_json TEXT DEFAULT '{}',
-        analyzed_at TEXT DEFAULT (datetime('now','localtime')),
-        FOREIGN KEY (product_id) REFERENCES map_products(id)
-    )""")
-
-    cur_or_conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_datalab_kw_product ON datalab_keywords(product_id);
-    """)
-    cur_or_conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_datalab_tr_product ON datalab_trend_results(product_id);
-    """)
-    cur_or_conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_datalab_tr_type ON datalab_trend_results(trend_type);
-    """)
-
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS datalab_categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
-        level INTEGER DEFAULT 1,
-        parent_code TEXT DEFAULT '',
-        sort_order INTEGER DEFAULT 0,
-        is_active INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now','localtime'))
-    )""")
-
-    # level, parent_code 컬럼 마이그레이션 (기존 테이블에 없으면 추가)
-    if USE_PG:
-        # PostgreSQL 9.6+ : ADD COLUMN IF NOT EXISTS (트랜잭션 안전)
-        cur_or_conn.execute("ALTER TABLE datalab_categories ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1")
-        cur_or_conn.execute("ALTER TABLE datalab_categories ADD COLUMN IF NOT EXISTS parent_code TEXT DEFAULT ''")
-    else:
-        try:
-            cur_or_conn.execute("SELECT level FROM datalab_categories LIMIT 1")
-        except Exception:
-            cur_or_conn.execute("ALTER TABLE datalab_categories ADD COLUMN level INTEGER DEFAULT 1")
-            cur_or_conn.execute("ALTER TABLE datalab_categories ADD COLUMN parent_code TEXT DEFAULT ''")
-
-    # 전체 카테고리 시드 (102개 미만이면 삭제 후 재입력)
-    _chk = cur_or_conn.execute("SELECT COUNT(*) as cnt FROM datalab_categories").fetchone()
-    _cnt = _chk["cnt"] if isinstance(_chk, dict) else _chk[0]
-    if _cnt < 100:
-        cur_or_conn.execute("DELETE FROM datalab_categories")
-        # (name, code, level, parent_code, sort_order)
-        _cats = [
-            # ── 대분류 ──
-            ("패션의류", "50000000", 1, "", 100),
-            ("패션잡화", "50000001", 1, "", 200),
-            ("화장품/미용", "50000002", 1, "", 300),
-            ("디지털/가전", "50000003", 1, "", 400),
-            ("가구/인테리어", "50000004", 1, "", 500),
-            ("출산/육아", "50000005", 1, "", 600),
-            ("식품", "50000006", 1, "", 700),
-            ("스포츠/레저", "50000007", 1, "", 800),
-            ("생활/건강", "50000008", 1, "", 900),
-            ("여가/생활편의", "50000009", 1, "", 1000),
-            ("면세점", "50000010", 1, "", 1100),
-            # ── 디지털/가전 > 중분류 ★ LANstar 핵심 ──
-            ("컴퓨터부품", "50000803", 2, "50000003", 410),
-            ("노트북", "50000836", 2, "50000003", 411),
-            ("데스크톱", "50000837", 2, "50000003", 412),
-            ("PC주변기기", "50000830", 2, "50000003", 413),
-            ("저장장치", "50000831", 2, "50000003", 414),
-            ("네트워크장비", "50000832", 2, "50000003", 415),
-            ("케이블/젠더/컨버터", "50000833", 2, "50000003", 416),
-            ("모니터/모니터주변기기", "50000834", 2, "50000003", 417),
-            ("프린터/복합기/스캐너", "50000835", 2, "50000003", 418),
-            ("소프트웨어", "50000838", 2, "50000003", 419),
-            ("서버/워크스테이션", "50000839", 2, "50000003", 420),
-            ("휴대폰", "50000176", 2, "50000003", 430),
-            ("태블릿PC", "50000177", 2, "50000003", 431),
-            ("웨어러블", "50000178", 2, "50000003", 432),
-            ("카메라/캠코더", "50000179", 2, "50000003", 433),
-            ("게임하드웨어", "50000180", 2, "50000003", 434),
-            ("영상가전", "50000167", 2, "50000003", 440),
-            ("음향가전", "50000172", 2, "50000003", 441),
-            ("주방가전", "50000168", 2, "50000003", 442),
-            ("계절가전", "50000169", 2, "50000003", 443),
-            ("생활가전", "50000170", 2, "50000003", 444),
-            ("이미용가전", "50000171", 2, "50000003", 445),
-            # ── 패션의류 > 중분류 ──
-            ("여성의류", "50000804", 2, "50000000", 110),
-            ("남성의류", "50000805", 2, "50000000", 120),
-            ("아동의류", "50000806", 2, "50000000", 130),
-            ("유아의류", "50000807", 2, "50000000", 140),
-            # ── 패션잡화 > 중분류 ──
-            ("여성신발", "50000808", 2, "50000001", 210),
-            ("남성신발", "50000809", 2, "50000001", 220),
-            ("여성가방", "50000810", 2, "50000001", 230),
-            ("남성가방", "50000811", 2, "50000001", 240),
-            ("시계", "50000812", 2, "50000001", 250),
-            ("주얼리", "50000813", 2, "50000001", 260),
-            # ── 화장품/미용 > 중분류 ──
-            ("스킨케어", "50000814", 2, "50000002", 310),
-            ("메이크업", "50000815", 2, "50000002", 320),
-            ("바디케어", "50000816", 2, "50000002", 330),
-            ("헤어케어", "50000817", 2, "50000002", 340),
-            ("향수", "50000818", 2, "50000002", 350),
-            ("네일케어", "50000819", 2, "50000002", 360),
-            ("남성화장품", "50000820", 2, "50000002", 370),
-            # ── 가구/인테리어 > 중분류 ──
-            ("가구", "50000821", 2, "50000004", 510),
-            ("침구", "50000822", 2, "50000004", 520),
-            ("커튼/블라인드", "50000823", 2, "50000004", 530),
-            ("카페트/러그", "50000824", 2, "50000004", 540),
-            ("인테리어소품", "50000825", 2, "50000004", 550),
-            ("수납/정리", "50000826", 2, "50000004", 560),
-            ("조명", "50000827", 2, "50000004", 570),
-            ("DIY", "50000828", 2, "50000004", 580),
-            # ── 출산/육아 > 중분류 ──
-            ("분유/이유식", "50001352", 2, "50000005", 610),
-            ("기저귀", "50001353", 2, "50000005", 620),
-            ("유모차/카시트", "50001354", 2, "50000005", 630),
-            # ── 식품 > 중분류 ──
-            ("과일", "50001340", 2, "50000006", 710),
-            ("채소", "50001341", 2, "50000006", 711),
-            ("축산", "50001342", 2, "50000006", 712),
-            ("수산물", "50001343", 2, "50000006", 713),
-            ("건강식품", "50001344", 2, "50000006", 720),
-            ("음료", "50001345", 2, "50000006", 730),
-            ("커피/차", "50001346", 2, "50000006", 731),
-            # ── 스포츠/레저 > 중분류 ──
-            ("헬스/요가", "50001355", 2, "50000007", 810),
-            ("골프", "50001356", 2, "50000007", 820),
-            ("캠핑", "50001357", 2, "50000007", 830),
-            ("등산", "50001358", 2, "50000007", 840),
-            ("자전거", "50001359", 2, "50000007", 850),
-            ("낚시", "50001360", 2, "50000007", 860),
-            # ── 생활/건강 > 중분류 ──
-            ("주방용품", "50001329", 2, "50000008", 910),
-            ("욕실용품", "50001330", 2, "50000008", 920),
-            ("세탁용품", "50001331", 2, "50000008", 930),
-            ("사무기기", "50001332", 2, "50000008", 940),
-            ("문구/사무", "50001333", 2, "50000008", 941),
-            ("반려동물", "50001334", 2, "50000008", 950),
-            ("건강관리", "50001335", 2, "50000008", 960),
-            # ── 네트워크장비 > 소분류 ★ ──
-            ("공유기/AP", "50001210", 3, "50000832", 4151),
-            ("허브/스위치", "50001211", 3, "50000832", 4152),
-            ("NAS", "50001212", 3, "50000832", 4153),
-            ("랜카드", "50001213", 3, "50000832", 4154),
-            ("KVM스위치", "50001214", 3, "50000832", 4155),
-            # ── 케이블/젠더/컨버터 > 소분류 ★ ──
-            ("HDMI케이블", "50001220", 3, "50000833", 4161),
-            ("USB케이블", "50001221", 3, "50000833", 4162),
-            ("DP케이블", "50001222", 3, "50000833", 4163),
-            ("랜케이블", "50001223", 3, "50000833", 4164),
-            ("영상젠더/컨버터", "50001224", 3, "50000833", 4165),
-            ("충전케이블", "50001225", 3, "50000833", 4166),
-            # ── PC주변기기 > 소분류 ★ ──
-            ("키보드", "50001230", 3, "50000830", 4131),
-            ("마우스", "50001231", 3, "50000830", 4132),
-            ("USB허브", "50001232", 3, "50000830", 4133),
-            ("웹캠", "50001233", 3, "50000830", 4134),
-            ("스피커", "50001234", 3, "50000830", 4135),
-            ("헤드셋/이어폰", "50001235", 3, "50000830", 4136),
-            ("마우스패드", "50001236", 3, "50000830", 4137),
-            # ── 모니터/모니터주변기기 > 소분류 ★ ──
-            ("모니터", "50001240", 3, "50000834", 4171),
-            ("모니터암/거치대", "50001241", 3, "50000834", 4172),
-            ("모니터받침대", "50001242", 3, "50000834", 4173),
-        ]
-        for _n, _c, _l, _p, _s in _cats:
-            cur_or_conn.execute(
-                "INSERT INTO datalab_categories (name, code, level, parent_code, sort_order) VALUES (?,?,?,?,?)",
-                (_n, _c, _l, _p, _s)
-            )
 
     conn.commit()
     conn.close()
