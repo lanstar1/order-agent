@@ -275,6 +275,22 @@ def column_exists(conn, table_name, column_name):
         ]
         return column_name in cols
 
+def safe_add_column(conn, table_name, column_name, column_def):
+    """ALTER TABLE ADD COLUMN 안전 실행 (SQLite/PostgreSQL 호환)
+
+    PostgreSQL에서 ALTER TABLE 실패 시 트랜잭션이 abort 상태가 되므로
+    반드시 rollback 후 다음 작업을 수행해야 한다.
+    """
+    try:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+        conn.commit()
+        logger.info(f"[DB] {table_name}.{column_name} 컬럼 추가 완료")
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
 
 # ─── 연결 함수 ──────────────────────────────────
 def get_connection():
