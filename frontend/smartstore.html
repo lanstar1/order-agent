@@ -180,6 +180,7 @@
                 <button class="btn btn-gray" onclick="sendExcludedErp()" id="b-exc">📋 경동 ERP전송</button>
                 <button class="btn btn-gray" onclick="downloadExcludedExcel()" id="b-exc-xl">📥 경동 엑셀</button>
                 <button class="btn btn-sm" onclick="openKdDispatchModal()" style="background:#7c3aed;color:#fff;">🚛 경동 발송처리</button>
+                <button class="btn btn-sm" onclick="openKdAutoModal()" style="background:#059669;color:#fff;">🚛 경동 자동발송</button>
             </div>
 
             <div style="margin-top:12px;">
@@ -1278,6 +1279,67 @@ async function submitKdDispatch(){
         }
     }catch(e){ ss('s-auto','err',e.message); log('오류: '+e.message); }
 }
+
+// ── 경동택배 자동발송처리 (경동 엑셀 → DB 매칭 → 네이버 발송) ──
+function openKdAutoModal(){
+    document.getElementById('kda-upload-input').value = '';
+    document.getElementById('kda-upload-name').textContent = '';
+    document.getElementById('kda-pending-info').textContent = '대기 주문 조회 중...';
+    document.getElementById('kda-modal').style.display = 'flex';
+    // 대기 주문 수 조회
+    fetch(B+'/api/smartstore/kd-dispatch-pending').then(r=>r.json()).then(r=>{
+        if(r.success){
+            document.getElementById('kda-pending-info').textContent = `발송 대기 중인 경동 주문: ${r.count}건`;
+            if(r.count===0) document.getElementById('kda-pending-info').textContent += ' (먼저 경동 ERP전송을 진행해주세요)';
+        } else {
+            document.getElementById('kda-pending-info').textContent = '대기 주문 조회 실패';
+        }
+    }).catch(()=>{ document.getElementById('kda-pending-info').textContent = '조회 오류'; });
+}
+function closeKdAutoModal(){ document.getElementById('kda-modal').style.display = 'none'; }
+function onKdAutoFileChange(input){
+    document.getElementById('kda-upload-name').textContent = input.files[0] ? input.files[0].name : '';
+}
+async function submitKdAutoDispatch(dryRun){
+    const input = document.getElementById('kda-upload-input');
+    if(!input.files[0]){ alert('경동택배에서 받은 엑셀 파일을 선택해주세요.'); return; }
+
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    formData.append('dry_run', dryRun ? 'true' : 'false');
+
+    closeKdAutoModal();
+    document.getElementById('card-result').style.display = 'block';
+    ss('s-auto','load', dryRun ? '경동 자동발송 매칭 확인 중...' : '경동 자동발송처리 중...');
+    log('=== 경동 자동발송처리 ===');
+
+    try{
+        const r = await(await fetch(B+'/api/smartstore/kd-dispatch-auto',{
+            method:'POST', body: formData
+        })).json();
+
+        if(r.success){
+            const dr = r.dispatch_result || {};
+            if(dryRun){
+                let msg = `매칭 결과: ${r.matched}건 매칭 / ${r.unmatched_count}건 미매칭 (엑셀 ${r.excel_total}건, DB 대기 ${r.db_pending}건)`;
+                ss('s-auto','ok', msg);
+                log(msg);
+                if(r.matched_details){
+                    r.matched_details.forEach(d => log(`  ✓ ${d.tracking} → ${d.rcv} (${d.product})`));
+                }
+                if(r.unmatched && r.unmatched.length > 0){
+                    r.unmatched.forEach(u => log(`  ✗ ${u.tracking} ${u.rcv} - ${u.reason}`));
+                }
+            } else {
+                ss('s-auto','ok',`경동 자동발송 완료! 발송: ${dr.dispatched||0}건, 실패: ${dr.failed||0}건`);
+                log(`완료: 매칭 ${r.matched}, 발송 ${dr.dispatched||0}, 실패 ${dr.failed||0}, 미매칭 ${r.unmatched_count}`);
+            }
+        } else {
+            ss('s-auto','err', r.error || '경동 자동발송 실패');
+            log('실패: '+ (r.error || JSON.stringify(r)));
+        }
+    }catch(e){ ss('s-auto','err',e.message); log('오류: '+e.message); }
+}
 </script>
 
 <!-- 로젠 송장처리 모달 -->
@@ -1312,7 +1374,7 @@ async function submitKdDispatch(){
     </div>
 </div>
 
-<!-- 경동택배 발송처리 모달 -->
+<!-- 경동택배 발송처리 모달 (기존: 상품주문번호+송장번호 수동 매칭) -->
 <div id="kd-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:520px;display:flex;flex-direction:column;gap:20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -1333,6 +1395,35 @@ async function submitKdDispatch(){
 
         <div style="display:flex;justify-content:flex-end;">
             <button onclick="closeKdModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">닫기</button>
+        </div>
+    </div>
+</div>
+
+<!-- 경동택배 자동발송 모달 (경동 엑셀 그대로 업로드 → DB 매칭) -->
+<div id="kda-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:520px;display:flex;flex-direction:column;gap:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h2 style="margin:0;font-size:18px;">🚛 경동 자동발송</h2>
+            <button onclick="closeKdAutoModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;">✕</button>
+        </div>
+        <p style="margin:0;font-size:13px;color:#64748b;">경동택배에서 받은 엑셀을 <b>그대로</b> 업로드하면<br>수령인/전화번호로 자동 매칭하여 네이버 발송처리합니다.</p>
+        <p id="kda-pending-info" style="margin:0;font-size:13px;font-weight:600;color:#059669;"></p>
+
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:10px;">
+            <p style="margin:0;font-size:13px;color:#475569;">경동택배에서 다운받은 엑셀 파일을 선택하세요.<br>(운송장번호, 받는분, 전화번호 열이 포함된 파일)</p>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                <span style="padding:8px 14px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;font-size:13px;white-space:nowrap;">파일 선택</span>
+                <span id="kda-upload-name" style="font-size:13px;color:#64748b;"></span>
+                <input id="kda-upload-input" type="file" accept=".xlsx" onchange="onKdAutoFileChange(this)" style="display:none;">
+            </label>
+            <div style="display:flex;gap:8px;">
+                <button onclick="submitKdAutoDispatch(true)" style="flex:1;padding:10px;border:1px solid #059669;border-radius:6px;background:#fff;color:#059669;font-weight:600;cursor:pointer;font-size:13px;">매칭 확인</button>
+                <button onclick="submitKdAutoDispatch(false)" style="flex:1;padding:10px;border:none;border-radius:6px;background:#059669;color:#fff;font-weight:600;cursor:pointer;font-size:14px;">자동 발송처리</button>
+            </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;">
+            <button onclick="closeKdAutoModal()" style="padding:8px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;">닫기</button>
         </div>
     </div>
 </div>
