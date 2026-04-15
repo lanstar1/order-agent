@@ -144,3 +144,30 @@ SMARTSTORE_KD_DELIVERY_MAP_PATH = BASE_DIR / "data" / "smartstore" / "kd_deliver
 BARCODE_CUST_CODE = os.getenv("BARCODE_CUST_CODE", "202308091")  # 바코드서버 거래처코드
 BARCODE_WH_CD     = os.getenv("BARCODE_WH_CD", "30")             # 바코드서버 출하창고
 BARCODE_MASTER_PATH = os.getenv("BARCODE_MASTER_PATH", "")       # master_data.xlsx 경로 (빈값이면 data/barcode/master_data.xlsx)
+
+# ─────────────────────────────────────────
+#  네이버 검색/데이터랩 API (MAP 감시 + 트렌드 분석)
+# ─────────────────────────────────────────
+NAVER_SEARCH_ID     = os.getenv("NAVER_SEARCH_ID", "")
+NAVER_SEARCH_SECRET = os.getenv("NAVER_SEARCH_SECRET", "")
+
+# ─── 선적 메일 (IMAP) ──────────────────────────────────
+MAIL_IMAP_SERVER = os.getenv("MAIL_IMAP_SERVER", "wmbox3.ecount.com")
+MAIL_IMAP_PORT = int(os.getenv("MAIL_IMAP_PORT", "993"))
+MAIL_USER = os.getenv("MAIL_USER", "")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+
+# ─── 메일 자동화 (SMTP 회신) ──────────────────────────────
+MAIL_SMTP_HOST = os.getenv("MAIL_SMTP_HOST", "wsmtp.ecount.com")
+MAIL_SMTP_PORT = int(os.getenv("MAIL_SMTP_PORT", "587"))
+MAIL_TARGET_SENDER = os.getenv("MAIL_TARGET_SENDER", "guzhiyi@bor-cable.com")
+MAIL_AUTO_PASSWORD = os.getenv("MAIL_AUTO_PASSWORD", "lanstar2026")
+ERP_SUPPLIER_CODE = os.getenv("ERP_SUPPLIER_CODE", "1111122222")
+TT_SELL_SPREAD = float(os.getenv("TT_SELL_SPREAD", "1.75"))  # 전신환매도율 스프레드 %
+
+# ─── 선적 메일 2 (네이버 IMAP) ────────────────────────────
+MAIL2_IMAP_SERVER = os.getenv("MAIL2_IMAP_SERVER", "imap.naver.com")
+MAIL2_IMAP_PORT = int(os.getenv("MAIL2_IMAP_PORT", "993"))
+MAIL2_USER = os.getenv("MAIL2_USER", "")
+MAIL2_PASSWORD = os.getenv("MAIL2_PASSWORD", "")
+MAIL2_SENDER_FILTER = os.getenv("MAIL2_SENDER_FILTER", "13428934642@163.com")
