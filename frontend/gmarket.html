@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>지마켓 주문 자동화</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; color: #1e293b; }
+        .header { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; }
+        .header h1 { font-size: 22px; font-weight: 700; }
+        .header .sub { font-size: 13px; opacity: 0.8; margin-top: 2px; }
+        .market-tabs { background: #fff; border-bottom: 2px solid #e2e8f0; padding: 0 32px; display: flex; gap: 0; }
+        .market-tab { padding: 14px 28px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+        .market-tab:hover { color: #334155; background: #f8fafc; }
+        .market-tab.active { color: #dc2626; border-bottom-color: #dc2626; background: transparent; }
+        .market-tab .tab-icon { font-size: 16px; }
+        .market-tab .tab-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: #e2e8f0; color: #64748b; font-weight: 700; }
+        .market-tab.active .tab-badge { background: #fee2e2; color: #dc2626; }
+        .container { max-width: 1400px; margin: 24px auto; padding: 0 20px; }
+        .coming-soon {
+            background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 80px 40px; text-align: center; margin-top: 40px;
+        }
+        .coming-soon .icon { font-size: 64px; margin-bottom: 20px; }
+        .coming-soon h2 { font-size: 24px; font-weight: 700; color: #334155; margin-bottom: 12px; }
+        .coming-soon p { font-size: 15px; color: #64748b; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>마켓플레이스 주문 자동화</h1>
+            <div class="sub">주문수집 → ERP 판매입력 → 택배등록 → 발송처리</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;">
+            <a href="/" style="color:#fff;text-decoration:none;font-size:13px;opacity:0.8;padding:5px 12px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;">← 메인으로</a>
+        </div>
+    </div>
+
+    <div class="market-tabs">
+        <a class="market-tab" href="/smartstore">
+            <span class="tab-icon">🟢</span> 스마트스토어
+        </a>
+        <a class="market-tab active" href="/gmarket">
+            <span class="tab-icon">🔴</span> 지마켓
+            <span class="tab-badge">준비중</span>
+        </a>
+        <a class="market-tab" href="/coupang">
+            <span class="tab-icon">🟠</span> 쿠팡
+            <span class="tab-badge">준비중</span>
+        </a>
+    </div>
+
+    <div class="container">
+        <div class="coming-soon">
+            <div class="icon">🔴</div>
+            <h2>지마켓 주문 자동화</h2>
+            <p>지마켓/옥션 ESM API 연동을 준비하고 있습니다.<br>주문수집, ERP 전송, 발송처리 기능이 추가될 예정입니다.</p>
+        </div>
+    </div>
+</body>
+</html>

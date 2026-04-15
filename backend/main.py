@@ -122,6 +122,26 @@ async def serve_smartstore_page():
         },
     )
 
+@app.get("/gmarket", include_in_schema=False)
+async def serve_gmarket_page():
+    html = FRONTEND_DIR / "gmarket.html"
+    if not html.exists():
+        return JSONResponse({"error": "gmarket.html not found"}, status_code=404)
+    return FileResponse(
+        html, media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"},
+    )
+
+@app.get("/coupang", include_in_schema=False)
+async def serve_coupang_page():
+    html = FRONTEND_DIR / "coupang.html"
+    if not html.exists():
+        return JSONResponse({"error": "coupang.html not found"}, status_code=404)
+    return FileResponse(
+        html, media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"},
+    )
+
 # 루트를 스마트스토어로 리다이렉트
 @app.get("/", include_in_schema=False)
 async def root_redirect():

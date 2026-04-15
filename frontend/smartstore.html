@@ -94,18 +94,42 @@
         .btn-xs-blue { background: #2563eb; color: #fff; } .btn-xs-blue:hover { background: #1d4ed8; }
         .btn-xs-red { background: #dc2626; color: #fff; } .btn-xs-red:hover { background: #b91c1c; }
         .btn-xs-green { background: #16a34a; color: #fff; } .btn-xs-green:hover { background: #15803d; }
+
+        /* 마켓 탭 네비게이션 */
+        .market-tabs { background: #fff; border-bottom: 2px solid #e2e8f0; padding: 0 32px; display: flex; gap: 0; }
+        .market-tab { padding: 14px 28px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+        .market-tab:hover { color: #334155; background: #f8fafc; }
+        .market-tab.active { color: #1e40af; border-bottom-color: #2563eb; background: transparent; }
+        .market-tab .tab-icon { font-size: 16px; }
+        .market-tab .tab-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: #e2e8f0; color: #64748b; font-weight: 700; }
+        .market-tab.active .tab-badge { background: #dbeafe; color: #1e40af; }
     </style>
 </head>
 <body>
     <div class="header">
         <div>
-            <h1>스마트스토어 주문 자동화</h1>
-            <div class="sub">네이버 주문수집 → ERP 판매입력 → 로젠택배 등록 → 발송처리</div>
+            <h1>마켓플레이스 주문 자동화</h1>
+            <div class="sub">주문수집 → ERP 판매입력 → 택배등록 → 발송처리</div>
         </div>
         <div style="display:flex;align-items:center;gap:16px;">
             <a href="/" style="color:#fff;text-decoration:none;font-size:13px;opacity:0.8;padding:5px 12px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;">← 메인으로</a>
             <span style="font-size:13px; opacity:0.8;" id="clock"></span>
         </div>
+    </div>
+
+    <!-- 마켓 탭 네비게이션 -->
+    <div class="market-tabs">
+        <a class="market-tab active" href="/smartstore">
+            <span class="tab-icon">🟢</span> 스마트스토어
+        </a>
+        <a class="market-tab" href="/gmarket">
+            <span class="tab-icon">🔴</span> 지마켓
+            <span class="tab-badge">준비중</span>
+        </a>
+        <a class="market-tab" href="/coupang">
+            <span class="tab-icon">🟠</span> 쿠팡
+            <span class="tab-badge">준비중</span>
+        </a>
     </div>
 
     <div class="container">
