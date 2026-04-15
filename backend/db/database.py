@@ -780,6 +780,24 @@ def init_db():
         updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
 
+    # ── 경동택배 주문 매핑 (네이버 자동발송처리용) ──
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS kd_order_map (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_order_id TEXT NOT NULL,
+        order_id        TEXT NOT NULL DEFAULT '',
+        rcv_name        TEXT NOT NULL DEFAULT '',
+        tel             TEXT NOT NULL DEFAULT '',
+        address         TEXT NOT NULL DEFAULT '',
+        product_name    TEXT NOT NULL DEFAULT '',
+        prod_cd         TEXT NOT NULL DEFAULT '',
+        tracking_no     TEXT NOT NULL DEFAULT '',
+        status          TEXT NOT NULL DEFAULT 'pending',
+        erp_date        TEXT NOT NULL DEFAULT '',
+        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        dispatched_at   TIMESTAMP
+    )""")
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -815,6 +833,11 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_aicc_unans_resolved ON aicc_unanswered(resolved);
         CREATE INDEX IF NOT EXISTS idx_inv_snapshots_date ON inventory_snapshots(snapshot_date);
         CREATE INDEX IF NOT EXISTS idx_inv_alert_date ON inventory_alert_history(check_date);
+
+        CREATE INDEX IF NOT EXISTS idx_kd_order_poid ON kd_order_map(product_order_id);
+        CREATE INDEX IF NOT EXISTS idx_kd_order_rcv ON kd_order_map(rcv_name);
+        CREATE INDEX IF NOT EXISTS idx_kd_order_tel ON kd_order_map(tel);
+        CREATE INDEX IF NOT EXISTS idx_kd_order_status ON kd_order_map(status);
     """)
 
     conn.commit()

@@ -576,6 +576,36 @@ async def excluded_send_erp(
             r["confirm"] = confirm_result
             logger.info(f"[SS] 경동 발주확인: {confirm_result.get('confirmed', 0)}건")
 
+        # ERP 전송 성공 시 kd_order_map DB에 매핑 저장 (자동발송처리용)
+        if r.get("success"):
+            try:
+                from db.database import get_conn
+                conn = get_conn()
+                KST_NOW = datetime.now(ZoneInfo("Asia/Seoul"))
+                erp_date = KST_NOW.strftime("%Y%m%d")
+                saved_cnt = 0
+                for oid, group in order_groups.items():
+                    ai = order_addr.get(oid, {})
+                    for o in group:
+                        poid = o.get("productOrderId", "")
+                        if not poid:
+                            continue
+                        conn.execute("""
+                            INSERT OR IGNORE INTO kd_order_map
+                            (product_order_id, order_id, rcv_name, tel, address,
+                             product_name, prod_cd, erp_date)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (poid, oid, ai.get("rcv",""), ai.get("tel",""),
+                              ai.get("addr",""), o.get("productName",""),
+                              _match_item_code(o) or "", erp_date))
+                        saved_cnt += 1
+                conn.commit()
+                conn.close()
+                r["kd_map_saved"] = saved_cnt
+                logger.info(f"[SS] 경동 매핑 DB 저장: {saved_cnt}건")
+            except Exception as db_err:
+                logger.error(f"[SS] 경동 매핑 DB 저장 실패: {db_err}", exc_info=True)
+
         return r
     except Exception as e:
         logger.error(f"[SS] 경동택배 ERP 전송 오류: {e}", exc_info=True)
@@ -909,119 +939,156 @@ async def kd_dispatch_excel(
 
 @router.post("/kd-dispatch-auto")
 async def kd_dispatch_auto(
-    body: dict = Body(...),
+    file: UploadFile = File(...),
+    dry_run: bool = Form(False),
 ):
-    """경동택배 자동 발송처리: ERP 판매현황에서 송장번호 추출 → 네이버 발송처리.
+    """경동택배 엑셀 업로드 → DB 매칭 → 네이버 자동 발송처리.
 
-    ERP 비고사항(U_MEMO5)에서 [경동 XXXX] 패턴의 송장번호를 파싱하고,
-    적요2(P_REMARKS2)에서 productOrderId를 읽어 자동 발송처리.
+    경동택배에서 받은 엑셀(운송장번호, 받는분, 전화번호 포함)을 업로드하면
+    kd_order_map DB에서 수령인/전화번호로 매칭하여 자동 발송처리.
 
-    body: {
-        "from_date": "YYYYMMDD" (선택, 기본 오늘),
-        "to_date": "YYYYMMDD" (선택, 기본 오늘),
-        "dry_run": false (선택, true면 발송처리 안하고 매칭 결과만 반환)
-    }
+    dry_run=true면 발송처리 안하고 매칭 결과만 반환.
     """
+    import io
+    import openpyxl
+    import unicodedata
+    from db.database import get_conn
     from services.naver_client import naver_client
-    from services.erp_client_ss import ERPClientSS
 
-    today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
-    from_date = body.get("from_date", today)
-    to_date = body.get("to_date", today)
-    dry_run = body.get("dry_run", False)
+    content = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    ws = wb.active
 
-    if not SMARTSTORE_CUST_CODE:
-        return {"success": False, "error": "SMARTSTORE_CUST_CODE 미설정"}
+    # 헤더에서 열 인덱스 자동 탐색
+    track_col = rcv_col = tel_col = None
+    for ci, cell in enumerate(ws[1]):
+        val = str(cell.value or "").strip()
+        if val in ("운송장번호", "송장번호", "trackingNumber"):
+            track_col = ci
+        elif val in ("받는분", "수령인", "수취인"):
+            rcv_col = ci
+        elif val in ("도착지전화번호", "받는분전화번호", "전화번호", "연락처"):
+            tel_col = ci
 
-    # 1. ERP 판매현황 조회 (스마트스토어 거래처만)
-    erp = ERPClientSS()
-    await erp.ensure_session()
-    sales_result = await erp.get_sales_list(
-        from_date=from_date, to_date=to_date,
-        cust_code=SMARTSTORE_CUST_CODE, per_page=1000,
-    )
+    if track_col is None:
+        return {"success": False, "error": "엑셀에 '운송장번호' 열이 필요합니다."}
+    if rcv_col is None and tel_col is None:
+        return {"success": False, "error": "엑셀에 '받는분' 또는 '도착지전화번호' 열이 필요합니다."}
 
-    if not sales_result.get("success"):
-        return {"success": False, "error": f"ERP 판매현황 조회 실패: {sales_result.get('error', '')}"}
+    # 경동 엑셀 파싱
+    kd_rows = []
+    for row in ws.iter_rows(min_row=2, values_only=False):
+        tracking = str(row[track_col].value or "").strip().replace("-", "")
+        if not tracking or tracking == "None":
+            continue
+        rcv = str(row[rcv_col].value or "").strip() if rcv_col is not None else ""
+        tel = str(row[tel_col].value or "").strip().replace("-", "") if tel_col is not None else ""
+        kd_rows.append({"tracking": tracking, "rcv": rcv, "tel": tel})
 
-    items = sales_result.get("items", [])
-    logger.info(f"[SS] 경동자동발송: ERP 조회 {len(items)}건 ({from_date}~{to_date})")
+    if not kd_rows:
+        return {"success": False, "error": "유효한 운송장 데이터가 없습니다."}
 
-    # 2. 경동 송장번호 파싱: [경동 XXXXXXXXXXXX] 패턴
-    kd_pattern = re.compile(r"\[경동\s+(\d+)\]")
+    logger.info(f"[SS] 경동자동발송: 엑셀 {len(kd_rows)}건 파싱")
+
+    # 수령인 이름 정리 (★, ●, 파손주의 등 제거)
+    def _clean_name(name: str) -> str:
+        name = re.sub(r"[★●▲▼◆◇■□]", "", name)
+        name = re.sub(r"파손주의|파손\s*주의", "", name)
+        name = re.sub(r"\[선\]|\[착\]", "", name)
+        return name.strip()
+
+    # DB에서 pending 상태 주문 조회
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, product_order_id, order_id, rcv_name, tel, product_name "
+        "FROM kd_order_map WHERE status = 'pending'"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return {"success": False, "error": "DB에 발송 대기 중인 경동 주문이 없습니다. 먼저 경동 ERP 전송을 진행해주세요."}
+
+    # DB 데이터를 매칭용으로 구조화
+    db_by_tel: dict = {}   # 전화번호 → [row, ...]
+    db_by_name: dict = {}  # 정리된이름 → [row, ...]
+    for r in rows:
+        row_dict = {"id": r[0], "poid": r[1], "oid": r[2], "rcv": r[3], "tel": r[4], "prod": r[5]}
+        tel_clean = r[4].replace("-", "").strip() if r[4] else ""
+        if tel_clean:
+            db_by_tel.setdefault(tel_clean, []).append(row_dict)
+        name_clean = _clean_name(r[3]) if r[3] else ""
+        if name_clean:
+            db_by_name.setdefault(name_clean, []).append(row_dict)
+
+    # 매칭
     dispatch_list = []
-    skipped_no_tracking = []
-    skipped_no_poid = []
+    matched_db_ids = set()
+    matched_details = []
+    unmatched = []
 
-    # slip_no 기준으로 그룹핑 (같은 전표의 모든 라인에서 productOrderId 수집)
-    slip_groups: dict = {}  # slip_no → {"tracking": str, "po_ids": set, "items": list}
-    for item in items:
-        memo = item.get("u_memo5", "") or item.get("des", "") or ""
-        if "경동" not in memo:
-            continue
+    for kd in kd_rows:
+        tracking = kd["tracking"]
+        kd_name = _clean_name(kd["rcv"])
+        kd_tel = kd["tel"].replace("-", "")
 
-        slip_no = item.get("slip_no", "")
-        match = kd_pattern.search(memo)
-        tracking = match.group(1) if match else ""
+        # 1차: 전화번호 매칭
+        matched = db_by_tel.get(kd_tel, []) if kd_tel else []
+        # 2차: 이름 매칭 (전화번호 없거나 매칭 안되면)
+        if not matched and kd_name:
+            matched = db_by_name.get(kd_name, [])
 
-        p_remarks2 = str(item.get("p_remarks2", "") or "").strip()
-        po_ids = [pid.strip() for pid in p_remarks2.split(",") if pid.strip()]
-
-        if slip_no not in slip_groups:
-            slip_groups[slip_no] = {"tracking": tracking, "po_ids": set(), "items": [], "memo": memo}
-        if tracking:
-            slip_groups[slip_no]["tracking"] = tracking
-        for pid in po_ids:
-            slip_groups[slip_no]["po_ids"].add(pid)
-        slip_groups[slip_no]["items"].append(item)
-
-    # 3. dispatch_list 구성
-    for slip_no, group in slip_groups.items():
-        tracking = group["tracking"]
-        po_ids = group["po_ids"]
-
-        if not tracking:
-            skipped_no_tracking.append({
-                "slip_no": slip_no,
-                "memo": group["memo"][:100],
-                "reason": "송장번호 없음 ([경동 XXXX] 패턴 미발견)",
+        if not matched:
+            unmatched.append({
+                "tracking": tracking, "rcv": kd["rcv"], "tel": kd["tel"],
+                "reason": "DB에 매칭되는 주문 없음",
             })
             continue
 
-        if not po_ids:
-            skipped_no_poid.append({
-                "slip_no": slip_no,
-                "tracking": tracking,
-                "memo": group["memo"][:100],
-                "reason": "productOrderId 없음 (적요2 비어있음)",
-            })
-            continue
-
-        for poid in po_ids:
+        for m in matched:
+            if m["id"] in matched_db_ids:
+                continue
+            matched_db_ids.add(m["id"])
             dispatch_list.append({
-                "productOrderId": poid,
+                "productOrderId": m["poid"],
                 "deliveryCompanyCode": "KDEXP",
                 "trackingNumber": tracking,
             })
+            matched_details.append({
+                "tracking": tracking,
+                "productOrderId": m["poid"],
+                "rcv": m["rcv"],
+                "product": m["prod"],
+            })
 
-    logger.info(f"[SS] 경동자동발송: 발송대상={len(dispatch_list)}건, "
-                f"송장없음={len(skipped_no_tracking)}건, POID없음={len(skipped_no_poid)}건")
+    logger.info(f"[SS] 경동자동발송: 매칭={len(dispatch_list)}건, 미매칭={len(unmatched)}건")
 
     result = {
-        "dispatch_target": len(dispatch_list),
-        "dispatch_list": dispatch_list,
-        "skipped_no_tracking": skipped_no_tracking,
-        "skipped_no_poid": skipped_no_poid,
-        "erp_total": len(items),
-        "kd_slips": len(slip_groups),
+        "excel_total": len(kd_rows),
+        "db_pending": len(rows),
+        "matched": len(dispatch_list),
+        "unmatched_count": len(unmatched),
+        "unmatched": unmatched,
+        "matched_details": matched_details,
     }
 
-    # 4. dry_run이 아니면 실제 발송처리
+    # 실제 발송처리
     if not dry_run and dispatch_list:
         dispatch_result = await naver_client.dispatch_orders(dispatch_list)
         result["dispatch_result"] = dispatch_result
         result["success"] = dispatch_result.get("success", False)
-        logger.info(f"[SS] 경동자동발송 완료: {dispatch_result}")
+
+        # 발송 성공 시 DB 상태 업데이트
+        if dispatch_result.get("dispatched", 0) > 0:
+            conn = get_conn()
+            for d in dispatch_list:
+                conn.execute(
+                    "UPDATE kd_order_map SET status='dispatched', tracking_no=?, dispatched_at=CURRENT_TIMESTAMP "
+                    "WHERE product_order_id=? AND status='pending'",
+                    (d["trackingNumber"], d["productOrderId"])
+                )
+            conn.commit()
+            conn.close()
+            logger.info(f"[SS] 경동자동발송 DB 업데이트: {len(dispatch_list)}건 dispatched")
     elif dry_run:
         result["success"] = True
         result["message"] = "dry_run 모드: 실제 발송처리하지 않음"
@@ -1030,6 +1097,23 @@ async def kd_dispatch_auto(
         result["message"] = "발송처리 대상이 없습니다."
 
     return result
+
+
+@router.get("/kd-dispatch-pending")
+async def kd_dispatch_pending():
+    """경동택배 발송 대기 중인 주문 목록 조회"""
+    from db.database import get_conn
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT product_order_id, order_id, rcv_name, tel, address, product_name, prod_cd, erp_date "
+        "FROM kd_order_map WHERE status = 'pending' ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+
+    items = [{"productOrderId": r[0], "orderId": r[1], "rcvName": r[2], "tel": r[3],
+              "address": r[4], "productName": r[5], "prodCd": r[6], "erpDate": r[7]}
+             for r in rows]
+    return {"success": True, "count": len(items), "items": items}
 
 
 @router.post("/dispatch-manual")
