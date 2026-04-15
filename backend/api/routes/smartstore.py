@@ -20,7 +20,7 @@ from config import (
     SMARTSTORE_PRODUCT_MAP_PATH, SMARTSTORE_MODEL_MAP_PATH,
     SMARTSTORE_OPTION_MAP_PATH, SMARTSTORE_ADDON_MAP_PATH,
     SMARTSTORE_OPTION_TEXT_MAP_PATH, SMARTSTORE_ADDON_TEXT_MAP_PATH,
-    SMARTSTORE_CODE_ALIAS_MAP_PATH,
+    SMARTSTORE_CODE_ALIAS_MAP_PATH, SMARTSTORE_KD_DELIVERY_MAP_PATH,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,8 @@ _option_text_map: dict = {}
 _addon_text_map: dict = {}
 # 추출코드 별칭맵: HDSVAL-XXX 등 → ERP품목코드
 _code_alias_map: dict = {}
+# 경동택배 배송비 매핑: 메인품목코드 → 배송비품목코드
+_kd_delivery_map: dict = {}
 
 
 def _load_json(path) -> dict:
@@ -63,7 +65,7 @@ def _save_json(path, data: dict):
 
 def _load_product_map():
     global _product_map, _option_override_map, _addon_map, _model_map, _model_to_erp_map
-    global _option_text_map, _addon_text_map, _code_alias_map
+    global _option_text_map, _addon_text_map, _code_alias_map, _kd_delivery_map
     _product_map        = _load_json(SMARTSTORE_PRODUCT_MAP_PATH)
     _option_override_map = _load_json(SMARTSTORE_OPTION_MAP_PATH)
     _addon_map          = _load_json(SMARTSTORE_ADDON_MAP_PATH)
@@ -71,6 +73,7 @@ def _load_product_map():
     _option_text_map    = _load_json(SMARTSTORE_OPTION_TEXT_MAP_PATH)
     _addon_text_map     = _load_json(SMARTSTORE_ADDON_TEXT_MAP_PATH)
     _code_alias_map     = _load_json(SMARTSTORE_CODE_ALIAS_MAP_PATH)
+    _kd_delivery_map    = _load_json(SMARTSTORE_KD_DELIVERY_MAP_PATH)
     # 역방향 맵 빌드: 모델명 → ERP품목코드 (전 시트 포함)
     _model_to_erp_map = {}
     for pno, model in _model_map.items():
@@ -525,9 +528,15 @@ async def excluded_send_erp(
                     "quantity": qty, "settlementAmount": settle,
                 })
 
-        # 배송비 라인도 같은 전표(ser_no)에 포함
+        # 배송비 라인: 품목별 경동 배송비 코드 매핑, 없으면 기본 DEL-매출배002
         fee = order_shipping.get(oid, 0)
-        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": 1, "price": int(fee),
+        del_code = DELIVERY_PROD_CD
+        for o in group:
+            matched = _match_item_code(o)
+            if matched and matched in _kd_delivery_map:
+                del_code = _kd_delivery_map[matched]
+                break
+        erp_lines.append({"prod_cd": del_code, "qty": 1, "price": int(fee),
                            "remark": remark, "ser_no": ser_no})
 
     if not erp_lines:

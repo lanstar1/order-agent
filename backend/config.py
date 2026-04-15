@@ -135,6 +135,7 @@ SMARTSTORE_ADDON_MAP_PATH      = BASE_DIR / "data" / "smartstore" / "smartstore_
 SMARTSTORE_OPTION_TEXT_MAP_PATH = BASE_DIR / "data" / "smartstore" / "smartstore_option_text_map.json"  # 옵션텍스트 직접매핑
 SMARTSTORE_ADDON_TEXT_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_addon_text_map.json"   # 추가상품텍스트 직접매핑
 SMARTSTORE_CODE_ALIAS_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_code_alias_map.json"   # 추출코드 별칭맵
+SMARTSTORE_KD_DELIVERY_MAP_PATH = BASE_DIR / "data" / "smartstore" / "kd_delivery_fee_map.json"        # 경동택배 배송비 매핑
 
 # ─────────────────────────────────────────
 #  바코드 ERP Bridge (쿠팡 PO → 이카운트)
