@@ -65,8 +65,8 @@ class ERPClientSS:
             rcv = line.get("rcv_name", "")
             remark = line.get("remark", "")
             if remark:
+                bulk["U_MEMO5"] = remark
                 bulk["DES"] = remark
-                bulk["REMARK1"] = remark
             elif rcv:
                 bulk["DES"] = rcv
             if emp_cd:
