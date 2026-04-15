@@ -105,7 +105,10 @@ class ERPClientSS:
 
                         logger.info(f"[ERP-SS] SaveSale ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ±ÃÂÃÂªÃÂÃÂ³ÃÂÃÂµ: {success_cnt}ÃÂÃÂªÃÂÃÂ±ÃÂÃÂ´, ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¤ÃÂÃÂ­ÃÂÃÂÃÂÃÂ¨: {fail_cnt}ÃÂÃÂªÃÂÃÂ±ÃÂÃÂ´, ÃÂÃÂ¬ÃÂÃÂ ÃÂÃÂÃÂÃÂ­ÃÂÃÂÃÂÃÂ: {slip_nos}")
                         is_success = success_cnt > 0 and fail_cnt == 0
-                        return {
+                        err_summary = ""
+                        if fail_cnt > 0 and fail_details:
+                            err_summary = "; ".join(d.get("error","") for d in fail_details if d.get("error"))
+                        result = {
                             "success": is_success,
                             "data": data,
                             "detail": {
@@ -115,6 +118,9 @@ class ERPClientSS:
                                 "errors": fail_details,
                             },
                         }
+                        if not is_success:
+                            result["error"] = f"ERP 전송 실패 ({fail_cnt}건): {err_summary}" if err_summary else f"ERP 전송 실패 ({fail_cnt}건)"
+                        return result
                     return {"success": True, "data": data}
                 if str(data.get("Status")) in ("301", "302"):
                     logger.warning(f"[ERP-SS] ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¸ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ§ÃÂÃÂÃÂÃÂ«ÃÂÃÂ£ÃÂÃÂ, ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¬ÃÂÃÂ«ÃÂÃÂ¡ÃÂÃÂÃÂÃÂªÃÂÃÂ·ÃÂÃÂ¸ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¸ ÃÂÃÂ¬ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ")
@@ -123,7 +129,9 @@ class ERPClientSS:
                     url = f"https://oapi{zone}.ecount.com/OAPI/V2/Sale/SaveSale?SESSION_ID={self._session_id}"
                     continue
                 logger.error(f"[ERP-SS] SaveSale ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¤ÃÂÃÂ­ÃÂÃÂÃÂÃÂ¨: Status={data.get('Status')}")
-                return {"success": False, "error": data}
+                err_msg = data.get("Message") or data.get("Error") or str(data.get("Status", ""))
+                logger.error(f"[ERP-SS] SaveSale 응답 데이터: {data}")
+                return {"success": False, "error": f"ERP 오류 (Status {data.get('Status')}): {err_msg}"}
             except Exception as e:
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
