@@ -54,7 +54,7 @@ class ERPClientSS:
             qty = float(line["qty"])
             qty_str = str(int(qty)) if qty == int(qty) else str(qty)
             bulk = {
-                "UPLOAD_SER_NO": "1",
+                "UPLOAD_SER_NO": str(line.get("ser_no", "1")),
                 "IO_DATE": io_date,
                 "CUST": cust_code,
                 "PROD_CD": line["prod_cd"],
@@ -65,6 +65,9 @@ class ERPClientSS:
             rcv = line.get("rcv_name", "")
             if rcv:
                 bulk["DES"] = rcv
+            remark = line.get("remark", "")
+            if remark:
+                bulk["CHAR5"] = remark
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
             price = float(line.get("price", 0) or 0)

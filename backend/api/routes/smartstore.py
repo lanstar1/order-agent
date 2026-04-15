@@ -475,7 +475,8 @@ async def excluded_send_erp(
     erp_lines = []
     unmatched_items = []
 
-    for oid, group in order_groups.items():
+    # orderId별로 개별 전표 생성 (ser_no를 다르게 할당)
+    for ser_no, (oid, group) in enumerate(order_groups.items(), start=1):
         # 선불/착불 판단
         fee_type = order_feetype.get(oid, "")
         if "착불" in fee_type or fee_type.upper() in ("COLLECT", "COD"):
@@ -499,7 +500,7 @@ async def excluded_send_erp(
             if code:
                 erp_lines.append({"prod_cd": code, "qty": qty,
                                    "price": round(settle / qty, 2) if qty else 0,
-                                   "remark": remark})
+                                   "remark": remark, "ser_no": ser_no})
             else:
                 unmatched_items.append({
                     "orderId": oid,
@@ -510,16 +511,10 @@ async def excluded_send_erp(
                     "quantity": qty, "settlementAmount": settle,
                 })
 
-    # 배송비 라인 (경동택배 배송비) — 비고사항 동일하게 포함
-    # (모든 라인에 CHAR5가 있어야 Ecount가 마지막 라인으로 덮어쓰지 않음)
-    first_remark = erp_lines[0]["remark"] if erp_lines and erp_lines[0].get("remark") else ""
-    delivery_by_fee: dict = defaultdict(int)
-    for oid in order_groups:
+        # 배송비 라인도 같은 전표(ser_no)에 포함
         fee = order_shipping.get(oid, 0)
-        delivery_by_fee[fee] += 1
-    for fee_amount, count in delivery_by_fee.items():
-        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": count, "price": int(fee_amount),
-                           "remark": first_remark})
+        erp_lines.append({"prod_cd": DELIVERY_PROD_CD, "qty": 1, "price": int(fee),
+                           "remark": remark, "ser_no": ser_no})
 
     if not erp_lines:
         return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
