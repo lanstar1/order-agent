@@ -509,6 +509,10 @@ async def excluded_send_erp(
         if ai.get("msg"):   parts.append(ai["msg"])
         remark = " / ".join(parts)
 
+        # orderId에 속한 모든 productOrderId 수집 (적요2에 저장)
+        group_po_ids = [o.get("productOrderId", "") for o in group if o.get("productOrderId")]
+        po_ids_str = ",".join(group_po_ids)  # P_REMARKS2 STRING(100)에 맞춤
+
         for o in group:
             code = _match_item_code(o)
             qty = int(o.get("quantity", 1) or 1)
@@ -517,7 +521,8 @@ async def excluded_send_erp(
                 erp_lines.append({"prod_cd": code, "qty": qty,
                                    "prod_name": o.get("productName", ""),
                                    "price": round(settle / qty, 2) if qty else 0,
-                                   "remark": remark, "ser_no": ser_no})
+                                   "remark": remark, "ser_no": ser_no,
+                                   "p_remarks2": o.get("productOrderId", "")})
             else:
                 unmatched_items.append({
                     "orderId": oid,
@@ -537,7 +542,8 @@ async def excluded_send_erp(
                 del_code = _kd_delivery_map[matched]
                 break
         erp_lines.append({"prod_cd": del_code, "qty": 1, "price": int(fee),
-                           "remark": remark, "ser_no": ser_no})
+                           "remark": remark, "ser_no": ser_no,
+                           "p_remarks2": po_ids_str})
 
     if not erp_lines:
         return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
@@ -899,6 +905,131 @@ async def kd_dispatch_excel(
     except Exception as e:
         logger.error(f"[SS] 경동발송처리 오류: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
+
+
+@router.post("/kd-dispatch-auto")
+async def kd_dispatch_auto(
+    body: dict = Body(...),
+):
+    """경동택배 자동 발송처리: ERP 판매현황에서 송장번호 추출 → 네이버 발송처리.
+
+    ERP 비고사항(U_MEMO5)에서 [경동 XXXX] 패턴의 송장번호를 파싱하고,
+    적요2(P_REMARKS2)에서 productOrderId를 읽어 자동 발송처리.
+
+    body: {
+        "from_date": "YYYYMMDD" (선택, 기본 오늘),
+        "to_date": "YYYYMMDD" (선택, 기본 오늘),
+        "dry_run": false (선택, true면 발송처리 안하고 매칭 결과만 반환)
+    }
+    """
+    from services.naver_client import naver_client
+    from services.erp_client_ss import ERPClientSS
+
+    today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+    from_date = body.get("from_date", today)
+    to_date = body.get("to_date", today)
+    dry_run = body.get("dry_run", False)
+
+    if not SMARTSTORE_CUST_CODE:
+        return {"success": False, "error": "SMARTSTORE_CUST_CODE 미설정"}
+
+    # 1. ERP 판매현황 조회 (스마트스토어 거래처만)
+    erp = ERPClientSS()
+    await erp.ensure_session()
+    sales_result = await erp.get_sales_list(
+        from_date=from_date, to_date=to_date,
+        cust_code=SMARTSTORE_CUST_CODE, per_page=1000,
+    )
+
+    if not sales_result.get("success"):
+        return {"success": False, "error": f"ERP 판매현황 조회 실패: {sales_result.get('error', '')}"}
+
+    items = sales_result.get("items", [])
+    logger.info(f"[SS] 경동자동발송: ERP 조회 {len(items)}건 ({from_date}~{to_date})")
+
+    # 2. 경동 송장번호 파싱: [경동 XXXXXXXXXXXX] 패턴
+    kd_pattern = re.compile(r"\[경동\s+(\d+)\]")
+    dispatch_list = []
+    skipped_no_tracking = []
+    skipped_no_poid = []
+
+    # slip_no 기준으로 그룹핑 (같은 전표의 모든 라인에서 productOrderId 수집)
+    slip_groups: dict = {}  # slip_no → {"tracking": str, "po_ids": set, "items": list}
+    for item in items:
+        memo = item.get("u_memo5", "") or item.get("des", "") or ""
+        if "경동" not in memo:
+            continue
+
+        slip_no = item.get("slip_no", "")
+        match = kd_pattern.search(memo)
+        tracking = match.group(1) if match else ""
+
+        p_remarks2 = str(item.get("p_remarks2", "") or "").strip()
+        po_ids = [pid.strip() for pid in p_remarks2.split(",") if pid.strip()]
+
+        if slip_no not in slip_groups:
+            slip_groups[slip_no] = {"tracking": tracking, "po_ids": set(), "items": [], "memo": memo}
+        if tracking:
+            slip_groups[slip_no]["tracking"] = tracking
+        for pid in po_ids:
+            slip_groups[slip_no]["po_ids"].add(pid)
+        slip_groups[slip_no]["items"].append(item)
+
+    # 3. dispatch_list 구성
+    for slip_no, group in slip_groups.items():
+        tracking = group["tracking"]
+        po_ids = group["po_ids"]
+
+        if not tracking:
+            skipped_no_tracking.append({
+                "slip_no": slip_no,
+                "memo": group["memo"][:100],
+                "reason": "송장번호 없음 ([경동 XXXX] 패턴 미발견)",
+            })
+            continue
+
+        if not po_ids:
+            skipped_no_poid.append({
+                "slip_no": slip_no,
+                "tracking": tracking,
+                "memo": group["memo"][:100],
+                "reason": "productOrderId 없음 (적요2 비어있음)",
+            })
+            continue
+
+        for poid in po_ids:
+            dispatch_list.append({
+                "productOrderId": poid,
+                "deliveryCompanyCode": "KDEXP",
+                "trackingNumber": tracking,
+            })
+
+    logger.info(f"[SS] 경동자동발송: 발송대상={len(dispatch_list)}건, "
+                f"송장없음={len(skipped_no_tracking)}건, POID없음={len(skipped_no_poid)}건")
+
+    result = {
+        "dispatch_target": len(dispatch_list),
+        "dispatch_list": dispatch_list,
+        "skipped_no_tracking": skipped_no_tracking,
+        "skipped_no_poid": skipped_no_poid,
+        "erp_total": len(items),
+        "kd_slips": len(slip_groups),
+    }
+
+    # 4. dry_run이 아니면 실제 발송처리
+    if not dry_run and dispatch_list:
+        dispatch_result = await naver_client.dispatch_orders(dispatch_list)
+        result["dispatch_result"] = dispatch_result
+        result["success"] = dispatch_result.get("success", False)
+        logger.info(f"[SS] 경동자동발송 완료: {dispatch_result}")
+    elif dry_run:
+        result["success"] = True
+        result["message"] = "dry_run 모드: 실제 발송처리하지 않음"
+    else:
+        result["success"] = True
+        result["message"] = "발송처리 대상이 없습니다."
+
+    return result
 
 
 @router.post("/dispatch-manual")

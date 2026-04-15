@@ -69,6 +69,10 @@ class ERPClientSS:
                 bulk["DES"] = remark
             elif rcv:
                 bulk["DES"] = rcv
+            # 적요2(P_REMARKS2): productOrderId 저장 (경동 자동발송처리용)
+            p_remarks2 = line.get("p_remarks2", "")
+            if p_remarks2:
+                bulk["P_REMARKS2"] = str(p_remarks2)[:100]
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
             price = float(line.get("price", 0) or 0)
@@ -212,6 +216,78 @@ class ERPClientSS:
                 else:
                     return {"success": False, "error": str(e)}
         return {"success": False, "error": "ÃÂÃÂ¬ÃÂÃÂµÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¬ÃÂÃÂ¬ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂ´ÃÂÃÂÃÂÃÂªÃÂÃÂ³ÃÂÃÂ¼"}
+
+    async def get_sales_list(self, from_date: str = "", to_date: str = "",
+                             cust_code: str = "", page: int = 1, per_page: int = 500) -> dict:
+        """ECOUNT 판매현황 조회 (U_MEMO5, P_REMARKS2 포함)
+        Args:
+            from_date: 시작일 YYYYMMDD
+            to_date: 종료일 YYYYMMDD
+            cust_code: 거래처코드 (빈 값이면 전체)
+        Returns: {"success": bool, "items": [...], "total": int}
+        """
+        if not self._session_id:
+            await self.ensure_session()
+
+        zone = self._zone.lower()
+        url = (f"https://oapi{zone}.ecount.com/OAPI/V2/Sale/GetListSaleBySearch"
+               f"?SESSION_ID={self._session_id}")
+
+        payload = {"PAGE_NO": str(page), "PER_PAGE_CNT": str(per_page)}
+        if from_date:
+            payload["FROM_DATE"] = from_date
+        if to_date:
+            payload["TO_DATE"] = to_date
+        if cust_code:
+            payload["CUST"] = cust_code
+
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(url, json=payload, timeout=30)
+                    data = r.json()
+
+                if str(data.get("Status")) == "200":
+                    result_list = data.get("Data", {}).get("Result", [])
+                    total_cnt = data.get("Data", {}).get("TotalCnt", 0)
+                    items = []
+                    for item in result_list:
+                        items.append({
+                            "date": item.get("IO_DATE", ""),
+                            "slip_no": item.get("SLIP_NO", ""),
+                            "cust_code": item.get("CUST", ""),
+                            "cust_name": item.get("CUST_DES", ""),
+                            "prod_cd": item.get("PROD_CD", ""),
+                            "prod_name": item.get("PROD_DES", ""),
+                            "qty": item.get("QTY", 0),
+                            "price": item.get("PRICE", 0),
+                            "supply_amt": item.get("SUPPLY_AMT", 0),
+                            "wh_cd": item.get("WH_CD", ""),
+                            "u_memo5": item.get("U_MEMO5", ""),       # 비고사항 (경동택배 정보+송장)
+                            "p_remarks2": item.get("P_REMARKS2", ""),  # 적요2 (productOrderId)
+                            "des": item.get("DES", ""),                # 적요
+                            "remarks1": item.get("REMARKS1", ""),
+                            "_raw": item,
+                        })
+                    logger.info(f"[ERP-SS] 판매현황 조회: {len(items)}건 (총 {total_cnt})")
+                    return {"success": True, "items": items, "total": total_cnt}
+
+                if str(data.get("Status")) in ("301", "302"):
+                    logger.warning("[ERP-SS] 판매현황 세션만료, 재로그인")
+                    await self.ensure_session()
+                    zone = self._zone.lower()
+                    url = (f"https://oapi{zone}.ecount.com/OAPI/V2/Sale/GetListSaleBySearch"
+                           f"?SESSION_ID={self._session_id}")
+                    continue
+
+                logger.error(f"[ERP-SS] 판매현황 조회 실패: {data}")
+                return {"success": False, "items": [], "total": 0, "error": f"Status {data.get('Status')}"}
+            except Exception as e:
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    return {"success": False, "items": [], "total": 0, "error": str(e)}
+        return {"success": False, "items": [], "total": 0, "error": "재시도 초과"}
 
     async def get_inventory_by_warehouses(self, prod_codes: list[str] = None) -> dict:
         """ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ©ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ°(10), ÃÂÃÂ­ÃÂÃÂÃÂÃÂµÃÂÃÂ¬ÃÂÃÂ§ÃÂÃÂ(30) ÃÂÃÂ¬ÃÂÃÂ°ÃÂÃÂ½ÃÂÃÂªÃÂÃÂ³ÃÂÃÂ  ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¬ÃÂÃÂªÃÂÃÂ³ÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ¥ÃÂÃÂ¼ ÃÂÃÂ«ÃÂÃÂ³ÃÂÃÂÃÂÃÂ«ÃÂÃÂ ÃÂÃÂ¬ ÃÂÃÂ¬ÃÂÃÂ¡ÃÂÃÂ°ÃÂÃÂ­ÃÂÃÂÃÂÃÂ"""
