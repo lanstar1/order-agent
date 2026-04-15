@@ -423,14 +423,27 @@ async def excluded_send_erp(
     if not selected_orders:
         return {"success": False, "error": "선택된 주문이 없습니다."}
 
-    # 제외 키워드 포함 주문만 필터
-    excluded_orders = []
+    # 제외 키워드 포함 orderId 수집 → 해당 주문의 모든 상품 포함
+    excluded_oids = set()
     for o in selected_orders:
         if _is_excluded(o):
-            excluded_orders.append(o)
+            od = o.get("order") or {}
+            po = o.get("productOrder") or {}
+            oid = od.get("orderId", "") or po.get("orderId", "")
+            if oid:
+                excluded_oids.add(oid)
 
-    if not excluded_orders:
+    if not excluded_oids:
         return {"success": False, "error": "제외 키워드(허브랙/서버랙/캐비넷) 주문이 없습니다."}
+
+    # 해당 orderId의 모든 상품 포함 (같은 주문이면 함께 전송)
+    excluded_orders = []
+    for o in selected_orders:
+        od = o.get("order") or {}
+        po = o.get("productOrder") or {}
+        oid = od.get("orderId", "") or po.get("orderId", "")
+        if oid in excluded_oids:
+            excluded_orders.append(o)
 
     # orderId 기준 그룹화
     order_groups: dict = {}
