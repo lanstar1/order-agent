@@ -499,6 +499,7 @@ async def excluded_send_erp(
             settle = float(o.get("settlementAmount", 0) or 0)
             if code:
                 erp_lines.append({"prod_cd": code, "qty": qty,
+                                   "prod_name": o.get("productName", ""),
                                    "price": round(settle / qty, 2) if qty else 0,
                                    "remark": remark, "ser_no": ser_no})
             else:
