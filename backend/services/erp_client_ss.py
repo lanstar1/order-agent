@@ -79,6 +79,10 @@ class ERPClientSS:
             sale_list.append({"BulkDatas": bulk})
 
         payload = {"SaleList": sale_list}
+        # 디버그: 전송 데이터 로그
+        for i, sl in enumerate(sale_list):
+            bd = sl.get("BulkDatas", {})
+            logger.info(f"[ERP-SS] Line {i+1}: SER_NO={bd.get('UPLOAD_SER_NO')}, PROD_CD={bd.get('PROD_CD')}, QTY={bd.get('QTY')}, PRICE={bd.get('PRICE','0')}, DES={bd.get('DES','')[:50]}, U_MEMO5={bd.get('U_MEMO5','')[:50]}")
 
         for attempt in range(3):
             try:
