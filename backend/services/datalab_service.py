@@ -989,7 +989,7 @@ async def analyze_keywords(
 
 async def suggest_keywords(query: str, category_code: str = None) -> List[str]:
     """
-    관련 키워드 제안
+    관련 키워드 제안 (네이버 쇼핑 자동완성 API 사용 - 인증 불필요)
 
     Args:
         query: 기본 검색어
@@ -999,8 +999,51 @@ async def suggest_keywords(query: str, category_code: str = None) -> List[str]:
         제안된 키워드 리스트
     """
     try:
-        keywords = await _call_search_api(query, display=20)
-        return keywords or []
+        # 방법 1: 네이버 쇼핑 자동완성 API (인증 불필요)
+        url = "https://ac.shopping.naver.com/ac"
+        params = {
+            "q": query,
+            "frm": "shopping",
+            "r_format": "json",
+            "r_enc": "UTF-8",
+            "st": "111111",
+            "q_enc": "UTF-8",
+            "subtype": "KEYWORD",
+        }
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                url,
+                params=params,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Referer": "https://search.shopping.naver.com/",
+                }
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                items = data.get("items", [])
+                keywords = []
+                for group in items:
+                    for item in group:
+                        if isinstance(item, list) and len(item) > 0:
+                            kw = item[0]
+                            if isinstance(kw, str) and kw.strip() and kw.strip() != query:
+                                keywords.append(kw.strip())
+                if keywords:
+                    return keywords[:20]
+
+        # 방법 2: 네이버 쇼핑 검색 API (DataLab 인증키 활용, 폴백)
+        try:
+            search_result = await _call_search_api(query, display=20)
+            if search_result:
+                return search_result
+        except Exception:
+            pass
+
+        return []
+
     except Exception as e:
         logger.error(f"[DataLab] 키워드 제안 실패: {e}")
         return []

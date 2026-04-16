@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api/datalab", tags=["DataLab"])
 
 # ── 인증 헬퍼 ──
 def _get_user(authorization: str = Header("")):
+    """인증 필수 헬퍼"""
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "인증이 필요합니다")
     from security import verify_token
@@ -22,6 +23,19 @@ def _get_user(authorization: str = Header("")):
     if not payload:
         raise HTTPException(401, "토큰이 유효하지 않습니다")
     return payload
+
+
+def _try_get_user(authorization: str = Header("")) -> dict:
+    """인증 선택적 헬퍼 (비로그인 시 기본 사용자 반환)"""
+    if authorization.startswith("Bearer "):
+        try:
+            from security import verify_token
+            payload = verify_token(authorization.replace("Bearer ", ""))
+            if payload:
+                return payload
+        except Exception:
+            pass
+    return {"emp_cd": "anonymous", "name": "Guest"}
 
 
 # ── Request Models ──
@@ -57,7 +71,7 @@ async def get_categories(parent_cid: str = Query("", description="상위 카테�
 @router.post("/analyze")
 async def analyze_trends(req: AnalyzeRequest, authorization: str = Header("")):
     """키워드 트렌드 분석 실행"""
-    user = _get_user(authorization)
+    user = _try_get_user(authorization)
 
     if not req.keywords:
         raise HTTPException(400, "키워드를 1개 이상 입력해주세요")
@@ -124,7 +138,7 @@ async def generate_ai_insight(
     authorization: str = Header("")
 ):
     """분석 결과 기반 Claude AI 인사이트 생성"""
-    user = _get_user(authorization)
+    user = _try_get_user(authorization)
 
     from db.database import get_connection
     conn = get_connection()
@@ -161,7 +175,7 @@ async def get_history(
     authorization: str = Header("")
 ):
     """분석 이력 목록 조회"""
-    user = _get_user(authorization)
+    user = _try_get_user(authorization)
     from db.database import get_connection
     conn = get_connection()
     rows = conn.execute(
@@ -189,7 +203,7 @@ async def get_history(
 @router.get("/history/{history_id}")
 async def get_history_detail(history_id: int, authorization: str = Header("")):
     """분석 이력 상세 조회"""
-    user = _get_user(authorization)
+    user = _try_get_user(authorization)
     from db.database import get_connection
     conn = get_connection()
     row = conn.execute(
@@ -220,8 +234,8 @@ async def suggest_keywords(
     query: str = Query(..., min_length=1),
     authorization: str = Header("")
 ):
-    """연관 키워드 추천 (네이버 검색 API 활용)"""
-    _get_user(authorization)
+    """연관 키워드 추천 (네이버 자동완성 API 활용)"""
+    _try_get_user(authorization)
     from services.datalab_service import suggest_keywords
     keywords = await suggest_keywords(query)
     return {"suggestions": keywords}
@@ -235,7 +249,7 @@ async def get_seed_keywords(
     authorization: str = Header("")
 ):
     """카테고리별 인기 키워드 목록 (축적된 시드 DB)"""
-    _get_user(authorization)
+    _try_get_user(authorization)
     from db.database import get_connection
     conn = get_connection()
     rows = conn.execute(
@@ -257,7 +271,7 @@ async def get_seed_keywords(
 @router.get("/brand-blacklist")
 async def get_brand_blacklist(authorization: str = Header("")):
     """제외 브랜드 목록"""
-    user = _get_user(authorization)
+    user = _try_get_user(authorization)
     from db.database import get_connection
     conn = get_connection()
     rows = conn.execute(
@@ -271,7 +285,7 @@ async def get_brand_blacklist(authorization: str = Header("")):
 @router.post("/brand-blacklist")
 async def add_brand_blacklist(req: BrandBlacklistRequest, authorization: str = Header("")):
     """제외 브랜드 추가"""
-    user = _get_user(authorization)
+    user = _try_get_user(authorization)
     from db.database import get_connection
     conn = get_connection()
     try:
@@ -288,7 +302,7 @@ async def add_brand_blacklist(req: BrandBlacklistRequest, authorization: str = H
 @router.delete("/brand-blacklist/{item_id}")
 async def delete_brand_blacklist(item_id: int, authorization: str = Header("")):
     """제외 브랜드 삭제"""
-    user = _get_user(authorization)
+    user = _try_get_user(authorization)
     from db.database import get_connection
     conn = get_connection()
     conn.execute(
@@ -304,7 +318,7 @@ async def delete_brand_blacklist(item_id: int, authorization: str = Header("")):
 @router.post("/export-excel")
 async def export_excel(history_id: int = Body(..., embed=True), authorization: str = Header("")):
     """분석 결과 엑셀 다운로드"""
-    user = _get_user(authorization)
+    user = _try_get_user(authorization)
     from db.database import get_connection
     conn = get_connection()
     row = conn.execute(
