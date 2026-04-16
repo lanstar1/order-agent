@@ -144,3 +144,17 @@ SMARTSTORE_KD_DELIVERY_MAP_PATH = BASE_DIR / "data" / "smartstore" / "kd_deliver
 BARCODE_CUST_CODE = os.getenv("BARCODE_CUST_CODE", "202308091")  # 바코드서버 거래처코드
 BARCODE_WH_CD     = os.getenv("BARCODE_WH_CD", "30")             # 바코드서버 출하창고
 BARCODE_MASTER_PATH = os.getenv("BARCODE_MASTER_PATH", "")       # master_data.xlsx 경로 (빈값이면 data/barcode/master_data.xlsx)
+
+# ─────────────────────────────────────────
+#  지마켓/옥션 ESM Trading API
+# ─────────────────────────────────────────
+ESM_MASTER_ID       = os.getenv("ESM_MASTER_ID", "")       # ESM 마스터 ID (JWT kid)
+ESM_SECRET_KEY      = os.getenv("ESM_SECRET_KEY", "")       # ESM Secret Key (JWT 서명)
+ESM_SELLER_ID_G     = os.getenv("ESM_SELLER_ID_G", "")     # 지마켓 판매자 ID
+ESM_SELLER_ID_A     = os.getenv("ESM_SELLER_ID_A", "")     # 옥션 판매자 ID
+ESM_API_BASE        = os.getenv("ESM_API_BASE", "https://sa2.esmplus.com/api")
+
+# 지마켓 ERP 연동 고정값
+GMARKET_CUST_CODE   = os.getenv("GMARKET_CUST_CODE", "")   # 지마켓 거래처코드
+GMARKET_EMP_CODE    = os.getenv("GMARKET_EMP_CODE", "")     # 담당자 코드
+GMARKET_WH_CODE     = os.getenv("GMARKET_WH_CODE", "30")    # 출하창고 코드

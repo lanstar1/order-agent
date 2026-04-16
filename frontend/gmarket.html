@@ -18,13 +18,76 @@
         .market-tab .tab-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: #e2e8f0; color: #64748b; font-weight: 700; }
         .market-tab.active .tab-badge { background: #fee2e2; color: #dc2626; }
         .container { max-width: 1400px; margin: 24px auto; padding: 0 20px; }
-        .coming-soon {
-            background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            padding: 80px 40px; text-align: center; margin-top: 40px;
+        .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
+        .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+        .btn { padding: 10px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-red { background: #dc2626; color: #fff; } .btn-red:hover:not(:disabled) { background: #b91c1c; }
+        .btn-orange { background: #ea580c; color: #fff; } .btn-orange:hover:not(:disabled) { background: #c2410c; }
+        .btn-blue { background: #2563eb; color: #fff; } .btn-blue:hover:not(:disabled) { background: #1d4ed8; }
+        .btn-green { background: #16a34a; color: #fff; } .btn-green:hover:not(:disabled) { background: #15803d; }
+        .btn-gray { background: #64748b; color: #fff; } .btn-gray:hover:not(:disabled) { background: #475569; }
+        .btn-sm { padding: 6px 14px; font-size: 12px; }
+        .btn-group { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+        .sb { margin-top: 16px; padding: 12px 16px; border-radius: 8px; font-size: 13px; display: none; }
+        .sb.info { display: block; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        .sb.ok { display: block; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        .sb.err { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .sb.load { display: block; background: #fefce8; color: #854d0e; border: 1px solid #fde68a; }
+        .sb.warn { display: block; background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
+        .rg { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
+        .rc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+        .rc h3 { font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 8px; }
+        .rc .v { font-size: 24px; font-weight: 700; }
+        .rc .d { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        .rc.g { border-left: 4px solid #22c55e; } .rc.r { border-left: 4px solid #ef4444; } .rc.y { border-left: 4px solid #f59e0b; }
+
+        .filter-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+        .filter-row label { font-size: 12px; font-weight: 600; color: #64748b; display: block; margin-bottom: 4px; }
+        .filter-row input[type="date"], .filter-row select {
+            padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;
+            background: #fff; color: #1e293b; min-width: 140px;
         }
-        .coming-soon .icon { font-size: 64px; margin-bottom: 20px; }
-        .coming-soon h2 { font-size: 24px; font-weight: 700; color: #334155; margin-bottom: 12px; }
-        .coming-soon p { font-size: 15px; color: #64748b; line-height: 1.6; }
+
+        .tbl-scroll { overflow-x: auto; margin-top: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #f1f5f9; padding: 10px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+        td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
+        tr:hover td { background: #f8fafc; }
+        .mono { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; color: #64748b; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .badge-pay { background: #dbeafe; color: #1e40af; }
+        .badge-ready { background: #fef3c7; color: #92400e; }
+        .badge-ship { background: #d1fae5; color: #065f46; }
+
+        .sel-bar { display: flex; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; flex-wrap: wrap; }
+        .sel-bar .sel-info { font-size: 14px; font-weight: 600; color: #334155; }
+        .sel-bar .sel-info em { color: #dc2626; font-style: normal; }
+
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+        .dot-g { background: #22c55e; } .dot-r { background: #ef4444; } .dot-y { background: #f59e0b; }
+        .ec { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 4px 0; }
+
+        input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #dc2626; }
+        .inp-sm { padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; width: 140px; }
+        .inp-sm:focus { outline: none; border-color: #dc2626; }
+
+        .log { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; margin-top: 16px; display: none; white-space: pre-wrap; }
+        .log.vis { display: block; }
+
+        .setup-banner {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border: 2px solid #f59e0b;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .setup-banner h3 { font-size: 18px; color: #92400e; margin-bottom: 12px; }
+        .setup-banner p { font-size: 14px; color: #78350f; line-height: 1.6; }
+        .setup-banner .steps { text-align: left; max-width: 600px; margin: 16px auto 0; }
+        .setup-banner .steps li { margin-bottom: 8px; font-size: 13px; color: #78350f; }
+        .setup-banner code { background: #fff; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -35,6 +98,7 @@
         </div>
         <div style="display:flex;align-items:center;gap:16px;">
             <a href="/" style="color:#fff;text-decoration:none;font-size:13px;opacity:0.8;padding:5px 12px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;">← 메인으로</a>
+            <span style="font-size:13px; opacity:0.8;" id="clock"></span>
         </div>
     </div>
 
@@ -44,7 +108,6 @@
         </a>
         <a class="market-tab active" href="/gmarket">
             <span class="tab-icon">🔴</span> 지마켓
-            <span class="tab-badge">준비중</span>
         </a>
         <a class="market-tab" href="/coupang">
             <span class="tab-icon">🟠</span> 쿠팡
@@ -53,11 +116,425 @@
     </div>
 
     <div class="container">
-        <div class="coming-soon">
-            <div class="icon">🔴</div>
-            <h2>지마켓 주문 자동화</h2>
-            <p>지마켓/옥션 ESM API 연동을 준비하고 있습니다.<br>주문수집, ERP 전송, 발송처리 기능이 추가될 예정입니다.</p>
+        <!-- API 키 미설정 시 안내 배너 -->
+        <div class="setup-banner" id="setup-banner" style="display:none;">
+            <h3>⚠️ ESM API 키 설정 필요</h3>
+            <p>지마켓/옥션 자동화를 사용하려면 ESM Trading API 키가 필요합니다.</p>
+            <ol class="steps">
+                <li><strong>API 키 신청:</strong> <code>etapihelp@gmail.com</code>으로 메일 발송
+                    <br>내용: ESM 마스터 ID, 서비스 URL, 매출 규모</li>
+                <li><strong>발급 후 환경변수 설정:</strong>
+                    <br><code>ESM_MASTER_ID</code> = ESM 마스터 ID
+                    <br><code>ESM_SECRET_KEY</code> = 발급받은 Secret Key
+                    <br><code>ESM_SELLER_ID_G</code> = 지마켓 판매자 ID
+                </li>
+                <li><strong>ERP 거래처코드 설정:</strong>
+                    <br><code>GMARKET_CUST_CODE</code> = 지마켓 거래처코드 (이카운트)
+                </li>
+            </ol>
+        </div>
+
+        <!-- 연결 상태 -->
+        <div class="card">
+            <h2>연결 상태</h2>
+            <div style="display:flex; gap:24px; flex-wrap:wrap;">
+                <div class="ec"><div class="dot dot-y" id="d-esm"></div> ESM API (지마켓)</div>
+                <div class="ec"><div class="dot dot-y" id="d-erp"></div> ECOUNT ERP</div>
+            </div>
+            <div style="margin-top:12px;"><button class="btn btn-gray" onclick="testConn()">연결 테스트</button></div>
+            <div class="sb" id="s-conn"></div>
+        </div>
+
+        <!-- 주문 수집 -->
+        <div class="card">
+            <h2>주문 수집 <span class="badge badge-pay" id="order-cnt" style="display:none;">0건</span></h2>
+            <div class="filter-row">
+                <div>
+                    <label>마켓</label>
+                    <select id="f-site">
+                        <option value="2">지마켓</option>
+                        <option value="1">옥션</option>
+                    </select>
+                </div>
+                <div>
+                    <label>주문상태</label>
+                    <select id="f-status">
+                        <option value="1">결제완료</option>
+                        <option value="2">배송준비중</option>
+                        <option value="3">배송중</option>
+                    </select>
+                </div>
+                <div>
+                    <label>시작일</label>
+                    <input type="date" id="f-from">
+                </div>
+                <div>
+                    <label>종료일</label>
+                    <input type="date" id="f-to">
+                </div>
+                <button class="btn btn-red" onclick="fetchOrders()">🔍 주문 조회</button>
+            </div>
+            <div class="sb" id="s-orders"></div>
+            <div class="tbl-scroll">
+                <table id="tbl-orders">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="chk-all" onchange="toggleAll(this)"></th>
+                            <th>주문번호</th>
+                            <th>상품명</th>
+                            <th>옵션</th>
+                            <th>수량</th>
+                            <th>결제금액</th>
+                            <th>수령인</th>
+                            <th>주문일시</th>
+                            <th>상태</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-orders"></tbody>
+                </table>
+            </div>
+            <div class="sel-bar" id="sel-bar" style="display:none;">
+                <span class="sel-info">선택: <em id="sel-cnt">0</em>건</span>
+                <button class="btn btn-sm btn-orange" onclick="confirmOrders()">📋 주문확인 (배송준비중)</button>
+                <button class="btn btn-sm btn-blue" onclick="sendToERP()">📤 ERP 전표 등록</button>
+            </div>
+        </div>
+
+        <!-- 발송 처리 -->
+        <div class="card">
+            <h2>발송 처리</h2>
+            <p style="font-size:13px; color:#64748b; margin-bottom:16px;">배송준비중 주문을 조회한 후, 송장번호를 입력하여 발송 처리합니다.</p>
+            <div class="filter-row">
+                <div>
+                    <label>택배사</label>
+                    <select id="f-delivery">
+                        <option value="로젠택배">로젠택배</option>
+                        <option value="경동택배">경동택배</option>
+                        <option value="CJ대한통운">CJ대한통운</option>
+                        <option value="한진택배">한진택배</option>
+                        <option value="롯데택배">롯데택배</option>
+                        <option value="우체국택배">우체국택배</option>
+                    </select>
+                </div>
+                <button class="btn btn-sm btn-green" onclick="shipSelected()">🚛 선택건 발송처리</button>
+            </div>
+            <div class="sb" id="s-ship"></div>
+        </div>
+
+        <!-- 로그 -->
+        <div class="card">
+            <h2>작업 로그</h2>
+            <button class="btn btn-sm btn-gray" onclick="toggleLog()">로그 토글</button>
+            <div class="log" id="log-area"></div>
         </div>
     </div>
+
+<script>
+const API = '/api/gmarket';
+let _orders = [];
+
+// ─── 유틸 ───
+function $(id) { return document.getElementById(id); }
+function sb(id, cls, msg) {
+    const el = $(id);
+    el.className = 'sb ' + cls;
+    el.innerHTML = msg;
+}
+function addLog(msg) {
+    const el = $('log-area');
+    const ts = new Date().toLocaleTimeString('ko-KR');
+    el.textContent += `[${ts}] ${msg}\n`;
+    el.scrollTop = el.scrollHeight;
+    if (!el.classList.contains('vis')) el.classList.add('vis');
+}
+function toggleLog() {
+    $('log-area').classList.toggle('vis');
+}
+function fmtMoney(n) {
+    return (n || 0).toLocaleString('ko-KR') + '원';
+}
+function fmtDate(s) {
+    if (!s) return '-';
+    try { return new Date(s).toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+    catch { return s; }
+}
+
+// ─── 시계 ───
+function updateClock() {
+    $('clock').textContent = new Date().toLocaleString('ko-KR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── 초기화: 날짜 기본값 ───
+(function initDates() {
+    const today = new Date();
+    const week = new Date(today);
+    week.setDate(week.getDate() - 7);
+    $('f-to').value = today.toISOString().slice(0, 10);
+    $('f-from').value = week.toISOString().slice(0, 10);
+})();
+
+// ─── 설정 상태 확인 ───
+async function checkConfig() {
+    try {
+        const resp = await fetch(`${API}/config-status`);
+        const data = await resp.json();
+        if (!data.esm_configured) {
+            $('setup-banner').style.display = 'block';
+        }
+    } catch(e) {
+        addLog('설정 확인 실패: ' + e.message);
+    }
+}
+checkConfig();
+
+// ─── 연결 테스트 ───
+async function testConn() {
+    sb('s-conn', 'load', '⏳ 연결 테스트 중...');
+    addLog('연결 테스트 시작');
+    try {
+        const resp = await fetch(`${API}/test-connection`);
+        const data = await resp.json();
+
+        // ESM
+        const esmDot = $('d-esm');
+        if (data.esm?.ok) {
+            esmDot.className = 'dot dot-g';
+            addLog('ESM API: 연결 성공');
+        } else {
+            esmDot.className = 'dot dot-r';
+            addLog('ESM API: ' + (data.esm?.error || '연결 실패'));
+        }
+
+        // ERP
+        const erpDot = $('d-erp');
+        if (data.erp?.ok) {
+            erpDot.className = 'dot dot-g';
+            addLog('ERP: 연결 성공');
+        } else {
+            erpDot.className = 'dot dot-r';
+            addLog('ERP: ' + (data.erp?.error || '연결 실패'));
+        }
+
+        const allOk = data.esm?.ok && data.erp?.ok;
+        sb('s-conn', allOk ? 'ok' : 'warn', allOk ? '✅ 모든 연결 정상' : '⚠️ 일부 연결 실패 - 로그를 확인하세요');
+    } catch(e) {
+        sb('s-conn', 'err', '❌ 연결 테스트 실패: ' + e.message);
+        addLog('연결 테스트 오류: ' + e.message);
+    }
+}
+
+// ─── 주문 조회 ───
+async function fetchOrders() {
+    const site = $('f-site').value;
+    const status = $('f-status').value;
+    const from = $('f-from').value;
+    const to = $('f-to').value;
+
+    sb('s-orders', 'load', '⏳ 주문을 조회하고 있습니다...');
+    addLog(`주문 조회: site=${site}, status=${status}, ${from}~${to}`);
+
+    try {
+        const params = new URLSearchParams({ site, status, from_date: from, to_date: to });
+        const resp = await fetch(`${API}/orders?${params}`);
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        _orders = data.orders || [];
+        renderOrders();
+        sb('s-orders', 'ok', `✅ ${_orders.length}건 조회 완료`);
+        addLog(`주문 조회 완료: ${_orders.length}건`);
+    } catch(e) {
+        sb('s-orders', 'err', '❌ ' + e.message);
+        addLog('주문 조회 실패: ' + e.message);
+    }
+}
+
+function renderOrders() {
+    const tbody = $('tb-orders');
+    tbody.innerHTML = '';
+
+    const cnt = $('order-cnt');
+    if (_orders.length) {
+        cnt.textContent = _orders.length + '건';
+        cnt.style.display = '';
+    } else {
+        cnt.style.display = 'none';
+    }
+
+    _orders.forEach((o, i) => {
+        const tr = document.createElement('tr');
+        const orderNo = o.orderNo || o.order_no || o.OrderNo || '';
+        const productName = o.productName || o.product_name || o.goodsNm || '';
+        const option = o.optionName || o.option || o.optionNm || '';
+        const qty = o.quantity || o.qty || o.orderQty || 1;
+        const price = o.paymentAmount || o.price || o.totalPrice || 0;
+        const receiver = o.receiverName || o.receiver_name || o.buyerNm || '';
+        const orderDate = o.orderDate || o.order_date || o.regDt || '';
+        const statusText = o.orderStatusName || o.statusText || '';
+
+        const statusBadge = statusText.includes('결제')
+            ? '<span class="badge badge-pay">결제완료</span>'
+            : statusText.includes('준비')
+            ? '<span class="badge badge-ready">배송준비중</span>'
+            : statusText.includes('배송')
+            ? '<span class="badge badge-ship">배송중</span>'
+            : `<span class="badge">${statusText}</span>`;
+
+        tr.innerHTML = `
+            <td><input type="checkbox" class="order-chk" data-idx="${i}" onchange="updateSel()"></td>
+            <td class="mono">${orderNo}</td>
+            <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${productName}">${productName}</td>
+            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${option}">${option || '-'}</td>
+            <td style="text-align:center;">${qty}</td>
+            <td style="text-align:right;">${fmtMoney(price)}</td>
+            <td>${receiver}</td>
+            <td class="mono">${fmtDate(orderDate)}</td>
+            <td>${statusBadge}</td>
+        `;
+
+        // 발송 처리용 송장번호 입력칸 추가 (배송준비중일 때)
+        if (statusText.includes('준비')) {
+            o._hasInvoice = true;
+        }
+
+        tbody.appendChild(tr);
+    });
+
+    updateSel();
+}
+
+function toggleAll(el) {
+    document.querySelectorAll('.order-chk').forEach(c => c.checked = el.checked);
+    updateSel();
+}
+
+function updateSel() {
+    const checked = document.querySelectorAll('.order-chk:checked');
+    const cnt = checked.length;
+    $('sel-cnt').textContent = cnt;
+    $('sel-bar').style.display = cnt > 0 ? 'flex' : 'none';
+}
+
+function getSelectedOrders() {
+    const checked = document.querySelectorAll('.order-chk:checked');
+    return Array.from(checked).map(c => _orders[parseInt(c.dataset.idx)]);
+}
+
+// ─── 주문 확인 ───
+async function confirmOrders() {
+    const selected = getSelectedOrders();
+    if (!selected.length) return alert('주문을 선택하세요.');
+
+    const orderNos = selected.map(o => o.orderNo || o.order_no || o.OrderNo);
+    sb('s-orders', 'load', `⏳ ${orderNos.length}건 주문확인 처리 중...`);
+    addLog(`주문확인 시작: ${orderNos.length}건`);
+
+    try {
+        const resp = await fetch(`${API}/confirm-orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order_nos: orderNos }),
+        });
+        const data = await resp.json();
+        sb('s-orders', 'ok', `✅ 주문확인 완료: ${data.success_count}/${data.total}건 성공`);
+        addLog(`주문확인 결과: ${data.success_count}/${data.total}건 성공`);
+
+        // 실패건 로그
+        (data.results || []).filter(r => !r.success).forEach(r => {
+            addLog(`  ❌ ${r.order_no}: ${r.error}`);
+        });
+    } catch(e) {
+        sb('s-orders', 'err', '❌ 주문확인 실패: ' + e.message);
+        addLog('주문확인 오류: ' + e.message);
+    }
+}
+
+// ─── ERP 전표 등록 ───
+async function sendToERP() {
+    const selected = getSelectedOrders();
+    if (!selected.length) return alert('주문을 선택하세요.');
+
+    const ioDate = prompt('전표일자를 입력하세요 (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
+    if (!ioDate) return;
+
+    sb('s-orders', 'load', `⏳ ${selected.length}건 ERP 전표 등록 중...`);
+    addLog(`ERP 전표 등록 시작: ${selected.length}건`);
+
+    try {
+        const orders = selected.map(o => ({
+            order_no: o.orderNo || o.order_no || o.OrderNo || '',
+            item_code: o.itemCode || o.item_code || '',
+            quantity: o.quantity || o.qty || o.orderQty || 1,
+            price: o.paymentAmount || o.price || o.totalPrice || 0,
+        }));
+
+        const resp = await fetch(`${API}/send-to-erp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orders, io_date: ioDate }),
+        });
+        const data = await resp.json();
+
+        if (data.detail) throw new Error(data.detail);
+        sb('s-orders', 'ok', `✅ ERP 등록 완료: ${data.success_count}/${data.total}건`);
+        addLog(`ERP 등록 결과: ${data.success_count}/${data.total}건 성공`);
+    } catch(e) {
+        sb('s-orders', 'err', '❌ ERP 등록 실패: ' + e.message);
+        addLog('ERP 등록 오류: ' + e.message);
+    }
+}
+
+// ─── 발송 처리 ───
+async function shipSelected() {
+    const selected = getSelectedOrders();
+    if (!selected.length) return alert('발송할 주문을 선택하세요.');
+
+    const deliveryCompany = $('f-delivery').value;
+
+    // 각 주문에 대해 송장번호 입력
+    const shipments = [];
+    for (const o of selected) {
+        const orderNo = o.orderNo || o.order_no || o.OrderNo || '';
+        const invoiceNo = prompt(`주문 ${orderNo} 의 송장번호를 입력하세요:`, '');
+        if (invoiceNo === null) return; // 취소
+        if (!invoiceNo.trim()) {
+            alert(`주문 ${orderNo}: 송장번호를 입력해야 합니다.`);
+            return;
+        }
+        shipments.push({
+            order_no: orderNo,
+            delivery_company: deliveryCompany,
+            invoice_no: invoiceNo.trim(),
+        });
+    }
+
+    sb('s-ship', 'load', `⏳ ${shipments.length}건 발송처리 중...`);
+    addLog(`발송처리 시작: ${shipments.length}건 (${deliveryCompany})`);
+
+    try {
+        const resp = await fetch(`${API}/ship`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shipments }),
+        });
+        const data = await resp.json();
+
+        if (data.detail) throw new Error(data.detail);
+        sb('s-ship', 'ok', `✅ 발송처리 완료: ${data.success_count}/${data.total}건`);
+        addLog(`발송처리 결과: ${data.success_count}/${data.total}건 성공`);
+
+        (data.results || []).filter(r => !r.success).forEach(r => {
+            addLog(`  ❌ ${r.order_no}: ${r.error}`);
+        });
+    } catch(e) {
+        sb('s-ship', 'err', '❌ 발송처리 실패: ' + e.message);
+        addLog('발송처리 오류: ' + e.message);
+    }
+}
+</script>
 </body>
 </html>
