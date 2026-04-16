@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from db.database import get_connection
+from services.datalab_categories import CATEGORIES_L3
 
 logger = logging.getLogger(__name__)
 
@@ -607,17 +608,24 @@ async def get_subcategories(parent_cid: str) -> List[Dict[str, str]]:
         [{"cid": "...", "name": "..."}, ...] 형태의 리스트
     """
     try:
-        # 1. 정적 데이터 확인 (L1→L2)
+        # 1. 정적 데이터 확인 (L1→L2 또는 L2→L3)
         if parent_cid in CATEGORIES_L2:
             static_data = CATEGORIES_L2[parent_cid]
             if static_data:
-                logger.debug(f"[DataLab] 정적 카테고리 데이터 사용: parent_cid={parent_cid}, {len(static_data)}개")
+                logger.debug(f"[DataLab] 정적 L2 데이터 사용: parent_cid={parent_cid}, {len(static_data)}개")
                 return [{"cid": item["cid"], "name": item["name"]} for item in static_data]
             else:
-                # 정적 데이터에 빈 리스트 (도서 등)
                 return []
 
-        # 2. DB 캐시 확인 (L2→L3 등)
+        if parent_cid in CATEGORIES_L3:
+            static_data = CATEGORIES_L3[parent_cid]
+            if static_data:
+                logger.debug(f"[DataLab] 정적 L3 데이터 사용: parent_cid={parent_cid}, {len(static_data)}개")
+                return [{"cid": item["cid"], "name": item["name"]} for item in static_data]
+            else:
+                return []
+
+        # 2. DB 캐시 확인 (L3 이하 등)
         conn = get_connection()
         cursor = conn.execute(
             """SELECT cid, name FROM datalab_category_cache
