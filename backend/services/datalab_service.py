@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────
 #  상수 정의
 # ─────────────────────────────────────────
-NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID", "")
-NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "")
+# NOTE: API 키는 _get_headers()에서 동적으로 os.getenv()를 호출하여 읽음
+# main.py startup에서 DB→환경변수 로드 이후에도 정상 작동하도록
 
 # 쇼핑 인사이트 API 기본 URL
 DATALAB_API_BASE = "https://openapi.naver.com/v1/datalab/shopping"
@@ -247,10 +247,10 @@ def _cleanup_expired_cache():
 #  API 호출
 # ─────────────────────────────────────────
 def _get_headers() -> Dict[str, str]:
-    """Naver API 헤더"""
+    """Naver API 헤더 (매 호출마다 환경변수에서 동적 로드)"""
     return {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
+        "X-Naver-Client-Id": os.getenv("NAVER_CLIENT_ID", ""),
+        "X-Naver-Client-Secret": os.getenv("NAVER_CLIENT_SECRET", ""),
         "Content-Type": "application/json",
     }
 
@@ -877,7 +877,9 @@ def get_all_categories_l1() -> List[Dict[str, str]]:
 async def validate_credentials() -> bool:
     """Naver API 자격증명 검증"""
     try:
-        if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        cid = os.getenv("NAVER_CLIENT_ID", "")
+        csec = os.getenv("NAVER_CLIENT_SECRET", "")
+        if not cid or not csec:
             logger.error("[DataLab] 자격증명 미설정")
             return False
 
@@ -887,12 +889,12 @@ async def validate_credentials() -> bool:
             "startDate": (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d"),
             "endDate": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "timeUnit": "date",
-            "category": [{"name": "패션의류", "param": "50000000"}]
+            "category": [{"name": "패션의류", "param": ["50000000"]}]
         }
 
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
-                f"{DATALAB_API_BASE}/category",
+                f"{DATALAB_API_BASE}/categories",
                 json=request_body,
                 headers=headers
             )

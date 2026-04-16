@@ -270,6 +270,10 @@ API_KEY_DEFINITIONS = [
      "description": "스마트스토어 주문수집/발송처리 API", "prefix": ""},
     {"key": "api_naver_commerce_secret", "label": "네이버 커머스 Client Secret", "env_var": "NAVER_COMMERCE_CLIENT_SECRET",
      "description": "스마트스토어 API 전자서명용 BCrypt 시크릿", "prefix": "$2a$"},
+    {"key": "api_naver_datalab_id", "label": "네이버 DataLab Client ID", "env_var": "NAVER_CLIENT_ID",
+     "description": "데이터랩 쇼핑인사이트 API (네이버 개발자 센터 발급)", "prefix": ""},
+    {"key": "api_naver_datalab_secret", "label": "네이버 DataLab Client Secret", "env_var": "NAVER_CLIENT_SECRET",
+     "description": "데이터랩 쇼핑인사이트 API 시크릿", "prefix": ""},
 ]
 
 
