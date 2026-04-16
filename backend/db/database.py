@@ -73,11 +73,10 @@ def _sql_to_pg(sql):
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
                 return None
-            # 재고 모니터링 + 트렌드 + 데이터랩 테이블 추가
+            # 재고 모니터링 + 트렌드 테이블 추가
             _ALLOWED_TABLES.update({
                 'inventory_snapshots', 'inventory_alert_history',
                 'inventory_exclude_keywords', 'inventory_alert_settings',
-                'dl_profiles', 'dl_runs', 'dl_tasks', 'dl_snapshots',
             })
             if table.lower() not in _ALLOWED_TABLES:
                 logger.warning(f"[DB] PRAGMA table_info 거부: 미허용 테이블 '{table}'")
