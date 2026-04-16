@@ -207,8 +207,11 @@ def fill_shortage_reasons(
     contents: bytes,
     shortage_reasons: dict,
     partial_quantities: dict = None,   # {orig_idx(int): partial_qty(int)}
+    yongsan_rows: list = None,         # [orig_idx, ...] 용산 출고건 인덱스
 ) -> io.BytesIO:
-    """납품부족사유를 채워서 엑셀 반환"""
+    """납품부족사유를 채워서 엑셀 반환 (용산 출고건은 노란색 배경)"""
+    from openpyxl.styles import PatternFill
+
     df = pd.read_excel(io.BytesIO(contents), dtype=str).fillna("")
     df.columns = df.columns.str.strip()
 
@@ -231,6 +234,18 @@ def fill_shortage_reasons(
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False)
+
+        # 용산 출고건 행 노란색 배경 적용
+        if yongsan_rows:
+            ws = writer.sheets["Sheet1"]
+            yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+            max_col = ws.max_column
+            for orig_idx in yongsan_rows:
+                row_num = orig_idx + 2  # 헤더(1) + 0-based index → 엑셀 행번호
+                if row_num <= ws.max_row:
+                    for col in range(1, max_col + 1):
+                        ws.cell(row=row_num, column=col).fill = yellow_fill
+
     output.seek(0)
     return output
 
