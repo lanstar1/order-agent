@@ -60,7 +60,7 @@ async def test_connection():
         try:
             from services.erp_client import ERPClient
             erp = ERPClient()
-            session = await erp.get_session()
+            session = await erp.ensure_session()
             results["erp"] = {"ok": bool(session)}
         except Exception as e:
             results["erp"] = {"ok": False, "error": str(e)}
@@ -139,7 +139,7 @@ async def send_to_erp(req: ERPSendRequest):
     try:
         from services.erp_client import ERPClient
         erp = ERPClient()
-        session_id = await erp.get_session()
+        session_id = await erp.ensure_session()
         if not session_id:
             return JSONResponse(status_code=500, content={"detail": "ERP 세션 획득 실패"})
 

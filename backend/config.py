@@ -158,3 +158,16 @@ ESM_API_BASE        = os.getenv("ESM_API_BASE", "https://sa2.esmplus.com/api")
 GMARKET_CUST_CODE   = os.getenv("GMARKET_CUST_CODE", "")   # 지마켓 거래처코드
 GMARKET_EMP_CODE    = os.getenv("GMARKET_EMP_CODE", "")     # 담당자 코드
 GMARKET_WH_CODE     = os.getenv("GMARKET_WH_CODE", "30")    # 출하창고 코드
+
+# ─────────────────────────────────────────
+#  쿠팡 OPEN API
+# ─────────────────────────────────────────
+COUPANG_ACCESS_KEY   = os.getenv("COUPANG_ACCESS_KEY", "")    # 쿠팡 OPEN API Access Key
+COUPANG_SECRET_KEY   = os.getenv("COUPANG_SECRET_KEY", "")    # 쿠팡 OPEN API Secret Key
+COUPANG_VENDOR_ID    = os.getenv("COUPANG_VENDOR_ID", "")     # 쿠팡 판매자 ID (예: A00012345)
+COUPANG_API_BASE     = os.getenv("COUPANG_API_BASE", "https://api-gateway.coupang.com")
+
+# 쿠팡 ERP 연동 고정값
+COUPANG_CUST_CODE    = os.getenv("COUPANG_CUST_CODE", "")    # 쿠팡 거래처코드
+COUPANG_EMP_CODE     = os.getenv("COUPANG_EMP_CODE", "")      # 담당자 코드
+COUPANG_WH_CODE      = os.getenv("COUPANG_WH_CODE", "30")     # 출하창고 코드

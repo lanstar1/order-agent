@@ -18,13 +18,64 @@
         .market-tab .tab-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: #e2e8f0; color: #64748b; font-weight: 700; }
         .market-tab.active .tab-badge { background: #ffedd5; color: #ea580c; }
         .container { max-width: 1400px; margin: 24px auto; padding: 0 20px; }
-        .coming-soon {
-            background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            padding: 80px 40px; text-align: center; margin-top: 40px;
+        .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
+        .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+        .btn { padding: 10px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-orange { background: #ea580c; color: #fff; } .btn-orange:hover:not(:disabled) { background: #c2410c; }
+        .btn-blue { background: #2563eb; color: #fff; } .btn-blue:hover:not(:disabled) { background: #1d4ed8; }
+        .btn-green { background: #16a34a; color: #fff; } .btn-green:hover:not(:disabled) { background: #15803d; }
+        .btn-gray { background: #64748b; color: #fff; } .btn-gray:hover:not(:disabled) { background: #475569; }
+        .btn-sm { padding: 6px 14px; font-size: 12px; }
+        .btn-group { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+        .sb { margin-top: 16px; padding: 12px 16px; border-radius: 8px; font-size: 13px; display: none; }
+        .sb.info { display: block; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        .sb.ok { display: block; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        .sb.err { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .sb.load { display: block; background: #fefce8; color: #854d0e; border: 1px solid #fde68a; }
+        .sb.warn { display: block; background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
+        .rg { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
+        .rc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+        .rc h3 { font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 8px; }
+        .rc .v { font-size: 24px; font-weight: 700; }
+        .rc .d { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        .rc.g { border-left: 4px solid #22c55e; } .rc.r { border-left: 4px solid #ef4444; } .rc.y { border-left: 4px solid #f59e0b; }
+        .filter-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+        .filter-row label { font-size: 12px; font-weight: 600; color: #64748b; display: block; margin-bottom: 4px; }
+        .filter-row input[type="date"], .filter-row select {
+            padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;
+            background: #fff; color: #1e293b; min-width: 140px;
         }
-        .coming-soon .icon { font-size: 64px; margin-bottom: 20px; }
-        .coming-soon h2 { font-size: 24px; font-weight: 700; color: #334155; margin-bottom: 12px; }
-        .coming-soon p { font-size: 15px; color: #64748b; line-height: 1.6; }
+        .tbl-scroll { overflow-x: auto; margin-top: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #f1f5f9; padding: 10px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+        td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
+        tr:hover td { background: #f8fafc; }
+        .mono { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; color: #64748b; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .badge-pay { background: #dbeafe; color: #1e40af; }
+        .badge-ready { background: #fef3c7; color: #92400e; }
+        .badge-ship { background: #d1fae5; color: #065f46; }
+        .sel-bar { display: flex; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; flex-wrap: wrap; }
+        .sel-bar .sel-info { font-size: 14px; font-weight: 600; color: #334155; }
+        .sel-bar .sel-info em { color: #ea580c; font-style: normal; }
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+        .dot-g { background: #22c55e; } .dot-r { background: #ef4444; } .dot-y { background: #f59e0b; }
+        .ec { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 4px 0; }
+        input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #ea580c; }
+        .inp-sm { padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; width: 140px; }
+        .inp-sm:focus { outline: none; border-color: #ea580c; }
+        .log { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; margin-top: 16px; display: none; white-space: pre-wrap; }
+        .log.vis { display: block; }
+        .setup-banner {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border: 2px solid #f59e0b; border-radius: 12px; padding: 24px; margin-bottom: 20px; text-align: center;
+        }
+        .setup-banner h3 { font-size: 18px; color: #92400e; margin-bottom: 12px; }
+        .setup-banner p { font-size: 14px; color: #78350f; line-height: 1.6; }
+        .setup-banner .steps { text-align: left; max-width: 600px; margin: 16px auto 0; }
+        .setup-banner .steps li { margin-bottom: 8px; font-size: 13px; color: #78350f; }
+        .setup-banner code { background: #fff; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -35,6 +86,7 @@
         </div>
         <div style="display:flex;align-items:center;gap:16px;">
             <a href="/" style="color:#fff;text-decoration:none;font-size:13px;opacity:0.8;padding:5px 12px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;">← 메인으로</a>
+            <span style="font-size:13px; opacity:0.8;" id="clock"></span>
         </div>
     </div>
 
@@ -44,20 +96,445 @@
         </a>
         <a class="market-tab" href="/gmarket">
             <span class="tab-icon">🔴</span> 지마켓
-            <span class="tab-badge">준비중</span>
         </a>
         <a class="market-tab active" href="/coupang">
             <span class="tab-icon">🟠</span> 쿠팡
-            <span class="tab-badge">준비중</span>
         </a>
     </div>
 
     <div class="container">
-        <div class="coming-soon">
-            <div class="icon">🟠</div>
-            <h2>쿠팡 주문 자동화</h2>
-            <p>쿠팡 WING API 연동을 준비하고 있습니다.<br>주문수집, ERP 전송, 발송처리 기능이 추가될 예정입니다.</p>
+        <!-- API 키 미설정 시 안내 배너 -->
+        <div class="setup-banner" id="setup-banner" style="display:none;">
+            <h3>⚠️ 쿠팡 OPEN API 키 설정 필요</h3>
+            <p>쿠팡 자동화를 사용하려면 OPEN API 키가 필요합니다.</p>
+            <ol class="steps">
+                <li><strong>WING 접속:</strong> <code>wing.coupang.com</code> 로그인</li>
+                <li><strong>API 키 발급:</strong> 판매자정보 → API Key 발급 받기 → "OPEN API" 선택 → 약관동의 → 발급</li>
+                <li><strong>환경변수 설정:</strong>
+                    <br><code>COUPANG_ACCESS_KEY</code> = Access Key
+                    <br><code>COUPANG_SECRET_KEY</code> = Secret Key
+                    <br><code>COUPANG_VENDOR_ID</code> = 판매자 ID (예: A00012345)
+                </li>
+            </ol>
+        </div>
+
+        <!-- 1. 연결 상태 -->
+        <div class="card" id="section-conn">
+            <h2>🔌 연결 상태</h2>
+            <div class="btn-group">
+                <button class="btn btn-orange" onclick="testConn()">연결 테스트</button>
+            </div>
+            <div id="conn-result" class="rg" style="display:none;">
+                <div class="rc" id="rc-coupang"><h3>쿠팡 API</h3><div class="v">-</div><div class="d">OPEN API</div></div>
+                <div class="rc" id="rc-erp"><h3>이카운트 ERP</h3><div class="v">-</div><div class="d">OAPI V2</div></div>
+            </div>
+            <div id="conn-sb" class="sb"></div>
+        </div>
+
+        <!-- 2. 주문 수집 -->
+        <div class="card" id="section-orders">
+            <h2>📦 발주서 수집</h2>
+            <div class="filter-row">
+                <div>
+                    <label>주문상태</label>
+                    <select id="f-status">
+                        <option value="ACCEPT">결제완료</option>
+                        <option value="INSTRUCT">상품준비중</option>
+                        <option value="DEPARTURE">배송지시</option>
+                        <option value="DELIVERING">배송중</option>
+                    </select>
+                </div>
+                <div>
+                    <label>시작일</label>
+                    <input type="date" id="f-from">
+                </div>
+                <div>
+                    <label>종료일</label>
+                    <input type="date" id="f-to">
+                </div>
+                <button class="btn btn-orange" onclick="fetchOrders()">주문 조회</button>
+            </div>
+            <div id="orders-sb" class="sb"></div>
+            <div id="orders-count" style="font-size:13px;color:#64748b;margin-top:8px;display:none;"></div>
+
+            <div class="tbl-scroll" id="orders-tbl-wrap" style="display:none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="chk-all" onchange="toggleAll(this)"></th>
+                            <th>배송번호</th>
+                            <th>주문번호</th>
+                            <th>상태</th>
+                            <th>주문일시</th>
+                            <th>수취인</th>
+                            <th>상품명</th>
+                            <th>수량</th>
+                            <th>금액</th>
+                            <th>송장번호</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-body"></tbody>
+                </table>
+            </div>
+
+            <div class="sel-bar" id="sel-bar" style="display:none;">
+                <span class="sel-info"><em id="sel-cnt">0</em>건 선택</span>
+                <button class="btn btn-blue btn-sm" onclick="confirmOrders()">상품준비중 처리</button>
+                <button class="btn btn-green btn-sm" onclick="sendToERP()">ERP 전표등록</button>
+                <button class="btn btn-orange btn-sm" onclick="shipOrders()">발송처리 (송장업로드)</button>
+            </div>
+        </div>
+
+        <!-- 3. 작업 로그 -->
+        <div class="card">
+            <h2>📋 작업 로그</h2>
+            <div class="btn-group">
+                <button class="btn btn-gray btn-sm" onclick="toggleLog()">로그 토글</button>
+                <button class="btn btn-gray btn-sm" onclick="clearLog()">로그 지우기</button>
+            </div>
+            <div class="log" id="work-log"></div>
         </div>
     </div>
+
+<script>
+// ──────────────────────────────
+//  상태
+// ──────────────────────────────
+let orders = [];
+let deliveryCompanies = [];
+const STATUS_LABELS = {
+    'ACCEPT': '결제완료', 'INSTRUCT': '상품준비중',
+    'DEPARTURE': '배송지시', 'DELIVERING': '배송중',
+    'FINAL_DELIVERY': '배송완료', 'NONE_TRACKING': '직접배송',
+};
+const STATUS_BADGE = {
+    'ACCEPT': 'badge-pay', 'INSTRUCT': 'badge-ready',
+    'DEPARTURE': 'badge-ship', 'DELIVERING': 'badge-ship',
+};
+
+// ──────────────────────────────
+//  유틸
+// ──────────────────────────────
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+function sb(id, cls, msg) {
+    const el = document.getElementById(id);
+    el.className = 'sb ' + cls;
+    el.innerHTML = msg;
+}
+function log(msg) {
+    const el = $('#work-log');
+    const ts = new Date().toLocaleTimeString('ko-KR');
+    el.textContent += `[${ts}] ${msg}\n`;
+    el.scrollTop = el.scrollHeight;
+    if (!el.classList.contains('vis')) el.classList.add('vis');
+}
+function toggleLog() { $('#work-log').classList.toggle('vis'); }
+function clearLog() { $('#work-log').textContent = ''; }
+
+function fmtDate(s) {
+    if (!s) return '-';
+    try { return new Date(s).toLocaleString('ko-KR', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+    catch { return s; }
+}
+function fmtPrice(p) {
+    if (!p) return '0';
+    const units = typeof p === 'object' ? (p.units || 0) : p;
+    return Number(units).toLocaleString();
+}
+
+// ──────────────────────────────
+//  초기화
+// ──────────────────────────────
+(async function init() {
+    // 날짜 기본값
+    const now = new Date();
+    const from = new Date(now); from.setDate(from.getDate() - 7);
+    $('#f-from').value = from.toISOString().slice(0,10);
+    $('#f-to').value = now.toISOString().slice(0,10);
+
+    // 시계
+    setInterval(() => {
+        $('#clock').textContent = new Date().toLocaleString('ko-KR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    }, 1000);
+
+    // 택배사 목록
+    try {
+        const r = await fetch('/api/coupang/delivery-companies');
+        const d = await r.json();
+        deliveryCompanies = d.companies || [];
+    } catch {}
+
+    // 설정 상태 체크
+    try {
+        const r = await fetch('/api/coupang/config-status');
+        const d = await r.json();
+        if (!d.coupang_configured) {
+            $('#setup-banner').style.display = 'block';
+        }
+    } catch {}
+})();
+
+
+// ──────────────────────────────
+//  연결 테스트
+// ──────────────────────────────
+async function testConn() {
+    sb('conn-sb', 'load', '⏳ 연결 테스트 중...');
+    log('연결 테스트 시작');
+
+    try {
+        const r = await fetch('/api/coupang/test-connection');
+        const d = await r.json();
+        $('#conn-result').style.display = '';
+
+        // 쿠팡
+        const cpEl = $('#rc-coupang');
+        if (d.coupang?.ok) {
+            cpEl.className = 'rc g'; cpEl.querySelector('.v').textContent = '✅ 연결됨';
+        } else {
+            cpEl.className = 'rc r'; cpEl.querySelector('.v').textContent = '❌ 실패';
+            cpEl.querySelector('.d').textContent = d.coupang?.error || '오류';
+        }
+
+        // ERP
+        const erpEl = $('#rc-erp');
+        if (d.erp?.ok) {
+            erpEl.className = 'rc g'; erpEl.querySelector('.v').textContent = '✅ 연결됨';
+        } else {
+            erpEl.className = 'rc r'; erpEl.querySelector('.v').textContent = '❌ 실패';
+            erpEl.querySelector('.d').textContent = d.erp?.error || '오류';
+        }
+
+        const allOk = d.coupang?.ok && d.erp?.ok;
+        sb('conn-sb', allOk ? 'ok' : 'warn', allOk ? '✅ 모든 서비스 연결 성공' : '⚠️ 일부 서비스에 문제가 있습니다.');
+        log(`연결 테스트 완료: 쿠팡=${d.coupang?.ok}, ERP=${d.erp?.ok}`);
+    } catch (e) {
+        sb('conn-sb', 'err', '❌ 연결 테스트 실패: ' + e.message);
+        log('연결 테스트 실패: ' + e.message);
+    }
+}
+
+
+// ──────────────────────────────
+//  주문 조회
+// ──────────────────────────────
+async function fetchOrders() {
+    const status = $('#f-status').value;
+    const from = $('#f-from').value;
+    const to = $('#f-to').value;
+    sb('orders-sb', 'load', '⏳ 주문 조회 중...');
+    log(`주문조회: status=${status}, from=${from}, to=${to}`);
+
+    try {
+        const params = new URLSearchParams({ status, from_date: from, to_date: to });
+        const r = await fetch('/api/coupang/orders?' + params);
+        if (!r.ok) {
+            const err = await r.json();
+            throw new Error(err.detail || `HTTP ${r.status}`);
+        }
+        const d = await r.json();
+        orders = d.orders || [];
+        renderOrders();
+        sb('orders-sb', 'ok', `✅ ${orders.length}건 조회 완료`);
+        log(`주문조회 결과: ${orders.length}건`);
+    } catch (e) {
+        sb('orders-sb', 'err', '❌ 주문 조회 실패: ' + e.message);
+        log('주문조회 실패: ' + e.message);
+    }
+}
+
+function renderOrders() {
+    const tbody = $('#orders-body');
+    tbody.innerHTML = '';
+    $('#orders-tbl-wrap').style.display = orders.length ? '' : 'none';
+    $('#orders-count').style.display = orders.length ? '' : 'none';
+    $('#orders-count').textContent = `총 ${orders.length}건`;
+
+    // 택배사 select 옵션
+    const compOpts = deliveryCompanies.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+
+    orders.forEach((o, i) => {
+        const items = o.orderItems || [];
+        const firstItem = items[0] || {};
+        const status = o.status || '';
+        const badgeCls = STATUS_BADGE[status] || '';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="checkbox" class="row-chk" data-idx="${i}" onchange="updateSel()"></td>
+            <td class="mono">${o.shipmentBoxId || '-'}</td>
+            <td class="mono">${o.orderId || '-'}</td>
+            <td><span class="badge ${badgeCls}">${STATUS_LABELS[status] || status}</span></td>
+            <td>${fmtDate(o.orderedAt)}</td>
+            <td>${o.receiver?.name || o.orderer?.name || '-'}</td>
+            <td>${firstItem.vendorItemName || '-'}${items.length > 1 ? ` 외 ${items.length-1}건` : ''}</td>
+            <td>${items.reduce((s, it) => s + (it.shippingCount || 0), 0)}</td>
+            <td>₩${items.reduce((s, it) => s + (it.orderPrice?.units || 0), 0).toLocaleString()}</td>
+            <td>
+                <select class="inp-sm" data-idx="${i}" data-field="company" style="width:100px;margin-right:4px;">
+                    ${compOpts}
+                </select>
+                <input class="inp-sm" data-idx="${i}" data-field="invoice" placeholder="송장번호">
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    updateSel();
+}
+
+// ──────────────────────────────
+//  선택 관리
+// ──────────────────────────────
+function toggleAll(el) {
+    $$('.row-chk').forEach(c => c.checked = el.checked);
+    updateSel();
+}
+function updateSel() {
+    const checked = [...$$('.row-chk:checked')];
+    const cnt = checked.length;
+    $('#sel-cnt').textContent = cnt;
+    $('#sel-bar').style.display = cnt > 0 ? '' : 'none';
+}
+function getSelectedOrders() {
+    return [...$$('.row-chk:checked')].map(c => {
+        const idx = +c.dataset.idx;
+        return orders[idx];
+    });
+}
+
+
+// ──────────────────────────────
+//  상품준비중 처리 (발주확인)
+// ──────────────────────────────
+async function confirmOrders() {
+    const sel = getSelectedOrders();
+    if (!sel.length) return alert('주문을 선택하세요.');
+    if (!confirm(`${sel.length}건을 상품준비중 처리하시겠습니까?`)) return;
+
+    sb('orders-sb', 'load', '⏳ 상품준비중 처리 중...');
+    log(`상품준비중 처리: ${sel.length}건`);
+
+    try {
+        const ids = sel.map(o => o.shipmentBoxId).filter(Boolean);
+        const r = await fetch('/api/coupang/confirm-orders', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ shipment_box_ids: ids }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'API 오류');
+
+        sb('orders-sb', 'ok', `✅ 상품준비중 처리 완료 (${ids.length}건)`);
+        log(`상품준비중 처리 완료: ${ids.length}건`);
+
+        // 새로고침
+        setTimeout(() => fetchOrders(), 1000);
+    } catch (e) {
+        sb('orders-sb', 'err', '❌ 상품준비중 처리 실패: ' + e.message);
+        log('상품준비중 처리 실패: ' + e.message);
+    }
+}
+
+
+// ──────────────────────────────
+//  ERP 전표등록
+// ──────────────────────────────
+async function sendToERP() {
+    const sel = getSelectedOrders();
+    if (!sel.length) return alert('주문을 선택하세요.');
+    if (!confirm(`${sel.length}건을 ERP에 등록하시겠습니까?`)) return;
+
+    sb('orders-sb', 'load', '⏳ ERP 전표등록 중...');
+    log(`ERP 전표등록: ${sel.length}건`);
+
+    try {
+        const r = await fetch('/api/coupang/send-to-erp', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ orders: sel }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'API 오류');
+
+        sb('orders-sb', 'ok', `✅ ERP 등록 완료: ${d.success_count}/${d.total}건 성공`);
+        log(`ERP 등록 완료: ${d.success_count}/${d.total}건`);
+    } catch (e) {
+        sb('orders-sb', 'err', '❌ ERP 등록 실패: ' + e.message);
+        log('ERP 등록 실패: ' + e.message);
+    }
+}
+
+
+// ──────────────────────────────
+//  발송처리 (송장업로드)
+// ──────────────────────────────
+async function shipOrders() {
+    const sel = getSelectedOrders();
+    if (!sel.length) return alert('주문을 선택하세요.');
+
+    // 송장번호 수집
+    const shipments = [];
+    const checkedIdxs = [...$$('.row-chk:checked')].map(c => +c.dataset.idx);
+
+    for (const idx of checkedIdxs) {
+        const o = orders[idx];
+        const companyEl = document.querySelector(`select[data-idx="${idx}"][data-field="company"]`);
+        const invoiceEl = document.querySelector(`input[data-idx="${idx}"][data-field="invoice"]`);
+        const company = companyEl?.value || '';
+        const invoice = invoiceEl?.value?.trim() || '';
+
+        if (!invoice) {
+            alert(`주문 ${o.orderId}의 송장번호를 입력하세요.`);
+            invoiceEl?.focus();
+            return;
+        }
+
+        const items = o.orderItems || [];
+        for (const item of items) {
+            shipments.push({
+                shipment_box_id: o.shipmentBoxId,
+                order_id: o.orderId,
+                vendor_item_id: item.vendorItemId,
+                delivery_company: company,
+                invoice_number: invoice,
+                split_shipping: false,
+                pre_split_shipped: false,
+            });
+        }
+    }
+
+    if (!confirm(`${shipments.length}건의 송장을 업로드하시겠습니까?`)) return;
+
+    sb('orders-sb', 'load', '⏳ 송장업로드 중...');
+    log(`송장업로드: ${shipments.length}건`);
+
+    try {
+        const r = await fetch('/api/coupang/ship', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ shipments }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'API 오류');
+
+        sb('orders-sb', 'ok', `✅ 발송처리 완료: ${d.success_count}/${d.total}건 성공`);
+        log(`발송처리 완료: ${d.success_count}/${d.total}건`);
+
+        // 결과에서 실패한 건 표시
+        if (d.results) {
+            d.results.filter(r => !r.success).forEach(r => {
+                log(`  ❌ 배송번호 ${r.shipment_box_id}: ${r.error}`);
+            });
+        }
+
+        setTimeout(() => fetchOrders(), 1000);
+    } catch (e) {
+        sb('orders-sb', 'err', '❌ 발송처리 실패: ' + e.message);
+        log('발송처리 실패: ' + e.message);
+    }
+}
+</script>
 </body>
 </html>

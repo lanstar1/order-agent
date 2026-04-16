@@ -17,6 +17,7 @@ from db.database import init_db
 from api.routes.smartstore import router as smartstore_router
 from api.routes.auth import router as auth_router
 from api.routes.gmarket import router as gmarket_router
+from api.routes.coupang import router as coupang_router
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -82,6 +83,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(smartstore_router)
 app.include_router(auth_router)
 app.include_router(gmarket_router)
+app.include_router(coupang_router)
 
 
 # ─────────────────────────────────────────
