@@ -101,12 +101,13 @@ class CoupangClient:
 
         try:
             # 간단한 주문 조회로 테스트 (오늘~오늘)
-            from datetime import datetime
-            today = datetime.utcnow().strftime("%Y-%m-%d")
+            from datetime import datetime, timezone, timedelta
+            kst = timezone(timedelta(hours=9))
+            today = datetime.now(kst).strftime("%Y-%m-%d")
             path = f"/v2/providers/openapi/apis/api/v5/vendors/{self.vendor_id}/ordersheets"
             query_params = {
-                "createdAtFrom": f"{today}T00:00:00",
-                "createdAtTo": f"{today}T23:59:59",
+                "createdAtFrom": f"{today}+09:00",
+                "createdAtTo": f"{today}+09:00",
                 "status": ORDER_STATUS_ACCEPT,
                 "maxPerPage": "1",
             }
@@ -144,8 +145,9 @@ class CoupangClient:
             max_per_page: 페이지당 최대 건수 (기본 50)
         """
         if not from_date or not to_date:
-            from datetime import datetime, timedelta
-            now = datetime.utcnow()
+            from datetime import datetime, timedelta, timezone
+            kst = timezone(timedelta(hours=9))
+            now = datetime.now(kst)
             if not to_date:
                 to_date = now.strftime("%Y-%m-%d")
             if not from_date:
@@ -158,8 +160,8 @@ class CoupangClient:
 
         while True:
             query_params = {
-                "createdAtFrom": f"{from_date}T00:00:00",
-                "createdAtTo": f"{to_date}T23:59:59",
+                "createdAtFrom": f"{from_date}+09:00",
+                "createdAtTo": f"{to_date}+09:00",
                 "status": status,
                 "maxPerPage": str(max_per_page),
             }
