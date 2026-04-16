@@ -379,35 +379,40 @@ async def get_subcategories(parent_cid: str) -> List[Dict[str, str]]:
             logger.debug(f"[DataLab] 카테고리 캐시 히트: parent_cid={parent_cid}")
             return [{"cid": row[0], "name": row[1]} for row in rows]
 
-        # Naver DataLab API에서 조회
+        # Naver DataLab API에서 조회 (JSON 응답)
         logger.info(f"[DataLab] 카테고리 API 호출: parent_cid={parent_cid}")
 
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
                 CATEGORY_TREE_API,
                 data={"cid": parent_cid},
-                headers={"User-Agent": "Mozilla/5.0"}
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Referer": "https://datalab.naver.com/shoppingInsight/sCategory.naver",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }
             )
 
             if response.status_code != 200:
                 logger.warning(f"[DataLab] 카테고리 API 실패: {response.status_code}")
                 return []
 
-            # HTML 응답에서 JSON 파싱
-            text = response.text
-            import re
+            # JSON 응답 파싱 (childList에 하위 카테고리 포함)
+            try:
+                data = response.json()
+            except Exception:
+                logger.warning(f"[DataLab] 카테고리 JSON 파싱 실패: {response.text[:200]}")
+                return []
 
-            # <select> 내 <option> 파싱
-            pattern = r'<option value="(\d+)"[^>]*>([^<]+)</option>'
-            matches = re.findall(pattern, text)
-
-            if not matches:
-                logger.warning(f"[DataLab] 카테고리 파싱 실패")
+            child_list = data.get("childList", [])
+            if not child_list:
+                logger.info(f"[DataLab] 하위 카테고리 없음: parent_cid={parent_cid}")
                 return []
 
             subcategories = [
-                {"cid": cid, "name": name}
-                for cid, name in matches
+                {"cid": str(child["cid"]), "name": child["name"]}
+                for child in child_list
+                if child.get("svcUse", True) and not child.get("deleted", False)
             ]
 
             # DB에 저장
