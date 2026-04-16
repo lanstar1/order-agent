@@ -1,0 +1,1392 @@
+/* ========================================
+   네이버 트렌드 분석 Admin Console CSS
+   Scoped to #page-naver_datalab
+   ======================================== */
+
+#page-naver_datalab {
+  --color-primary: #1F6F5C;
+  --color-primary-dark: #154A3E;
+  --color-primary-light: #2D8A6F;
+
+  /* Accent Colors - Indigo/Purple */
+  --color-accent: #6366F1;
+  --color-accent-light: #818CF8;
+  --color-accent-lighter: #E0E7FF;
+
+  /* Neutrals */
+  --color-bg: #FAFAFA;
+  --color-bg-secondary: #F5F5F5;
+  --color-surface: #FFFFFF;
+  --color-border: #E5E7EB;
+  --color-text: #1F2937;
+  --color-text-secondary: #6B7280;
+  --color-text-muted: #9CA3AF;
+
+  /* Status Colors */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 250ms ease-in-out;
+}
+
+/* ========================================
+   Page Layout
+   ======================================== */
+
+#page-naver_datalab .page-wrapper {
+  min-height: 100vh;
+  padding: var(--spacing-xl);
+}
+
+#page-naver_datalab .page-header {
+  margin-bottom: var(--spacing-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+#page-naver_datalab .page-header h1 {
+  font-size: clamp(28px, 5vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+#page-naver_datalab .page-header p {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ========================================
+   Card Component
+   ======================================== */
+
+#page-naver_datalab .card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+}
+
+#page-naver_datalab .card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+#page-naver_datalab .card.card-interactive {
+  cursor: pointer;
+}
+
+#page-naver_datalab .card.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ========================================
+   Stats Grid
+   ======================================== */
+
+#page-naver_datalab .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-2xl);
+}
+
+#page-naver_datalab .stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+#page-naver_datalab .stat-card-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+#page-naver_datalab .stat-card-value {
+  font-size: clamp(24px, 2.5vw, 32px);
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.02em;
+}
+
+#page-naver_datalab .stat-card-change {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+#page-naver_datalab .stat-card-change.positive {
+  color: var(--color-success);
+}
+
+#page-naver_datalab .stat-card-change.negative {
+  color: var(--color-danger);
+}
+
+/* ========================================
+   Tabs Navigation
+   ======================================== */
+
+#page-naver_datalab .tabs {
+  display: flex;
+  gap: var(--spacing-xs);
+  border-bottom: 2px solid var(--color-border);
+  margin-bottom: var(--spacing-xl);
+  overflow-x: auto;
+  padding-bottom: 0;
+}
+
+#page-naver_datalab .tab-btn {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all var(--transition-normal);
+  white-space: nowrap;
+  position: relative;
+  bottom: -2px;
+}
+
+#page-naver_datalab .tab-btn:hover {
+  color: var(--color-text);
+}
+
+#page-naver_datalab .tab-btn.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* ========================================
+   Form Components
+   ======================================== */
+
+#page-naver_datalab .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+
+#page-naver_datalab .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--spacing-lg);
+}
+
+#page-naver_datalab .form-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+#page-naver_datalab .form-label.required::after {
+  content: '*';
+  color: var(--color-danger);
+}
+
+#page-naver_datalab .form-input,
+#page-naver_datalab .form-select,
+#page-naver_datalab .form-textarea {
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  transition: all var(--transition-fast);
+}
+
+#page-naver_datalab .form-input:focus,
+#page-naver_datalab .form-select:focus,
+#page-naver_datalab .form-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(31, 111, 92, 0.1);
+}
+
+#page-naver_datalab .form-input:disabled,
+#page-naver_datalab .form-select:disabled,
+#page-naver_datalab .form-textarea:disabled {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+#page-naver_datalab .form-textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+#page-naver_datalab .form-help {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-xs);
+}
+
+#page-naver_datalab .form-error {
+  font-size: 12px;
+  color: var(--color-danger);
+  margin-top: var(--spacing-xs);
+}
+
+/* ========================================
+   Buttons
+   ======================================== */
+
+#page-naver_datalab .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  text-decoration: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+#page-naver_datalab .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary Button */
+#page-naver_datalab .btn-primary {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+  color: white;
+  box-shadow: var(--shadow-md);
+}
+
+#page-naver_datalab .btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+  background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
+}
+
+#page-naver_datalab .btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Secondary Button (Default) */
+#page-naver_datalab .btn {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+#page-naver_datalab .btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: rgba(31, 111, 92, 0.05);
+}
+
+/* Danger Button */
+#page-naver_datalab .btn-danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+#page-naver_datalab .btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--color-danger);
+}
+
+/* Ghost Button */
+#page-naver_datalab .btn-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-color: transparent;
+}
+
+#page-naver_datalab .btn-ghost:hover:not(:disabled) {
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+}
+
+/* Small Button */
+#page-naver_datalab .btn-sm {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: 12px;
+}
+
+/* ========================================
+   Badges & Status
+   ======================================== */
+
+#page-naver_datalab .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#page-naver_datalab .badge-queued {
+  background: rgba(156, 163, 175, 0.2);
+  color: #6B7280;
+}
+
+#page-naver_datalab .badge-running {
+  background: rgba(59, 130, 246, 0.2);
+  color: var(--color-info);
+}
+
+#page-naver_datalab .badge-completed {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--color-success);
+}
+
+#page-naver_datalab .badge-failed {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--color-danger);
+}
+
+#page-naver_datalab .badge-cancelled {
+  background: rgba(107, 114, 128, 0.2);
+  color: #6B7280;
+}
+
+/* ========================================
+   Progress Bar
+   ======================================== */
+
+#page-naver_datalab .progress-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+#page-naver_datalab .progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+  border-radius: inherit;
+  transition: width var(--transition-normal);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ========================================
+   Tables
+   ======================================== */
+
+#page-naver_datalab .table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#page-naver_datalab .table thead {
+  background: var(--color-bg-secondary);
+  border-bottom: 2px solid var(--color-border);
+}
+
+#page-naver_datalab .table th {
+  padding: var(--spacing-lg);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+#page-naver_datalab .table td {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+#page-naver_datalab .table tbody tr {
+  transition: background var(--transition-normal);
+}
+
+#page-naver_datalab .table tbody tr:hover {
+  background: var(--color-bg-secondary);
+}
+
+/* ========================================
+   Toast Notifications
+   ======================================== */
+
+#page-naver_datalab .toast {
+  position: fixed;
+  bottom: var(--spacing-xl);
+  right: var(--spacing-xl);
+  max-width: 400px;
+  padding: var(--spacing-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-lg);
+  z-index: 1000;
+  animation: slideIn 300ms ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+#page-naver_datalab .toast.success {
+  border-left: 4px solid var(--color-success);
+}
+
+#page-naver_datalab .toast.error {
+  border-left: 4px solid var(--color-danger);
+}
+
+#page-naver_datalab .toast.info {
+  border-left: 4px solid var(--color-info);
+}
+
+#page-naver_datalab .toast-content {
+  flex: 1;
+}
+
+#page-naver_datalab .toast-title {
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-xs);
+}
+
+#page-naver_datalab .toast-message {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+/* ========================================
+   Analysis Cards
+   ======================================== */
+
+#page-naver_datalab .analysis-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+#page-naver_datalab .analysis-card.trend {
+  border-left-color: var(--color-accent);
+}
+
+#page-naver_datalab .analysis-card.keyword {
+  border-left-color: var(--color-primary);
+}
+
+#page-naver_datalab .analysis-card.demographic {
+  border-left-color: var(--color-warning);
+}
+
+#page-naver_datalab .analysis-card.temporal {
+  border-left-color: var(--color-info);
+}
+
+#page-naver_datalab .analysis-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+#page-naver_datalab .analysis-card-content {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+#page-naver_datalab .analysis-card-metric {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: var(--spacing-md) 0;
+}
+
+/* ========================================
+   Heatmap Grid
+   ======================================== */
+
+#page-naver_datalab .heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+  gap: var(--spacing-xs);
+}
+
+#page-naver_datalab .heatmap-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: var(--color-bg-secondary);
+}
+
+#page-naver_datalab .heatmap-cell:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+}
+
+#page-naver_datalab .heatmap-cell.low {
+  background: rgba(31, 111, 92, 0.1);
+  color: var(--color-primary);
+}
+
+#page-naver_datalab .heatmap-cell.medium {
+  background: rgba(31, 111, 92, 0.3);
+  color: var(--color-primary);
+}
+
+#page-naver_datalab .heatmap-cell.high {
+  background: linear-gradient(135deg, rgba(31, 111, 92, 0.6) 0%, rgba(45, 138, 111, 0.6) 100%);
+  color: white;
+}
+
+/* ========================================
+   Sparkline Charts
+   ======================================== */
+
+#page-naver_datalab .sparkline {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#page-naver_datalab .sparkline svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ========================================
+   Hero Metrics
+   ======================================== */
+
+#page-naver_datalab .hero-metric {
+  background: linear-gradient(135deg, rgba(31, 111, 92, 0.05) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  padding: var(--spacing-xl);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  align-items: center;
+  justify-content: center;
+}
+
+#page-naver_datalab .hero-metric-value {
+  font-size: clamp(32px, 3vw, 48px);
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
+}
+
+#page-naver_datalab .hero-metric-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#page-naver_datalab .hero-metric-description {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+/* ========================================
+   Planner Grid (Monthly)
+   ======================================== */
+
+#page-naver_datalab .planner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-lg);
+}
+
+#page-naver_datalab .planner-month {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+#page-naver_datalab .planner-month:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
+}
+
+#page-naver_datalab .planner-month.active {
+  background: linear-gradient(135deg, rgba(31, 111, 92, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
+  border-color: var(--color-primary);
+}
+
+#page-naver_datalab .planner-month-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+#page-naver_datalab .planner-month-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+#page-naver_datalab .planner-month-date {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* ========================================
+   Category Picker
+   ======================================== */
+
+#page-naver_datalab .category-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-lg);
+}
+
+#page-naver_datalab .category-select {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+#page-naver_datalab .category-select-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+#page-naver_datalab .category-select select {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+#page-naver_datalab .category-select select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(31, 111, 92, 0.1);
+}
+
+/* ========================================
+   Chips & Chip Groups
+   ======================================== */
+
+#page-naver_datalab .chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+#page-naver_datalab .chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+#page-naver_datalab .chip:hover {
+  background: var(--color-border);
+}
+
+#page-naver_datalab .chip.active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+#page-naver_datalab .chip.removable {
+  padding-right: var(--spacing-xs);
+}
+
+#page-naver_datalab .chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: var(--spacing-xs);
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  transition: all var(--transition-fast);
+}
+
+#page-naver_datalab .chip.active .chip-remove:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ========================================
+   Empty State
+   ======================================== */
+
+#page-naver_datalab .empty-state {
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-2xl);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+#page-naver_datalab .empty-state-icon {
+  font-size: 48px;
+  opacity: 0.3;
+}
+
+#page-naver_datalab .empty-state-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+#page-naver_datalab .empty-state-description {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  max-width: 400px;
+}
+
+#page-naver_datalab .empty-state-action {
+  margin-top: var(--spacing-lg);
+}
+
+/* ========================================
+   Modal
+   ======================================== */
+
+#page-naver_datalab .modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 200ms ease-out;
+}
+
+#page-naver_datalab .modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  padding: var(--spacing-2xl);
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+  animation: slideUp 300ms ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+#page-naver_datalab .modal-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+#page-naver_datalab .modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+#page-naver_datalab .modal-close {
+  position: absolute;
+  top: var(--spacing-lg);
+  right: var(--spacing-lg);
+  width: 32px;
+  height: 32px;
+  background: var(--color-bg-secondary);
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+}
+
+#page-naver_datalab .modal-close:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+#page-naver_datalab .modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+#page-naver_datalab .modal-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-xl);
+}
+
+/* ========================================
+   Skeleton Loading
+   ======================================== */
+
+#page-naver_datalab .skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-secondary) 0%,
+    var(--color-border) 50%,
+    var(--color-bg-secondary) 100%
+  );
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+  border-radius: var(--radius-lg);
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+#page-naver_datalab .skeleton-text {
+  height: 16px;
+  margin-bottom: var(--spacing-md);
+}
+
+#page-naver_datalab .skeleton-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+}
+
+#page-naver_datalab .skeleton-card {
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-lg);
+}
+
+/* ========================================
+   Utilities
+   ======================================== */
+
+#page-naver_datalab .grid {
+  display: grid;
+  gap: var(--spacing-lg);
+}
+
+#page-naver_datalab .grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+#page-naver_datalab .grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+#page-naver_datalab .grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+#page-naver_datalab .flex {
+  display: flex;
+}
+
+#page-naver_datalab .flex-col {
+  flex-direction: column;
+}
+
+#page-naver_datalab .flex-center {
+  align-items: center;
+  justify-content: center;
+}
+
+#page-naver_datalab .flex-between {
+  align-items: center;
+  justify-content: space-between;
+}
+
+#page-naver_datalab .gap-xs {
+  gap: var(--spacing-xs);
+}
+
+#page-naver_datalab .gap-sm {
+  gap: var(--spacing-sm);
+}
+
+#page-naver_datalab .gap-md {
+  gap: var(--spacing-md);
+}
+
+#page-naver_datalab .gap-lg {
+  gap: var(--spacing-lg);
+}
+
+#page-naver_datalab .gap-xl {
+  gap: var(--spacing-xl);
+}
+
+#page-naver_datalab .text-xs {
+  font-size: 12px;
+}
+
+#page-naver_datalab .text-sm {
+  font-size: 13px;
+}
+
+#page-naver_datalab .text-md {
+  font-size: 14px;
+}
+
+#page-naver_datalab .text-lg {
+  font-size: 16px;
+}
+
+#page-naver_datalab .text-xl {
+  font-size: 18px;
+}
+
+#page-naver_datalab .text-muted {
+  color: var(--color-text-muted);
+}
+
+#page-naver_datalab .text-secondary {
+  color: var(--color-text-secondary);
+}
+
+#page-naver_datalab .font-bold {
+  font-weight: 700;
+}
+
+#page-naver_datalab .font-semibold {
+  font-weight: 600;
+}
+
+#page-naver_datalab .text-center {
+  text-align: center;
+}
+
+#page-naver_datalab .mt-xs {
+  margin-top: var(--spacing-xs);
+}
+
+#page-naver_datalab .mt-sm {
+  margin-top: var(--spacing-sm);
+}
+
+#page-naver_datalab .mt-md {
+  margin-top: var(--spacing-md);
+}
+
+#page-naver_datalab .mt-lg {
+  margin-top: var(--spacing-lg);
+}
+
+#page-naver_datalab .mt-xl {
+  margin-top: var(--spacing-xl);
+}
+
+#page-naver_datalab .mb-xs {
+  margin-bottom: var(--spacing-xs);
+}
+
+#page-naver_datalab .mb-sm {
+  margin-bottom: var(--spacing-sm);
+}
+
+#page-naver_datalab .mb-md {
+  margin-bottom: var(--spacing-md);
+}
+
+#page-naver_datalab .mb-lg {
+  margin-bottom: var(--spacing-lg);
+}
+
+#page-naver_datalab .mb-xl {
+  margin-bottom: var(--spacing-xl);
+}
+
+#page-naver_datalab .p-xs {
+  padding: var(--spacing-xs);
+}
+
+#page-naver_datalab .p-sm {
+  padding: var(--spacing-sm);
+}
+
+#page-naver_datalab .p-md {
+  padding: var(--spacing-md);
+}
+
+#page-naver_datalab .p-lg {
+  padding: var(--spacing-lg);
+}
+
+#page-naver_datalab .p-xl {
+  padding: var(--spacing-xl);
+}
+
+#page-naver_datalab .rounded {
+  border-radius: var(--radius-lg);
+}
+
+#page-naver_datalab .rounded-full {
+  border-radius: var(--radius-full);
+}
+
+#page-naver_datalab .shadow {
+  box-shadow: var(--shadow-md);
+}
+
+#page-naver_datalab .shadow-lg {
+  box-shadow: var(--shadow-lg);
+}
+
+#page-naver_datalab .opacity-50 {
+  opacity: 0.5;
+}
+
+#page-naver_datalab .opacity-75 {
+  opacity: 0.75;
+}
+
+#page-naver_datalab .overflow-hidden {
+  overflow: hidden;
+}
+
+#page-naver_datalab .cursor-pointer {
+  cursor: pointer;
+}
+
+#page-naver_datalab .cursor-not-allowed {
+  cursor: not-allowed;
+}
+
+/* ========================================
+   Responsive Design
+   ======================================== */
+
+@media (max-width: 1024px) {
+  #page-naver_datalab .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  #page-naver_datalab .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  #page-naver_datalab .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  #page-naver_datalab .planner-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  #page-naver_datalab .category-picker {
+    grid-template-columns: 1fr;
+  }
+
+  #page-naver_datalab .modal-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #page-naver_datalab .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  #page-naver_datalab {
+    --spacing-xl: 16px;
+    --spacing-lg: 12px;
+  }
+
+  #page-naver_datalab .page-wrapper {
+    padding: var(--spacing-lg);
+  }
+
+  #page-naver_datalab .page-header h1 {
+    font-size: 24px;
+  }
+
+  #page-naver_datalab .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #page-naver_datalab .grid-2,
+  #page-naver_datalab .grid-3,
+  #page-naver_datalab .grid-4 {
+    grid-template-columns: 1fr;
+  }
+
+  #page-naver_datalab .planner-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #page-naver_datalab .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #page-naver_datalab .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  #page-naver_datalab .modal {
+    width: 95%;
+    padding: var(--spacing-lg);
+  }
+
+  #page-naver_datalab .modal-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #page-naver_datalab .heatmap-grid {
+    grid-template-columns: repeat(auto-fit, minmax(32px, 1fr));
+  }
+
+  #page-naver_datalab .card {
+    padding: var(--spacing-lg);
+  }
+
+  #page-naver_datalab .table {
+    font-size: 12px;
+  }
+
+  #page-naver_datalab .table th,
+  #page-naver_datalab .table td {
+    padding: var(--spacing-md);
+  }
+
+  #page-naver_datalab .toast {
+    right: var(--spacing-lg);
+    left: var(--spacing-lg);
+    max-width: none;
+  }
+
+  #page-naver_datalab .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  #page-naver_datalab .page-header {
+    margin-bottom: var(--spacing-lg);
+  }
+
+  #page-naver_datalab .page-header h1 {
+    font-size: 20px;
+  }
+
+  #page-naver_datalab .stat-card-value {
+    font-size: 20px;
+  }
+
+  #page-naver_datalab .hero-metric-value {
+    font-size: 32px;
+  }
+
+  #page-naver_datalab .btn {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 12px;
+  }
+
+  #page-naver_datalab .badge {
+    font-size: 11px;
+  }
+
+  #page-naver_datalab .chip-group {
+    gap: var(--spacing-sm);
+  }
+
+  #page-naver_datalab .chip {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  #page-naver_datalab .table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* ========================================
+   Dark Mode Support (Optional)
+   ======================================== */
+
+@media (prefers-color-scheme: dark) {
+  #page-naver_datalab {
+    --color-bg: #111827;
+    --color-bg-secondary: #1F2937;
+    --color-surface: #1F2937;
+    --color-border: #374151;
+    --color-text: #F3F4F6;
+    --color-text-secondary: #D1D5DB;
+    --color-text-muted: #9CA3AF;
+  }
+
+  #page-naver_datalab .form-input,
+  #page-naver_datalab .form-select,
+  #page-naver_datalab .form-textarea {
+    background: #374151;
+  }
+
+  #page-naver_datalab .empty-state {
+    border-color: #374151;
+  }
+
+  #page-naver_datalab .modal {
+    background: #1F2937;
+    border-color: #374151;
+  }
+
+  #page-naver_datalab .modal-close {
+    background: #374151;
+  }
+
+  #page-naver_datalab .card,
+  #page-naver_datalab .stat-card,
+  #page-naver_datalab .planner-month,
+  #page-naver_datalab .analysis-card {
+    border-color: #374151;
+  }
+}

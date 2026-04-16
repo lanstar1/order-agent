@@ -37,7 +37,7 @@ from api.routes.smartstore import router as smartstore_router
 from api.routes.purchase_reconciliation import router as reconcile_router
 from api.routes.rebate import router as rebate_router
 from api.routes.map_monitor import router as map_monitor_router
-from api.routes.naver_datalab import router as naver_datalab_router
+from api.routes.trend_routes import router as trend_router
 from api.routes.mail_auto import router as mail_auto_router
 from api.routes.telegram_bot import router as telegram_bot_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
@@ -279,7 +279,7 @@ app.include_router(smartstore_router)
 app.include_router(reconcile_router)
 app.include_router(rebate_router)
 app.include_router(map_monitor_router)
-app.include_router(naver_datalab_router)
+app.include_router(trend_router)
 app.include_router(mail_auto_router)
 app.include_router(telegram_bot_router)
 
@@ -639,6 +639,24 @@ async def startup():
         logger.info("MAP 지도가 감시 스케줄러 등록 완료")
     except Exception as e:
         logger.warning(f"MAP 스케줄러 시작 실패 (서비스는 계속): {e}")
+
+    # 데이터랩 트렌드 수집 백그라운드 워커 (2분 간격)
+    async def _datalab_worker_loop():
+        from services.naver_collector import process_next_task
+        logger.info("데이터랩 백그라운드 수집 워커 시작")
+        while True:
+            try:
+                result = process_next_task()
+                if result and result.get("processed"):
+                    logger.info(f"데이터랩 태스크 처리 완료: {result.get('task_id', '?')}")
+                    await asyncio.sleep(1)
+                    continue
+            except Exception as e:
+                logger.error(f"데이터랩 워커 루프 오류: {e}", exc_info=True)
+            await asyncio.sleep(120)
+
+    asyncio.create_task(_datalab_worker_loop())
+    logger.info("데이터랩 백그라운드 워커 등록")
 
     # 판매현황 자동 수집 + 에이전트 스케줄러
     try:
