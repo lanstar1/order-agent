@@ -9651,9 +9651,31 @@ async function dlOnCat2Change(cid) {
 }
 
 // ── 키워드 관리 ──
+let _dlComposing = false;  // 한글 IME 조합 상태 추적
+
+function dlKeywordCompositionStart() { _dlComposing = true; }
+function dlKeywordCompositionEnd(e) {
+  _dlComposing = false;
+  // compositionend 후 Enter 처리
+  if (e && e.target && e.target.dataset.pendingEnter === 'true') {
+    e.target.dataset.pendingEnter = 'false';
+    const kw = e.target.value.trim();
+    if (kw && !_dlKeywords.includes(kw) && _dlKeywords.length < 20) {
+      _dlKeywords.push(kw);
+      e.target.value = '';
+      dlRenderKeywordTags();
+    }
+  }
+}
+
 function dlKeywordKeydown(e) {
   if (e.key === 'Enter') {
     e.preventDefault();
+    // 한글 조합 중이면 compositionend에서 처리
+    if (_dlComposing) {
+      e.target.dataset.pendingEnter = 'true';
+      return;
+    }
     const input = document.getElementById('dl-keyword-input');
     const kw = input.value.trim();
     if (kw && !_dlKeywords.includes(kw) && _dlKeywords.length < 20) {
@@ -9695,15 +9717,28 @@ async function dlSuggestKeywords() {
     const res = await fetch(`/api/datalab/suggest-keywords?query=${encodeURIComponent(query)}`, {
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
     });
-    const data = await res.json();
     const popup = document.getElementById('dl-suggest-popup');
     const list = document.getElementById('dl-suggest-list');
-    list.innerHTML = (data.suggestions || []).map(s =>
-      `<div class="dl-suggest-item" onclick="dlAddKeyword('${s.replace(/'/g, "\\'")}'); this.remove();">${s}</div>`
-    ).join('') || '<div style="padding:12px;color:var(--text-secondary)">추천 결과가 없습니다</div>';
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      list.innerHTML = `<div style="padding:12px;color:#ef4444">오류: ${errData.detail || res.status}</div>`;
+      popup.style.display = 'block';
+      return;
+    }
+    const data = await res.json();
+    const suggestions = data.suggestions || [];
+    list.innerHTML = suggestions.length > 0
+      ? suggestions.map(s =>
+          `<div class="dl-suggest-item" onclick="dlAddKeyword('${s.replace(/'/g, "\\'")}'); this.remove();">${s}</div>`
+        ).join('')
+      : '<div style="padding:12px;color:var(--text-secondary)">추천 결과가 없습니다</div>';
     popup.style.display = 'block';
   } catch (e) {
     console.error('[DataLab] 키워드 추천 실패:', e);
+    const popup = document.getElementById('dl-suggest-popup');
+    const list = document.getElementById('dl-suggest-list');
+    list.innerHTML = '<div style="padding:12px;color:#ef4444">네트워크 오류가 발생했습니다</div>';
+    popup.style.display = 'block';
   }
 }
 
@@ -9792,6 +9827,13 @@ async function dlRunAnalysis() {
 
     _dlAnalysisData = await res.json();
     _dlHistoryId = _dlAnalysisData.history_id || null;
+    console.log('[DataLab] 분석 결과:', JSON.stringify(_dlAnalysisData).substring(0, 500));
+
+    if (_dlAnalysisData.error) {
+      alert('⚠️ ' + _dlAnalysisData.error);
+    } else if (!_dlAnalysisData.keywords || _dlAnalysisData.keywords.length === 0) {
+      alert('분석 결과: 키워드 트렌드 데이터가 없습니다.\n네이버 API 키 설정을 확인해주세요.\n\n설정 > API 키 관리 > 네이버 DataLab Client ID/Secret');
+    }
 
     dlRenderResults();
 
@@ -9835,6 +9877,12 @@ function dlRenderSummaryCards() {
 
   let html = '';
   html += `<div class="dl-summary-card dl-card-info"><h4>분석 키워드</h4><div class="dl-card-value">${kws.length}개</div><div class="dl-card-sub">API ${_dlAnalysisData.api_calls || 0}회 호출</div></div>`;
+
+  if (kws.length === 0) {
+    html += `<div class="dl-summary-card dl-card-caution" style="grid-column:span 3"><h4>⚠️ 데이터 없음</h4><div class="dl-card-sub">네이버 API에서 키워드 트렌드 데이터를 받지 못했습니다.<br>설정 &gt; API 키 관리에서 네이버 DataLab Client ID/Secret을 확인해주세요.</div></div>`;
+    document.getElementById('dl-summary-cards').innerHTML = html;
+    return;
+  }
 
   if (hot.length > 0) {
     html += `<div class="dl-summary-card dl-card-hot"><h4>🔥 주목 키워드</h4><div class="dl-card-value">${hot[0].keyword}</div><div class="dl-card-sub">${hot.map(h => h.keyword).join(', ')}</div></div>`;

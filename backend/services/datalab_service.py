@@ -523,14 +523,22 @@ async def _call_datalab_api(
             if cached:
                 return cached
 
+        # API 키 확인
+        headers = _get_headers()
+        if not headers.get("X-Naver-Client-Id") or not headers.get("X-Naver-Client-Secret"):
+            logger.error(f"[DataLab] API 키 미설정 - 설정 > API 키 관리에서 네이버 DataLab Client ID/Secret을 입력하세요")
+            return None
+
         # API 호출
         url = f"{DATALAB_API_BASE}{endpoint}"
-        headers = _get_headers()
 
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(url, json=request_body, headers=headers)
 
-            if response.status_code != 200:
+            if response.status_code == 401:
+                logger.error(f"[DataLab] API 인증 실패 ({endpoint}): 네이버 DataLab API 키가 유효하지 않습니다. 설정에서 확인해주세요.")
+                return None
+            elif response.status_code != 200:
                 logger.error(f"[DataLab] API 오류 ({endpoint}): {response.status_code} - {response.text}")
                 return None
 
@@ -1034,13 +1042,40 @@ async def suggest_keywords(query: str, category_code: str = None) -> List[str]:
                 if keywords:
                     return keywords[:20]
 
-        # 방법 2: 네이버 쇼핑 검색 API (DataLab 인증키 활용, 폴백)
+        # 방법 2: 네이버 쇼핑 검색 API (별도 검색 API 키 사용, 폴백)
         try:
-            search_result = await _call_search_api(query, display=20)
-            if search_result:
-                return search_result
-        except Exception:
-            pass
+            # aicc_web_search에 등록된 검색 API 키 활용
+            search_cid = os.getenv("NAVER_SEARCH_CLIENT_ID", "yJoeRzSxXZJiN8amAOrY")
+            search_csec = os.getenv("NAVER_SEARCH_CLIENT_SECRET", "ccpO9tf7b7")
+            search_headers = {
+                "X-Naver-Client-Id": search_cid,
+                "X-Naver-Client-Secret": search_csec,
+                "Content-Type": "application/json",
+            }
+            url = f"{SEARCH_API_BASE}/shop.json"
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(url, params={"query": query, "display": 20}, headers=search_headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    items = data.get("items", [])
+                    keywords = []
+                    seen = set()
+                    for item in items:
+                        title = item.get("title", "").replace("<b>", "").replace("</b>", "").strip()
+                        # 상품명에서 핵심 키워드 추출 (짧은 것 우선)
+                        parts = [p.strip() for p in title.split() if len(p.strip()) >= 2]
+                        for part in parts:
+                            if part not in seen and part.lower() != query.lower():
+                                keywords.append(part)
+                                seen.add(part)
+                                if len(keywords) >= 20:
+                                    break
+                        if len(keywords) >= 20:
+                            break
+                    if keywords:
+                        return keywords
+        except Exception as e2:
+            logger.warning(f"[DataLab] 검색 API 폴백 실패: {e2}")
 
         return []
 
@@ -1262,6 +1297,26 @@ async def run_full_analysis(
     cat_name = category_name or get_category_name(category_code)
     api_calls = 0
     keyword_results = []
+
+    # ── API 키 사전 확인 ──
+    headers = _get_headers()
+    api_key_missing = not headers.get("X-Naver-Client-Id") or not headers.get("X-Naver-Client-Secret")
+    if api_key_missing:
+        logger.error("[DataLab] 네이버 DataLab API 키 미설정")
+        return {
+            "category_code": category_code,
+            "category_name": cat_name,
+            "period": {"start": start_date, "end": end_date},
+            "time_unit": time_unit,
+            "keywords": [],
+            "category_trend": None,
+            "device_data": {},
+            "gender_data": {},
+            "age_data": {},
+            "api_calls": 0,
+            "error": "네이버 DataLab API 키가 설정되지 않았습니다. 설정 > API 키 관리에서 네이버 DataLab Client ID/Secret을 입력해주세요.",
+            "analyzed_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     # ── 1. 키워드별 트렌드 (배치) ──
     for batch_idx in range(0, len(keywords), MAX_KEYWORDS_PER_REQUEST):
