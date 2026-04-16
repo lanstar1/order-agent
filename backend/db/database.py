@@ -77,7 +77,6 @@ def _sql_to_pg(sql):
             _ALLOWED_TABLES.update({
                 'inventory_snapshots', 'inventory_alert_history',
                 'inventory_exclude_keywords', 'inventory_alert_settings',
-                'trend_profiles', 'trend_runs', 'trend_tasks', 'trend_snapshots',
             })
             if table.lower() not in _ALLOWED_TABLES:
                 logger.warning(f"[DB] PRAGMA table_info 거부: 미허용 테이블 '{table}'")
@@ -815,90 +814,6 @@ def init_db():
         dispatched_at   TIMESTAMP
     )""")
 
-    # ── 트렌드 프로필 (데이터랩) ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS trend_profiles (
-        id              TEXT PRIMARY KEY,
-        slug            TEXT UNIQUE NOT NULL,
-        name            TEXT NOT NULL DEFAULT '',
-        status          TEXT NOT NULL DEFAULT 'active',
-        category_cid    TEXT NOT NULL DEFAULT '',
-        category_path   TEXT NOT NULL DEFAULT '',
-        category_depth  INTEGER NOT NULL DEFAULT 0,
-        time_unit       TEXT NOT NULL DEFAULT 'month',
-        devices         TEXT NOT NULL DEFAULT '["pc","mo"]',
-        genders         TEXT NOT NULL DEFAULT '["f","m"]',
-        ages            TEXT NOT NULL DEFAULT '["10","20","30","40","50","60"]',
-        result_count    INTEGER NOT NULL DEFAULT 20,
-        exclude_brand_products  INTEGER NOT NULL DEFAULT 1,
-        custom_excluded_terms   TEXT NOT NULL DEFAULT '[]',
-        spreadsheet_id  TEXT NOT NULL DEFAULT '',
-        start_period    TEXT NOT NULL DEFAULT '',
-        end_period      TEXT NOT NULL DEFAULT '',
-        last_collected_period TEXT NOT NULL DEFAULT '',
-        last_synced_at  TEXT,
-        sync_status     TEXT NOT NULL DEFAULT 'idle',
-        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-    )""")
-
-    # ── 트렌드 수집 실행 (Run) ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS trend_runs (
-        id              TEXT PRIMARY KEY,
-        profile_id      TEXT NOT NULL,
-        status          TEXT NOT NULL DEFAULT 'queued',
-        run_type        TEXT NOT NULL DEFAULT 'backfill',
-        start_period    TEXT NOT NULL DEFAULT '',
-        end_period      TEXT NOT NULL DEFAULT '',
-        total_tasks     INTEGER NOT NULL DEFAULT 0,
-        completed_tasks INTEGER NOT NULL DEFAULT 0,
-        failed_tasks    INTEGER NOT NULL DEFAULT 0,
-        total_snapshots INTEGER NOT NULL DEFAULT 0,
-        sheet_url       TEXT,
-        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-        started_at      TEXT,
-        completed_at    TEXT,
-        updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-        cancelled_at    TEXT
-    )""")
-
-    # ── 트렌드 수집 태스크 (월별) ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS trend_tasks (
-        id              TEXT PRIMARY KEY,
-        run_id          TEXT NOT NULL,
-        profile_id      TEXT NOT NULL,
-        period          TEXT NOT NULL,
-        status          TEXT NOT NULL DEFAULT 'pending',
-        completed_pages INTEGER NOT NULL DEFAULT 0,
-        total_pages     INTEGER NOT NULL DEFAULT 0,
-        retry_count     INTEGER NOT NULL DEFAULT 0,
-        failure_reason  TEXT,
-        failure_snippet TEXT,
-        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-    )""")
-
-    # ── 트렌드 키워드 스냅샷 ──
-    cur_or_conn.execute("""
-    CREATE TABLE IF NOT EXISTS trend_snapshots (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        profile_id      TEXT NOT NULL,
-        run_id          TEXT NOT NULL,
-        task_id         TEXT NOT NULL,
-        period          TEXT NOT NULL,
-        keyword         TEXT NOT NULL,
-        rank            INTEGER NOT NULL,
-        category_cid    TEXT NOT NULL DEFAULT '',
-        device          TEXT NOT NULL DEFAULT '',
-        gender          TEXT NOT NULL DEFAULT '',
-        age             TEXT NOT NULL DEFAULT '',
-        brand_excluded  INTEGER NOT NULL DEFAULT 0,
-        collected_at    TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(profile_id, period, rank)
-    )""")
-
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -939,15 +854,6 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_kd_order_rcv ON kd_order_map(rcv_name);
         CREATE INDEX IF NOT EXISTS idx_kd_order_tel ON kd_order_map(tel);
         CREATE INDEX IF NOT EXISTS idx_kd_order_status ON kd_order_map(status);
-
-        CREATE INDEX IF NOT EXISTS idx_trend_runs_profile ON trend_runs(profile_id);
-        CREATE INDEX IF NOT EXISTS idx_trend_runs_status ON trend_runs(status);
-        CREATE INDEX IF NOT EXISTS idx_trend_tasks_run ON trend_tasks(run_id);
-        CREATE INDEX IF NOT EXISTS idx_trend_tasks_status ON trend_tasks(status);
-        CREATE INDEX IF NOT EXISTS idx_trend_snap_profile ON trend_snapshots(profile_id);
-        CREATE INDEX IF NOT EXISTS idx_trend_snap_period ON trend_snapshots(profile_id, period);
-        CREATE INDEX IF NOT EXISTS idx_trend_snap_run ON trend_snapshots(run_id);
-        CREATE INDEX IF NOT EXISTS idx_trend_profiles_status ON trend_profiles(status);
     """)
 
     conn.commit()

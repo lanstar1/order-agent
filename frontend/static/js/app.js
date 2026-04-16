@@ -150,7 +150,6 @@ function navigateTo(pageId) {
     reconcile:    "매입정산",
     rebate:       "리베이트",
     map_monitor:  "지도가 감시",
-    naver_datalab: "데이터랩",
     mail_agent:   "📧 메일 자동화",
   }[pageId] || "";
   // AI 상담 페이지 진입 시 초기화
@@ -183,8 +182,6 @@ function navigateTo(pageId) {
   if (pageId === "settings" && typeof showAdminOverlay === "function") showAdminOverlay();
   // 리베이트 페이지 진입 시 초기화
   if (pageId === "rebate" && typeof initRebatePage === "function") initRebatePage();
-  // 네이버 데이터랩 페이지 진입 시 초기화
-  if (pageId === "naver_datalab" && window.initDatalab) window.initDatalab();
 }
 
 function statusBadge(status) {
