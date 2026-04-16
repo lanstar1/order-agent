@@ -596,6 +596,12 @@ async function sendToEcount() {
     // 부분출고 수량 저장 (PO 다운로드 시 확정수량 반영용)
     window._partialQtys = data.partial_quantities || {};
 
+    // 용산 출고건 orig_idx 저장 (PO 다운로드 시 노란색 표시용)
+    window._yongsanRows = (data.items_result || [])
+      .filter(r => r.stock_status === "wh10_used" || r.used_wh === "10")
+      .map(r => r.orig_idx)
+      .filter(idx => idx !== undefined && idx !== null);
+
     resultDiv.className = `ecount-result ${isOk ? "success" : "fail"}`;
     resultDiv.innerHTML = `
       <strong>${isOk ? "✅ 전표 등록 완료!" : "⚠️ 일부 실패"}</strong><br>
@@ -753,6 +759,7 @@ async function downloadPO() {
   fd.append("file",              ecountFile);
   fd.append("shortage_reasons",  getShortageReasons());
   fd.append("partial_quantities", JSON.stringify(window._partialQtys || {}));
+  fd.append("yongsan_rows",      JSON.stringify(window._yongsanRows || []));
 
   try {
     const res = await fetch(`${API_BASE}/download-po`, { method: "POST", body: fd });
