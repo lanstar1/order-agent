@@ -39,6 +39,7 @@ from api.routes.rebate import router as rebate_router
 from api.routes.map_monitor import router as map_monitor_router
 from api.routes.mail_auto import router as mail_auto_router
 from api.routes.telegram_bot import router as telegram_bot_router
+from api.routes.datalab import router as datalab_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -175,6 +176,11 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/map/products/upload"): "MAP 제품 엑셀 업로드",
     ("PUT", "/api/map/settings"): "MAP 설정 변경",
     ("POST", "/api/map/products"): "MAP 제품 등록",
+
+    ("POST", "/api/datalab/collect"): "데이터랩 트렌드 수집",
+    ("GET", "/api/datalab/runs"): "데이터랩 분석 조회",
+    ("POST", "/api/datalab/runs"): "데이터랩 분석 취소",
+    ("DELETE", "/api/datalab/runs"): "데이터랩 분석 삭제",
 }
 
 @app.middleware("http")
@@ -280,6 +286,7 @@ app.include_router(rebate_router)
 app.include_router(map_monitor_router)
 app.include_router(mail_auto_router)
 app.include_router(telegram_bot_router)
+app.include_router(datalab_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -403,6 +410,26 @@ async def serve_sales_daily_page():
 
 
 # ─────────────────────────────────────────
+#  데이터랩 (쇼핑 트렌드) 페이지
+# ─────────────────────────────────────────
+@app.get("/datalab", include_in_schema=False)
+async def serve_datalab_page():
+    """네이버 쇼핑인사이트 트렌드 분석 페이지"""
+    dl_html = FRONTEND_DIR / "datalab.html"
+    if not dl_html.exists():
+        return JSONResponse({"error": "datalab.html not found"}, status_code=404)
+    return FileResponse(
+        dl_html,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+# ─────────────────────────────────────────
 #  시작 이벤트
 # ─────────────────────────────────────────
 @app.on_event("startup")
@@ -410,6 +437,14 @@ async def startup():
     logger.info("=== Order Agent 시작 (v0.2.0) ===")
     init_db()
     logger.info("데이터베이스 초기화 완료")
+
+    # 데이터랩 테이블 초기화
+    try:
+        from api.routes.datalab import init_datalab_tables
+        init_datalab_tables()
+        logger.info("데이터랩 테이블 초기화 완료")
+    except Exception as e:
+        logger.warning(f"데이터랩 테이블 초기화 실패 (서비스는 계속): {e}")
 
     # 리베이트 테이블 초기화
     try:

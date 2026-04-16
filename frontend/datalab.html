@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>데이터랩 - 쇼핑 트렌드 분석</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234a7c6f'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>D</text></svg>" type="image/svg+xml">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
+  <style>
+/* ─── Reset ─── */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{font-size:15px;-webkit-font-smoothing:antialiased}
+body{font-family:'Pretendard Variable',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a1a;background:#f8f6f3;line-height:1.6}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;border:none;background:none;font:inherit}
+input,select,textarea{font:inherit}
+ul,ol{list-style:none}
+
+/* ─── Variables ─── */
+:root{
+  --teal:#4a7c6f;--teal-light:#6b9e8f;--teal-dark:#3a6358;
+  --gold:#c4a35a;--navy:#2c3e50;
+  --bg:#f8f6f3;--bg-card:#fff;--bg-panel:#faf9f7;
+  --border:#e8e4df;--border-light:#f0ece7;
+  --text:#1a1a1a;--text-sec:#6b7280;--text-muted:#9ca3af;
+  --danger:#e8857a;--danger-bg:#fdf0ee;
+  --success:#6b9e8f;--success-bg:#eef5f2;
+  --radius:16px;--radius-sm:10px;--radius-xs:6px;
+  --shadow:0 1px 3px rgba(0,0,0,.05);--shadow-md:0 4px 12px rgba(0,0,0,.08);
+}
+
+/* ─── Page Header ─── */
+.page-header{padding:24px 28px 14px;border-bottom:1px solid var(--border-light)}
+.page-header__brand{font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:2px}
+.page-header__title{font-size:1.6rem;font-weight:700;margin-bottom:6px}
+.page-header__desc{font-size:.88rem;color:var(--text-sec);max-width:700px}
+.page-header__tags{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.tag{display:inline-flex;align-items:center;padding:3px 11px;border-radius:20px;font-size:.76rem;background:var(--bg-panel);color:var(--text-sec);border:1px solid var(--border)}
+
+/* ─── Main Grid ─── */
+.main-grid{display:grid;grid-template-columns:370px 1fr;gap:0;min-height:calc(100vh - 110px)}
+
+/* ─── Left Panel ─── */
+.panel-left{padding:20px;border-right:1px solid var(--border-light);position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--bg)}
+.panel-section{background:var(--bg-card);border-radius:var(--radius);padding:18px;margin-bottom:14px;border:1px solid var(--border-light)}
+.panel-section__header{font-size:.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:3px}
+.panel-section__title{font-size:1.05rem;font-weight:700;margin-bottom:12px}
+.category-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+.category-row label{font-size:.76rem;color:var(--text-sec);margin-bottom:3px;display:block}
+.sel{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-card);font-size:.84rem;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.toggle-group{display:flex;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border);margin-bottom:6px}
+.toggle-btn{flex:1;padding:9px;text-align:center;font-size:.88rem;font-weight:600;background:var(--bg-card);color:var(--text-sec);transition:all .2s}
+.toggle-btn.active{background:var(--teal);color:#fff}
+.filter-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px}
+.filter-group__label{font-size:.84rem;font-weight:600;margin-bottom:6px}
+.filter-group__sub{font-size:.7rem;color:var(--text-muted);margin-bottom:6px}
+.filter-chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{padding:5px 11px;border-radius:var(--radius-xs);font-size:.79rem;border:1px solid var(--border);background:var(--bg-card);color:var(--text-sec);transition:all .15s;cursor:pointer}
+.chip:hover{border-color:var(--teal-light)}
+.chip.active{background:var(--teal);color:#fff;border-color:var(--teal)}
+.excl-box{background:var(--bg-panel);border-radius:var(--radius-sm);padding:14px;border:1px solid var(--border-light);margin-bottom:14px}
+.excl-box .cb-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.excl-box .cb-row input[type="checkbox"]{width:17px;height:17px;accent-color:var(--teal)}
+.excl-box .cb-row label{font-size:.88rem;font-weight:600}
+.excl-input{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-xs);font-size:.82rem;background:var(--bg-card)}
+.excl-input::placeholder{color:var(--text-muted)}
+.collect-info{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.ci-item{background:var(--bg-panel);padding:10px;border-radius:var(--radius-xs)}
+.ci-label{font-size:.7rem;color:var(--text-muted);margin-bottom:1px}
+.ci-value{font-size:1rem;font-weight:700}
+.ci-sub{font-size:.7rem;color:var(--text-muted)}
+.btn-start{width:100%;padding:13px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;font-size:.95rem;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s;margin-bottom:14px}
+.btn-start:hover{opacity:.9}
+.btn-start:disabled{opacity:.5;cursor:not-allowed}
+.archive-section{background:var(--bg-card);border-radius:var(--radius);padding:18px;border:1px solid var(--border-light)}
+.archive-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.archive-count{font-size:.82rem;color:var(--text-muted)}
+.archive-item{padding:12px;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:7px;cursor:pointer;transition:border-color .15s}
+.archive-item:hover{border-color:var(--teal-light)}
+.archive-item__title{font-size:.92rem;font-weight:600;margin-bottom:3px}
+.archive-item__meta{font-size:.76rem;color:var(--text-muted);display:flex;gap:10px}
+
+/* ─── Right Panel ─── */
+.panel-right{padding:20px 28px;overflow-y:auto;background:var(--bg)}
+.result-header__label{font-size:.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.2px}
+.result-header__title{font-size:1.25rem;font-weight:700}
+.result-header__desc{font-size:.86rem;color:var(--text-sec);margin-bottom:14px}
+.run-controls{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+.btn-ctrl{padding:7px 14px;border-radius:var(--radius-xs);font-size:.82rem;border:1px solid var(--border);display:flex;align-items:center;gap:5px;transition:all .15s}
+.btn-ctrl:hover{border-color:var(--text-muted)}
+.btn-ctrl--danger{color:var(--danger);border-color:var(--danger)}
+.btn-ctrl--danger:hover{background:var(--danger-bg)}
+.status-badge{padding:5px 12px;border-radius:20px;font-size:.76rem;font-weight:500}
+.status-badge--ok{background:var(--success-bg);color:var(--success)}
+.status-badge--running{background:#fef3cd;color:#856404}
+.run-profile{background:var(--bg-card);border-radius:var(--radius);padding:20px;border:1px solid var(--border-light);margin-bottom:14px}
+.run-profile__top{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.run-profile__icon{width:50px;height:50px;border-radius:50%;background:radial-gradient(circle at 30% 30%,var(--teal-light),var(--teal-dark));flex-shrink:0}
+.run-profile__name{font-size:1.1rem;font-weight:700}
+.run-profile__sub{font-size:.8rem;color:var(--text-sec)}
+.progress-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.stat-card{background:var(--bg-panel);padding:12px;border-radius:var(--radius-sm)}
+.stat-card__label{font-size:.7rem;color:var(--text-muted);margin-bottom:1px}
+.stat-card__value{font-size:1.15rem;font-weight:700}
+.stat-card__sub{font-size:.7rem;color:var(--text-muted)}
+.progress-bar-wrap{height:9px;background:var(--border-light);border-radius:5px;overflow:hidden;margin-bottom:18px}
+.progress-bar{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--teal),var(--gold));transition:width .5s}
+.analysis-lock{background:var(--bg-card);border-radius:var(--radius);padding:40px 28px;border:1px solid var(--border-light);text-align:center;margin-bottom:14px}
+.analysis-lock__label{font-size:.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:3px}
+.analysis-lock__title{font-size:1.15rem;font-weight:700;margin-bottom:10px}
+.analysis-lock__desc{font-size:.84rem;color:var(--text-sec);max-width:380px;margin:0 auto}
+.preview-panel{background:var(--bg-card);border-radius:var(--radius);padding:18px;border:1px solid var(--border-light);margin-bottom:14px}
+.preview-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.preview-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light)}
+.preview-item:last-child{border-bottom:none}
+.preview-rank{width:30px;height:30px;border-radius:50%;background:var(--teal);color:#fff;font-size:.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.preview-keyword{font-size:.92rem;font-weight:600}
+.preview-meta{font-size:.73rem;color:var(--text-muted)}
+
+/* ─── Insight Section ─── */
+.insight-section{margin-top:28px}
+.insight-header__label{font-size:.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.2px}
+.insight-header__title{font-size:1.3rem;font-weight:700}
+.tab-toggle{display:flex;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border);margin-bottom:18px;width:fit-content}
+.tab-btn{padding:7px 18px;font-size:.84rem;font-weight:500;background:var(--bg-card);color:var(--text-sec);transition:all .15s}
+.tab-btn.active{background:var(--teal);color:#fff}
+.llm-report{background:var(--success-bg);border-radius:var(--radius);padding:18px 22px;margin-bottom:20px;border-left:4px solid var(--teal)}
+.llm-report p{font-size:.9rem;color:var(--teal-dark);line-height:1.7;margin-bottom:3px}
+.card-section{margin-bottom:28px}
+.card-section__header{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.card-section__icon{width:34px;height:34px;border-radius:9px;background:var(--bg-panel);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:16px}
+.card-section__title{font-size:1rem;font-weight:700}
+.card-section__desc{font-size:.8rem;color:var(--text-sec)}
+.cards-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.insight-card{background:var(--bg-card);border-radius:var(--radius);padding:18px;border:1px solid var(--border-light);transition:box-shadow .2s}
+.insight-card:hover{box-shadow:var(--shadow-md)}
+.insight-card__top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px}
+.insight-card__keyword{font-size:1rem;font-weight:700}
+.confidence-badge{padding:3px 9px;border-radius:20px;font-size:.73rem;font-weight:600;background:var(--bg-panel);color:var(--teal);border:1px solid var(--border)}
+.insight-card__desc{font-size:.8rem;color:var(--text-sec);margin-bottom:10px;line-height:1.5}
+.sparkline-container{height:55px;margin-bottom:10px}
+.card-stats{display:flex;gap:14px;margin-bottom:10px;font-size:.78rem}
+.card-stat__label{color:var(--text-muted)}
+.card-stat__value{font-weight:600}
+.month-tags{margin-bottom:5px}
+.month-tags__label{font-size:.73rem;color:var(--text-muted);margin-bottom:3px}
+.month-tag{display:inline-block;padding:2px 9px;border-radius:14px;font-size:.73rem;font-weight:500;margin-right:3px;margin-bottom:3px}
+.month-tag--peak{background:var(--bg-panel);color:var(--text);border:1px solid var(--border)}
+.month-tag--weak{background:var(--danger-bg);color:var(--danger);border:1px solid #f5d5d0}
+.card-detail-link{display:block;text-align:center;font-size:.8rem;color:var(--text-muted);padding-top:7px;border-top:1px solid var(--border-light);cursor:pointer}
+.card-detail-link:hover{color:var(--teal)}
+
+/* Heatmap */
+.heatmap-table{width:100%;background:var(--bg-card);border-radius:var(--radius);border:1px solid var(--border-light);overflow:hidden;border-collapse:collapse}
+.heatmap-table thead th{padding:8px 5px;font-size:.73rem;font-weight:600;color:var(--text-sec);text-align:center;border-bottom:1px solid var(--border-light)}
+.heatmap-table thead th:first-child{text-align:left;padding-left:14px;min-width:110px}
+.heatmap-row td{padding:10px 5px;border-bottom:1px solid var(--border-light)}
+.heatmap-row td:first-child{padding-left:14px}
+.heatmap-keyword{font-weight:700;font-size:.86rem;margin-bottom:1px}
+.heatmap-desc{font-size:.7rem;color:var(--text-muted);line-height:1.3}
+.heatmap-cell{width:34px;height:34px;border-radius:5px;margin:0 auto}
+
+/* Planner */
+.planner-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.planner-card{background:var(--bg-card);border-radius:var(--radius-sm);padding:14px;border:1px solid var(--border-light);cursor:pointer;transition:all .15s}
+.planner-card:hover{border-color:var(--teal-light);box-shadow:var(--shadow)}
+.planner-card.active{border-color:var(--teal);box-shadow:0 0 0 2px rgba(74,124,111,.15)}
+.planner-month{font-size:1.1rem;font-weight:700;margin-bottom:1px}
+.planner-label{font-size:.73rem;color:var(--text-muted);margin-bottom:8px}
+.planner-recommend__label,.planner-caution__label{font-size:.7rem;color:var(--text-muted);margin-bottom:1px}
+.planner-recommend__keyword{font-size:.88rem;font-weight:600;color:var(--teal);margin-bottom:4px}
+.planner-caution__keyword{font-size:.88rem;font-weight:600;color:var(--text-sec)}
+.month-detail{background:var(--bg-card);border-radius:var(--radius);padding:20px;border:1px solid var(--border-light);margin-top:14px;display:none}
+.month-detail.visible{display:block}
+
+.hidden{display:none!important}
+.empty-state{text-align:center;padding:40px 20px;color:var(--text-muted);font-size:.88rem}
+.loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:900px){
+  .main-grid{grid-template-columns:1fr}
+  .panel-left{position:relative;height:auto;border-right:none;border-bottom:1px solid var(--border-light)}
+  .cards-grid{grid-template-columns:1fr}
+  .planner-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:1200px){
+  .cards-grid{grid-template-columns:1fr}
+}
+  </style>
+</head>
+<body>
+
+<!-- Page Header -->
+<header class="page-header">
+  <div class="page-header__brand">DATALAB · SOURCING WIZARD</div>
+  <h1 class="page-header__title">AI 소싱 마법사</h1>
+  <p class="page-header__desc">장기간 월별 인기검색어를 취합해 앞으로 준비해야 할 키워드, 조심해야 할 키워드, 시즌형 수요를 더 입체적으로 보여줍니다.</p>
+  <div class="page-header__tags">
+    <span class="tag" id="tagPeriod">수집 기간 2021-01 ~ <span id="tagEndPeriod">2026-04</span></span>
+    <span class="tag">기본 수집 20개 · 확장 40개</span>
+    <span class="tag">브랜드 제품 제외 옵션 제공</span>
+  </div>
+</header>
+
+<!-- Main Grid -->
+<div class="main-grid">
+
+  <!-- ══ Left Panel ══ -->
+  <aside class="panel-left">
+    <div class="panel-section">
+      <div class="panel-section__header">INPUT</div>
+      <div class="panel-section__title">트렌드 분석 조건 입력</div>
+      <p style="font-size:.8rem;color:var(--text-sec);margin-bottom:14px">카테고리와 필터를 정하면 바로 데이터 취합과 세일즈 트렌드 분석을 시작합니다.</p>
+
+      <div class="category-row">
+        <div><label>1분류</label><select class="sel" id="cat1"><option value="">선택</option></select></div>
+        <div><label>2분류</label><select class="sel" id="cat2" disabled><option value="">선택</option></select></div>
+        <div><label>3분류</label><select class="sel" id="cat3" disabled><option value="">선택</option></select></div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div style="font-size:.84rem;font-weight:600;margin-bottom:6px">분석 개수</div>
+        <p style="font-size:.76rem;color:var(--text-muted);margin-bottom:6px">20개는 빠르게, 40개는 더 깊게 볼 수 있습니다.</p>
+        <div class="toggle-group">
+          <button class="toggle-btn active" data-count="20">Top 20</button>
+          <button class="toggle-btn" data-count="40">Top 40</button>
+        </div>
+      </div>
+
+      <div class="filter-grid">
+        <div class="filter-group">
+          <div class="filter-group__label">기기</div>
+          <div class="filter-group__sub">선택하지 않으면 전체</div>
+          <div class="filter-chips" data-filter="device">
+            <button class="chip" data-value="pc">PC</button>
+            <button class="chip" data-value="mo">모바일</button>
+          </div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-group__label">성별</div>
+          <div class="filter-group__sub">선택하지 않으면 전체</div>
+          <div class="filter-chips" data-filter="gender">
+            <button class="chip" data-value="f">여성</button>
+            <button class="chip" data-value="m">남성</button>
+          </div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-group__label">연령</div>
+          <div class="filter-group__sub">복수 선택 가능</div>
+          <div class="filter-chips" data-filter="ages">
+            <button class="chip" data-value="10">10대</button>
+            <button class="chip" data-value="20">20대</button>
+            <button class="chip" data-value="30">30대</button>
+            <button class="chip" data-value="40">40대</button>
+            <button class="chip" data-value="50">50대</button>
+            <button class="chip" data-value="60">60대 이상</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="excl-box">
+      <div class="cb-row">
+        <input type="checkbox" id="brandExclude" checked>
+        <label for="brandExclude">브랜드 제품 제외</label>
+      </div>
+      <p style="font-size:.76rem;color:var(--text-muted);margin-bottom:8px">브랜드명 중심 키워드를 분석 결과에서 제외해 일반 상품 트렌드에 더 집중합니다.</p>
+      <div id="customExclusionWrap">
+        <label style="font-size:.76rem;font-weight:600;color:var(--text-sec);margin-bottom:3px;display:block">추가 제외어</label>
+        <input type="text" class="excl-input" id="customExclusion" placeholder="예: 올리비아로렌, 써스데이아일랜드">
+      </div>
+    </div>
+
+    <div class="collect-info">
+      <div class="ci-item">
+        <div class="ci-label">예상 수집 범위</div>
+        <div class="ci-value" id="collectRange">2021-01 ~<br>2026-04</div>
+        <div class="ci-sub" id="collectMonths">64개월 기준</div>
+      </div>
+      <div class="ci-item">
+        <div class="ci-label">예상 취합 속도</div>
+        <div class="ci-value" id="collectSpeed">약 2분</div>
+        <div class="ci-sub">1페이지 수집 기준</div>
+      </div>
+    </div>
+
+    <button class="btn-start" id="btnStart">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      분석 시작
+    </button>
+
+    <div class="archive-section">
+      <div class="archive-header">
+        <div>
+          <div class="panel-section__header">ARCHIVE</div>
+          <div class="panel-section__title">작업 결과 보기</div>
+        </div>
+        <span class="archive-count" id="archiveCount">0건</span>
+      </div>
+      <div id="archiveList"><div class="empty-state" style="padding:16px">아직 완료된 분석이 없습니다.</div></div>
+    </div>
+  </aside>
+
+  <!-- ══ Right Panel ══ -->
+  <main class="panel-right">
+    <div id="resultSection">
+      <div style="margin-bottom:14px">
+        <div class="result-header__label">RESULT</div>
+        <h2 class="result-header__title">데이터 취합</h2>
+      </div>
+      <p class="result-header__desc">데이터 취합 진행 상황을 확인하고, 전체 5년 데이터가 모두 모이면 장기 세일즈 인사이트를 열어봅니다.</p>
+
+      <div class="run-controls" id="runControls" style="display:none">
+        <button class="btn-ctrl" id="btnCancel">⏸ 중지</button>
+        <button class="btn-ctrl btn-ctrl--danger" id="btnDelete">🗑 삭제</button>
+        <div style="flex:1"></div>
+        <span class="status-badge status-badge--ok" id="statusBadge">대기 중</span>
+      </div>
+
+      <div class="run-profile" id="runProfile" style="display:none">
+        <div class="run-profile__top">
+          <div class="run-profile__icon"></div>
+          <div>
+            <div class="run-profile__name" id="runCategoryName">카테고리 선택 필요</div>
+            <div class="run-profile__sub" id="runCategorySub"></div>
+            <div id="runTags" style="display:flex;gap:6px;margin-top:4px"></div>
+          </div>
+        </div>
+        <div class="progress-stats">
+          <div class="stat-card"><div class="stat-card__label">현재 처리 중 월</div><div class="stat-card__value" id="statPeriod">-</div><div class="stat-card__sub">최근 완료 월 기준</div></div>
+          <div class="stat-card"><div class="stat-card__label">완료 월 수</div><div class="stat-card__value" id="statProgress">0/0</div><div class="stat-card__sub">완료/전체</div></div>
+          <div class="stat-card"><div class="stat-card__label">현재 페이지</div><div class="stat-card__value" id="statPage">-</div><div class="stat-card__sub">월 내부 진행</div></div>
+        </div>
+        <div class="progress-stats">
+          <div class="stat-card"><div class="stat-card__label">남은 예상시간</div><div class="stat-card__value" id="statEta">계산 중</div><div class="stat-card__sub" id="statEtaSub">평균 2초/월</div></div>
+          <div class="stat-card"><div class="stat-card__label">예상 완료 시각</div><div class="stat-card__value" id="statEtaTime">-</div><div class="stat-card__sub">실시간 ETA</div></div>
+          <div class="stat-card"><div class="stat-card__label">최근 완료 월</div><div class="stat-card__value" id="statLastPeriod">-</div><div class="stat-card__sub">전체 취합 완료</div></div>
+        </div>
+        <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+      </div>
+
+      <div class="analysis-lock" id="analysisLock">
+        <div class="analysis-lock__label">ANALYSIS LOCK</div>
+        <div class="analysis-lock__title">장기 인사이트 준비 중</div>
+        <div class="analysis-lock__desc">전체 취합이 끝나면 장기 리포트가 열립니다. 수집 중에는 월 진행 상태만 보여주고, 모든 월이 완료되면 스테디 키워드·계절 반복·월별 추천/주의 플래너를 한 번에 생성합니다.</div>
+      </div>
+
+      <div id="previewWrap" style="display:none">
+        <div class="preview-panel">
+          <div class="preview-header">
+            <div>
+              <div class="panel-section__header">PREVIEW</div>
+              <div class="panel-section__title">최근 수집 월 미리보기</div>
+            </div>
+            <div style="font-size:.76rem;color:var(--text-muted)" id="previewPageInfo">1/1</div>
+          </div>
+          <div style="margin-bottom:10px">
+            <label style="font-size:.76rem;color:var(--text-muted)">조회 월</label>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+              <select class="sel" id="previewPeriodSelect" style="width:130px"></select>
+              <button class="btn-ctrl" id="btnPrevPeriod" style="padding:5px 10px;font-size:.76rem">← 이전</button>
+              <button class="btn-ctrl" id="btnNextPeriod" style="padding:5px 10px;font-size:.76rem">다음 →</button>
+            </div>
+          </div>
+          <ul id="previewList" style="list-style:none;padding:0"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Insight Dashboard (after analysis) -->
+    <div class="insight-section hidden" id="insightSection">
+      <div style="margin-bottom:6px">
+        <div class="insight-header__label">INSIGHT</div>
+        <h2 class="insight-header__title">세일즈 트렌드 분석</h2>
+      </div>
+      <div class="tab-toggle">
+        <button class="tab-btn active" data-tab="report">실무 추천형 리포트</button>
+        <button class="tab-btn" data-tab="raw">원본 키워드 기준</button>
+      </div>
+      <div class="llm-report" id="llmReport"><p id="llmReportText">분석 결과를 로딩 중...</p></div>
+      <div id="insightCards"></div>
+      <div id="heatmapSection" style="margin-bottom:28px">
+        <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px">계절 요약에서는 평균적으로 어느 달에 강한지 압축해서 보고, 시즌 반복 패턴을 빠르게 읽습니다.</div>
+        <div class="tab-toggle" style="margin-bottom:14px">
+          <button class="tab-btn active" data-heatmap="summary">계절 요약</button>
+          <button class="tab-btn" data-heatmap="full">63개월 보기</button>
+        </div>
+        <div id="heatmapContent"></div>
+      </div>
+      <div id="plannerSection" style="margin-bottom:28px">
+        <div class="card-section__header">
+          <div class="card-section__icon">📅</div>
+          <div>
+            <div class="card-section__title">월별 준비 키워드</div>
+            <div class="card-section__desc">특정 월 직전 1~2개월부터 힘을 받는 패턴이 있는 키워드</div>
+          </div>
+        </div>
+        <div class="planner-grid" id="plannerGrid"></div>
+        <div class="month-detail" id="monthDetail"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ─────────────────────────────────────
+   데이터랩 - 인라인 JS (독립 페이지)
+   ───────────────────────────────────── */
+const API_BASE = window.location.origin;
+
+// ─── State ───
+const DL = {
+  runId: null, profileId: null, sse: null, isCollecting: false,
+  selectedCat: { id: '', name: '', path: '' },
+  resultCount: 20, device: '', gender: '', ages: [],
+};
+
+// ─── API ───
+const Api = {
+  async getCategories() { return (await fetch(`${API_BASE}/api/datalab/categories`)).json(); },
+  async startCollection(p) { const r = await fetch(`${API_BASE}/api/datalab/collect`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(p) }); return r.json(); },
+  async getRunStatus(id) { return (await fetch(`${API_BASE}/api/datalab/runs/${id}`)).json(); },
+  connectSSE(id, onMsg, onErr) {
+    const es = new EventSource(`${API_BASE}/api/datalab/runs/${id}/stream`);
+    es.onmessage = e => { try { const d=JSON.parse(e.data); onMsg(d); if(['done','completed','failed'].includes(d.status)) es.close(); } catch(ex){} };
+    es.onerror = e => { if(onErr) onErr(e); es.close(); };
+    return es;
+  },
+  async getAnalysis(id) { return (await fetch(`${API_BASE}/api/datalab/runs/${id}/analysis`)).json(); },
+  async getSnapshots(id, period) { let u=`${API_BASE}/api/datalab/runs/${id}/snapshots`; if(period) u+=`?period=${period}`; return (await fetch(u)).json(); },
+  async cancelRun(id) { return (await fetch(`${API_BASE}/api/datalab/runs/${id}/cancel`,{method:'POST'})).json(); },
+  async deleteRun(id) { return (await fetch(`${API_BASE}/api/datalab/runs/${id}`,{method:'DELETE'})).json(); },
+  async getArchive() { return (await fetch(`${API_BASE}/api/datalab/archive`)).json(); },
+};
+
+// ─── Charts ───
+const Charts = {
+  _defaults: {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{display:false},y:{display:false}},elements:{point:{radius:0},line:{tension:.3,borderWidth:2}},animation:{duration:600}},
+  renderSparkline(canvas, data, cat='steady') {
+    const ctx=canvas.getContext('2d');
+    const colors={steady:{line:'#4a7c6f',fill:'rgba(74,124,111,.12)'},seasonal:{line:'#4a7c6f',fill:'rgba(74,124,111,.1)'},rising:{line:'#2980b9',fill:'rgba(41,128,185,.1)'},caution:{line:'#e8857a',fill:'rgba(232,133,122,.1)'}};
+    const c=colors[cat]||colors.steady;
+    const g=ctx.createLinearGradient(0,0,0,canvas.height);g.addColorStop(0,c.fill);g.addColorStop(1,'rgba(255,255,255,0)');
+    return new Chart(ctx,{type:'line',data:{labels:data.map((_,i)=>i),datasets:[{data,borderColor:c.line,backgroundColor:g,fill:true}]},options:{...this._defaults}});
+  },
+  heatmapColor(v,max){if(!v||!max)return'#f0ece7';const i=Math.min(v/max,1);return`rgb(${Math.round(248-i*170)},${Math.round(246-i*122)},${Math.round(243-i*132)})`},
+};
+
+// ─── UI Helpers ───
+function updateProgress(d) {
+  const pct = d.total_tasks>0 ? Math.round((d.completed_tasks/d.total_tasks)*100) : 0;
+  document.getElementById('progressBar').style.width = pct+'%';
+  document.getElementById('statPeriod').textContent = d.current_period||'-';
+  document.getElementById('statProgress').textContent = `${d.completed_tasks}/${d.total_tasks}`;
+  document.getElementById('statLastPeriod').textContent = d.status==='completed'?'전체 취합 완료':d.current_period||'-';
+  if(d.eta_seconds!=null&&d.eta_seconds>0){
+    const min=Math.floor(d.eta_seconds/60),sec=Math.floor(d.eta_seconds%60);
+    document.getElementById('statEta').textContent = min>0?`약 ${min}분 ${sec}초`:`약 ${sec}초`;
+    const now=new Date();now.setSeconds(now.getSeconds()+d.eta_seconds);
+    document.getElementById('statEtaTime').textContent = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  }
+  if(d.avg_task_duration) document.getElementById('statEtaSub').textContent=`평균 ${d.avg_task_duration.toFixed(1)}초/월`;
+  const b=document.getElementById('statusBadge');
+  if(d.status==='running'){b.textContent='수집 중';b.className='status-badge status-badge--running';}
+  else if(d.status==='completed'){b.textContent='완료';b.className='status-badge status-badge--ok';}
+}
+
+function renderSnapshots(sd){
+  const list=document.getElementById('previewList');
+  document.getElementById('previewWrap').style.display='block';
+  document.getElementById('previewPageInfo').textContent=`${sd.current_page}/${sd.total_periods}`;
+  if(!sd.snapshots||!sd.snapshots.length){list.innerHTML='<li class="empty-state" style="padding:14px">데이터 없음</li>';return;}
+  list.innerHTML=sd.snapshots.map(s=>`<li class="preview-item"><span class="preview-rank">${s.rank}</span><div><div class="preview-keyword">${s.keyword}</div><div class="preview-meta">${s.period} · 분석 포함</div></div></li>`).join('');
+}
+
+function renderInsight(a){
+  document.getElementById('analysisLock').style.display='none';
+  const sec=document.getElementById('insightSection');sec.classList.remove('hidden');
+  const rt=a.llm_report||'분석 리포트가 생성되지 않았습니다.';
+  document.getElementById('llmReportText').innerHTML=rt.split('\n').map(l=>`<p>${l}</p>`).join('');
+  renderInsightCards(a.insight_cards||[]);
+  renderHeatmap(a.heatmap||[]);
+  renderPlanner(a.monthly_planner||[]);
+}
+
+function renderInsightCards(cards){
+  const con=document.getElementById('insightCards');con.innerHTML='';
+  const icons={steady:'✓',seasonal:'🔄',rising:'📈',caution:'⚠️'};
+  cards.forEach(card=>{
+    const sec=document.createElement('div');sec.className='card-section';
+    sec.innerHTML=`<div class="card-section__header"><div class="card-section__icon">${icons[card.card_type]||'📊'}</div><div><div class="card-section__title">${card.title}</div><div class="card-section__desc">${card.description}</div></div></div><div class="cards-grid" id="cg-${card.card_type}"></div>`;
+    con.appendChild(sec);
+    const grid=sec.querySelector('.cards-grid');
+    card.keywords.forEach(kw=>grid.appendChild(createKwCard(kw)));
+  });
+}
+
+function createKwCard(kw){
+  const div=document.createElement('div');div.className='insight-card';
+  const pt=(kw.peak_months||[]).map(m=>`<span class="month-tag month-tag--peak">${m}월</span>`).join('');
+  const wt=(kw.weak_months||[]).map(m=>`<span class="month-tag month-tag--weak">${m}월</span>`).join('');
+  const ts=kw.trend_score>=0?'+':'';
+  div.innerHTML=`<div class="insight-card__top"><span class="insight-card__keyword">${kw.keyword}</span><span class="confidence-badge">신뢰도 ${Math.round(kw.confidence)}</span></div><p class="insight-card__desc">${kw.description}</p><div class="sparkline-container"><canvas></canvas></div><div class="card-stats"><div><span class="card-stat__label">최근 점수 </span><span class="card-stat__value">${kw.recent_score}</span></div><div><span class="card-stat__label">추세 </span><span class="card-stat__value">${ts}${kw.trend_score}</span></div><div><span class="card-stat__label">등장 </span><span class="card-stat__value">${kw.appearance_count}개월</span></div></div><div class="month-tags"><div class="month-tags__label">추천 월</div>${pt||'-'}</div><div class="month-tags"><div class="month-tags__label">주의 월</div>${wt||'-'}</div><div class="card-detail-link">단일 키워드 상세 보기</div>`;
+  requestAnimationFrame(()=>{const c=div.querySelector('canvas');if(c&&kw.sparkline_data&&kw.sparkline_data.length) Charts.renderSparkline(c,kw.sparkline_data,kw.category);});
+  return div;
+}
+
+function renderHeatmap(hd){
+  const con=document.getElementById('heatmapContent');
+  if(!hd||!hd.length){con.innerHTML='<div class="empty-state">히트맵 데이터 없음</div>';return;}
+  let mx=0;hd.forEach(r=>r.monthly_scores.forEach(v=>{if(v>mx)mx=v}));
+  const ms=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  let h=`<table class="heatmap-table"><thead><tr><th>핵심 키워드</th>${ms.map(m=>`<th>${m}</th>`).join('')}</tr></thead><tbody>`;
+  hd.forEach(r=>{h+=`<tr class="heatmap-row"><td><div class="heatmap-keyword">${r.keyword}</div><div class="heatmap-desc">${r.description}</div></td>`;r.monthly_scores.forEach(v=>{h+=`<td><div class="heatmap-cell" style="background:${Charts.heatmapColor(v,mx)}" title="${v}"></div></td>`});h+='</tr>'});
+  h+='</tbody></table>';con.innerHTML=h;
+}
+
+function renderPlanner(pd){
+  const grid=document.getElementById('plannerGrid');grid.innerHTML='';
+  const labels=['','신년/겨울 준비','신학기 준비','봄 전환','봄 피크','가정의 달','초여름/휴가 준비','여름 휴가','늦여름/가을 준비','가을 전환','가을 피크','연말/블랙프라이데이','연말/겨울 피크'];
+  pd.forEach(p=>{
+    const card=document.createElement('div');card.className='planner-card';card.dataset.month=p.month;
+    card.innerHTML=`<div class="planner-month">${p.month}월</div><div class="planner-label">${p.label||labels[p.month]||''}</div><div><div class="planner-recommend__label">추천</div><div class="planner-recommend__keyword">${p.recommend_keywords[0]||'-'}</div></div><div style="margin-top:4px"><div class="planner-caution__label">주의</div><div class="planner-caution__keyword">${p.caution_keywords[0]||'-'}</div></div>`;
+    card.onclick=()=>{document.querySelectorAll('.planner-card').forEach(c=>c.classList.remove('active'));card.classList.add('active');
+      const det=document.getElementById('monthDetail');det.classList.add('visible');
+      det.innerHTML=`<div style="margin-bottom:10px"><div style="font-size:.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.2px">MONTH DETAIL</div><div style="font-size:1.1rem;font-weight:700">${p.month}월 준비 / 조심 보드</div></div><div style="font-size:.84rem;color:var(--text-sec);margin-bottom:12px">${p.label||labels[p.month]||''} 기준으로 최근 5년 반복 패턴을 바탕으로 추천과 주의를 같이 보여줍니다.</div><div style="margin-bottom:8px"><strong>추천 키워드:</strong> ${p.recommend_keywords.join(', ')||'-'}</div><div><strong>주의 키워드:</strong> ${p.caution_keywords.join(', ')||'-'}</div>`;
+    };
+    grid.appendChild(card);
+  });
+}
+
+function renderArchive(items){
+  const con=document.getElementById('archiveList');document.getElementById('archiveCount').textContent=`${items.length}건`;
+  if(!items||!items.length){con.innerHTML='<div class="empty-state" style="padding:14px">아직 완료된 분석이 없습니다.</div>';return;}
+  con.innerHTML=items.map(i=>`<div class="archive-item" onclick="loadArchiveRun('${i.run_id}')"><div class="archive-item__title">${i.category_path}</div><div class="archive-item__meta"><span>Top ${i.result_count}</span><span>${i.keyword_type}</span><span>${i.period_range}</span></div></div>`).join('');
+}
+
+// ─── Main Logic ───
+async function init(){
+  const now=new Date();
+  document.getElementById('tagEndPeriod').textContent=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  updateCollectInfo();
+  bindEvents();
+  try{const d=await Api.getCategories();const s=document.getElementById('cat1');(d.categories||[]).forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.name;s.appendChild(o)});}catch(e){console.error('카테고리 로드 실패',e);}
+  try{const a=await Api.getArchive();renderArchive(a);}catch(e){}
+}
+
+function bindEvents(){
+  document.getElementById('btnStart').addEventListener('click',startAnalysis);
+  document.querySelectorAll('.toggle-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.toggle-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');DL.resultCount=parseInt(b.dataset.count);updateCollectInfo();}));
+  document.querySelectorAll('.filter-chips[data-filter="device"] .chip').forEach(c=>c.addEventListener('click',()=>{const w=c.classList.contains('active');document.querySelectorAll('.filter-chips[data-filter="device"] .chip').forEach(x=>x.classList.remove('active'));if(!w){c.classList.add('active');DL.device=c.dataset.value}else DL.device='';}));
+  document.querySelectorAll('.filter-chips[data-filter="gender"] .chip').forEach(c=>c.addEventListener('click',()=>{const w=c.classList.contains('active');document.querySelectorAll('.filter-chips[data-filter="gender"] .chip').forEach(x=>x.classList.remove('active'));if(!w){c.classList.add('active');DL.gender=c.dataset.value}else DL.gender='';}));
+  document.querySelectorAll('.filter-chips[data-filter="ages"] .chip').forEach(c=>c.addEventListener('click',()=>{c.classList.toggle('active');DL.ages=Array.from(document.querySelectorAll('.filter-chips[data-filter="ages"] .chip.active')).map(x=>x.dataset.value);}));
+  document.getElementById('brandExclude').addEventListener('change',e=>{document.getElementById('customExclusionWrap').style.display=e.target.checked?'block':'none';});
+  document.getElementById('btnCancel').addEventListener('click',async()=>{if(!DL.runId||!confirm('중지하시겠습니까?'))return;await Api.cancelRun(DL.runId);DL.isCollecting=false;if(DL.sse)DL.sse.close();});
+  document.getElementById('btnDelete').addEventListener('click',async()=>{if(!DL.runId||!confirm('삭제하시겠습니까?'))return;await Api.deleteRun(DL.runId);location.reload();});
+  document.getElementById('cat1').addEventListener('change',function(){const o=this.options[this.selectedIndex];DL.selectedCat={id:o.value,name:o.textContent,path:o.textContent};});
+  document.querySelectorAll('.tab-toggle .tab-btn').forEach(b=>b.addEventListener('click',()=>{b.parentElement.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');}));
+}
+
+async function startAnalysis(){
+  if(!DL.selectedCat.id){alert('카테고리를 선택해 주세요.');return;}
+  const btn=document.getElementById('btnStart');btn.disabled=true;btn.textContent='분석 시작 중...';
+  try{
+    const r=await Api.startCollection({category_id:DL.selectedCat.id,category_name:DL.selectedCat.name,category_path:DL.selectedCat.path,device:DL.device,gender:DL.gender,ages:DL.ages,result_count:DL.resultCount,brand_exclusion:document.getElementById('brandExclude').checked,custom_exclusion_terms:document.getElementById('customExclusion').value});
+    DL.runId=r.run_id;DL.profileId=r.profile_id;DL.isCollecting=true;
+    const now=new Date(),ep=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    document.getElementById('runProfile').style.display='block';
+    document.getElementById('runCategoryName').textContent=DL.selectedCat.path||DL.selectedCat.name;
+    document.getElementById('runCategorySub').textContent='데이터 취합을 시작합니다.';
+    document.getElementById('runTags').innerHTML=`<span class="tag">수집 기준 ${DL.resultCount}개</span><span class="tag">기준 기간 2021-01 ~ ${ep}</span>`;
+    document.getElementById('runControls').style.display='flex';
+    document.getElementById('analysisLock').style.display='block';
+    document.getElementById('insightSection').classList.add('hidden');
+    connectSSE(r.run_id);
+  }catch(e){alert('분석 시작 실패: '+e.message);}
+  finally{btn.disabled=false;btn.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> 분석 시작';}
+}
+
+function connectSSE(id){
+  if(DL.sse)DL.sse.close();
+  DL.sse=Api.connectSSE(id,d=>{
+    if(d.status==='done'){onComplete();return;}
+    updateProgress(d);
+    if(d.completed_tasks>0&&DL.runId)loadSnapshots();
+    if(d.status==='completed')onComplete();
+    else if(d.status==='failed'){alert('수집 실패');DL.isCollecting=false;}
+  },()=>startPolling(id));
+}
+
+async function onComplete(){
+  DL.isCollecting=false;
+  try{const a=await Api.getAnalysis(DL.runId);renderInsight(a);}catch(e){console.error('분석 로드 실패',e);}
+  try{const a=await Api.getArchive();renderArchive(a);}catch(e){}
+}
+
+function startPolling(id){
+  const iv=setInterval(async()=>{try{const d=await Api.getRunStatus(id);updateProgress(d);if(['completed','failed','cancelled'].includes(d.status)){clearInterval(iv);if(d.status==='completed')onComplete();}}catch(e){}},3000);
+}
+
+async function loadSnapshots(period){
+  if(!DL.runId)return;
+  try{const d=await Api.getSnapshots(DL.runId,period);renderSnapshots(d);}catch(e){}
+}
+
+async function loadArchiveRun(runId){
+  try{DL.runId=runId;const r=await Api.getRunStatus(runId);
+    document.getElementById('runProfile').style.display='block';
+    document.getElementById('runCategoryName').textContent='이전 분석 결과';
+    document.getElementById('runCategorySub').textContent='완료된 기존 작업 결과를 불러왔습니다.';
+    updateProgress({status:'completed',completed_tasks:r.total_tasks,total_tasks:r.total_tasks,current_period:''});
+    const a=await Api.getAnalysis(runId);renderInsight(a);
+  }catch(e){alert('결과 로드 실패: '+e.message);}
+}
+
+function updateCollectInfo(){
+  const now=new Date(),ep=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const months=(now.getFullYear()-2021)*12+(now.getMonth()+1-1)+1;
+  document.getElementById('collectRange').innerHTML=`2021-01 ~<br>${ep}`;
+  document.getElementById('collectMonths').textContent=`${months}개월 기준`;
+  document.getElementById('collectSpeed').textContent=`약 ${Math.ceil(months*(DL.resultCount<=20?.3:.5)/60)}분`;
+}
+
+document.addEventListener('DOMContentLoaded',init);
+</script>
+</body>
+</html>

@@ -114,6 +114,11 @@ function navigateTo(pageId) {
     window.open("/sales-daily", "_blank");
     return;
   }
+  // 데이터랩(쇼핑 트렌드)은 별도 페이지로 열기
+  if (pageId === "datalab_bridge") {
+    window.open("/datalab", "_blank");
+    return;
+  }
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   const page = document.getElementById("page-" + pageId);
