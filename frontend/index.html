@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LANstar Agent</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/css/style.css?v=20260408b">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260417a">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
   <style>
     /* CS/RMA 파이프라인 탭 */
@@ -148,6 +148,7 @@
           <div class="nav-item" data-page="map_monitor"><span>🔍 지도가감시</span></div>
 
           <div class="nav-item" data-page="cs_rma"><span>CS / RMA</span></div>
+          <div class="nav-item" data-page="datalab"><span>📊 데이터랩</span></div>
         </div>
       </div>
 
@@ -1617,6 +1618,235 @@ C규격품 200개
       </div>
     </div>
 
+
+    <!-- ──────────────────────────────
+         페이지: 데이터랩
+         ────────────────────────────── -->
+    <div class="page" id="page-datalab">
+      <!-- 상단 헤더 -->
+      <div class="dl-header">
+        <h2 style="margin:0">📊 네이버 쇼핑 데이터랩</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline" onclick="dlLoadHistory()" title="분석 이력">📋 이력</button>
+          <button class="btn btn-outline" onclick="dlShowBlacklist()" title="제외 브랜드 관리">🚫 블랙리스트</button>
+        </div>
+      </div>
+
+      <!-- 검색 조건 패널 -->
+      <div class="dl-search-panel">
+        <div class="dl-search-row">
+          <!-- 카테고리 캐스케이드 -->
+          <div class="dl-field">
+            <label>1분류</label>
+            <select id="dl-cat1" onchange="dlOnCat1Change(this.value)">
+              <option value="">-- 선택 --</option>
+            </select>
+          </div>
+          <div class="dl-field">
+            <label>2분류</label>
+            <select id="dl-cat2" onchange="dlOnCat2Change(this.value)" disabled>
+              <option value="">-- 1분류를 먼저 선택 --</option>
+            </select>
+          </div>
+          <div class="dl-field">
+            <label>3분류</label>
+            <select id="dl-cat3" disabled>
+              <option value="">-- 2분류를 먼저 선택 --</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="dl-search-row">
+          <!-- 기간 -->
+          <div class="dl-field">
+            <label>시작일</label>
+            <input type="date" id="dl-start-date" />
+          </div>
+          <div class="dl-field">
+            <label>종료일</label>
+            <input type="date" id="dl-end-date" />
+          </div>
+          <div class="dl-field">
+            <label>구간단위</label>
+            <select id="dl-time-unit">
+              <option value="month" selected>월간</option>
+              <option value="week">주간</option>
+              <option value="date">일간</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="dl-search-row">
+          <!-- 필터 -->
+          <div class="dl-field">
+            <label>기기</label>
+            <select id="dl-device">
+              <option value="">전체</option>
+              <option value="pc">PC</option>
+              <option value="mo">모바일</option>
+            </select>
+          </div>
+          <div class="dl-field">
+            <label>성별</label>
+            <select id="dl-gender">
+              <option value="">전체</option>
+              <option value="m">남성</option>
+              <option value="f">여성</option>
+            </select>
+          </div>
+          <div class="dl-field">
+            <label>연령</label>
+            <div class="dl-age-chips">
+              <label class="dl-chip"><input type="checkbox" value="10"> 10대</label>
+              <label class="dl-chip"><input type="checkbox" value="20"> 20대</label>
+              <label class="dl-chip"><input type="checkbox" value="30"> 30대</label>
+              <label class="dl-chip"><input type="checkbox" value="40"> 40대</label>
+              <label class="dl-chip"><input type="checkbox" value="50"> 50대</label>
+              <label class="dl-chip"><input type="checkbox" value="60"> 60+</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 키워드 입력 -->
+        <div class="dl-search-row">
+          <div class="dl-field dl-field-wide">
+            <label>분석 키워드 <small>(Enter로 추가, 최대 20개)</small></label>
+            <div class="dl-keyword-input-wrap">
+              <div id="dl-keyword-tags" class="dl-keyword-tags"></div>
+              <input type="text" id="dl-keyword-input" placeholder="키워드 입력 후 Enter" onkeydown="dlKeywordKeydown(event)" />
+            </div>
+            <div class="dl-keyword-actions">
+              <button class="btn btn-sm btn-outline" onclick="dlSuggestKeywords()">💡 연관 키워드 추천</button>
+              <button class="btn btn-sm btn-outline" onclick="dlLoadSeedKeywords()">📚 인기 키워드</button>
+              <span id="dl-keyword-count" class="dl-keyword-count">0/20</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 분석 실행 -->
+        <div class="dl-search-row" style="justify-content:center;margin-top:8px">
+          <button class="btn btn-primary btn-lg" onclick="dlRunAnalysis()" id="dl-analyze-btn">
+            🔍 트렌드 분석 실행
+          </button>
+        </div>
+      </div>
+
+      <!-- 추천 키워드 팝업 -->
+      <div id="dl-suggest-popup" class="dl-suggest-popup" style="display:none">
+        <div class="dl-suggest-header">
+          <span>💡 연관 키워드</span>
+          <button onclick="document.getElementById('dl-suggest-popup').style.display='none'">&times;</button>
+        </div>
+        <div id="dl-suggest-list" class="dl-suggest-list"></div>
+      </div>
+
+      <!-- 로딩 -->
+      <div id="dl-loading" class="dl-loading" style="display:none">
+        <div class="dl-spinner"></div>
+        <p>네이버 API에서 데이터를 수집하고 분석 중입니다...</p>
+      </div>
+
+      <!-- 결과 영역 -->
+      <div id="dl-results" style="display:none">
+        <!-- 요약 위젯 -->
+        <div class="dl-summary-cards" id="dl-summary-cards"></div>
+
+        <!-- 탭 -->
+        <div class="dl-tabs">
+          <button class="dl-tab active" data-tab="trend" onclick="dlSwitchTab('trend')">📈 트렌드</button>
+          <button class="dl-tab" data-tab="table" onclick="dlSwitchTab('table')">📊 데이터 테이블</button>
+          <button class="dl-tab" data-tab="demographic" onclick="dlSwitchTab('demographic')">👥 인구통계</button>
+          <button class="dl-tab" data-tab="ai" onclick="dlSwitchTab('ai')">🤖 AI 인사이트</button>
+        </div>
+
+        <!-- 트렌드 탭 -->
+        <div class="dl-tab-content active" id="dl-tab-trend">
+          <div class="dl-chart-container">
+            <canvas id="dl-trend-chart"></canvas>
+          </div>
+          <div class="dl-chart-container">
+            <canvas id="dl-season-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- 데이터 테이블 탭 -->
+        <div class="dl-tab-content" id="dl-tab-table">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+            <button class="btn btn-sm btn-outline" onclick="dlExportExcel()">📥 엑셀 다운로드</button>
+          </div>
+          <div class="dl-table-wrap">
+            <table class="dl-table" id="dl-result-table">
+              <thead>
+                <tr>
+                  <th>키워드</th>
+                  <th>신뢰도</th>
+                  <th>종합점수</th>
+                  <th>모멘텀</th>
+                  <th>추천 시즌</th>
+                  <th>주의 시즌</th>
+                  <th>트렌드</th>
+                </tr>
+              </thead>
+              <tbody id="dl-result-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 인구통계 탭 -->
+        <div class="dl-tab-content" id="dl-tab-demographic">
+          <div class="dl-demo-grid">
+            <div class="dl-chart-container">
+              <h4>기기별 트렌드</h4>
+              <canvas id="dl-device-chart"></canvas>
+            </div>
+            <div class="dl-chart-container">
+              <h4>성별 트렌드</h4>
+              <canvas id="dl-gender-chart"></canvas>
+            </div>
+            <div class="dl-chart-container" style="grid-column:1/-1">
+              <h4>연령별 트렌드</h4>
+              <canvas id="dl-age-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI 인사이트 탭 -->
+        <div class="dl-tab-content" id="dl-tab-ai">
+          <div id="dl-ai-content" class="dl-ai-content">
+            <div class="dl-ai-placeholder">
+              <p>🤖 분석 완료 후 <strong>AI 인사이트 생성</strong> 버튼을 눌러주세요.</p>
+              <button class="btn btn-primary" onclick="dlGenerateAI()" id="dl-ai-btn">AI 인사이트 생성</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 이력 모달 -->
+      <div id="dl-history-modal" class="dl-modal" style="display:none">
+        <div class="dl-modal-content">
+          <div class="dl-modal-header">
+            <h3>📋 분석 이력</h3>
+            <button onclick="document.getElementById('dl-history-modal').style.display='none'">&times;</button>
+          </div>
+          <div id="dl-history-list" class="dl-history-list"></div>
+        </div>
+      </div>
+
+      <!-- 블랙리스트 모달 -->
+      <div id="dl-blacklist-modal" class="dl-modal" style="display:none">
+        <div class="dl-modal-content">
+          <div class="dl-modal-header">
+            <h3>🚫 제외 브랜드 관리</h3>
+            <button onclick="document.getElementById('dl-blacklist-modal').style.display='none'">&times;</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <input type="text" id="dl-bl-input" placeholder="브랜드명 입력" style="flex:1" />
+            <button class="btn btn-primary btn-sm" onclick="dlAddBlacklist()">추가</button>
+          </div>
+          <div id="dl-blacklist-list" class="dl-blacklist-list"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- ──────────────────────────────
          페이지: AI 상담 (AICC)
@@ -4714,7 +4944,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260416a"></script>
+<script src="/static/js/app.js?v=20260417a"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 </body>
 </html>

@@ -151,6 +151,7 @@ function navigateTo(pageId) {
     rebate:       "리베이트",
     map_monitor:  "지도가 감시",
     mail_agent:   "📧 메일 자동화",
+    datalab:      "📊 데이터랩",
   }[pageId] || "";
   // AI 상담 페이지 진입 시 초기화
   if (pageId === "aicc") initAiccTab();
@@ -182,6 +183,8 @@ function navigateTo(pageId) {
   if (pageId === "settings" && typeof showAdminOverlay === "function") showAdminOverlay();
   // 리베이트 페이지 진입 시 초기화
   if (pageId === "rebate" && typeof initRebatePage === "function") initRebatePage();
+  // 데이터랩 페이지 진입 시 초기화
+  if (pageId === "datalab") initDatalabPage();
 }
 
 function statusBadge(status) {
@@ -9544,3 +9547,683 @@ function reconcileNewMatch() {
 
   console.log('Mail Auto 모듈 로드 완료');
 })();
+
+// ══════════════════════════════════════════════════════════
+//  DataLab (데이터랩) Module - 네이버 쇼핑인사이트 AI 소싱
+// ══════════════════════════════════════════════════════════
+let _dlKeywords = [];
+let _dlAnalysisData = null;
+let _dlHistoryId = null;
+let _dlCharts = {};
+
+function initDatalabPage() {
+  // 1차 카테고리 로드
+  dlLoadCategories();
+  // 기본 날짜 설정 (최근 2년)
+  const now = new Date();
+  const twoYearsAgo = new Date(now.getFullYear() - 2, now.getMonth(), 1);
+  document.getElementById('dl-start-date').value = twoYearsAgo.toISOString().slice(0, 10);
+  document.getElementById('dl-end-date').value = now.toISOString().slice(0, 10);
+  // 초기화
+  _dlKeywords = [];
+  _dlAnalysisData = null;
+  _dlHistoryId = null;
+  dlRenderKeywordTags();
+  document.getElementById('dl-results').style.display = 'none';
+  document.getElementById('dl-loading').style.display = 'none';
+}
+
+// ── 카테고리 캐스케이딩 ──
+async function dlLoadCategories() {
+  try {
+    const res = await fetch('/api/datalab/categories', {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    const data = await res.json();
+    const sel = document.getElementById('dl-cat1');
+    sel.innerHTML = '<option value="">-- 선택 --</option>';
+    (data.categories || []).forEach(c => {
+      sel.innerHTML += `<option value="${c.cid}">${c.name}</option>`;
+    });
+  } catch (e) {
+    console.error('[DataLab] 카테고리 로드 실패:', e);
+  }
+}
+
+async function dlOnCat1Change(cid) {
+  const cat2 = document.getElementById('dl-cat2');
+  const cat3 = document.getElementById('dl-cat3');
+  cat2.innerHTML = '<option value="">로딩 중...</option>';
+  cat2.disabled = true;
+  cat3.innerHTML = '<option value="">-- 2분류를 먼저 선택 --</option>';
+  cat3.disabled = true;
+
+  if (!cid) {
+    cat2.innerHTML = '<option value="">-- 1분류를 먼저 선택 --</option>';
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/datalab/categories?parent_cid=${cid}`, {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    const data = await res.json();
+    cat2.innerHTML = '<option value="">-- 선택 --</option>';
+    (data.categories || []).forEach(c => {
+      cat2.innerHTML += `<option value="${c.cid}">${c.name}</option>`;
+    });
+    cat2.disabled = false;
+  } catch (e) {
+    cat2.innerHTML = '<option value="">로드 실패</option>';
+    console.error('[DataLab] 2분류 로드 실패:', e);
+  }
+}
+
+async function dlOnCat2Change(cid) {
+  const cat3 = document.getElementById('dl-cat3');
+  cat3.innerHTML = '<option value="">로딩 중...</option>';
+  cat3.disabled = true;
+
+  if (!cid) {
+    cat3.innerHTML = '<option value="">-- 2분류를 먼저 선택 --</option>';
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/datalab/categories?parent_cid=${cid}`, {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    const data = await res.json();
+    const cats = data.categories || [];
+    if (cats.length === 0) {
+      cat3.innerHTML = '<option value="">-- 하위 카테고리 없음 --</option>';
+    } else {
+      cat3.innerHTML = '<option value="">-- 선택 (선택사항) --</option>';
+      cats.forEach(c => {
+        cat3.innerHTML += `<option value="${c.cid}">${c.name}</option>`;
+      });
+      cat3.disabled = false;
+    }
+  } catch (e) {
+    cat3.innerHTML = '<option value="">로드 실패</option>';
+    console.error('[DataLab] 3분류 로드 실패:', e);
+  }
+}
+
+// ── 키워드 관리 ──
+function dlKeywordKeydown(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const input = document.getElementById('dl-keyword-input');
+    const kw = input.value.trim();
+    if (kw && !_dlKeywords.includes(kw) && _dlKeywords.length < 20) {
+      _dlKeywords.push(kw);
+      input.value = '';
+      dlRenderKeywordTags();
+    }
+  }
+}
+
+function dlRemoveKeyword(idx) {
+  _dlKeywords.splice(idx, 1);
+  dlRenderKeywordTags();
+}
+
+function dlAddKeyword(kw) {
+  if (kw && !_dlKeywords.includes(kw) && _dlKeywords.length < 20) {
+    _dlKeywords.push(kw);
+    dlRenderKeywordTags();
+  }
+}
+
+function dlRenderKeywordTags() {
+  const container = document.getElementById('dl-keyword-tags');
+  container.innerHTML = _dlKeywords.map((kw, i) =>
+    `<span class="dl-keyword-tag">${kw}<span class="dl-tag-remove" onclick="dlRemoveKeyword(${i})">&times;</span></span>`
+  ).join('');
+  document.getElementById('dl-keyword-count').textContent = `${_dlKeywords.length}/20`;
+}
+
+async function dlSuggestKeywords() {
+  const input = document.getElementById('dl-keyword-input');
+  const query = input.value.trim() || (_dlKeywords.length > 0 ? _dlKeywords[0] : '');
+  if (!query) {
+    alert('키워드를 입력하거나 기존 키워드가 있어야 합니다.');
+    return;
+  }
+  try {
+    const res = await fetch(`/api/datalab/suggest-keywords?query=${encodeURIComponent(query)}`, {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    const data = await res.json();
+    const popup = document.getElementById('dl-suggest-popup');
+    const list = document.getElementById('dl-suggest-list');
+    list.innerHTML = (data.suggestions || []).map(s =>
+      `<div class="dl-suggest-item" onclick="dlAddKeyword('${s.replace(/'/g, "\\'")}'); this.remove();">${s}</div>`
+    ).join('') || '<div style="padding:12px;color:var(--text-secondary)">추천 결과가 없습니다</div>';
+    popup.style.display = 'block';
+  } catch (e) {
+    console.error('[DataLab] 키워드 추천 실패:', e);
+  }
+}
+
+async function dlLoadSeedKeywords() {
+  const catCode = document.getElementById('dl-cat3').value || document.getElementById('dl-cat2').value || document.getElementById('dl-cat1').value;
+  if (!catCode) {
+    alert('카테고리를 먼저 선택해주세요.');
+    return;
+  }
+  try {
+    const res = await fetch(`/api/datalab/seed-keywords?category_code=${catCode}`, {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    const data = await res.json();
+    const popup = document.getElementById('dl-suggest-popup');
+    const list = document.getElementById('dl-suggest-list');
+    const kws = data.keywords || [];
+    if (kws.length === 0) {
+      list.innerHTML = '<div style="padding:12px;color:var(--text-secondary)">축적된 인기 키워드가 없습니다. 분석을 실행하면 자동 축적됩니다.</div>';
+    } else {
+      list.innerHTML = kws.map(k =>
+        `<div class="dl-suggest-item" onclick="dlAddKeyword('${k.keyword.replace(/'/g, "\\'")}')">
+          ${k.keyword} <small style="color:var(--text-secondary)">(검색 ${k.count}회, 점수 ${k.score || '-'})</small>
+        </div>`
+      ).join('');
+    }
+    popup.style.display = 'block';
+  } catch (e) {
+    console.error('[DataLab] 시드 키워드 로드 실패:', e);
+  }
+}
+
+// ── 트렌드 분석 실행 ──
+async function dlRunAnalysis() {
+  const catCode = document.getElementById('dl-cat3').value || document.getElementById('dl-cat2').value || document.getElementById('dl-cat1').value;
+  if (!catCode) { alert('카테고리를 선택해주세요.'); return; }
+  if (_dlKeywords.length === 0) { alert('키워드를 1개 이상 입력해주세요.'); return; }
+
+  const startDate = document.getElementById('dl-start-date').value;
+  const endDate = document.getElementById('dl-end-date').value;
+  if (!startDate || !endDate) { alert('분석 기간을 설정해주세요.'); return; }
+
+  // 선택된 카테고리명 추출
+  const cat1Sel = document.getElementById('dl-cat1');
+  const cat2Sel = document.getElementById('dl-cat2');
+  const cat3Sel = document.getElementById('dl-cat3');
+  let catName = '';
+  if (cat3Sel.value && cat3Sel.selectedIndex > 0) catName = cat3Sel.options[cat3Sel.selectedIndex].text;
+  else if (cat2Sel.value && cat2Sel.selectedIndex > 0) catName = cat2Sel.options[cat2Sel.selectedIndex].text;
+  else if (cat1Sel.value && cat1Sel.selectedIndex > 0) catName = cat1Sel.options[cat1Sel.selectedIndex].text;
+
+  // 연령 필터
+  const ages = [];
+  document.querySelectorAll('.dl-age-chips input:checked').forEach(cb => ages.push(cb.value));
+
+  const body = {
+    category_code: catCode,
+    category_name: catName,
+    keywords: _dlKeywords,
+    start_date: startDate,
+    end_date: endDate,
+    time_unit: document.getElementById('dl-time-unit').value,
+    device: document.getElementById('dl-device').value,
+    gender: document.getElementById('dl-gender').value,
+    ages: ages,
+  };
+
+  document.getElementById('dl-loading').style.display = 'block';
+  document.getElementById('dl-results').style.display = 'none';
+  document.getElementById('dl-analyze-btn').disabled = true;
+
+  try {
+    const res = await fetch('/api/datalab/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (localStorage.getItem('token') || '')
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || '분석 실패');
+    }
+
+    _dlAnalysisData = await res.json();
+    _dlHistoryId = _dlAnalysisData.history_id || null;
+
+    dlRenderResults();
+
+  } catch (e) {
+    alert('분석 오류: ' + e.message);
+    console.error('[DataLab] 분석 실패:', e);
+  } finally {
+    document.getElementById('dl-loading').style.display = 'none';
+    document.getElementById('dl-analyze-btn').disabled = false;
+  }
+}
+
+// ── 결과 렌더링 ──
+function dlRenderResults() {
+  if (!_dlAnalysisData) return;
+  document.getElementById('dl-results').style.display = 'block';
+
+  // 요약 카드
+  dlRenderSummaryCards();
+  // 데이터 테이블
+  dlRenderTable();
+  // 차트
+  dlRenderTrendChart();
+  dlRenderSeasonChart();
+  dlRenderDemographicCharts();
+  // AI 탭 초기화
+  document.getElementById('dl-ai-content').innerHTML = `
+    <div class="dl-ai-placeholder">
+      <p>🤖 분석이 완료되었습니다. AI 인사이트를 생성하시겠습니까?</p>
+      <button class="btn btn-primary" onclick="dlGenerateAI()" id="dl-ai-btn">🤖 AI 인사이트 생성</button>
+    </div>`;
+  // 첫 번째 탭 활성화
+  dlSwitchTab('trend');
+}
+
+function dlRenderSummaryCards() {
+  const kws = _dlAnalysisData.keywords || [];
+  const hot = kws.filter(k => k.momentum === '급상승' || k.momentum === '상승').slice(0, 3);
+  const caution = kws.filter(k => k.momentum === '하락').slice(0, 3);
+  const steady = kws.filter(k => k.trust_score >= 80).slice(0, 3);
+
+  let html = '';
+  html += `<div class="dl-summary-card dl-card-info"><h4>분석 키워드</h4><div class="dl-card-value">${kws.length}개</div><div class="dl-card-sub">API ${_dlAnalysisData.api_calls || 0}회 호출</div></div>`;
+
+  if (hot.length > 0) {
+    html += `<div class="dl-summary-card dl-card-hot"><h4>🔥 주목 키워드</h4><div class="dl-card-value">${hot[0].keyword}</div><div class="dl-card-sub">${hot.map(h => h.keyword).join(', ')}</div></div>`;
+  }
+  if (caution.length > 0) {
+    html += `<div class="dl-summary-card dl-card-caution"><h4>⚠️ 주의 키워드</h4><div class="dl-card-value">${caution[0].keyword}</div><div class="dl-card-sub">${caution.map(c => c.keyword).join(', ')}</div></div>`;
+  }
+  if (steady.length > 0) {
+    html += `<div class="dl-summary-card dl-card-steady"><h4>✅ 스테디셀러</h4><div class="dl-card-value">${steady[0].keyword}</div><div class="dl-card-sub">신뢰도 ${steady[0].trust_score}점</div></div>`;
+  }
+
+  document.getElementById('dl-summary-cards').innerHTML = html;
+}
+
+function dlRenderTable() {
+  const tbody = document.getElementById('dl-result-tbody');
+  const kws = _dlAnalysisData.keywords || [];
+  tbody.innerHTML = kws.map(kw => {
+    const momClass = kw.momentum === '급상승' ? 'dl-momentum-surge' : kw.momentum === '상승' ? 'dl-momentum-up' : kw.momentum === '하락' ? 'dl-momentum-down' : 'dl-momentum-stable';
+    const peakStr = (kw.peak_months || []).map(m => m + '월').join(', ') || '-';
+    const lowStr = (kw.low_months || []).map(m => m + '월').join(', ') || '-';
+    const sparkData = (kw.trend_data || []).slice(-12);
+    const sparkSvg = dlMiniSpark(sparkData);
+    return `<tr>
+      <td><strong>${kw.keyword}</strong></td>
+      <td>${kw.trust_score || 0}</td>
+      <td>${kw.overall_score || 0}</td>
+      <td class="${momClass}">${kw.momentum || '?'} (${kw.momentum_pct > 0 ? '+' : ''}${(kw.momentum_pct || 0).toFixed(1)}%)</td>
+      <td>${peakStr}</td>
+      <td>${lowStr}</td>
+      <td>${sparkSvg}</td>
+    </tr>`;
+  }).join('');
+}
+
+function dlMiniSpark(data) {
+  if (!data || data.length === 0) return '-';
+  const vals = data.map(d => d.ratio || 0);
+  const max = Math.max(...vals, 1);
+  const w = 80, h = 24;
+  const step = w / (vals.length - 1 || 1);
+  const points = vals.map((v, i) => `${i * step},${h - (v / max) * h}`).join(' ');
+  return `<svg class="dl-mini-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${points}" fill="none" stroke="var(--primary)" stroke-width="1.5"/></svg>`;
+}
+
+// ── 차트 렌더링 ──
+function dlDestroyChart(key) {
+  if (_dlCharts[key]) { _dlCharts[key].destroy(); delete _dlCharts[key]; }
+}
+
+function dlRenderTrendChart() {
+  dlDestroyChart('trend');
+  const canvas = document.getElementById('dl-trend-chart');
+  if (!canvas) return;
+  const kws = _dlAnalysisData.keywords || [];
+  if (kws.length === 0) return;
+
+  const colors = ['#6366f1','#ef4444','#22c55e','#f59e0b','#8b5cf6','#06b6d4','#ec4899','#14b8a6','#f97316','#a855f7','#64748b','#0ea5e9','#d946ef','#84cc16','#e11d48','#0891b2','#7c3aed','#059669','#dc2626','#2563eb'];
+  const labels = (kws[0].trend_data || []).map(d => d.period.slice(0, 7));
+  const datasets = kws.slice(0, 10).map((kw, i) => ({
+    label: kw.keyword,
+    data: (kw.trend_data || []).map(d => d.ratio),
+    borderColor: colors[i % colors.length],
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    tension: 0.3,
+    pointRadius: 1,
+  }));
+
+  _dlCharts['trend'] = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      plugins: { title: { display: true, text: '키워드별 검색 트렌드 추이' }, legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: '검색 비율' } } },
+      interaction: { intersect: false, mode: 'index' },
+    }
+  });
+}
+
+function dlRenderSeasonChart() {
+  dlDestroyChart('season');
+  const canvas = document.getElementById('dl-season-chart');
+  if (!canvas) return;
+  const kws = _dlAnalysisData.keywords || [];
+  if (kws.length === 0) return;
+
+  const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  const colors = ['#6366f1','#ef4444','#22c55e','#f59e0b','#8b5cf6','#06b6d4'];
+  const datasets = kws.slice(0, 5).map((kw, i) => {
+    const monthlyAvg = kw.monthly_avg || {};
+    const data = months.map((_, mi) => monthlyAvg[String(mi + 1)] || 0);
+    return {
+      label: kw.keyword,
+      data,
+      backgroundColor: colors[i % colors.length] + '88',
+      borderColor: colors[i % colors.length],
+      borderWidth: 1,
+    };
+  });
+
+  _dlCharts['season'] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: months, datasets },
+    options: {
+      responsive: true,
+      plugins: { title: { display: true, text: '월별 계절성 패턴 (연간 평균)' }, legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true, title: { display: true, text: '평균 비율' } } },
+    }
+  });
+}
+
+function dlRenderDemographicCharts() {
+  // 기기별
+  dlDestroyChart('device');
+  const devCanvas = document.getElementById('dl-device-chart');
+  if (devCanvas && _dlAnalysisData.device_data) {
+    const results = (_dlAnalysisData.device_data.results || [])[0];
+    if (results && results.data) {
+      const grouped = {};
+      results.data.forEach(d => {
+        if (!grouped[d.group]) grouped[d.group] = [];
+        grouped[d.group].push({ period: d.period, ratio: d.ratio });
+      });
+      const labels = (grouped['mo'] || grouped['pc'] || []).map(d => d.period.slice(0, 7));
+      const datasets = [];
+      if (grouped['mo']) datasets.push({ label: '모바일', data: grouped['mo'].map(d => d.ratio), borderColor: '#6366f1', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3 });
+      if (grouped['pc']) datasets.push({ label: 'PC', data: grouped['pc'].map(d => d.ratio), borderColor: '#f59e0b', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3 });
+      _dlCharts['device'] = new Chart(devCanvas, { type: 'line', data: { labels, datasets }, options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, max: 100 } } } });
+    }
+  }
+
+  // 성별
+  dlDestroyChart('gender');
+  const genCanvas = document.getElementById('dl-gender-chart');
+  if (genCanvas && _dlAnalysisData.gender_data) {
+    const results = (_dlAnalysisData.gender_data.results || [])[0];
+    if (results && results.data) {
+      const grouped = {};
+      results.data.forEach(d => {
+        if (!grouped[d.group]) grouped[d.group] = [];
+        grouped[d.group].push({ period: d.period, ratio: d.ratio });
+      });
+      const labels = (grouped['f'] || grouped['m'] || []).map(d => d.period.slice(0, 7));
+      const datasets = [];
+      if (grouped['f']) datasets.push({ label: '여성', data: grouped['f'].map(d => d.ratio), borderColor: '#ec4899', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3 });
+      if (grouped['m']) datasets.push({ label: '남성', data: grouped['m'].map(d => d.ratio), borderColor: '#3b82f6', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3 });
+      _dlCharts['gender'] = new Chart(genCanvas, { type: 'line', data: { labels, datasets }, options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, max: 100 } } } });
+    }
+  }
+
+  // 연령별
+  dlDestroyChart('age');
+  const ageCanvas = document.getElementById('dl-age-chart');
+  if (ageCanvas && _dlAnalysisData.age_data) {
+    const results = (_dlAnalysisData.age_data.results || [])[0];
+    if (results && results.data) {
+      const ageLabels = { '10': '10대', '20': '20대', '30': '30대', '40': '40대', '50': '50대', '60': '60+' };
+      const ageColors = { '10': '#f97316', '20': '#ef4444', '30': '#8b5cf6', '40': '#22c55e', '50': '#06b6d4', '60': '#64748b' };
+      const grouped = {};
+      results.data.forEach(d => {
+        if (!grouped[d.group]) grouped[d.group] = [];
+        grouped[d.group].push({ period: d.period, ratio: d.ratio });
+      });
+      const labels = (Object.values(grouped)[0] || []).map(d => d.period.slice(0, 7));
+      const datasets = Object.keys(grouped).map(g => ({
+        label: ageLabels[g] || g,
+        data: grouped[g].map(d => d.ratio),
+        borderColor: ageColors[g] || '#999',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        tension: 0.3,
+      }));
+      _dlCharts['age'] = new Chart(ageCanvas, { type: 'line', data: { labels, datasets }, options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, max: 100 } } } });
+    }
+  }
+}
+
+// ── 탭 전환 ──
+function dlSwitchTab(tabId) {
+  document.querySelectorAll('.dl-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+  document.querySelectorAll('.dl-tab-content').forEach(c => c.classList.toggle('active', c.id === 'dl-tab-' + tabId));
+}
+
+// ── AI 인사이트 생성 ──
+async function dlGenerateAI() {
+  if (!_dlHistoryId) { alert('분석을 먼저 실행해주세요.'); return; }
+  const btn = document.getElementById('dl-ai-btn');
+  const content = document.getElementById('dl-ai-content');
+  if (btn) btn.disabled = true;
+  content.innerHTML = '<div class="dl-loading"><div class="dl-spinner"></div><p>Claude AI가 인사이트를 생성 중입니다...</p></div>';
+  dlSwitchTab('ai');
+
+  try {
+    const res = await fetch('/api/datalab/ai-insight', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (localStorage.getItem('token') || '')
+      },
+      body: JSON.stringify({ history_id: _dlHistoryId })
+    });
+
+    if (!res.ok) throw new Error('AI 인사이트 생성 실패');
+    const insight = await res.json();
+
+    if (insight.error) {
+      content.innerHTML = `<div class="dl-ai-placeholder"><p style="color:#ef4444">❌ ${insight.error}</p>
+        <button class="btn btn-primary" onclick="dlGenerateAI()" id="dl-ai-btn">재시도</button></div>`;
+      return;
+    }
+
+    let html = '';
+    // Executive Summary
+    if (insight.executive_summary) {
+      html += `<div class="dl-ai-section"><h4>📋 시장 요약</h4><div class="dl-ai-summary">${insight.executive_summary}</div></div>`;
+    }
+    // Hot keywords
+    if (insight.hot_keywords && insight.hot_keywords.length) {
+      html += '<div class="dl-ai-section"><h4>🔥 주목 키워드</h4><ul class="dl-ai-list">';
+      insight.hot_keywords.forEach(k => {
+        html += `<li class="hot"><strong>${k.keyword}</strong> — ${k.reason}<br><small>💡 ${k.action}</small></li>`;
+      });
+      html += '</ul></div>';
+    }
+    // Caution keywords
+    if (insight.caution_keywords && insight.caution_keywords.length) {
+      html += '<div class="dl-ai-section"><h4>⚠️ 주의 키워드</h4><ul class="dl-ai-list">';
+      insight.caution_keywords.forEach(k => {
+        html += `<li class="caution"><strong>${k.keyword}</strong> — ${k.reason} <span style="font-size:11px;background:#f59e0b22;padding:2px 6px;border-radius:4px">${k.risk_level}</span></li>`;
+      });
+      html += '</ul></div>';
+    }
+    // Seasonal advice
+    if (insight.seasonal_advice) {
+      html += `<div class="dl-ai-section"><h4>📅 시즌 어드바이스</h4><div class="dl-ai-summary">${insight.seasonal_advice}</div></div>`;
+    }
+    // Target insight
+    if (insight.target_insight) {
+      html += `<div class="dl-ai-section"><h4>🎯 타겟 인사이트</h4><div class="dl-ai-summary">${insight.target_insight}</div></div>`;
+    }
+    // Action items
+    if (insight.action_items && insight.action_items.length) {
+      html += '<div class="dl-ai-section"><h4>✅ 실행 항목</h4><div class="dl-ai-actions"><ol>';
+      insight.action_items.forEach(a => { html += `<li>${a}</li>`; });
+      html += '</ol></div></div>';
+    }
+    // Meta
+    if (insight._meta) {
+      html += `<div style="text-align:right;font-size:11px;color:var(--text-secondary);margin-top:12px">생성: ${insight._meta.generated_at?.slice(0, 19) || ''} | 모델: ${insight._meta.model || ''}</div>`;
+    }
+
+    content.innerHTML = html;
+
+  } catch (e) {
+    content.innerHTML = `<div class="dl-ai-placeholder"><p style="color:#ef4444">❌ ${e.message}</p>
+      <button class="btn btn-primary" onclick="dlGenerateAI()" id="dl-ai-btn">재시도</button></div>`;
+  }
+}
+
+// ── 이력 ──
+async function dlLoadHistory() {
+  document.getElementById('dl-history-modal').style.display = 'flex';
+  const list = document.getElementById('dl-history-list');
+  list.innerHTML = '<div class="dl-loading"><div class="dl-spinner"></div></div>';
+
+  try {
+    const res = await fetch('/api/datalab/history?limit=20', {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    const data = await res.json();
+    const items = data.history || [];
+    if (items.length === 0) {
+      list.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px">분석 이력이 없습니다.</p>';
+      return;
+    }
+    list.innerHTML = items.map(h => `
+      <div class="dl-history-item" onclick="dlLoadHistoryDetail(${h.id})">
+        <div class="dl-hist-cat">${h.category_name || h.category_code}</div>
+        <div class="dl-hist-kw">${(h.keywords || []).join(', ')}</div>
+        <div class="dl-hist-date">${h.created_at || ''}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    list.innerHTML = '<p style="color:#ef4444;padding:12px">이력 로드 실패</p>';
+  }
+}
+
+async function dlLoadHistoryDetail(id) {
+  document.getElementById('dl-history-modal').style.display = 'none';
+  document.getElementById('dl-loading').style.display = 'block';
+  document.getElementById('dl-results').style.display = 'none';
+
+  try {
+    const res = await fetch(`/api/datalab/history/${id}`, {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    const data = await res.json();
+    _dlAnalysisData = data.trend_data || {};
+    _dlHistoryId = id;
+    _dlKeywords = data.keywords || [];
+    dlRenderKeywordTags();
+    dlRenderResults();
+  } catch (e) {
+    alert('이력 로드 실패: ' + e.message);
+  } finally {
+    document.getElementById('dl-loading').style.display = 'none';
+  }
+}
+
+// ── 블랙리스트 ──
+async function dlShowBlacklist() {
+  document.getElementById('dl-blacklist-modal').style.display = 'flex';
+  const list = document.getElementById('dl-blacklist-list');
+  list.innerHTML = '<div class="dl-loading"><div class="dl-spinner"></div></div>';
+
+  try {
+    const res = await fetch('/api/datalab/brand-blacklist', {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    const data = await res.json();
+    const items = data.blacklist || [];
+    if (items.length === 0) {
+      list.innerHTML = '<p style="text-align:center;color:var(--text-secondary)">등록된 제외 브랜드가 없습니다.</p>';
+    } else {
+      list.innerHTML = items.map(b =>
+        `<div class="dl-bl-item"><span>${b.name}</span><button onclick="dlRemoveBlacklist(${b.id})">&times;</button></div>`
+      ).join('');
+    }
+  } catch (e) {
+    list.innerHTML = '<p style="color:#ef4444">로드 실패</p>';
+  }
+}
+
+async function dlAddBlacklist() {
+  const input = document.getElementById('dl-bl-input');
+  const name = input.value.trim();
+  if (!name) return;
+
+  try {
+    await fetch('/api/datalab/brand-blacklist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (localStorage.getItem('token') || '')
+      },
+      body: JSON.stringify({ brand_name: name })
+    });
+    input.value = '';
+    dlShowBlacklist();
+  } catch (e) {
+    alert('추가 실패');
+  }
+}
+
+async function dlRemoveBlacklist(id) {
+  try {
+    await fetch(`/api/datalab/brand-blacklist/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    dlShowBlacklist();
+  } catch (e) {
+    alert('삭제 실패');
+  }
+}
+
+// ── 엑셀 내보내기 ──
+async function dlExportExcel() {
+  if (!_dlHistoryId) { alert('분석을 먼저 실행해주세요.'); return; }
+  try {
+    const res = await fetch('/api/datalab/export-excel', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (localStorage.getItem('token') || '')
+      },
+      body: JSON.stringify({ history_id: _dlHistoryId })
+    });
+    if (!res.ok) throw new Error('다운로드 실패');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `datalab_analysis_${_dlHistoryId}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('엑셀 다운로드 실패: ' + e.message);
+  }
+}

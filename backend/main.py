@@ -39,6 +39,7 @@ from api.routes.rebate import router as rebate_router
 from api.routes.map_monitor import router as map_monitor_router
 from api.routes.mail_auto import router as mail_auto_router
 from api.routes.telegram_bot import router as telegram_bot_router
+from api.routes.datalab import router as datalab_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -175,6 +176,12 @@ _ACTIVITY_ACTIONS = {
     ("POST", "/api/map/products/upload"): "MAP 제품 엑셀 업로드",
     ("PUT", "/api/map/settings"): "MAP 설정 변경",
     ("POST", "/api/map/products"): "MAP 제품 등록",
+
+    ("POST", "/api/datalab/analyze"): "데이터랩 트렌드 분석",
+    ("POST", "/api/datalab/ai-insight"): "데이터랩 AI 인사이트",
+    ("GET", "/api/datalab/history"): "데이터랩 이력 조회",
+    ("POST", "/api/datalab/export-excel"): "데이터랩 엑셀 내보내기",
+    ("POST", "/api/datalab/brand-blacklist"): "데이터랩 브랜드 블랙리스트 추가",
 }
 
 @app.middleware("http")
@@ -280,6 +287,7 @@ app.include_router(rebate_router)
 app.include_router(map_monitor_router)
 app.include_router(mail_auto_router)
 app.include_router(telegram_bot_router)
+app.include_router(datalab_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -557,6 +565,14 @@ async def startup():
         logger.info("활동 로그 테이블 초기화 완료")
     except Exception as e:
         logger.warning(f"활동 로그 테이블 초기화 실패: {e}")
+
+    # 데이터랩 테이블 초기화
+    try:
+        from services.datalab_service import init_datalab_tables
+        init_datalab_tables()
+        logger.info("데이터랩 테이블 초기화 완료")
+    except Exception as e:
+        logger.warning(f"데이터랩 테이블 초기화 실패 (서비스는 계속): {e}")
 
     # 거래처 자동 동기화: customers 테이블이 비어있으면 ERP에서 자동 가져오기
     asyncio.create_task(_auto_sync_customers())

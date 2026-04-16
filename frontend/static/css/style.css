@@ -1166,3 +1166,124 @@ table.map-tbl th[style*="cursor:pointer"]:hover { background: #e2e8f0; }
 #ip-table-body td:nth-child(2) { min-width: 120px; } /* 모델명 */
 #ip-table-body td:nth-child(3) { min-width: 150px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; } /* 품목명 */
 .ip-table-wrap { overflow-x: auto; }
+
+/* ─────────────────────────────────────────
+   DataLab (데이터랩) Styles
+   ───────────────────────────────────────── */
+.dl-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:8px; }
+.dl-search-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:20px; }
+.dl-search-row { display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; align-items:flex-end; }
+.dl-field { display:flex; flex-direction:column; gap:4px; min-width:160px; flex:1; }
+.dl-field label { font-size:12px; font-weight:600; color:var(--text-secondary); }
+.dl-field select, .dl-field input[type="date"] { padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px; background:var(--bg-main); color:var(--text-primary); }
+.dl-field select:disabled { opacity:0.5; cursor:not-allowed; }
+.dl-field-wide { min-width:100%; }
+
+/* 연령 칩 */
+.dl-age-chips { display:flex; gap:4px; flex-wrap:wrap; }
+.dl-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:1px solid var(--border); border-radius:16px; font-size:12px; cursor:pointer; transition:all .15s; user-select:none; }
+.dl-chip:hover { border-color:var(--primary); }
+.dl-chip input[type="checkbox"] { display:none; }
+.dl-chip:has(input:checked) { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+/* 키워드 입력 */
+.dl-keyword-input-wrap { display:flex; flex-wrap:wrap; gap:6px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-main); min-height:42px; align-items:center; }
+.dl-keyword-input-wrap input { border:none; outline:none; flex:1; min-width:120px; background:transparent; font-size:13px; color:var(--text-primary); }
+.dl-keyword-tags { display:flex; flex-wrap:wrap; gap:4px; }
+.dl-keyword-tag { display:inline-flex; align-items:center; gap:4px; background:var(--primary); color:#fff; padding:3px 10px; border-radius:12px; font-size:12px; }
+.dl-keyword-tag .dl-tag-remove { cursor:pointer; opacity:.7; font-size:14px; line-height:1; }
+.dl-keyword-tag .dl-tag-remove:hover { opacity:1; }
+.dl-keyword-actions { display:flex; gap:8px; align-items:center; margin-top:6px; }
+.dl-keyword-count { font-size:12px; color:var(--text-secondary); margin-left:auto; }
+
+/* 추천 팝업 */
+.dl-suggest-popup { position:absolute; z-index:100; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow-lg); width:320px; max-height:300px; overflow-y:auto; }
+.dl-suggest-header { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid var(--border); font-weight:600; font-size:13px; }
+.dl-suggest-header button { background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-secondary); }
+.dl-suggest-list { padding:6px; }
+.dl-suggest-item { padding:6px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+.dl-suggest-item:hover { background:var(--bg-hover); }
+
+/* 로딩 */
+.dl-loading { text-align:center; padding:60px 20px; }
+.dl-spinner { width:40px; height:40px; border:4px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:dlSpin 1s linear infinite; margin:0 auto 16px; }
+@keyframes dlSpin { to { transform:rotate(360deg); } }
+.dl-loading p { color:var(--text-secondary); font-size:14px; }
+
+/* 요약 카드 */
+.dl-summary-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:20px; }
+.dl-summary-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+.dl-summary-card h4 { margin:0 0 8px; font-size:13px; color:var(--text-secondary); }
+.dl-summary-card .dl-card-value { font-size:22px; font-weight:700; }
+.dl-summary-card .dl-card-sub { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+.dl-card-hot { border-left:3px solid #ef4444; }
+.dl-card-caution { border-left:3px solid #f59e0b; }
+.dl-card-steady { border-left:3px solid #22c55e; }
+.dl-card-info { border-left:3px solid var(--primary); }
+
+/* 탭 */
+.dl-tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:16px; }
+.dl-tab { padding:10px 20px; border:none; background:none; font-size:13px; font-weight:500; color:var(--text-secondary); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; }
+.dl-tab:hover { color:var(--text-primary); }
+.dl-tab.active { color:var(--primary); border-bottom-color:var(--primary); font-weight:600; }
+.dl-tab-content { display:none; }
+.dl-tab-content.active { display:block; }
+
+/* 차트 */
+.dl-chart-container { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
+.dl-chart-container h4 { margin:0 0 12px; font-size:14px; color:var(--text-primary); }
+.dl-chart-container canvas { width:100%!important; max-height:350px; }
+
+/* 인구통계 그리드 */
+.dl-demo-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media (max-width:900px) { .dl-demo-grid { grid-template-columns:1fr; } }
+
+/* 데이터 테이블 */
+.dl-table-wrap { overflow-x:auto; }
+.dl-table { width:100%; border-collapse:collapse; font-size:13px; }
+.dl-table th { background:var(--bg-main); padding:10px 12px; text-align:left; font-weight:600; border-bottom:2px solid var(--border); white-space:nowrap; }
+.dl-table td { padding:8px 12px; border-bottom:1px solid var(--border); }
+.dl-table tr:hover td { background:var(--bg-hover); }
+.dl-momentum-up { color:#ef4444; font-weight:600; }
+.dl-momentum-surge { color:#ef4444; font-weight:700; }
+.dl-momentum-stable { color:#6b7280; }
+.dl-momentum-down { color:#3b82f6; }
+.dl-mini-spark { display:inline-block; vertical-align:middle; }
+
+/* AI 인사이트 */
+.dl-ai-content { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:20px; }
+.dl-ai-placeholder { text-align:center; padding:40px; color:var(--text-secondary); }
+.dl-ai-section { margin-bottom:20px; }
+.dl-ai-section h4 { margin:0 0 8px; font-size:14px; display:flex; align-items:center; gap:6px; }
+.dl-ai-summary { font-size:15px; line-height:1.7; padding:16px; background:var(--bg-main); border-radius:8px; }
+.dl-ai-list { list-style:none; padding:0; margin:0; }
+.dl-ai-list li { padding:8px 12px; margin-bottom:4px; border-radius:6px; background:var(--bg-main); font-size:13px; }
+.dl-ai-list .hot { border-left:3px solid #ef4444; }
+.dl-ai-list .caution { border-left:3px solid #f59e0b; }
+.dl-ai-actions { padding:12px 16px; background:var(--bg-main); border-radius:8px; }
+.dl-ai-actions ol { margin:8px 0 0 20px; }
+.dl-ai-actions li { margin-bottom:6px; font-size:13px; }
+
+/* 모달 */
+.dl-modal { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.5); z-index:1000; display:flex; align-items:center; justify-content:center; }
+.dl-modal-content { background:var(--bg-card); border-radius:12px; width:90%; max-width:560px; max-height:80vh; overflow-y:auto; padding:24px; }
+.dl-modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.dl-modal-header h3 { margin:0; }
+.dl-modal-header button { background:none; border:none; font-size:24px; cursor:pointer; color:var(--text-secondary); line-height:1; }
+
+/* 이력 */
+.dl-history-list { display:flex; flex-direction:column; gap:8px; }
+.dl-history-item { padding:12px; border:1px solid var(--border); border-radius:8px; cursor:pointer; transition:background .15s; }
+.dl-history-item:hover { background:var(--bg-hover); }
+.dl-history-item .dl-hist-cat { font-weight:600; font-size:14px; }
+.dl-history-item .dl-hist-kw { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+.dl-history-item .dl-hist-date { font-size:11px; color:var(--text-secondary); margin-top:4px; }
+
+/* 블랙리스트 */
+.dl-blacklist-list { display:flex; flex-direction:column; gap:6px; }
+.dl-bl-item { display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:13px; }
+.dl-bl-item button { background:none; border:none; color:#ef4444; cursor:pointer; font-size:16px; }
+
+/* 버튼 확장 */
+.btn-lg { padding:12px 32px; font-size:15px; font-weight:600; }
+.btn-sm { padding:4px 10px; font-size:12px; }
