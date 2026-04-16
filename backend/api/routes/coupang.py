@@ -132,51 +132,57 @@ class ERPSendRequest(BaseModel):
 
 @router.post("/send-to-erp")
 async def send_to_erp(req: ERPSendRequest):
-    """주문 데이터를 ERP 판매전표로 등록"""
+    """주문 데이터를 ERP 판매전표로 등록 (ERPClientSS.save_sale 사용)"""
     if not ERP_COM_CODE or not ERP_API_KEY:
         return JSONResponse(status_code=400, content={"detail": "ERP 설정이 없습니다."})
-
-    io_date = req.io_date or datetime.now(KST).strftime("%Y-%m-%d")
+    if not COUPANG_CUST_CODE:
+        return JSONResponse(status_code=400, content={"detail": "COUPANG_CUST_CODE가 설정되지 않았습니다."})
 
     try:
-        from services.erp_client import ERPClient
-        erp = ERPClient()
-        session_id = await erp.ensure_session()
-        if not session_id:
-            return JSONResponse(status_code=500, content={"detail": "ERP 세션 획득 실패"})
+        from services.erp_client_ss import ERPClientSS
+        erp = ERPClientSS()
+        await erp.ensure_session()
 
-        results = []
+        # ERP 판매전표 라인 구성
+        erp_lines = []
+        unmatched_items = []
         for order in req.orders:
-            try:
-                # 주문 아이템 개별 처리
-                order_items = order.get("orderItems", [])
-                for item in order_items:
-                    sale_data = {
-                        "IO_DATE": io_date,
-                        "CUST_CD": COUPANG_CUST_CODE,
-                        "EMP_CD": COUPANG_EMP_CODE,
-                        "WH_CD": COUPANG_WH_CODE,
-                        "PROD_CD": item.get("externalVendorSku", ""),
-                        "QTY": item.get("shippingCount", 1),
-                        "PRICE": item.get("salesPrice", {}).get("units", 0),
-                        "SUPPLY_AMT": item.get("orderPrice", {}).get("units", 0),
-                        "REMARKS1": f"쿠팡#{order.get('orderId', '')}",
-                    }
-                    results.append({
+            order_items = order.get("orderItems", [])
+            for item in order_items:
+                prod_cd = item.get("externalVendorSku", "").strip()
+                qty = item.get("shippingCount", 1)
+                price = item.get("salesPrice", 0)
+                if isinstance(price, dict):
+                    price = price.get("units", 0)
+                rcv_name = order.get("receiver", {}).get("name", "")
+
+                if not prod_cd:
+                    unmatched_items.append({
                         "order_id": order.get("orderId", ""),
-                        "vendor_item_id": item.get("vendorItemId", ""),
-                        "success": True,
-                        "sale_data": sale_data,
+                        "item_name": item.get("vendorItemName", ""),
+                        "reason": "externalVendorSku 없음",
                     })
-            except Exception as e:
-                results.append({
-                    "order_id": order.get("orderId", ""),
-                    "success": False,
-                    "error": str(e),
+                    continue
+
+                erp_lines.append({
+                    "prod_cd": prod_cd,
+                    "prod_name": item.get("vendorItemName", ""),
+                    "qty": qty,
+                    "price": round(price / qty, 2) if qty else 0,
+                    "rcv_name": rcv_name,
                 })
 
-        success = sum(1 for r in results if r.get("success"))
-        return {"results": results, "total": len(results), "success_count": success}
+        if not erp_lines:
+            return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
+
+        # ERPClientSS.save_sale() 호출 (스마트스토어와 동일)
+        _emp_cd = COUPANG_EMP_CODE or ""
+        result = await erp.save_sale(COUPANG_CUST_CODE, erp_lines, COUPANG_WH_CODE, _emp_cd)
+        result["lines"] = len(erp_lines)
+        result["unmatched_items"] = unmatched_items
+        logger.info(f"[쿠팡] ERP 전송 완료: {len(erp_lines)}건, 미매칭: {len(unmatched_items)}건")
+        return result
+
     except Exception as e:
         logger.error(f"[쿠팡] ERP 전송 오류: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": str(e)})
