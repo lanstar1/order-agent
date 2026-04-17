@@ -1,0 +1,112 @@
+/* AI 상품소싱 페이지 전용 스타일 (모든 클래스는 .ais- 프리픽스) */
+
+#page-ai_sourcing .ais-layout { display: grid; grid-template-columns: 360px 1fr; gap: 1rem; }
+@media (max-width: 1100px) { #page-ai_sourcing .ais-layout { grid-template-columns: 1fr; } }
+
+#page-ai_sourcing .ais-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem 1.1rem; box-shadow: 0 1px 2px rgba(17,24,39,0.04); }
+#page-ai_sourcing .ais-panel__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+#page-ai_sourcing .ais-panel__head h2 { margin: 0; font-size: 1rem; }
+#page-ai_sourcing .ais-panel__head h3, #page-ai_sourcing .ais-panel__head h4 { margin: 0; font-size: 0.95rem; }
+#page-ai_sourcing .ais-muted { color: #6b7280; font-size: 0.8125rem; margin: 0.25rem 0 0; }
+
+#page-ai_sourcing .ais-builder { display: grid; gap: 0.85rem; }
+#page-ai_sourcing .ais-field { display: grid; gap: 0.3rem; border: none; padding: 0; margin: 0; font-size: 0.84rem; }
+#page-ai_sourcing .ais-field span, #page-ai_sourcing .ais-field legend { font-weight: 600; color: #374151; }
+#page-ai_sourcing .ais-field select,
+#page-ai_sourcing .ais-field textarea { width: 100%; padding: 0.45rem 0.55rem; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafbfc; font-size: 0.85rem; font-family: inherit; color: #111827; }
+#page-ai_sourcing .ais-field--check { grid-template-columns: auto 1fr; align-items: center; gap: 0.45rem; color: #374151; }
+#page-ai_sourcing .ais-field--check input { width: 1rem; height: 1rem; }
+
+#page-ai_sourcing .ais-chips { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+#page-ai_sourcing .ais-chip { display: inline-flex; align-items: center; padding: 0.26rem 0.6rem; border-radius: 999px; border: 1px solid #e5e7eb; background: #eef2ff; font-size: 0.78rem; cursor: pointer; user-select: none; }
+#page-ai_sourcing .ais-chip.is-active { background: #2563eb; color: #fff; border-color: transparent; }
+#page-ai_sourcing .ais-chip input { display: none; }
+
+#page-ai_sourcing .ais-builder__submit { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+#page-ai_sourcing .ais-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+#page-ai_sourcing .ais-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.55rem; margin-bottom: 0.9rem; }
+#page-ai_sourcing .ais-metric { padding: 0.6rem 0.7rem; border-radius: 10px; background: #f9fafb; border: 1px solid #e5e7eb; }
+#page-ai_sourcing .ais-metric__label { font-size: 0.7rem; color: #6b7280; }
+#page-ai_sourcing .ais-metric__value { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em; }
+#page-ai_sourcing .ais-metric--attention { background: #fff7ed; border-color: #fed7aa; }
+#page-ai_sourcing .ais-metric--progress { background: #eff6ff; border-color: #bfdbfe; }
+
+#page-ai_sourcing .ais-progress { margin-bottom: 1rem; }
+#page-ai_sourcing .ais-progress__bar { position: relative; height: 10px; background: #f3f4f6; border-radius: 999px; overflow: hidden; }
+#page-ai_sourcing .ais-progress__bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--ais-progress, 0%); background: linear-gradient(90deg, #2563eb, #7c3aed); transition: width 0.3s ease; }
+#page-ai_sourcing .ais-progress__label { margin: 0.4rem 0 0; font-size: 0.8rem; color: #6b7280; }
+
+#page-ai_sourcing .ais-sub { border-top: 1px solid #e5e7eb; padding-top: 0.9rem; margin-top: 0.9rem; }
+#page-ai_sourcing .ais-sub__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.4rem; }
+#page-ai_sourcing .ais-sub__tools { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+#page-ai_sourcing .ais-pager { display: inline-flex; gap: 0.25rem; align-items: center; }
+#page-ai_sourcing .ais-pager .ais-muted { margin: 0; }
+
+#page-ai_sourcing .ais-snapshot-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+#page-ai_sourcing .ais-snapshot-table th, #page-ai_sourcing .ais-snapshot-table td { padding: 0.5rem 0.7rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+#page-ai_sourcing .ais-snapshot-table th { background: #f9fafb; font-weight: 600; color: #374151; }
+#page-ai_sourcing .ais-snapshot-table td.dim { color: #6b7280; }
+#page-ai_sourcing .ais-snapshot-table td.brand { color: #d97706; font-weight: 600; }
+#page-ai_sourcing .ais-snapshot-table td.rank { width: 3.5rem; color: #6b7280; font-variant-numeric: tabular-nums; }
+
+#page-ai_sourcing .ais-hero { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.6rem; margin-bottom: 0.9rem; }
+#page-ai_sourcing .ais-hero__card { padding: 0.75rem; border-radius: 12px; background: linear-gradient(180deg, #f5f3ff, #ffffff); border: 1px solid #ddd6fe; }
+#page-ai_sourcing .ais-hero__label { font-size: 0.7rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+#page-ai_sourcing .ais-hero__keyword { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em; margin: 0.2rem 0; }
+#page-ai_sourcing .ais-hero__meta { font-size: 0.72rem; color: #374151; }
+
+#page-ai_sourcing .ais-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.7rem; margin-bottom: 0.9rem; }
+#page-ai_sourcing .ais-card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 0.8rem; background: #fff; }
+#page-ai_sourcing .ais-card h4 { margin: 0 0 0.25rem; font-size: 0.9rem; }
+#page-ai_sourcing .ais-card p.ais-muted { margin: 0 0 0.5rem; }
+#page-ai_sourcing .ais-card ol { margin: 0; padding-left: 1.05rem; font-size: 0.8rem; color: #374151; line-height: 1.55; }
+#page-ai_sourcing .ais-card ol li { margin-bottom: 0.3rem; }
+#page-ai_sourcing .ais-card ol li strong { color: #111827; margin-right: 0.25rem; }
+#page-ai_sourcing .ais-confidence { display: inline-block; padding: 0 0.35rem; border-radius: 999px; font-size: 0.65rem; font-weight: 700; margin-left: 0.3rem; vertical-align: middle; }
+#page-ai_sourcing .ais-confidence--high { background: #d1fae5; color: #065f46; }
+#page-ai_sourcing .ais-confidence--medium { background: #fef3c7; color: #92400e; }
+#page-ai_sourcing .ais-confidence--low { background: #fee2e2; color: #991b1b; }
+
+#page-ai_sourcing .ais-planner { border: 1px solid #e5e7eb; border-radius: 12px; padding: 0.8rem; margin-bottom: 0.9rem; }
+#page-ai_sourcing .ais-planner__head { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+#page-ai_sourcing .ais-planner__head h4 { margin: 0; font-size: 0.92rem; }
+#page-ai_sourcing .ais-planner__tabs { display: flex; gap: 0.2rem; flex-wrap: wrap; }
+#page-ai_sourcing .ais-planner__tabs button { padding: 0.22rem 0.55rem; font-size: 0.72rem; border-radius: 999px; background: #f3f4f6; border: 1px solid transparent; cursor: pointer; }
+#page-ai_sourcing .ais-planner__tabs button.is-active { background: #2563eb; color: #fff; }
+#page-ai_sourcing .ais-planner__body { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-top: 0.65rem; }
+@media (max-width: 720px) { #page-ai_sourcing .ais-planner__body { grid-template-columns: 1fr; } }
+#page-ai_sourcing .ais-planner__bucket { border: 1px solid #e5e7eb; border-radius: 10px; padding: 0.7rem; background: #fafbfc; }
+#page-ai_sourcing .ais-planner__bucket h5 { margin: 0 0 0.3rem; font-size: 0.78rem; color: #374151; }
+#page-ai_sourcing .ais-planner__bucket ul { margin: 0; padding-left: 1rem; font-size: 0.78rem; line-height: 1.5; color: #374151; }
+
+#page-ai_sourcing .ais-heatmap { border: 1px solid #e5e7eb; border-radius: 12px; padding: 0.8rem; margin-bottom: 0.9rem; overflow: hidden; }
+#page-ai_sourcing .ais-heatmap__head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.55rem; flex-wrap: wrap; }
+#page-ai_sourcing .ais-toggle { display: inline-flex; gap: 0.2rem; }
+#page-ai_sourcing .ais-toggle button.is-active { background: #2563eb; color: #fff; border-color: transparent; }
+#page-ai_sourcing .ais-heatmap-row { display: grid; grid-template-columns: 150px 1fr; gap: 0.55rem; padding: 0.4rem 0; border-bottom: 1px dashed #e5e7eb; align-items: center; }
+#page-ai_sourcing .ais-heatmap-row:last-child { border-bottom: none; }
+#page-ai_sourcing .ais-heatmap-row__keyword { font-weight: 600; font-size: 0.82rem; }
+#page-ai_sourcing .ais-heatmap-row__cells { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(24px, 1fr); gap: 2px; }
+#page-ai_sourcing .ais-heatmap-row__cells--season { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+#page-ai_sourcing .ais-heat-cell { height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.62rem; color: #111; background: #f1f5f9; }
+
+#page-ai_sourcing .ais-drilldown { border: 1px solid #e5e7eb; border-radius: 12px; padding: 0.8rem; }
+#page-ai_sourcing .ais-drilldown h4 { margin: 0 0 0.45rem; font-size: 0.92rem; }
+#page-ai_sourcing .ais-drilldown > div { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.55rem; }
+#page-ai_sourcing .ais-drilldown-item { padding: 0.6rem 0.7rem; border: 1px solid #e5e7eb; border-radius: 10px; background: #fafbfc; font-size: 0.78rem; }
+#page-ai_sourcing .ais-drilldown-item strong { font-size: 0.9rem; }
+#page-ai_sourcing .ais-drilldown-item p { margin: 0.25rem 0 0; color: #374151; }
+#page-ai_sourcing .ais-sparkline { height: 30px; margin-top: 0.3rem; display: block; }
+#page-ai_sourcing .ais-sparkline polyline { fill: none; stroke: #2563eb; stroke-width: 1.5; }
+
+#page-ai_sourcing .ais-modal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+#page-ai_sourcing .ais-modal[hidden] { display: none; }
+#page-ai_sourcing .ais-modal__backdrop { position: absolute; inset: 0; background: rgba(15,23,42,0.45); }
+#page-ai_sourcing .ais-modal__card { position: relative; background: #fff; padding: 1.25rem 1.4rem; border-radius: 14px; max-width: 420px; width: calc(100% - 2rem); box-shadow: 0 20px 40px rgba(15,23,42,0.25); }
+#page-ai_sourcing .ais-modal__card h3 { margin: 0 0 0.4rem; font-size: 1rem; }
+#page-ai_sourcing .ais-modal__card footer { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.8rem; }
+
+#page-ai_sourcing .ais-feedback--success { color: #065f46; }
+#page-ai_sourcing .ais-feedback--error { color: #b91c1c; }
+#page-ai_sourcing .ais-feedback--info { color: #1d4ed8; }
