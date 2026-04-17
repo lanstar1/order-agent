@@ -185,7 +185,37 @@
             </div>
         </div>
 
-        <!-- 3. 작업 로그 -->
+        <!-- 3. 상품 매핑 -->
+        <div class="card" id="section-mapping">
+            <h2>🔗 상품 매핑 (쿠팡상품 → ERP품목코드)</h2>
+            <div class="btn-group">
+                <button class="btn btn-orange btn-sm" onclick="autoGenerateMapping()">쿠팡 상품 가져오기</button>
+                <button class="btn btn-blue btn-sm" onclick="loadMapping()">매핑 목록 보기</button>
+                <a class="btn btn-green btn-sm" href="/api/coupang/mapping/download" style="text-decoration:none;">엑셀 다운로드</a>
+                <label class="btn btn-gray btn-sm" style="cursor:pointer;">
+                    엑셀 업로드
+                    <input type="file" accept=".xlsx" onchange="uploadMapping(this)" style="display:none;">
+                </label>
+            </div>
+            <div id="mapping-sb" class="sb"></div>
+            <div id="mapping-stats" style="font-size:13px;color:#64748b;margin-top:8px;display:none;"></div>
+
+            <div class="tbl-scroll" id="mapping-tbl-wrap" style="display:none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>쿠팡상품ID</th>
+                            <th>상품명</th>
+                            <th>ERP품목코드</th>
+                            <th style="width:100px;">작업</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mapping-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 4. 작업 로그 -->
         <div class="card">
             <h2>📋 작업 로그</h2>
             <div class="btn-group">
@@ -534,6 +564,130 @@ async function shipOrders() {
         sb('orders-sb', 'err', '❌ 발송처리 실패: ' + e.message);
         log('발송처리 실패: ' + e.message);
     }
+}
+
+
+// ──────────────────────────────
+//  상품 매핑 관리
+// ──────────────────────────────
+let mappingData = [];
+
+async function autoGenerateMapping() {
+    sb('mapping-sb', 'load', '⏳ 쿠팡 상품 목록 가져오는 중...');
+    log('쿠팡 상품 자동 가져오기 시작');
+
+    try {
+        const r = await fetch('/api/coupang/mapping/auto-generate', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'API 오류');
+
+        sb('mapping-sb', 'ok', `✅ 상품 ${d.total_products}건 중 신규 ${d.new_added}건 추가 (매핑완료: ${d.mapped}건, 미매핑: ${d.unmapped}건)`);
+        log(`상품 가져오기 완료: 총${d.total_products}건, 신규${d.new_added}건, 매핑${d.mapped}건`);
+        await loadMapping();
+    } catch (e) {
+        sb('mapping-sb', 'err', '❌ 상품 가져오기 실패: ' + e.message);
+        log('상품 가져오기 실패: ' + e.message);
+    }
+}
+
+async function loadMapping() {
+    try {
+        const r = await fetch('/api/coupang/mapping');
+        const d = await r.json();
+        mappingData = d.mappings || [];
+
+        const mapped = mappingData.filter(m => m.erpCode).length;
+        const unmapped = mappingData.length - mapped;
+        $('#mapping-stats').style.display = '';
+        $('#mapping-stats').textContent = `총 ${mappingData.length}건 (매핑완료: ${mapped}건, 미매핑: ${unmapped}건)`;
+
+        const tbody = $('#mapping-body');
+        tbody.innerHTML = '';
+        $('#mapping-tbl-wrap').style.display = '';
+
+        // 미매핑 먼저, 그 다음 매핑된 것
+        const sorted = [...mappingData].sort((a, b) => {
+            if (!a.erpCode && b.erpCode) return -1;
+            if (a.erpCode && !b.erpCode) return 1;
+            return 0;
+        });
+
+        sorted.forEach(m => {
+            const tr = document.createElement('tr');
+            const isMapped = !!m.erpCode;
+            tr.innerHTML = `
+                <td class="mono">${m.sellerProductId}</td>
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${m.model || ''}">${m.model || '-'}</td>
+                <td>
+                    <input class="inp-sm" value="${m.erpCode || ''}" placeholder="ERP코드 입력"
+                        onchange="saveMapping('${m.sellerProductId}', this.value, '${(m.model||'').replace(/'/g,"\\'")}')">
+                </td>
+                <td>
+                    ${isMapped ? `<button class="btn btn-gray btn-sm" onclick="deleteMapping('${m.sellerProductId}')" style="padding:3px 8px;font-size:11px;">삭제</button>` : ''}
+                </td>
+            `;
+            if (!isMapped) tr.style.background = '#fff7ed';
+            tbody.appendChild(tr);
+        });
+
+        log(`매핑 목록 로드: ${mappingData.length}건`);
+    } catch (e) {
+        sb('mapping-sb', 'err', '❌ 매핑 로드 실패: ' + e.message);
+    }
+}
+
+async function saveMapping(sid, erpCode, model) {
+    if (!erpCode.trim()) return;
+    try {
+        const r = await fetch('/api/coupang/mapping', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ sellerProductId: sid, erpCode: erpCode.trim(), model }),
+        });
+        const d = await r.json();
+        sb('mapping-sb', 'ok', `✅ 매핑 ${d.action}: ${sid} → ${erpCode.trim()}`);
+        log(`매핑 ${d.action}: ${sid} → ${erpCode.trim()}`);
+    } catch (e) {
+        sb('mapping-sb', 'err', '❌ 매핑 저장 실패: ' + e.message);
+    }
+}
+
+async function deleteMapping(sid) {
+    if (!confirm(`${sid} 매핑을 삭제하시겠습니까?`)) return;
+    try {
+        const r = await fetch(`/api/coupang/mapping/${sid}`, { method: 'DELETE' });
+        const d = await r.json();
+        sb('mapping-sb', 'ok', `✅ 매핑 삭제: ${sid}`);
+        log(`매핑 삭제: ${sid}`);
+        await loadMapping();
+    } catch (e) {
+        sb('mapping-sb', 'err', '❌ 매핑 삭제 실패: ' + e.message);
+    }
+}
+
+async function uploadMapping(input) {
+    if (!input.files[0]) return;
+    if (!confirm('엑셀 업로드 시 기존 매핑이 교체됩니다. 진행하시겠습니까?')) {
+        input.value = '';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+
+    try {
+        sb('mapping-sb', 'load', '⏳ 엑셀 업로드 중...');
+        const r = await fetch('/api/coupang/mapping/upload', { method: 'POST', body: formData });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'API 오류');
+
+        sb('mapping-sb', 'ok', `✅ 엑셀 업로드 완료: ${d.count}건 매핑 로드`);
+        log(`엑셀 업로드: ${d.count}건`);
+        await loadMapping();
+    } catch (e) {
+        sb('mapping-sb', 'err', '❌ 엑셀 업로드 실패: ' + e.message);
+    }
+    input.value = '';
 }
 </script>
 </body>

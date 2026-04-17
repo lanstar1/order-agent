@@ -268,6 +268,59 @@ class CoupangClient:
         logger.info(f"[쿠팡] 송장업로드 결과: {result}")
         return result
 
+    # ─── 상품 목록 조회 ───
+    async def fetch_products(
+        self,
+        status: str = "",
+        max_per_page: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """판매자 등록상품 전체 목록 조회
+
+        Args:
+            status: 상품상태 필터 (빈값이면 전체)
+            max_per_page: 페이지당 최대 건수 (최대 100)
+        """
+        path = "/v2/providers/seller_api/apis/api/v1/marketplace/seller-products"
+
+        all_products = []
+        next_token = ""
+
+        while True:
+            query_params = {
+                "vendorId": self.vendor_id,
+                "maxPerPage": str(max_per_page),
+            }
+            if status:
+                query_params["status"] = status
+            if next_token:
+                query_params["nextToken"] = next_token
+
+            query_string = urllib.parse.urlencode(query_params)
+            headers = self._generate_signature("GET", path, query_string)
+            url = f"{self.base_url}{path}?{query_string}"
+
+            logger.info(f"[쿠팡] 상품목록 조회 요청 (현재 {len(all_products)}건)")
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(url, headers=headers)
+
+            if resp.status_code != 200:
+                raise ValueError(f"상품목록 조회 실패 (HTTP {resp.status_code}): {resp.text[:300]}")
+
+            data = resp.json()
+            products = data.get("data", [])
+            if not products:
+                break
+
+            all_products.extend(products)
+
+            next_token = data.get("nextToken", "")
+            if not next_token:
+                break
+
+        logger.info(f"[쿠팡] 상품목록 조회 결과: {len(all_products)}건")
+        return all_products
+
     # ─── 일괄 송장업로드 ───
     async def upload_invoices_bulk(
         self,

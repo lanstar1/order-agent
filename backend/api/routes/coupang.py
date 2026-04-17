@@ -1,14 +1,17 @@
 """
 쿠팡 OPEN API 주문 자동화 라우트
 발주서조회 → 상품준비중 → ERP 판매입력 → 송장업로드(발송처리)
++ 상품매핑 (엑셀 기반 쿠팡상품 → ERP품목코드)
 """
 import logging
+import io
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
-from fastapi import APIRouter, Query, Body
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Query, Body, UploadFile, File
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from config import (
@@ -149,7 +152,7 @@ async def send_to_erp(req: ERPSendRequest):
         for order in req.orders:
             order_items = order.get("orderItems", [])
             for item in order_items:
-                prod_cd = item.get("externalVendorSku", "").strip()
+                prod_cd = _resolve_erp_code(item)
                 qty = item.get("shippingCount", 1)
                 price = item.get("salesPrice", 0)
                 if isinstance(price, dict):
@@ -160,7 +163,8 @@ async def send_to_erp(req: ERPSendRequest):
                     unmatched_items.append({
                         "order_id": order.get("orderId", ""),
                         "item_name": item.get("vendorItemName", ""),
-                        "reason": "externalVendorSku 없음",
+                        "sellerProductId": item.get("sellerProductId", ""),
+                        "reason": "매핑 없음 & externalVendorSku 없음",
                     })
                     continue
 
@@ -256,3 +260,287 @@ async def config_status():
         "coupang_cust_code": COUPANG_CUST_CODE,
         "coupang_wh_code": COUPANG_WH_CODE,
     }
+
+
+# ═══════════════════════════════════════════
+#  쿠팡 상품 → ERP 품목코드 매핑 (엑셀 기반)
+# ═══════════════════════════════════════════
+
+# 매핑 딕셔너리: sellerProductId → ERP 품목코드
+_coupang_product_map: dict = {}   # sellerProductId → erp_code
+_coupang_model_map: dict = {}     # sellerProductId → model_name
+
+# 엑셀 파일 경로
+_MAPPING_DIR = Path(__file__).parent.parent.parent / "data"
+_MAPPING_FILE = _MAPPING_DIR / "coupang_product_map.xlsx"
+
+
+def _load_mapping():
+    """엑셀 파일에서 매핑 로드"""
+    global _coupang_product_map, _coupang_model_map
+    _coupang_product_map.clear()
+    _coupang_model_map.clear()
+
+    if not _MAPPING_FILE.exists():
+        logger.info("[쿠팡매핑] 매핑 파일 없음, 빈 맵 사용")
+        return
+
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(str(_MAPPING_FILE), read_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or not row[0]:
+                continue
+            seller_id = str(row[0]).strip()
+            erp_code = str(row[1] or "").strip() if len(row) > 1 else ""
+            model = str(row[2] or "").strip() if len(row) > 2 else ""
+            if seller_id and erp_code:
+                _coupang_product_map[seller_id] = erp_code
+            if seller_id and model:
+                _coupang_model_map[seller_id] = model
+        wb.close()
+        logger.info(f"[쿠팡매핑] 로드 완료: {len(_coupang_product_map)}건")
+    except Exception as e:
+        logger.error(f"[쿠팡매핑] 로드 실패: {e}", exc_info=True)
+
+
+def _save_mapping():
+    """매핑을 엑셀 파일로 저장"""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    _MAPPING_DIR.mkdir(parents=True, exist_ok=True)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "쿠팡매핑"
+
+    # 헤더
+    headers = ["쿠팡상품ID(sellerProductId)", "ERP품목코드", "모델명(참고)"]
+    header_fill = PatternFill(start_color="EA580C", end_color="EA580C", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(1, col, h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    # 데이터
+    all_ids = sorted(set(list(_coupang_product_map.keys()) + list(_coupang_model_map.keys())))
+    for row_idx, sid in enumerate(all_ids, 2):
+        ws.cell(row_idx, 1, sid)
+        ws.cell(row_idx, 2, _coupang_product_map.get(sid, ""))
+        ws.cell(row_idx, 3, _coupang_model_map.get(sid, ""))
+
+    ws.column_dimensions["A"].width = 25
+    ws.column_dimensions["B"].width = 20
+    ws.column_dimensions["C"].width = 30
+
+    wb.save(str(_MAPPING_FILE))
+    logger.info(f"[쿠팡매핑] 저장 완료: {len(all_ids)}건 → {_MAPPING_FILE}")
+
+
+def _resolve_erp_code(order_item: dict) -> str:
+    """주문 아이템에서 ERP 품목코드 결정
+    우선순위: 1) 매핑테이블 2) externalVendorSku
+    """
+    # 1) sellerProductId로 매핑테이블 조회
+    seller_id = str(order_item.get("sellerProductId", "")).strip()
+    if seller_id and seller_id in _coupang_product_map:
+        return _coupang_product_map[seller_id]
+
+    # 2) externalVendorSku 사용
+    sku = str(order_item.get("externalVendorSku", "")).strip()
+    if sku:
+        return sku
+
+    return ""
+
+
+# 시작 시 매핑 로드
+_load_mapping()
+
+
+# ─── 상품 목록 조회 (쿠팡 API) ───
+@router.get("/products")
+async def get_products():
+    """쿠팡 전체 상품 목록 조회"""
+    cp = _get_coupang()
+    if not cp.access_key:
+        return JSONResponse(status_code=400, content={"detail": "쿠팡 API 키 미설정"})
+
+    try:
+        products = await cp.fetch_products()
+        # 매핑 상태 추가
+        for p in products:
+            sid = str(p.get("sellerProductId", ""))
+            p["_erp_code"] = _coupang_product_map.get(sid, "")
+            p["_model"] = _coupang_model_map.get(sid, "")
+            p["_mapped"] = bool(p["_erp_code"])
+        return {"products": products, "total": len(products)}
+    except Exception as e:
+        logger.error(f"[쿠팡] 상품목록 조회 오류: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
+# ─── 매핑 목록 조회 ───
+@router.get("/mapping")
+async def get_mapping():
+    """현재 매핑 목록 반환"""
+    items = []
+    all_ids = sorted(set(list(_coupang_product_map.keys()) + list(_coupang_model_map.keys())))
+    for sid in all_ids:
+        items.append({
+            "sellerProductId": sid,
+            "erpCode": _coupang_product_map.get(sid, ""),
+            "model": _coupang_model_map.get(sid, ""),
+        })
+    return {"mappings": items, "total": len(items)}
+
+
+# ─── 매핑 추가/수정 ───
+@router.post("/mapping")
+async def upsert_mapping(entry: dict = Body(...)):
+    """매핑 추가/수정"""
+    sid = str(entry.get("sellerProductId", "")).strip()
+    erp_code = str(entry.get("erpCode", "")).strip()
+    model = str(entry.get("model", "")).strip()
+
+    if not sid or not erp_code:
+        return JSONResponse(status_code=400, content={"detail": "sellerProductId와 erpCode 필수"})
+
+    action = "수정" if sid in _coupang_product_map else "추가"
+    _coupang_product_map[sid] = erp_code
+    if model:
+        _coupang_model_map[sid] = model
+    _save_mapping()
+
+    logger.info(f"[쿠팡매핑] {action}: {sid} → ERP:{erp_code}, 모델:{model}")
+    return {"success": True, "action": action, "sellerProductId": sid, "erpCode": erp_code}
+
+
+# ─── 매핑 삭제 ───
+@router.delete("/mapping/{seller_product_id}")
+async def delete_mapping(seller_product_id: str):
+    """매핑 삭제"""
+    if seller_product_id not in _coupang_product_map:
+        return JSONResponse(status_code=404, content={"detail": "매핑 없음"})
+
+    erp_code = _coupang_product_map.pop(seller_product_id)
+    _coupang_model_map.pop(seller_product_id, None)
+    _save_mapping()
+    logger.info(f"[쿠팡매핑] 삭제: {seller_product_id} (was {erp_code})")
+    return {"success": True, "deleted": seller_product_id}
+
+
+# ─── 매핑 엑셀 다운로드 ───
+@router.get("/mapping/download")
+async def download_mapping():
+    """매핑 엑셀 파일 다운로드"""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "쿠팡매핑"
+
+    headers = ["쿠팡상품ID(sellerProductId)", "ERP품목코드", "모델명(참고)"]
+    header_fill = PatternFill(start_color="EA580C", end_color="EA580C", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(1, col, h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    all_ids = sorted(set(list(_coupang_product_map.keys()) + list(_coupang_model_map.keys())))
+    for row_idx, sid in enumerate(all_ids, 2):
+        ws.cell(row_idx, 1, sid)
+        ws.cell(row_idx, 2, _coupang_product_map.get(sid, ""))
+        ws.cell(row_idx, 3, _coupang_model_map.get(sid, ""))
+
+    ws.column_dimensions["A"].width = 25
+    ws.column_dimensions["B"].width = 20
+    ws.column_dimensions["C"].width = 30
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"coupang_mapping_{datetime.now(KST).strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ─── 매핑 엑셀 업로드 ───
+@router.post("/mapping/upload")
+async def upload_mapping(file: UploadFile = File(...)):
+    """매핑 엑셀 파일 업로드 (기존 매핑 교체)"""
+    try:
+        import openpyxl
+        content = await file.read()
+        wb = openpyxl.load_workbook(io.BytesIO(content))
+        ws = wb.active
+
+        new_map = {}
+        new_model = {}
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or not row[0]:
+                continue
+            sid = str(row[0]).strip()
+            erp_code = str(row[1] or "").strip() if len(row) > 1 else ""
+            model = str(row[2] or "").strip() if len(row) > 2 else ""
+            if sid and erp_code:
+                new_map[sid] = erp_code
+            if sid and model:
+                new_model[sid] = model
+        wb.close()
+
+        global _coupang_product_map, _coupang_model_map
+        _coupang_product_map = new_map
+        _coupang_model_map = new_model
+        _save_mapping()
+
+        logger.info(f"[쿠팡매핑] 업로드 완료: {len(new_map)}건")
+        return {"success": True, "count": len(new_map)}
+    except Exception as e:
+        logger.error(f"[쿠팡매핑] 업로드 실패: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
+# ─── 쿠팡 상품 → 미매핑 목록 자동 생성 ───
+@router.post("/mapping/auto-generate")
+async def auto_generate_mapping():
+    """쿠팡 전체 상품을 가져와서 미매핑 상품을 엑셀에 자동 추가"""
+    cp = _get_coupang()
+    if not cp.access_key:
+        return JSONResponse(status_code=400, content={"detail": "쿠팡 API 키 미설정"})
+
+    try:
+        products = await cp.fetch_products()
+        added = 0
+        for p in products:
+            sid = str(p.get("sellerProductId", ""))
+            if sid and sid not in _coupang_product_map:
+                # 미매핑 상품은 상품명을 모델로 저장 (ERP코드는 비워둠)
+                _coupang_model_map[sid] = p.get("sellerProductName", "")
+                added += 1
+
+        if added > 0:
+            _save_mapping()
+
+        mapped = sum(1 for sid in _coupang_product_map if _coupang_product_map.get(sid))
+        total = len(set(list(_coupang_product_map.keys()) + list(_coupang_model_map.keys())))
+        return {
+            "success": True,
+            "total_products": len(products),
+            "new_added": added,
+            "mapped": mapped,
+            "unmapped": total - mapped,
+        }
+    except Exception as e:
+        logger.error(f"[쿠팡매핑] 자동생성 오류: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": str(e)})
