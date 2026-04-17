@@ -185,8 +185,6 @@ function navigateTo(pageId) {
   if (pageId === "rebate" && typeof initRebatePage === "function") initRebatePage();
   // 데이터랩 페이지 진입 시 초기화
   if (pageId === "datalab") initDatalabPage();
-  // AI 상품소싱 페이지 진입 시 초기화
-  if (pageId === "ai_sourcing" && typeof window.initAiSourcingPage === "function") window.initAiSourcingPage();
 }
 
 function statusBadge(status) {

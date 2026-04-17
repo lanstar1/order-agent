@@ -7,7 +7,6 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/style.css?v=20260417d">
   <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
-  <link rel="stylesheet" href="/static/css/ai_sourcing.css?v=20260417e">
   <style>
     /* CS/RMA 파이프라인 탭 */
     .cs-pipe-tab{padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:#6b7280;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
@@ -168,7 +167,6 @@
           <!-- Super Agent: 개발 중 블라인드 -->
           <!-- <div class="nav-item" data-page="super_agent"><span>Super Agent</span></div> -->
           <div class="nav-item" data-page="mail_agent"><span>AI 메일</span></div>
-          <div class="nav-item" data-page="ai_sourcing"><span>🛒 AI 상품소싱</span></div>
         </div>
       </div>
 
@@ -2006,132 +2004,6 @@ C규격품 200개
     </div>
 
     <!-- 데이터랩 제거됨 - 재설계 예정 -->
-
-    <!-- ──────────────────────────────
-         페이지: AI 상품소싱
-         ────────────────────────────── -->
-    <div class="page" id="page-ai_sourcing">
-      <div class="ais-layout">
-        <section class="ais-panel ais-panel--builder">
-          <header class="ais-panel__head">
-            <h2>🛒 AI 상품소싱 — 분석 조건</h2>
-            <p class="ais-muted">네이버 쇼핑 인기검색어 추이를 장기 수집하여 스테디/계절/경계 키워드를 추천합니다.</p>
-          </header>
-          <form id="ais-form" class="ais-builder" autocomplete="off">
-            <label class="ais-field"><span>1분류</span>
-              <select id="ais-cat1"></select>
-            </label>
-            <label class="ais-field"><span>2분류</span>
-              <select id="ais-cat2" disabled></select>
-            </label>
-            <label class="ais-field"><span>3분류</span>
-              <select id="ais-cat3" disabled></select>
-            </label>
-
-            <fieldset class="ais-field"><legend>기기</legend><div class="ais-chips" id="ais-devices"></div></fieldset>
-            <fieldset class="ais-field"><legend>성별</legend><div class="ais-chips" id="ais-genders"></div></fieldset>
-            <fieldset class="ais-field"><legend>연령</legend><div class="ais-chips" id="ais-ages"></div></fieldset>
-            <fieldset class="ais-field"><legend>분석 결과 수</legend><div class="ais-chips" id="ais-result-count"></div></fieldset>
-
-            <label class="ais-field ais-field--check">
-              <input type="checkbox" id="ais-exclude-brand" />
-              <span>브랜드 상품 제외 (기본 브랜드 리스트 + 사용자 지정)</span>
-            </label>
-            <label class="ais-field">
-              <span>추가 제외 키워드 (쉼표/줄바꿈 구분)</span>
-              <textarea id="ais-custom-terms" rows="2" placeholder="예: 티셔츠, 후드티, 자사브랜드"></textarea>
-            </label>
-            <div class="ais-builder__submit">
-              <button type="submit" class="btn btn-primary" id="ais-submit">분석 시작</button>
-              <p id="ais-feedback" class="ais-muted"></p>
-            </div>
-          </form>
-        </section>
-
-        <section class="ais-panel ais-panel--monitor">
-          <header class="ais-panel__head">
-            <div>
-              <h2 id="ais-run-title">수집 현황</h2>
-              <p class="ais-muted" id="ais-run-subtitle">조건을 설정하고 분석을 시작하면 여기에 진행 상황이 표시됩니다.</p>
-            </div>
-            <div class="ais-actions">
-              <button class="btn btn-outline btn-sm" id="ais-refresh" type="button">새로고침</button>
-              <button class="btn btn-outline btn-sm" id="ais-cancel" type="button" hidden>취합 중지</button>
-              <button class="btn btn-outline btn-sm" id="ais-retry" type="button" hidden>실패 재시도</button>
-              <button class="btn btn-outline btn-sm" id="ais-delete" type="button" hidden>런 삭제</button>
-            </div>
-          </header>
-
-          <div class="ais-metrics" id="ais-metrics"></div>
-
-          <div class="ais-progress">
-            <div class="ais-progress__bar" id="ais-progress-bar"></div>
-            <p class="ais-progress__label" id="ais-progress-label">진행 상황이 아직 없습니다.</p>
-          </div>
-
-          <section class="ais-sub">
-            <header class="ais-sub__head">
-              <h3>월별 인기검색어 미리보기</h3>
-              <div class="ais-sub__tools">
-                <select id="ais-snapshot-period"></select>
-                <div class="ais-pager">
-                  <button class="btn btn-outline btn-sm" id="ais-snap-prev" type="button">◀</button>
-                  <span id="ais-snap-page" class="ais-muted">페이지 1 / 1</span>
-                  <button class="btn btn-outline btn-sm" id="ais-snap-next" type="button">▶</button>
-                </div>
-              </div>
-            </header>
-            <table class="ais-snapshot-table">
-              <thead><tr><th>순위</th><th>키워드</th><th>링크ID</th><th>브랜드</th></tr></thead>
-              <tbody id="ais-snapshot-body"></tbody>
-            </table>
-          </section>
-
-          <section class="ais-sub" id="ais-analysis" hidden>
-            <header class="ais-sub__head">
-              <h3>트렌드 분석 리포트</h3>
-              <p class="ais-muted" id="ais-analysis-hint"></p>
-            </header>
-            <div class="ais-hero" id="ais-hero"></div>
-            <div class="ais-cards" id="ais-cards"></div>
-            <div class="ais-planner">
-              <header class="ais-planner__head">
-                <h4>월별 플래너</h4>
-                <div class="ais-planner__tabs" id="ais-planner-tabs"></div>
-              </header>
-              <div class="ais-planner__body" id="ais-planner-body"></div>
-            </div>
-            <div class="ais-heatmap">
-              <header class="ais-heatmap__head">
-                <h4>시즈널리티 히트맵</h4>
-                <div class="ais-toggle" id="ais-heatmap-toggle">
-                  <button class="btn btn-outline btn-sm is-active" data-mode="season" type="button">월 평균</button>
-                  <button class="btn btn-outline btn-sm" data-mode="timeline" type="button">전체 타임라인</button>
-                </div>
-              </header>
-              <div id="ais-heatmap-body"></div>
-            </div>
-            <div class="ais-drilldown">
-              <header><h4>키워드 드릴다운</h4></header>
-              <div id="ais-drilldown-body"></div>
-            </div>
-          </section>
-        </section>
-      </div>
-
-      <!-- 확인 모달 -->
-      <div id="ais-modal" class="ais-modal" hidden>
-        <div class="ais-modal__backdrop" data-ais-dismiss></div>
-        <div class="ais-modal__card">
-          <h3 id="ais-modal-title">확인</h3>
-          <p id="ais-modal-message"></p>
-          <footer>
-            <button type="button" class="btn btn-outline btn-sm" data-ais-dismiss>취소</button>
-            <button type="button" class="btn btn-primary btn-sm" id="ais-modal-confirm">확인</button>
-          </footer>
-        </div>
-      </div>
-    </div>
 
     <!-- ──────────────────────────────
          페이지: 메일 자동화
@@ -5072,8 +4944,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
 <script src="/static/js/api.js?v=20260323a"></script>
-<script src="/static/js/app.js?v=20260417e"></script>
+<script src="/static/js/app.js?v=20260417d"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
-<script src="/static/js/ai_sourcing.js?v=20260417e"></script>
 </body>
 </html>

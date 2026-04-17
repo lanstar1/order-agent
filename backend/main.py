@@ -40,7 +40,6 @@ from api.routes.map_monitor import router as map_monitor_router
 from api.routes.mail_auto import router as mail_auto_router
 from api.routes.telegram_bot import router as telegram_bot_router
 from api.routes.datalab import router as datalab_router
-from api.routes.ai_sourcing import router as ai_sourcing_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -289,7 +288,6 @@ app.include_router(map_monitor_router)
 app.include_router(mail_auto_router)
 app.include_router(telegram_bot_router)
 app.include_router(datalab_router)
-app.include_router(ai_sourcing_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -590,33 +588,6 @@ async def startup():
         logger.info("SmartLogen 자동 동기화 스케줄러 등록 완료 (1시간 간격)")
     except Exception as e:
         logger.warning(f"택배 스케줄러 시작 실패: {e}")
-
-    # AI 상품소싱 백그라운드 워커 (네이버 쇼핑 인기검색어 수집 루프)
-    try:
-        import os as _os_ai_sourcing
-        from services.ai_sourcing.db import ensure_schema as _ensure_ai_sourcing_schema
-        from services.ai_sourcing.runs import process_next_queued_run as _ai_sourcing_tick
-
-        _ensure_ai_sourcing_schema()
-        _ai_sourcing_interval = float(_os_ai_sourcing.environ.get("AI_SOURCING_WORKER_INTERVAL", "5"))
-
-        async def _ai_sourcing_worker_loop(interval: float = _ai_sourcing_interval):
-            while True:
-                try:
-                    result = await _ai_sourcing_tick()
-                    if result.get("processed"):
-                        logger.info(
-                            "AI 상품소싱 태스크 처리: run=%s period=%s ok=%s",
-                            result.get("runId"), result.get("period"), result.get("ok"),
-                        )
-                except Exception:
-                    logger.exception("AI 상품소싱 워커 루프 오류")
-                await asyncio.sleep(interval)
-
-        asyncio.create_task(_ai_sourcing_worker_loop())
-        logger.info("AI 상품소싱 워커 시작 (interval=%.1fs)", _ai_sourcing_interval)
-    except Exception as e:
-        logger.warning(f"AI 상품소싱 워커 시작 실패: {e}")
 
     # 재고 변동 모니터링 스케줄러 (평일 09:00 KST = UTC 00:00)
     try:
