@@ -273,7 +273,10 @@ _coupang_model_map: dict = {}     # sellerProductId → model_name
 
 # 엑셀 파일 경로
 _MAPPING_DIR = Path(__file__).parent.parent.parent / "data"
-_MAPPING_FILE = _MAPPING_DIR / "coupang_product_map.xlsx"
+# v2 파일이 있으면 우선 사용 (실제 ERP 품목코드 매핑)
+_MAPPING_FILE_V2 = _MAPPING_DIR / "coupang_product_map_v2.xlsx"
+_MAPPING_FILE_V1 = _MAPPING_DIR / "coupang_product_map.xlsx"
+_MAPPING_FILE = _MAPPING_FILE_V2 if _MAPPING_FILE_V2.exists() else _MAPPING_FILE_V1
 
 
 def _load_mapping():
