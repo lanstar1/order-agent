@@ -289,6 +289,52 @@ class ERPClientSS:
                     return {"success": False, "items": [], "total": 0, "error": str(e)}
         return {"success": False, "items": [], "total": 0, "error": "재시도 초과"}
 
+    async def get_product_list(self, page: int = 1, per_page: int = 5000) -> dict:
+        """ECOUNT 품목 마스터 전체 조회
+        Returns: {"success": bool, "products": [{"PROD_CD": ..., "PROD_DES": ..., ...}], "total": int}
+        """
+        if not self._session_id:
+            await self.ensure_session()
+
+        zone = self._zone.lower()
+        url = (f"https://oapi{zone}.ecount.com/OAPI/V2/Inventory/GetListProductBySearch"
+               f"?SESSION_ID={self._session_id}")
+
+        payload = {
+            "PAGE_NO": str(page),
+            "PER_PAGE_CNT": str(per_page),
+        }
+
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(url, json=payload, timeout=30)
+                    data = r.json()
+
+                if str(data.get("Status")) == "200":
+                    inner = data.get("Data", {}) if isinstance(data.get("Data"), dict) else {}
+                    rows = inner.get("Result", []) or inner.get("Datas", []) or []
+                    total_cnt = inner.get("TotalCnt", 0)
+                    logger.info(f"[ERP-SS] 품목목록 조회: {len(rows)}건 (총 {total_cnt})")
+                    return {"success": True, "products": rows, "total": total_cnt}
+
+                if str(data.get("Status")) in ("301", "302"):
+                    logger.warning("[ERP-SS] 품목목록 세션만료, 재로그인")
+                    await self.ensure_session()
+                    zone = self._zone.lower()
+                    url = (f"https://oapi{zone}.ecount.com/OAPI/V2/Inventory/GetListProductBySearch"
+                           f"?SESSION_ID={self._session_id}")
+                    continue
+
+                logger.error(f"[ERP-SS] 품목목록 조회 실패: {data}")
+                return {"success": False, "products": [], "total": 0, "error": f"Status {data.get('Status')}"}
+            except Exception as e:
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    return {"success": False, "products": [], "total": 0, "error": str(e)}
+        return {"success": False, "products": [], "total": 0, "error": "재시도 초과"}
+
     async def get_inventory_by_warehouses(self, prod_codes: list[str] = None) -> dict:
         """ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ©ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ°(10), ÃÂÃÂ­ÃÂÃÂÃÂÃÂµÃÂÃÂ¬ÃÂÃÂ§ÃÂÃÂ(30) ÃÂÃÂ¬ÃÂÃÂ°ÃÂÃÂ½ÃÂÃÂªÃÂÃÂ³ÃÂÃÂ  ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¬ÃÂÃÂªÃÂÃÂ³ÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ¥ÃÂÃÂ¼ ÃÂÃÂ«ÃÂÃÂ³ÃÂÃÂÃÂÃÂ«ÃÂÃÂ ÃÂÃÂ¬ ÃÂÃÂ¬ÃÂÃÂ¡ÃÂÃÂ°ÃÂÃÂ­ÃÂÃÂÃÂÃÂ"""
         async def _fetch_wh(wh_cd):

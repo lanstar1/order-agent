@@ -3,6 +3,7 @@
 발주서조회 → 상품준비중 → ERP 판매입력 → 송장업로드(발송처리)
 + 상품매핑 (엑셀 기반 쿠팡상품 → ERP품목코드)
 """
+import re
 import logging
 import io
 from datetime import datetime, timedelta
@@ -543,4 +544,135 @@ async def auto_generate_mapping():
         }
     except Exception as e:
         logger.error(f"[쿠팡매핑] 자동생성 오류: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
+# ─── 자동매칭: 쿠팡 모델명 ↔ ERP 품목코드 ───
+@router.post("/mapping/auto-match")
+async def auto_match_mapping():
+    """쿠팡 상품의 모델명/판매자코드에서 ERP 품목코드를 자동으로 매칭
+
+    로직:
+    1) ERP 전체 품목 목록 조회
+    2) 쿠팡 상품 목록 조회
+    3) 쿠팡 상품명/externalVendorSku에서 ERP 품목코드와 일치하는 것을 찾아 매핑
+    """
+    try:
+        # 1) ERP 품목 목록 가져오기
+        from services.erp_client_ss import ERPClientSS
+        erp = ERPClientSS()
+        await erp.ensure_session()
+
+        erp_result = await erp.get_product_list(per_page=5000)
+        if not erp_result.get("success"):
+            return JSONResponse(status_code=500, content={
+                "detail": f"ERP 품목 조회 실패: {erp_result.get('error', '')}"
+            })
+
+        # ERP 품목코드 셋 구성
+        erp_products = erp_result.get("products", [])
+        erp_code_set = set()
+        erp_code_to_name = {}
+        for p in erp_products:
+            cd = str(p.get("PROD_CD", "")).strip()
+            if cd:
+                erp_code_set.add(cd)
+                erp_code_to_name[cd] = p.get("PROD_DES", "")
+
+        logger.info(f"[쿠팡매칭] ERP 품목 수: {len(erp_code_set)}")
+
+        # 페이지네이션으로 전체 ERP 품목 조회 (5000건 이상일 경우)
+        total_erp = erp_result.get("total", 0)
+        if total_erp > 5000:
+            page = 2
+            while len(erp_products) < total_erp:
+                more = await erp.get_product_list(page=page, per_page=5000)
+                if not more.get("success") or not more.get("products"):
+                    break
+                for p in more["products"]:
+                    cd = str(p.get("PROD_CD", "")).strip()
+                    if cd:
+                        erp_code_set.add(cd)
+                        erp_code_to_name[cd] = p.get("PROD_DES", "")
+                erp_products.extend(more["products"])
+                page += 1
+            logger.info(f"[쿠팡매칭] ERP 전체 품목 수: {len(erp_code_set)}")
+
+        # 2) 쿠팡 상품 목록 가져오기
+        cp = _get_coupang()
+        coupang_products = await cp.fetch_products()
+        logger.info(f"[쿠팡매칭] 쿠팡 상품 수: {len(coupang_products)}")
+
+        # 3) 자동 매칭
+        matched = 0
+        already_mapped = 0
+        unmatched = 0
+
+        for p in coupang_products:
+            sid = str(p.get("sellerProductId", ""))
+            if not sid:
+                continue
+
+            # 이미 매핑된 건 스킵
+            if sid in _coupang_product_map and _coupang_product_map[sid]:
+                already_mapped += 1
+                continue
+
+            # 모델명을 _coupang_model_map 또는 상품명에서 가져옴
+            model = _coupang_model_map.get(sid, "") or p.get("sellerProductName", "")
+            sku = str(p.get("externalVendorSku", "")).strip()
+
+            found_code = ""
+
+            # 방법 1: externalVendorSku가 ERP 품목코드와 직접 일치
+            if sku and sku in erp_code_set:
+                found_code = sku
+
+            # 방법 2: 모델명/상품명에서 ERP 품목코드와 일치하는 부분 찾기
+            if not found_code and model:
+                # 모델명에서 하이픈/공백으로 분리한 토큰들을 ERP 코드와 비교
+                tokens = re.split(r'[\s\-_/,()]+', model)
+                for token in tokens:
+                    token = token.strip()
+                    if token and token in erp_code_set:
+                        found_code = token
+                        break
+
+                # 모델명 전체가 ERP 코드에 포함되는지 확인
+                if not found_code:
+                    for erp_cd in erp_code_set:
+                        if erp_cd and len(erp_cd) >= 3 and erp_cd in model:
+                            found_code = erp_cd
+                            break
+
+            if found_code:
+                _coupang_product_map[sid] = found_code
+                if not _coupang_model_map.get(sid):
+                    _coupang_model_map[sid] = model
+                matched += 1
+            else:
+                if not _coupang_model_map.get(sid):
+                    _coupang_model_map[sid] = model
+                unmatched += 1
+
+        # 저장
+        if matched > 0:
+            _save_mapping()
+
+        total_mapped = sum(1 for v in _coupang_product_map.values() if v)
+        total_all = len(set(list(_coupang_product_map.keys()) + list(_coupang_model_map.keys())))
+
+        logger.info(f"[쿠팡매칭] 결과: 신규매칭={matched}, 기존매핑={already_mapped}, 미매칭={unmatched}")
+        return {
+            "success": True,
+            "new_matched": matched,
+            "already_mapped": already_mapped,
+            "unmatched": unmatched,
+            "total_mapped": total_mapped,
+            "total_products": total_all,
+            "erp_product_count": len(erp_code_set),
+        }
+
+    except Exception as e:
+        logger.error(f"[쿠팡매칭] 자동매칭 오류: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": str(e)})

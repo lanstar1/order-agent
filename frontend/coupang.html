@@ -190,6 +190,7 @@
             <h2>🔗 상품 매핑 (쿠팡상품 → ERP품목코드)</h2>
             <div class="btn-group">
                 <button class="btn btn-orange btn-sm" onclick="autoGenerateMapping()">쿠팡 상품 가져오기</button>
+                <button class="btn btn-green btn-sm" onclick="autoMatchMapping()">자동 매칭 (모델명→ERP코드)</button>
                 <button class="btn btn-blue btn-sm" onclick="loadMapping()">매핑 목록 보기</button>
                 <a class="btn btn-green btn-sm" href="/api/coupang/mapping/download" style="text-decoration:none;">엑셀 다운로드</a>
                 <label class="btn btn-gray btn-sm" style="cursor:pointer;">
@@ -587,6 +588,26 @@ async function autoGenerateMapping() {
     } catch (e) {
         sb('mapping-sb', 'err', '❌ 상품 가져오기 실패: ' + e.message);
         log('상품 가져오기 실패: ' + e.message);
+    }
+}
+
+async function autoMatchMapping() {
+    sb('mapping-sb', 'load', '⏳ ERP 품목 목록 조회 및 자동 매칭 중... (시간이 걸릴 수 있습니다)');
+    log('자동 매칭 시작 (모델명 → ERP 품목코드)');
+
+    try {
+        const r = await fetch('/api/coupang/mapping/auto-match', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'API 오류');
+
+        sb('mapping-sb', 'ok',
+            `✅ 자동매칭 완료! 신규매칭: ${d.new_matched}건, 기존매핑: ${d.already_mapped}건, 미매칭: ${d.unmatched}건 (ERP품목: ${d.erp_product_count}건)`
+        );
+        log(`자동매칭 결과: 신규${d.new_matched}건, 기존${d.already_mapped}건, 미매칭${d.unmatched}건`);
+        await loadMapping();
+    } catch (e) {
+        sb('mapping-sb', 'err', '❌ 자동 매칭 실패: ' + e.message);
+        log('자동 매칭 실패: ' + e.message);
     }
 }
 
