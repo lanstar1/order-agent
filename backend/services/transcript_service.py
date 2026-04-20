@@ -150,6 +150,11 @@ def download_auto_captions(
             lang,
             "--convert-subs",
             "srt",
+            # Render Dockerfile에는 Node.js가 있음 — yt-dlp가 YouTube JS
+            # challenge를 해결하도록 runtime 명시. 없어도 동작하는 영상은
+            # 그대로 작동하므로 안전한 addition.
+            "--extractor-args",
+            "youtube:player_client=android,web;js_runtime=node",
             "-o",
             str(work_dir / "caption_%(subtitle_lang)s.%(ext)s"),
             video_url,
@@ -179,3 +184,82 @@ def download_auto_captions(
         last_err = f"empty caption for {lang}"
 
     raise TranscriptFetchError(last_err or "no captions available")
+
+
+# --------------------------------------------------------------------------- #
+# youtube-transcript-api 경로 — JS runtime 불필요 (1순위 시도)
+# --------------------------------------------------------------------------- #
+
+
+def fetch_captions_via_api(
+    video_id: str,
+    *,
+    lang_priority: tuple[str, ...] = ("ko", "ko-KR", "en"),
+) -> tuple[list[Segment], str]:
+    """youtube-transcript-api로 자막을 받아 (segments, language) 반환.
+
+    yt-dlp와 달리 JS 런타임 불필요. Render 같은 클라우드 환경에서 안정.
+    라이브러리 1.x / 0.6.x API 차이를 모두 흡수한다.
+    """
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore[import-not-found]
+        try:
+            from youtube_transcript_api._errors import (  # type: ignore[import-not-found]
+                TranscriptsDisabled, NoTranscriptFound,
+                VideoUnavailable, CouldNotRetrieveTranscript,
+            )
+        except Exception:  # noqa: BLE001
+            TranscriptsDisabled = NoTranscriptFound = VideoUnavailable = \
+                CouldNotRetrieveTranscript = Exception  # fallback catch-all
+    except ImportError as exc:
+        raise TranscriptFetchError(
+            "youtube-transcript-api 패키지가 설치되지 않았습니다."
+        ) from exc
+
+    last_err: Optional[str] = None
+    for lang in lang_priority:
+        try:
+            # v1.x instance API 우선
+            try:
+                ytt = YouTubeTranscriptApi()
+                fetched = ytt.fetch(video_id, languages=[lang])
+                # FetchedTranscript iterable → snippets with .text .start .duration
+                raw = [
+                    {"text": s.text, "start": s.start, "duration": s.duration}
+                    for s in fetched
+                ]
+            except (AttributeError, TypeError):
+                # v0.6.x 클래스 메서드 레거시
+                raw = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
+        except (TranscriptsDisabled, NoTranscriptFound) as exc:
+            last_err = f"{lang}: {type(exc).__name__}"
+            continue
+        except VideoUnavailable as exc:
+            raise TranscriptFetchError(f"영상을 재생할 수 없습니다: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 - runtime fallback
+            last_err = f"{lang}: {exc}"
+            continue
+
+        segments: list[Segment] = []
+        for s in raw:
+            text = (s.get("text") or "").strip()
+            text = SEGMENT_TEXT_RE.sub(" ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            if not text:
+                continue
+            start = float(s.get("start") or 0.0)
+            end = start + float(s.get("duration") or 0.0)
+            segments.append(Segment(start, end, text))
+        if segments:
+            return segments, lang
+
+    raise TranscriptFetchError(
+        f"자막을 찾을 수 없습니다 (시도: {', '.join(lang_priority)}). "
+        f"원인: {last_err or 'unknown'}"
+    )
+
+
+def clean_transcript_from_segments(segments: list[Segment]) -> str:
+    """segments → sliding-window dedup된 단일 문자열."""
+    joined = " ".join(s.text for s in segments)
+    return dedupe_sliding_window(joined)

@@ -78,8 +78,14 @@ def _fake_download(url, work_dir=None, **kw):
 
 
 def test_process_video_full_end_to_end(conn):
-    """가짜 자막 다운로드 + fake LLM들로 전체 파이프라인 실행."""
-    with patch("services.transcript_service.download_auto_captions",
+    """가짜 자막 다운로드 + fake LLM들로 전체 파이프라인 실행.
+
+    API 경로(1순위)가 실패하면 yt-dlp(폴백)가 성공하도록 세팅.
+    """
+    def fail_api(*a, **kw):
+        raise vp.ts.TranscriptFetchError("simulated api miss")
+    with patch("services.transcript_service.fetch_captions_via_api", side_effect=fail_api), \
+         patch("services.transcript_service.download_auto_captions",
                side_effect=_fake_download):
         result = vp.process_video_full(
             conn, 1,
@@ -145,16 +151,20 @@ def test_process_video_marks_failed_on_fetch_error(conn):
 
 
 def test_process_video_guards_too_short_transcript(conn):
-    def tiny(url, **kw):
+    """API/yt-dlp 둘 다 너무 짧은 자막만 반환하는 경우 ProcessingError."""
+    def fail_api(*a, **kw):
+        raise vp.ts.TranscriptFetchError("no transcript")
+    def tiny_yt(url, **kw):
         return "1\n00:00:00,000 --> 00:00:02,000\n짧음\n", "ko"
-    with patch("services.transcript_service.download_auto_captions", side_effect=tiny):
+    with patch("services.transcript_service.fetch_captions_via_api", side_effect=fail_api), \
+         patch("services.transcript_service.download_auto_captions", side_effect=tiny_yt):
         with pytest.raises(vp.ProcessingError) as e:
             vp.process_video_full(
                 conn, 1,
                 correct_llm_fn=tc.fake_rule_based_llm,
                 extract_llm_fn=px.fake_keyword_extractor,
             )
-    assert "짧습니다" in str(e.value)
+    assert "자막" in str(e.value)
 
 
 def test_process_video_missing_row_raises(conn):

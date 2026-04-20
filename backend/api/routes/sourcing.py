@@ -213,18 +213,20 @@ def list_videos(channel_id: Optional[int] = None, status: Optional[str] = None,
                 conn=Depends(get_db),
                 user=Depends(get_current_user)):
     sql = ("SELECT id, channel_id, video_id, title, video_type, "
-           "processed_status, internal_step, retry_count, error_reason, created_at "
+           "processed_status, internal_step, retry_count, error_reason, "
+           "published_at, created_at "
            "FROM youtube_videos WHERE 1=1")
     args: list[Any] = []
     if channel_id:
         sql += " AND channel_id=?"; args.append(channel_id)
     if status:
         sql += " AND processed_status=?"; args.append(status)
-    sql += " ORDER BY id DESC LIMIT 200"
+    # 업로드 날짜 최신순 정렬 (없으면 created_at 기준)
+    sql += " ORDER BY COALESCE(published_at, created_at) DESC LIMIT 200"
     rows = conn.execute(sql, args).fetchall()
     cols = ["id", "channel_id", "video_id", "title", "video_type",
             "processed_status", "internal_step", "retry_count",
-            "error_reason", "created_at"]
+            "error_reason", "published_at", "created_at"]
     return [dict(zip(cols, r)) for r in rows]
 
 

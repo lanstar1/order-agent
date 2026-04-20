@@ -104,22 +104,48 @@ def _mark_done(conn, video_row_id: int):
 
 
 def _step_transcribe(conn, video: dict) -> tuple[str, list]:
-    """yt-dlp로 자막 내려받기 + sliding-window dedup."""
-    _set_step(conn, video["id"], "transcribing")
-    url = f"https://www.youtube.com/watch?v={video['video_id']}"
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            srt_text, lang = ts.download_auto_captions(url, work_dir=Path(tmp))
-    except ts.TranscriptFetchError as exc:
-        raise ProcessingError(
-            f"자막을 가져올 수 없습니다. 자동자막 생성 전일 수 있습니다 "
-            f"(영상 업로드 직후면 몇 시간 대기 필요). 원본: {exc}"
-        ) from exc
+    """자막 수집 + sliding-window dedup.
 
-    cleaned, segments = ts.clean_transcript_from_srt(srt_text)
+    1순위: youtube-transcript-api (JS 런타임 불필요, 가볍고 빠름)
+    2순위: yt-dlp (Node.js runtime hint 포함)
+    """
+    _set_step(conn, video["id"], "transcribing")
+    vid = video["video_id"]
+
+    cleaned = ""
+    segments: list = []
+    api_err: Optional[str] = None
+    yt_dlp_err: Optional[str] = None
+
+    # ─ 1순위 — youtube-transcript-api ─
+    try:
+        segments, _lang = ts.fetch_captions_via_api(vid)
+        cleaned = ts.clean_transcript_from_segments(segments)
+        logger.info(f"[video_processor] transcript-api 성공 video={video['id']} chars={len(cleaned)}")
+    except ts.TranscriptFetchError as exc:
+        api_err = str(exc)
+        logger.info(f"[video_processor] transcript-api 실패, yt-dlp 폴백: {api_err}")
+
+    # ─ 2순위 폴백 — yt-dlp ─
     if not cleaned or len(cleaned) < 200:
+        url = f"https://www.youtube.com/watch?v={vid}"
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                srt_text, _lang = ts.download_auto_captions(url, work_dir=Path(tmp))
+            cleaned, segments = ts.clean_transcript_from_srt(srt_text)
+            logger.info(f"[video_processor] yt-dlp 성공 video={video['id']} chars={len(cleaned)}")
+        except ts.TranscriptFetchError as exc:
+            yt_dlp_err = str(exc)
+
+    if not cleaned or len(cleaned) < 200:
+        reasons = []
+        if api_err:
+            reasons.append(f"youtube-transcript-api: {api_err}")
+        if yt_dlp_err:
+            reasons.append(f"yt-dlp: {yt_dlp_err[:200]}")
         raise ProcessingError(
-            f"자막이 너무 짧습니다 ({len(cleaned)}자). 유효한 영상인지 확인해주세요."
+            "자막을 가져올 수 없습니다. 자동자막 미생성 / 영상 비공개 / 자막 자체 없음 "
+            "중 하나일 수 있습니다. " + " | ".join(reasons)
         )
 
     conn.execute(

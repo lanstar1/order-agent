@@ -33,3 +33,4 @@ feedparser>=6.0.0
 # ── 신제품 소싱 모듈 (v0.3.0) ──
 yt-dlp>=2024.12.0
 google-api-python-client>=2.150.0
+youtube-transcript-api>=1.0.0

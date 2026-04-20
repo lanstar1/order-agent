@@ -46,6 +46,15 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
+  // 2026-04-19T12:00:00Z / 2026-04-19 12:00:00 → "2026-04-19" (공백 시 "-")
+  function formatUploadDate(iso) {
+    if (!iso) return "-";
+    const s = String(iso);
+    // YYYY-MM-DD 부분만 추출
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : s.slice(0, 10);
+  }
+
   // ─── 대시보드 ───────────────────────────────────────────────
   async function renderDashboard(container) {
     try {
@@ -189,6 +198,7 @@
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:#f9fafb;text-align:left">
           <th style="padding:8px">상태</th>
+          <th style="padding:8px">업로드</th>
           <th style="padding:8px">제목</th>
           <th style="padding:8px">타입</th>
           <th style="padding:8px">단계</th>
@@ -199,9 +209,11 @@
           ${videos.map(v => {
             const canProcess = v.processed_status === 'pending' || v.processed_status === 'failed';
             const btnLabel = v.processed_status === 'failed' ? '재시도' : '처리 시작';
+            const pubLabel = formatUploadDate(v.published_at);
             return `
             <tr style="border-top:1px solid #e5e7eb">
               <td style="padding:8px">${statusBadge(v.processed_status, v.retry_count)}</td>
+              <td style="padding:8px;white-space:nowrap;color:#374151;font-size:12px">${escape(pubLabel)}</td>
               <td style="padding:8px">
                 <a href="https://www.youtube.com/watch?v=${escape(v.video_id)}" target="_blank"
                    style="color:#2563eb;text-decoration:none">${escape(v.title || v.video_id)}</a>
@@ -215,7 +227,7 @@
                   : v.processed_status === 'done' ? '<span style="color:#065f46;font-size:11px">✓</span>' : ''}
               </td>
             </tr>`;
-          }).join("") || '<tr><td colspan="6" style="padding:20px;color:#9ca3af;text-align:center">수집된 영상이 없습니다</td></tr>'}
+          }).join("") || '<tr><td colspan="7" style="padding:20px;color:#9ca3af;text-align:center">수집된 영상이 없습니다</td></tr>'}
         </tbody>
       </table>
       <p style="color:#6b7280;font-size:12px;margin-top:8px">
