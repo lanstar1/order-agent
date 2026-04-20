@@ -104,7 +104,11 @@ class PurchaseMark(BaseModel):
 def create_channel(body: ChannelCreate, user=Depends(get_current_user)):
     parsed = parse_youtube_input(body.url_or_id)
     if not parsed:
-        raise HTTPException(400, f"지원하지 않는 입력 형식: {body.url_or_id!r}")
+        raise HTTPException(
+            400,
+            "YouTube URL / @핸들 / UCxxxx ID / 영상 URL 중 하나로 입력해주세요. "
+            f"입력값: {body.url_or_id!r}",
+        )
     conn = _conn()
     raw_handle = None
     channel_id_val = None

@@ -62,6 +62,11 @@ def test_sourcing_ddl_is_idempotent():
         ("https://youtu.be/gZPdX8NRv24",                    "video",      "gZPdX8NRv24"),
         ("https://www.youtube.com/shorts/abcdefghijk",      "video",      "abcdefghijk"),
         ("https://www.youtube.com/@ali_gadget/videos",      "handle",     "@ali_gadget"),
+        # Unicode (Hangul) handle — raw and percent-encoded forms must both parse
+        ("https://www.youtube.com/@알뜰직구",                 "handle",     "@알뜰직구"),
+        ("https://www.youtube.com/@%EC%95%8C%EB%9C%B0%EC%A7%81%EA%B5%AC",
+                                                            "handle",     "@알뜰직구"),
+        ("@알뜰직구",                                         "handle",     "@알뜰직구"),
         ("https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv", "channel_id", "UCabcdefghijklmnopqrstuv"),
         ("@best_reviews",                                   "handle",     "@best_reviews"),
         ("UCabcdefghijklmnopqrstuv",                        "channel_id", "UCabcdefghijklmnopqrstuv"),

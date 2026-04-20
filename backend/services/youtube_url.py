@@ -5,15 +5,18 @@ Accepted inputs:
 - https://youtu.be/VIDEO_ID
 - https://www.youtube.com/@channelhandle
 - https://www.youtube.com/@channelhandle/videos
+- https://www.youtube.com/@한글핸들              (Unicode handles supported)
+- https://www.youtube.com/@%EC%95%8C%EB%9C%B0   (percent-encoded)
 - https://www.youtube.com/channel/UCxxxxxxx
 - https://www.youtube.com/c/CustomName      (legacy)
-- @channelhandle            (bare handle)
+- @channelhandle            (bare handle, ASCII or Unicode)
 - UCxxxxxxxxxxxxxxxxxxxxxx  (bare channel id; 24 chars, starts with UC)
 - 11-char video id
 """
 from __future__ import annotations
 
 import re
+import urllib.parse
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlparse, parse_qs
@@ -33,36 +36,52 @@ class ParseResult:
 
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 CHANNEL_ID_RE = re.compile(r"^UC[A-Za-z0-9_-]{22}$")
-HANDLE_RE = re.compile(r"^@[A-Za-z0-9._-]{3,30}$")
+
+# YouTube handle: 3-30 chars of Unicode word chars + `.` `-`.
+# `\w` with re.UNICODE includes Hangul, Kana, CJK, Latin, digits, underscore.
+# This matches YouTube's actual policy (e.g. `@알뜨직구`, `@のり弁`, `@naver`).
+HANDLE_RE = re.compile(r"^@[\w.\-]{3,30}$", re.UNICODE)
+
+
+def _safe_unquote(s: str) -> str:
+    """Percent-decode defensively — malformed sequences pass through unchanged."""
+    try:
+        return urllib.parse.unquote(s)
+    except Exception:
+        return s
 
 
 def parse_youtube_input(raw: str) -> ParseResult:
-    """Parse a YouTube identifier of unknown format."""
+    """Parse a YouTube identifier of unknown format.
+
+    Handles browser-style percent-encoded Unicode handles
+    (e.g. `/@%EC%95%8C%EB%9C%B0%EC%A7%81%EA%B5%AC` → `@알뜨직구`).
+    """
     if not raw:
         return ParseResult("unknown", "", raw)
 
     s = raw.strip()
 
-    # Bare identifiers first
-    if CHANNEL_ID_RE.match(s):
-        return ParseResult("channel_id", s, raw)
-    if HANDLE_RE.match(s):
-        return ParseResult("handle", s, raw)
+    # Bare identifiers first (handle both raw and percent-encoded forms)
+    decoded = _safe_unquote(s)
+    if CHANNEL_ID_RE.match(decoded):
+        return ParseResult("channel_id", decoded, raw)
+    if HANDLE_RE.match(decoded):
+        return ParseResult("handle", decoded, raw)
     # 11-char bare video id — conservative: only if clearly not a URL
-    if VIDEO_ID_RE.match(s) and "/" not in s and "." not in s:
-        return ParseResult("video", s, raw)
+    if VIDEO_ID_RE.match(decoded) and "/" not in decoded and "." not in decoded:
+        return ParseResult("video", decoded, raw)
 
     # URL parsing
-    # Ensure scheme so urlparse treats path correctly
     if not s.startswith(("http://", "https://")):
         s = "https://" + s
 
     u = urlparse(s)
     host = (u.hostname or "").lower().removeprefix("www.")
-    path = u.path or "/"
+    # Decode percent-encoded path so Unicode handles become readable.
+    path = _safe_unquote(u.path or "/")
 
     if host == "youtu.be":
-        # youtu.be/VIDEO_ID
         vid = path.lstrip("/").split("/")[0]
         if VIDEO_ID_RE.match(vid):
             return ParseResult("video", vid, raw)
@@ -80,7 +99,7 @@ def parse_youtube_input(raw: str) -> ParseResult:
             vid = path.split("/", 2)[2].split("/")[0]
             if VIDEO_ID_RE.match(vid):
                 return ParseResult("video", vid, raw)
-        # /@handle[/...]
+        # /@handle[/...]  (ASCII + Unicode)
         if path.startswith("/@"):
             handle = "@" + path[2:].split("/")[0]
             if HANDLE_RE.match(handle):
