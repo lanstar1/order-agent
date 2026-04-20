@@ -357,14 +357,85 @@
           <pre style="background:#f9fafb;padding:10px;border-radius:4px;overflow:auto;margin-top:6px;font-size:10px">${escape(JSON.stringify({ cookies: cookieRes, youtube: ytRes }, null, 2))}</pre>
         </details>
 
-        <div style="margin-top:20px;padding:10px 14px;background:#eff6ff;border-radius:6px;font-size:12px;line-height:1.6;color:#1e40af">
-          <b>💡 해결 가이드:</b><br>
-          ❌ <b>쿠키 미설정</b> → Render Environment 에서 YOUTUBE_COOKIES_TEXT 를 추가하고 Save → 재배포<br>
-          ❌ <b>인증 쿠키 없음</b> → youtube.com 에 <b>로그인한 상태</b>에서 쿠키를 다시 추출<br>
-          ⚠️ <b>만료됨</b> → 브라우저에서 쿠키 새로 추출 (로그인 세션은 1~3개월 유효)<br>
-          ⚠️ <b>봇 탐지 페이지</b> → 쿠키만으로 부족. Webshare 프록시 추가 권장
+        <section style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb">
+          <h4 style="margin:0 0 10px">🎯 자막 API 실제 호출 테스트</h4>
+          <p style="color:#6b7280;font-size:12px;margin:0 0 8px">
+            youtube-transcript-api 를 직접 호출해 어디서 실패하는지 확인합니다.
+          </p>
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+            <input id="diag-vid" type="text" placeholder="영상 ID (예: gZPdX8NRv24)"
+              value="gZPdX8NRv24"
+              style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-family:monospace">
+            <button id="diag-test-transcript" class="btn-small" style="background:#2563eb;color:#fff;padding:6px 14px">테스트 실행</button>
+          </div>
+          <div id="diag-transcript-result" style="font-size:12px"></div>
+        </section>
+
+        <div style="margin-top:20px;padding:12px 16px;background:#eff6ff;border-radius:6px;font-size:12px;line-height:1.7;color:#1e40af">
+          <b>💡 해결 가이드 (진단 결과 기반)</b><br>
+          ${ytRes.ok && ytRes.looks_logged_in === false && (cookieRes.status === 'ok') ?
+            `<span style="color:#991b1b"><b>⚠️ 현재 상황</b>: 쿠키는 정상이지만 "비로그인" 감지 = Render 데이터센터 IP가 차단되어 쿠키만으론 부족합니다.</span><br>
+             <b>→ 다음 단계</b>: <b>Webshare 프록시</b> 가입 (무료 플랜 있음) — 아래 가이드 참고` :
+            `❌ <b>쿠키 미설정</b> → Render Environment 에서 YOUTUBE_COOKIES_TEXT 추가<br>
+             ❌ <b>인증 쿠키 없음</b> → youtube.com 에 로그인한 상태에서 쿠키 재추출<br>
+             ⚠️ <b>만료됨</b> → 브라우저에서 쿠키 새로 추출<br>
+             ⚠️ <b>봇 탐지 페이지</b> → Webshare 프록시 필요`}
         </div>
+
+        <details style="margin-top:14px;font-size:12px" open>
+          <summary style="cursor:pointer;color:#4338ca;font-weight:600;padding:8px">🌐 Webshare 프록시 3분 가이드 (권장 해결책)</summary>
+          <div style="padding:10px 14px;background:#f9fafb;border-radius:6px;line-height:1.8;margin-top:6px">
+            <b>왜 필요한가?</b> 쿠키가 있어도 Render 공용 IP는 YouTube 블랙리스트. 주거용 IP 프록시로 우회 필요.<br><br>
+            <b>단계:</b><br>
+            ① <a href="https://www.webshare.io/" target="_blank" rel="noopener" style="color:#4338ca;text-decoration:underline">webshare.io</a> 가입 (무료 — 10 프록시, 1GB/월)<br>
+            ② Dashboard → Proxy → <b>"Residential" 플랜 선택</b> (Datacenter 아님)<br>
+            ③ Proxy Settings 에서 <b>Username / Password</b> 확인<br>
+            ④ Render Environment → 추가:<br>
+            &nbsp;&nbsp;&nbsp;<code style="background:#fff;padding:2px 6px;border-radius:3px;border:1px solid #e5e7eb">YT_TRANSCRIPT_PROXY_USERNAME</code> = (webshare username)<br>
+            &nbsp;&nbsp;&nbsp;<code style="background:#fff;padding:2px 6px;border-radius:3px;border:1px solid #e5e7eb">YT_TRANSCRIPT_PROXY_PASSWORD</code> = (webshare password)<br>
+            ⑤ Save → 재배포 → 이 진단 버튼으로 다시 확인<br><br>
+            <b>💰 비용</b>: 무료 플랜은 한 달 ~100영상. 초과 시 $3.5/월부터.<br>
+            <b>🔒 보안</b>: 환경변수는 Render 내부에서 암호화 저장.
+          </div>
+        </details>
       `;
+
+      // 자막 API 테스트 버튼 바인딩
+      const testBtn = modal.querySelector("#diag-test-transcript");
+      const testResult = modal.querySelector("#diag-transcript-result");
+      const vidInput = modal.querySelector("#diag-vid");
+      if (testBtn) testBtn.addEventListener("click", async () => {
+        const vid = (vidInput.value || "").trim() || "gZPdX8NRv24";
+        testBtn.disabled = true; testBtn.textContent = "테스트 중...";
+        testResult.innerHTML = `<div style="color:#6b7280;padding:8px">📡 youtube-transcript-api 호출 중... (최대 30초)</div>`;
+        try {
+          const r = await authFetch(`${API}/diagnostics/test-transcript`, {
+            method: "POST",
+            body: JSON.stringify({ video_id: vid }),
+          });
+          const d = await r.json();
+          if (d.ok) {
+            testResult.innerHTML = `
+              <div style="padding:10px 14px;background:#d1fae5;border-left:4px solid #065f46;border-radius:4px;margin-top:4px">
+                <b style="color:#065f46">✅ 자막 수집 성공!</b><br>
+                언어: ${escape(d.lang)} · 세그먼트: ${d.segments_count}개 · ${d.cleaned_chars}자<br>
+                쿠키 사용: ${d.cookies_used ? '✓' : '—'} · 프록시 사용: ${d.proxy_used ? '✓' : '—'}<br>
+                <small style="color:#374151">발췌: ${escape((d.first_200_chars||'')+'...')}</small>
+              </div>`;
+          } else {
+            testResult.innerHTML = `
+              <div style="padding:10px 14px;background:#fef2f2;border-left:4px solid #991b1b;border-radius:4px;margin-top:4px">
+                <b style="color:#991b1b">❌ 실패</b> ${d.ip_blocked_detected?' · <span style="color:#991b1b">IP 차단 감지됨</span>':''}<br>
+                <pre style="white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:#fff;padding:8px;border-radius:4px;margin:6px 0;border:1px solid #e5e7eb">${escape(d.error||'')}</pre>
+                <div style="color:#1e40af">💡 ${escape(d.hint||'')}</div>
+              </div>`;
+          }
+        } catch (e) {
+          testResult.innerHTML = `<div style="color:#991b1b">요청 실패: ${escape(e.message)}</div>`;
+        } finally {
+          testBtn.disabled = false; testBtn.textContent = "테스트 실행";
+        }
+      });
     } catch (e) {
       content.innerHTML = `<div style="color:#991b1b">진단 실패: ${escape(e.message)}</div>`;
     }

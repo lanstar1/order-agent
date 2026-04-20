@@ -161,6 +161,63 @@ def diag_cookies(user=Depends(get_current_user)):
     return info
 
 
+@router.post("/diagnostics/test-transcript")
+def diag_test_transcript_fetch(body: dict = None,
+                                user=Depends(get_current_user)):
+    """youtube-transcript-api 실제 호출 테스트. 어디서 실패하는지 정확히 확인.
+
+    Body: {"video_id": "xxxxxxxxxxx"} — 없으면 파일럿에 쓴 영상 기본값.
+    """
+    import os as _os
+    from services import transcript_service as ts
+    from services import cookies_manager
+
+    vid = (body or {}).get("video_id", "gZPdX8NRv24").strip()
+    cookies_manager.reset_cache()
+    cookies_path = cookies_manager.get_cookies_file_path()
+    proxy_on = bool(_os.environ.get("YT_TRANSCRIPT_PROXY_USERNAME", "").strip())
+
+    try:
+        segments, lang = ts.fetch_captions_via_api(vid)
+        cleaned = ts.clean_transcript_from_segments(segments)
+        return {
+            "ok": True,
+            "video_id": vid,
+            "lang": lang,
+            "segments_count": len(segments),
+            "cleaned_chars": len(cleaned),
+            "first_200_chars": cleaned[:200],
+            "cookies_used": bool(cookies_path),
+            "proxy_used": proxy_on,
+        }
+    except ts.TranscriptFetchError as exc:
+        msg = str(exc)
+        ip_blocked = (
+            "blocking requests from your ip" in msg.lower()
+            or "too many requests" in msg.lower()
+            or "ip has been" in msg.lower()
+            or "requestblocked" in msg.lower()
+        )
+        hint = (
+            "프록시 없이 실패 — 쿠키만으로는 데이터센터 IP의 한계가 있습니다. "
+            "Webshare 무료 플랜 가입 후 YT_TRANSCRIPT_PROXY_USERNAME/PASSWORD 를 "
+            "Render Environment에 추가하는 것이 가장 확실한 해결책입니다."
+            if ip_blocked and not proxy_on else
+            ("프록시 경유했음에도 실패 — 해당 영상에 자막이 없거나 제한된 영상일 수 있습니다. "
+             "다른 영상으로도 테스트해주세요." if proxy_on else
+             "영상 자체에 자막이 없거나 접근이 제한된 듯합니다.")
+        )
+        return {
+            "ok": False,
+            "video_id": vid,
+            "error": msg[:1000],
+            "ip_blocked_detected": ip_blocked,
+            "cookies_used": bool(cookies_path),
+            "proxy_used": proxy_on,
+            "hint": hint,
+        }
+
+
 @router.post("/diagnostics/test-youtube")
 def diag_test_youtube_access(user=Depends(get_current_user)):
     """쿠키로 실제 youtube.com 접속 테스트 — 로그인 상태 확인."""
