@@ -242,6 +242,23 @@ def persist_research(conn, result: MarketResearchResult) -> int:
     return cur.lastrowid
 
 
+def _loads_any(value, default):
+    """SQLite(TEXT) vs PostgreSQL(JSONB) 양쪽 호환 JSON 파싱.
+
+    - PostgreSQL JSONB: psycopg2 가 이미 dict/list 로 반환 → 그대로 사용
+    - SQLite TEXT: 문자열 → json.loads
+    - NULL / 빈 값 → default
+    """
+    if value is None or value == "":
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def load_latest_research(conn, product_id: int) -> Optional[dict]:
     row = conn.execute(
         """SELECT id, version, market_size_score, competition_score,
@@ -260,8 +277,8 @@ def load_latest_research(conn, product_id: int) -> Optional[dict]:
         "competition_score": row[3],
         "blue_ocean_signal": row[4],
         "opportunity_summary": row[5],
-        "recommended_price_range_krw": json.loads(row[6] or "{}"),
-        "risk_factors": json.loads(row[7] or "[]"),
+        "recommended_price_range_krw": _loads_any(row[6], {}),
+        "risk_factors": _loads_any(row[7], []),
         "created_at": row[8],
     }
 

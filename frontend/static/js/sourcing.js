@@ -318,9 +318,13 @@
                <button data-upload-transcript="${v.id}" data-title="${escape(v.title||'')}" data-videoid="${escape(v.video_id)}"
                        class="src-btn src-btn-sm" title="IP 차단 시 수동 업로드">📋 업로드</button>`
             : v.processed_status === 'done'
-              ? '<span style="color:#065f46;font-size:11px;font-weight:600">✓ 완료</span>'
+              ? '<span style="color:#065f46;font-size:11px;font-weight:600;margin-right:6px">✓ 완료</span>'
               : v.processed_status === 'in_progress'
-                ? `<span class="src-spinner"></span><span style="font-size:11px;color:#1e40af">진행 중</span>` : ''}
+                ? `<span class="src-spinner"></span><span style="font-size:11px;color:#1e40af;margin-right:6px">진행 중</span>
+                   <button data-reset="${v.id}" class="src-btn src-btn-sm" title="멈춘 상태를 실패로 복구">🔄 복구</button>`
+                : ''}
+          <button data-delete="${v.id}" data-title="${escape(v.title||'')}"
+                  class="src-btn src-btn-sm" style="color:#991b1b" title="영상 및 관련 데이터 삭제">🗑️</button>
         </td>
       </tr>`;
   }
@@ -341,6 +345,60 @@
           btn.dataset.title || "",
           () => renderVideosPanel(container),
         );
+      }));
+
+    // 🗑️ 영상 삭제 — 관련 제품·분석·자료·매칭·초안 모두 cascade 제거
+    container.querySelectorAll("button[data-delete]").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        const vid = btn.dataset.delete;
+        const title = btn.dataset.title || `영상 #${vid}`;
+        if (!confirm(
+          `정말 이 영상을 삭제하시겠습니까?\n\n` +
+          `"${title}"\n\n` +
+          `⚠️ 이 영상에서 추출된 제품·시장성 분석·마케팅 자료·` +
+          `인플루언서 매칭·컨택 초안이 모두 함께 삭제됩니다. 되돌릴 수 없습니다.`
+        )) return;
+        btn.disabled = true; btn.innerHTML = `<span class="src-spinner"></span>`;
+        try {
+          const r = await authFetch(`${API}/videos/${vid}`, { method: "DELETE" });
+          const data = await r.json().catch(() => ({}));
+          if (r.ok) {
+            showToast(data.message || "삭제되었습니다", "success");
+            renderVideosPanel(container);
+          } else {
+            showToast("삭제 실패: " + (data.detail || r.status), "error");
+            btn.disabled = false; btn.innerHTML = "🗑️";
+          }
+        } catch (e) {
+          showToast("오류: " + e.message, "error");
+          btn.disabled = false; btn.innerHTML = "🗑️";
+        }
+      }));
+
+    // 🔄 in_progress 복구 — 멈춘 상태를 failed 로 되돌려 재시도·삭제 가능하게 함
+    container.querySelectorAll("button[data-reset]").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        const vid = btn.dataset.reset;
+        if (!confirm(
+          "이 영상의 상태를 '실패'로 복구합니다.\n\n" +
+          "서버가 처리 도중 멈춰서 '진행 중'으로 남은 경우에만 사용하세요.\n" +
+          "복구 후에는 재시도 또는 삭제할 수 있습니다."
+        )) return;
+        btn.disabled = true; btn.innerHTML = `<span class="src-spinner"></span>`;
+        try {
+          const r = await authFetch(`${API}/videos/${vid}/reset`, { method: "POST" });
+          const data = await r.json().catch(() => ({}));
+          if (r.ok) {
+            showToast(data.message || "복구 완료", "success");
+            renderVideosPanel(container);
+          } else {
+            showToast("복구 실패: " + (data.detail || r.status), "error");
+            btn.disabled = false; btn.innerHTML = "🔄 복구";
+          }
+        } catch (e) {
+          showToast("오류: " + e.message, "error");
+          btn.disabled = false; btn.innerHTML = "🔄 복구";
+        }
       }));
   }
 

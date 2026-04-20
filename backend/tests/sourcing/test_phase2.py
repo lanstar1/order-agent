@@ -222,6 +222,29 @@ def test_persist_research_versioning_and_latest_flag():
     assert count_latest == 1
 
 
+def test_load_latest_research_handles_jsonb_dict_rows():
+    """PostgreSQL JSONB 회귀 방지.
+
+    psycopg2 는 JSONB 컬럼을 이미 파싱된 dict/list 로 돌려준다.
+    이전 구현은 ``json.loads(row[6])`` 로 호출해서
+    ``TypeError: the JSON object must be str, bytes or bytearray, not dict``
+    예외가 발생, /market-latest 응답이 500 이 되는 버그를 재현한다.
+    """
+    from services.market_analyzer import _loads_any
+
+    # dict / list 가 들어와도 그대로 통과시켜야 함
+    assert _loads_any({"low": 100, "high": 200}, {}) == {"low": 100, "high": 200}
+    assert _loads_any(["r1", "r2"], []) == ["r1", "r2"]
+    # SQLite TEXT (문자열) 는 기존대로 json 으로 파싱
+    assert _loads_any('{"a": 1}', {}) == {"a": 1}
+    assert _loads_any("[1,2,3]", []) == [1, 2, 3]
+    # NULL / 빈 문자열 → default
+    assert _loads_any(None, {"k": "v"}) == {"k": "v"}
+    assert _loads_any("", []) == []
+    # 깨진 JSON → default (예외로 폭발하지 않음)
+    assert _loads_any("{not json", {}) == {}
+
+
 def test_run_analysis_tolerates_api_failures():
     """If Naver clients throw, collectors must return empty without crashing."""
     class BoomAdClient:

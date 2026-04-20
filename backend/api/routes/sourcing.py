@@ -230,6 +230,114 @@ def list_videos(channel_id: Optional[int] = None, status: Optional[str] = None,
     return [dict(zip(cols, r)) for r in rows]
 
 
+@router.delete("/videos/{vid}")
+def delete_video(vid: int,
+                 conn=Depends(get_db),
+                 user=Depends(get_current_user)):
+    """영상과 관련 데이터 일괄 삭제.
+
+    SQLite 는 PRAGMA foreign_keys 가 기본 OFF 이고, PostgreSQL 은 스키마상
+    market_research / marketing_assets 가 ON DELETE SET NULL 이므로
+    **안전하게 명시적으로** 자식 레코드부터 역순 삭제한다.
+
+    삭제 순서:
+      1. outreach_drafts (product → matches → drafts)
+      2. product_influencer_matches
+      3. marketing_assets
+      4. market_research
+      5. sourced_products
+      6. youtube_videos
+    """
+    # 영상 존재 확인
+    row = conn.execute(
+        "SELECT id, title FROM youtube_videos WHERE id=?", (vid,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "영상을 찾을 수 없습니다")
+
+    title = row[1] if len(row) > 1 else ""
+
+    try:
+        # 1) outreach_drafts — product 에 연결된 match 하위
+        conn.execute(
+            """DELETE FROM outreach_drafts
+               WHERE match_id IN (
+                 SELECT id FROM product_influencer_matches
+                 WHERE product_id IN (SELECT id FROM sourced_products WHERE video_id=?)
+               )""",
+            (vid,),
+        )
+        # 2) product_influencer_matches
+        conn.execute(
+            """DELETE FROM product_influencer_matches
+               WHERE product_id IN (SELECT id FROM sourced_products WHERE video_id=?)""",
+            (vid,),
+        )
+        # 3) marketing_assets (ON DELETE SET NULL 대신 명시 삭제)
+        conn.execute(
+            """DELETE FROM marketing_assets
+               WHERE product_id IN (SELECT id FROM sourced_products WHERE video_id=?)""",
+            (vid,),
+        )
+        # 4) market_research
+        conn.execute(
+            """DELETE FROM market_research
+               WHERE product_id IN (SELECT id FROM sourced_products WHERE video_id=?)""",
+            (vid,),
+        )
+        # 5) sourced_products
+        conn.execute(
+            "DELETE FROM sourced_products WHERE video_id=?",
+            (vid,),
+        )
+        # 6) youtube_videos
+        conn.execute("DELETE FROM youtube_videos WHERE id=?", (vid,))
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        try: conn.rollback()
+        except Exception: pass
+        logger.exception("[sourcing] delete_video failed")
+        raise HTTPException(500, f"삭제 실패: {exc}")
+
+    logger.info(f"[sourcing] video deleted: vid={vid} title={title!r}")
+    return {"ok": True, "message": f"영상 #{vid} 과 관련 데이터가 모두 삭제되었습니다"}
+
+
+@router.post("/videos/{vid}/reset")
+def reset_video_status(vid: int,
+                       conn=Depends(get_db),
+                       user=Depends(get_current_user)):
+    """멈춘 ``in_progress`` 상태를 ``failed`` 로 되돌린다.
+
+    서버 크래시·타임아웃 등으로 처리 루프가 중단되었을 때, 영상이
+    영원히 ``in_progress`` 상태로 남아 재시도·삭제도 못하는 상황을
+    방지한다. status != in_progress 이면 아무 동작도 하지 않고 no-op.
+    """
+    row = conn.execute(
+        "SELECT processed_status FROM youtube_videos WHERE id=?", (vid,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "영상을 찾을 수 없습니다")
+    cur_status = row[0]
+    if cur_status != "in_progress":
+        return {
+            "ok": True, "changed": False,
+            "message": f"현재 상태({cur_status})는 복구 대상이 아닙니다",
+        }
+    conn.execute(
+        """UPDATE youtube_videos
+           SET processed_status='failed',
+               error_reason=COALESCE(error_reason, '') || ' [수동 리셋됨]'
+           WHERE id=?""",
+        (vid,),
+    )
+    conn.commit()
+    return {
+        "ok": True, "changed": True,
+        "message": "상태를 failed 로 복구했습니다. 재시도 또는 삭제할 수 있습니다.",
+    }
+
+
 # --------------------------------------------------------------- #
 # Products
 # --------------------------------------------------------------- #
