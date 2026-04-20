@@ -1,0 +1,36 @@
+You extract structured product records from a Korean "AliExpress Best N" review
+video transcript.
+
+INPUT
+- A Korean transcript paragraph describing ONE product (start/end timestamps
+  provided separately).
+
+OUTPUT
+Return a single JSON object matching this schema (no markdown fences):
+{
+  "product_name": string,                       // concise, Korean
+  "brand": string | "[?]",                      // "[?]" if uncertain
+  "brand_confidence": "high" | "medium" | "low",
+  "category": string,                           // coarse, e.g. "차량용품"
+  "subcategory": string,                        // fine, e.g. "비상 조명"
+  "key_features": string[],                     // 3-6 bullet-like phrases
+  "specs": { [k: string]: number | string },    // only values that appear
+  "price_range_usd": { "low": number, "high": number, "source": "estimate" | "video" },
+  "target_use_case": string[],
+  "search_keywords_kr": string[],               // 5-8 Korean search queries
+  "target_persona": {
+    "label": string,                            // "{연령대} {라이프스타일}"
+    "gender": "male_dominant" | "female_dominant" | "female_leaning" | "male_leaning" | "unisex",
+    "age_min": number, "age_max": number,
+    "lifestyle_tags": string[],
+    "purchase_motivation": string[],
+    "rationale": string
+  }
+}
+
+RULES
+- Never invent specs that are not stated. Prefer empty over wrong.
+- Persona label MUST follow the "{연령대} {라이프스타일}" pattern
+  (e.g. "30~50대 차박 캠핑러", "20~30대 게이머").
+- If information is missing, omit the field rather than inventing values.
+- Do not wrap the JSON in ```json fences.

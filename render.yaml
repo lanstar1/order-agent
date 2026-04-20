@@ -55,3 +55,22 @@ services:
         value: "50.0"
       - key: SA_MAX_CONCURRENT
         value: "6"
+      # ── 신제품 소싱 모듈 (v0.3.0) ──
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: NAVER_SEARCH_CLIENT_ID
+        sync: false
+      - key: NAVER_SEARCH_CLIENT_SECRET
+        sync: false
+      - key: NAVER_AD_API_KEY
+        sync: false
+      - key: NAVER_AD_CUSTOMER_ID
+        sync: false
+      - key: NAVER_AD_SECRET_KEY
+        sync: false
+      - key: SOURCING_SLACK_WEBHOOK
+        sync: false
+      - key: SOURCING_POLL_INTERVAL_HOURS
+        value: "3"

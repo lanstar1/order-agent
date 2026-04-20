@@ -40,6 +40,7 @@ from api.routes.map_monitor import router as map_monitor_router
 from api.routes.mail_auto import router as mail_auto_router
 from api.routes.telegram_bot import router as telegram_bot_router
 from api.routes.datalab import router as datalab_router
+from api.routes.sourcing import router as sourcing_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -288,6 +289,7 @@ app.include_router(map_monitor_router)
 app.include_router(mail_auto_router)
 app.include_router(telegram_bot_router)
 app.include_router(datalab_router)
+app.include_router(sourcing_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -426,6 +428,16 @@ async def startup():
         logger.info("리베이트 테이블 초기화 완료")
     except Exception as e:
         logger.warning(f"리베이트 테이블 초기화 실패 (서비스는 계속): {e}")
+
+    # 신제품 소싱 모듈 테이블 초기화 (10개)
+    try:
+        from db.database import get_connection as _get_conn, USE_PG as _USE_PG
+        from db.sourcing_schema import init_sourcing_tables
+        _sconn = _get_conn()
+        init_sourcing_tables(_sconn, dialect="postgres" if _USE_PG else "sqlite")
+        logger.info("신제품 소싱 테이블 초기화 완료")
+    except Exception as e:
+        logger.warning(f"신제품 소싱 테이블 초기화 실패 (서비스는 계속): {e}")
 
     # 통합 스캔 스케줄러 (매일 오전 8시 KST)
     try:

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "seeded_from": "pilot:gZPdX8NRv24",
+  "labels": [
+    {"label": "20~30대 게이머", "age_min": 20, "age_max": 35, "gender": "male_dominant", "lifestyle_tags": ["gaming", "desk_setup", "tech_savvy"]},
+    {"label": "20~30대 자취생", "age_min": 20, "age_max": 35, "gender": "unisex", "lifestyle_tags": ["single_household", "budget_conscious", "small_space"]},
+    {"label": "20~30대 헬창·운동러", "age_min": 20, "age_max": 35, "gender": "unisex", "lifestyle_tags": ["fitness", "gym_goer", "health_food"]},
+    {"label": "20~30대 1인 크리에이터", "age_min": 20, "age_max": 35, "gender": "unisex", "lifestyle_tags": ["content_creation", "vlog", "travel"]},
+    {"label": "20~40대 오디오 입문자", "age_min": 20, "age_max": 45, "gender": "male_dominant", "lifestyle_tags": ["desk_setup", "audio_enthusiast", "work_from_home"]},
+    {"label": "30~40대 남성 라이더", "age_min": 30, "age_max": 45, "gender": "male_dominant", "lifestyle_tags": ["motorcycle", "touring"]},
+    {"label": "30~40대 워킹맘", "age_min": 30, "age_max": 45, "gender": "female_dominant", "lifestyle_tags": ["parenting", "time_saving", "multi_tasking"]},
+    {"label": "30~40대 홈트족", "age_min": 25, "age_max": 45, "gender": "female_leaning", "lifestyle_tags": ["home_workout", "self_care", "wellness"]},
+    {"label": "30~50대 차박 캠핑러", "age_min": 30, "age_max": 55, "gender": "male_dominant", "lifestyle_tags": ["camping", "car_camping", "outdoor"]},
+    {"label": "30~50대 장거리 운전자", "age_min": 30, "age_max": 55, "gender": "male_dominant", "lifestyle_tags": ["long_commute", "business_travel"]},
+    {"label": "30~50대 홈오너 DIY러", "age_min": 30, "age_max": 55, "gender": "male_dominant", "lifestyle_tags": ["diy", "home_improvement"]},
+    {"label": "40~60대 캠핑러", "age_min": 40, "age_max": 60, "gender": "unisex", "lifestyle_tags": ["camping", "outdoor", "retirement_prep"]},
+    {"label": "50~60대 텃밭러", "age_min": 50, "age_max": 65, "gender": "unisex", "lifestyle_tags": ["gardening", "countryside", "retirement"]},
+    {"label": "40~50대 아빠 운전자", "age_min": 40, "age_max": 55, "gender": "male_dominant", "lifestyle_tags": ["family", "safety_concerned", "auto_care"]}
+  ]
+}

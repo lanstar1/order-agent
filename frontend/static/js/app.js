@@ -179,6 +179,8 @@ function navigateTo(pageId) {
   if (pageId === "training") initTrainingPage().catch(e => console.error("initTrainingPage 실패:", e));
   // AI 대시보드 진입 시 데이터 로드
   if (pageId === "ai_dashboard" && typeof loadDashboard === "function") loadDashboard();
+  // 신제품 소싱 페이지 진입 시 초기화
+  if (pageId === "sourcing" && typeof initSourcingPage === "function") initSourcingPage();
   // 설정 페이지 진입 시 관리자 인증 확인
   if (pageId === "settings" && typeof showAdminOverlay === "function") showAdminOverlay();
   // 리베이트 페이지 진입 시 초기화
