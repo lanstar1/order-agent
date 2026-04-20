@@ -60,6 +60,15 @@ except Exception as _src_err:
     sourcing_router = None
     logging.getLogger(__name__).warning(f"신제품 소싱 모듈 로드 실패 (기존 기능은 계속): {_src_err}")
 
+# 신제품 소싱 파이프라인 (전사·보정·시장성·마케팅·인플루언서 트리거)
+try:
+    from api.routes.sourcing_pipeline import router as sourcing_pipeline_router
+    _HAS_SOURCING_PIPELINE = True
+except Exception as _srcp_err:
+    _HAS_SOURCING_PIPELINE = False
+    sourcing_pipeline_router = None
+    logging.getLogger(__name__).warning(f"신제품 소싱 파이프라인 로드 실패: {_srcp_err}")
+
 # ─────────────────────────────────────────
 #  로깅 설정
 # ─────────────────────────────────────────
@@ -299,6 +308,8 @@ app.include_router(telegram_bot_router)
 app.include_router(datalab_router)
 if _HAS_SOURCING and sourcing_router is not None:
     app.include_router(sourcing_router)
+if _HAS_SOURCING_PIPELINE and sourcing_pipeline_router is not None:
+    app.include_router(sourcing_pipeline_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
