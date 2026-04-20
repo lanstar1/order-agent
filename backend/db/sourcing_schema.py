@@ -238,8 +238,11 @@ def sourcing_ddl(dialect: Dialect = "sqlite") -> list[str]:
 
 
 def init_sourcing_tables(conn, dialect: Dialect = "sqlite") -> None:
-    """Execute every CREATE TABLE statement. Idempotent."""
-    cur = conn.cursor()
+    """Execute every CREATE TABLE statement. Idempotent.
+
+    Uses ``conn.execute(ddl)`` (not ``conn.cursor().execute``) so the
+    order-agent PostgreSQL wrapper applies its ``_sql_to_pg`` translation.
+    """
     for ddl in sourcing_ddl(dialect):
-        cur.execute(ddl)
+        conn.execute(ddl)
     conn.commit()

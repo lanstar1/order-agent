@@ -51,8 +51,8 @@ def log_llm_call(conn, record: LLMCallRecord) -> int:
         record.cost_usd = compute_cost_usd(
             record.provider, record.model, record.input_tokens, record.output_tokens
         )
-    cur = conn.cursor()
-    cur.execute(
+    # conn.execute() (not cursor) for order-agent's _sql_to_pg translation.
+    cur = conn.execute(
         """INSERT INTO llm_call_logs (
             service, provider, model, prompt_version,
             input_tokens, output_tokens, latency_ms,

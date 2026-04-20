@@ -119,8 +119,8 @@ def create_channel(body: ChannelCreate, user=Depends(get_current_user)):
         channel_id_val = parsed.value
     else:
         channel_id_val = f"__provisional__{parsed.value}"
-    cur = conn.cursor()
-    cur.execute(
+    # order-agent 규약: conn.execute()는 _sql_to_pg 변환 + RETURNING id 자동 적용
+    cur = conn.execute(
         "INSERT INTO youtube_channels (channel_id, channel_handle, category, polling_mode) VALUES (?, ?, ?, ?)",
         (channel_id_val, raw_handle, body.category, body.polling_mode),
     )

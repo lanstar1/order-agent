@@ -192,21 +192,24 @@ def _stat_to_dict(s: KeywordStat) -> dict:
 
 def persist_research(conn, result: MarketResearchResult) -> int:
     """Insert the result as a new row, flipping previous rows of the same
-    product to is_latest=0. Returns the new row id."""
-    cur = conn.cursor()
+    product to is_latest=0. Returns the new row id.
+
+    Uses ``conn.execute()`` (not cursor) per order-agent convention so the
+    PostgreSQL wrapper applies ``_sql_to_pg`` translation.
+    """
     # Find max version for this product
-    row = cur.execute(
+    row = conn.execute(
         "SELECT COALESCE(MAX(version), 0) FROM market_research WHERE product_id=?",
         (result.product_id,),
     ).fetchone()
     prev_max = int(row[0] if row else 0)
     new_version = prev_max + 1
     # Flip is_latest=FALSE on previous rows (TRUE/FALSE 리터럴로 SQLite/PG 양쪽 호환)
-    cur.execute(
+    conn.execute(
         "UPDATE market_research SET is_latest=FALSE WHERE product_id=?",
         (result.product_id,),
     )
-    cur.execute(
+    cur = conn.execute(
         """INSERT INTO market_research (
             product_id, version, is_latest,
             ad_keyword_stats, datalab_category_trend, naver_shop_top40,

@@ -346,8 +346,8 @@ def generate_all_kinds(
 
 
 def persist_asset(conn, product_id: int, asset: MarketingAsset) -> int:
-    cur = conn.cursor()
-    cur.execute(
+    # conn.execute() (not cursor) for order-agent's _sql_to_pg translation.
+    cur = conn.execute(
         """INSERT INTO marketing_assets
            (product_id, kind, title, body_markdown, metadata, prompt_version)
            VALUES (?, ?, ?, ?, ?, ?)""",

@@ -152,15 +152,17 @@ def find_candidates(
 
 
 def upsert_influencer(conn, snap: ChannelSnapshot, contact_email: Optional[str] = None) -> int:
-    """Insert or update the influencers master row. Returns id."""
-    cur = conn.cursor()
-    row = cur.execute(
+    """Insert or update the influencers master row. Returns id.
+
+    Uses ``conn.execute()`` (not cursor) per order-agent convention.
+    """
+    row = conn.execute(
         "SELECT id FROM influencers WHERE platform=? AND handle=?",
         ("youtube", snap.handle or snap.channel_id),
     ).fetchone()
     if row:
         inf_id = row[0]
-        cur.execute(
+        conn.execute(
             """UPDATE influencers SET
                 display_name=?, follower_count=?, avg_views=?,
                 engagement_rate=?, last_metrics_update=CURRENT_TIMESTAMP,
@@ -174,7 +176,7 @@ def upsert_influencer(conn, snap: ChannelSnapshot, contact_email: Optional[str] 
             ),
         )
     else:
-        cur.execute(
+        cur = conn.execute(
             """INSERT INTO influencers
                (platform, handle, profile_url, display_name,
                 follower_count, avg_views, engagement_rate,
@@ -202,15 +204,14 @@ def persist_matches(
 ) -> list[int]:
     """Upsert each candidate into influencers + create a match row per product."""
     ids: list[int] = []
-    cur = conn.cursor()
     for c in candidates:
         inf_id = upsert_influencer(conn, c.channel_snapshot)
-        existing = cur.execute(
+        existing = conn.execute(
             "SELECT id FROM product_influencer_matches WHERE product_id=? AND influencer_id=?",
             (product_id, inf_id),
         ).fetchone()
         if existing:
-            cur.execute(
+            conn.execute(
                 """UPDATE product_influencer_matches SET
                     quality_score=?, match_score=?, is_excluded=?, exclusion_reason=?
                    WHERE id=?""",
@@ -219,7 +220,7 @@ def persist_matches(
             )
             ids.append(existing[0])
         else:
-            cur.execute(
+            cur = conn.execute(
                 """INSERT INTO product_influencer_matches
                    (product_id, influencer_id, quality_score, match_score,
                     is_excluded, exclusion_reason)

@@ -114,8 +114,8 @@ def copy_payload(draft: OutreachDraft) -> dict:
 
 
 def persist_draft(conn, draft: OutreachDraft) -> int:
-    cur = conn.cursor()
-    cur.execute(
+    # conn.execute() (not cursor) for order-agent's _sql_to_pg translation.
+    cur = conn.execute(
         """INSERT INTO outreach_drafts
            (match_id, channel_kind, offer_kind, subject, message_body,
             product_proposal, status, prompt_version)
