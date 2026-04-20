@@ -79,14 +79,27 @@ def _set_step(conn, video_row_id: int, step: str):
 
 
 def _mark_failed(conn, video_row_id: int, error: str):
-    conn.execute(
-        """UPDATE youtube_videos
-           SET processed_status='failed', error_reason=?,
-               retry_count=COALESCE(retry_count, 0) + 1
-           WHERE id=?""",
-        (error[:500], video_row_id),
-    )
-    conn.commit()
+    # PostgreSQL: 이전 쿼리 실패 시 트랜잭션이 aborted 상태가 되어 후속
+    # 쿼리가 전부 'current transaction is aborted' 로 실패함. 먼저 rollback.
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+    try:
+        conn.execute(
+            """UPDATE youtube_videos
+               SET processed_status='failed', error_reason=?,
+                   retry_count=COALESCE(retry_count, 0) + 1
+               WHERE id=?""",
+            (error[:500], video_row_id),
+        )
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[video_processor] _mark_failed 쿼리 실패: {exc}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 def _mark_done(conn, video_row_id: int):
@@ -230,7 +243,7 @@ def _step_correct(conn, video_row_id: int, raw_cleaned: str,
             result.corrected, result.model,
             result.input_tokens + result.output_tokens,
             result.ratio,
-            1 if result.needs_human_review else 0,
+            bool(result.needs_human_review),  # psycopg2 → PostgreSQL BOOLEAN 자동 변환
             video_row_id,
         ),
     )
