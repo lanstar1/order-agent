@@ -231,9 +231,12 @@
           }).join("") || '<tr><td colspan="7" style="padding:20px;color:#9ca3af;text-align:center">수집된 영상이 없습니다</td></tr>'}
         </tbody>
       </table>
-      <p style="color:#6b7280;font-size:12px;margin-top:8px">
-        ℹ️ <b>처리 시작</b> = 자동 자막 다운로드 → 보정 → 제품 추출 · <b>자막 업로드</b> = YouTube IP 차단 시 수동 업로드 경로
-      </p>`;
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px;flex-wrap:wrap">
+        <p style="color:#6b7280;font-size:12px;margin:0;flex:1">
+          ℹ️ <b>처리 시작</b> = 자동 자막 → 보정 → 제품 추출 · <b>자막 업로드</b> = IP 차단 시 수동 업로드 경로
+        </p>
+        <button id="diag-cookies-btn" class="btn-small" style="background:#eef2ff;color:#4338ca">🔍 쿠키 진단</button>
+      </div>`;
 
     // 영상 처리 트리거
     container.querySelectorAll("button[data-process]").forEach((btn) =>
@@ -263,6 +266,108 @@
           () => renderVideosPanel(container),
         );
       }));
+
+    // 쿠키 진단 버튼
+    const diagBtn = document.getElementById("diag-cookies-btn");
+    if (diagBtn) {
+      diagBtn.addEventListener("click", () => openDiagnosticsModal());
+    }
+  }
+
+  // ─── 진단 모달 ──────────────────────────────────────────────
+  async function openDiagnosticsModal() {
+    const modal = document.createElement("div");
+    modal.style.cssText =
+      "position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;" +
+      "align-items:center;justify-content:center;z-index:9999;padding:20px";
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:10px;max-width:720px;width:100%;max-height:90vh;display:flex;flex-direction:column">
+        <div style="padding:18px 24px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0;font-size:16px">🔍 YouTube 쿠키·네트워크 진단</h3>
+          <button style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280"
+                  onclick="this.closest('[style*=fixed]').remove()">×</button>
+        </div>
+        <div id="diag-content" style="padding:20px 24px;overflow:auto;font-size:13px">
+          로딩 중...
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const content = modal.querySelector("#diag-content");
+
+    try {
+      const [cookieRes, ytRes] = await Promise.all([
+        authFetch(`${API}/diagnostics/cookies`).then(r => r.ok ? r.json() : { error: r.status }),
+        authFetch(`${API}/diagnostics/test-youtube`, { method: "POST" }).then(r => r.ok ? r.json() : { error: r.status }),
+      ]);
+
+      const statusColors = {
+        ok: "#065f46", no_cookies_configured: "#991b1b",
+        no_auth_cookies: "#991b1b", expired: "#92400e",
+        parse_error: "#991b1b", unknown: "#6b7280",
+      };
+      const statusLabels = {
+        ok: "✅ 정상",
+        no_cookies_configured: "❌ 쿠키 미설정",
+        no_auth_cookies: "❌ 인증 쿠키 없음",
+        expired: "⚠️ 만료됨",
+        parse_error: "❌ 파싱 실패",
+        unknown: "❓ 알 수 없음",
+      };
+      const st = cookieRes.status || "unknown";
+      const envEntries = cookieRes.env || {};
+
+      content.innerHTML = `
+        <section style="margin-bottom:20px">
+          <h4 style="margin:0 0 10px">🍪 쿠키 설정 상태</h4>
+          <div style="padding:10px 14px;background:#f9fafb;border-left:4px solid ${statusColors[st]||'#d1d5db'};border-radius:4px">
+            <div style="font-weight:600;color:${statusColors[st]||'#111'};margin-bottom:4px">${statusLabels[st]||st}</div>
+            ${cookieRes.hint ? `<div style="color:#374151">${escape(cookieRes.hint)}</div>` : ""}
+          </div>
+          <table style="width:100%;margin-top:12px;font-size:12px;border-collapse:collapse">
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">YOUTUBE_COOKIES_FILE 설정</td><td style="padding:6px">${envEntries.YOUTUBE_COOKIES_FILE_set ? '✓ ' + escape(envEntries.YOUTUBE_COOKIES_FILE_value||'') : '—'}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">YOUTUBE_COOKIES_TEXT 길이</td><td style="padding:6px">${envEntries.YOUTUBE_COOKIES_TEXT_length||0}자</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">Webshare 프록시</td><td style="padding:6px">${envEntries.YT_TRANSCRIPT_PROXY_configured ? '✓ 설정됨' : '—'}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">Resolved 쿠키 경로</td><td style="padding:6px;font-family:monospace">${escape(cookieRes.resolved_path||'—')}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">파일 존재</td><td style="padding:6px">${cookieRes.path_exists ? '✓' : '✗'}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">총 쿠키 수</td><td style="padding:6px">${cookieRes.total_cookies ?? '—'}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">YouTube/Google 도메인</td><td style="padding:6px">${cookieRes.youtube_domain_cookies ?? '—'}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">인증 쿠키 발견</td><td style="padding:6px;font-family:monospace;font-size:11px">${(cookieRes.auth_cookies_found||[]).join(', ') || '—'}</td></tr>
+            <tr><td style="padding:6px;color:#6b7280">만료된 인증 쿠키</td><td style="padding:6px;color:#991b1b">${(cookieRes.auth_cookies_expired||[]).join(', ') || '—'}</td></tr>
+          </table>
+        </section>
+
+        <section>
+          <h4 style="margin:0 0 10px">🌐 youtube.com 접속 테스트</h4>
+          ${ytRes.ok ? `
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">HTTP 상태</td><td style="padding:6px">${ytRes.http_status}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">최종 URL</td><td style="padding:6px;word-break:break-all;font-family:monospace;font-size:11px">${escape(ytRes.final_url||'')}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">consent 페이지 리다이렉트</td><td style="padding:6px">${ytRes.redirected_to_consent ? '⚠️ 예 (비로그인)' : '아니오'}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">로그인 상태 감지</td><td style="padding:6px">${ytRes.looks_logged_in ? '✅ 로그인됨' : '❌ 비로그인'}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">봇 탐지 페이지</td><td style="padding:6px">${ytRes.has_bot_guard ? '⚠️ 감지됨 (IP 차단 가능성)' : '아니오'}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px;color:#6b7280">응답 크기</td><td style="padding:6px">${(ytRes.response_bytes||0).toLocaleString()} bytes</td></tr>
+            <tr><td style="padding:6px;color:#6b7280">전송된 쿠키 수</td><td style="padding:6px">${ytRes.cookies_sent||0}</td></tr>
+          </table>` : `
+          <div style="padding:10px;background:#fef2f2;color:#991b1b;border-radius:4px">에러: ${escape(ytRes.error||'unknown')}</div>
+          `}
+        </section>
+
+        <details style="margin-top:16px;color:#6b7280;font-size:11px">
+          <summary style="cursor:pointer">📦 Raw JSON</summary>
+          <pre style="background:#f9fafb;padding:10px;border-radius:4px;overflow:auto;margin-top:6px;font-size:10px">${escape(JSON.stringify({ cookies: cookieRes, youtube: ytRes }, null, 2))}</pre>
+        </details>
+
+        <div style="margin-top:20px;padding:10px 14px;background:#eff6ff;border-radius:6px;font-size:12px;line-height:1.6;color:#1e40af">
+          <b>💡 해결 가이드:</b><br>
+          ❌ <b>쿠키 미설정</b> → Render Environment 에서 YOUTUBE_COOKIES_TEXT 를 추가하고 Save → 재배포<br>
+          ❌ <b>인증 쿠키 없음</b> → youtube.com 에 <b>로그인한 상태</b>에서 쿠키를 다시 추출<br>
+          ⚠️ <b>만료됨</b> → 브라우저에서 쿠키 새로 추출 (로그인 세션은 1~3개월 유효)<br>
+          ⚠️ <b>봇 탐지 페이지</b> → 쿠키만으로 부족. Webshare 프록시 추가 권장
+        </div>
+      `;
+    } catch (e) {
+      content.innerHTML = `<div style="color:#991b1b">진단 실패: ${escape(e.message)}</div>`;
+    }
   }
 
   // ─── 자막 수동 업로드 모달 ──────────────────────────────────

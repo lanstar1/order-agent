@@ -70,6 +70,137 @@ class ManualTranscriptBody(BaseModel):
     raw_transcript: str
 
 
+# ─── 진단 — 쿠키·프록시 상태 확인 ──────────────────────────── #
+
+
+@router.get("/diagnostics/cookies")
+def diag_cookies(user=Depends(get_current_user)):
+    """현재 설정된 YouTube 쿠키 상태를 반환. UI '🔍 진단' 버튼이 호출."""
+    import time
+    import os
+    from pathlib import Path
+    from services import cookies_manager
+
+    env_file_val = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
+    env_text = os.environ.get("YOUTUBE_COOKIES_TEXT", "").strip()
+    proxy_user = os.environ.get("YT_TRANSCRIPT_PROXY_USERNAME", "").strip()
+
+    cookies_manager.reset_cache()  # 최신 env 반영
+    resolved = cookies_manager.get_cookies_file_path()
+
+    info: dict = {
+        "env": {
+            "YOUTUBE_COOKIES_FILE_set": bool(env_file_val),
+            "YOUTUBE_COOKIES_FILE_value": env_file_val if env_file_val else None,
+            "YOUTUBE_COOKIES_TEXT_length": len(env_text),
+            "YT_TRANSCRIPT_PROXY_configured": bool(proxy_user),
+        },
+        "resolved_path": resolved,
+        "path_exists": bool(resolved and Path(resolved).exists()),
+        "status": "unknown",
+    }
+
+    if not resolved:
+        info["status"] = "no_cookies_configured"
+        info["hint"] = (
+            "쿠키가 설정되지 않았습니다. Render Environment 에 "
+            "YOUTUBE_COOKIES_TEXT 를 추가한 후 재배포해주세요."
+        )
+        return info
+
+    # 파일 파싱
+    try:
+        from http.cookiejar import MozillaCookieJar
+        jar = MozillaCookieJar(resolved)
+        jar.load(ignore_discard=True, ignore_expires=True)
+        cookies_list = list(jar)
+    except Exception as exc:  # noqa: BLE001
+        info["status"] = "parse_error"
+        info["parse_error"] = str(exc)
+        info["hint"] = (
+            "cookies.txt 형식이 올바르지 않습니다. "
+            "'Get cookies.txt LOCALLY' 확장에서 Netscape 형식으로 export 후 "
+            "전체 내용 그대로 복사해주세요."
+        )
+        return info
+
+    # YouTube / Google 도메인 쿠키 추출
+    yt_cookies = [c for c in cookies_list
+                  if c.domain.endswith("youtube.com")
+                  or c.domain.endswith(".youtube.com")
+                  or c.domain.endswith("google.com")
+                  or c.domain.endswith(".google.com")]
+    auth_names = {"SID", "HSID", "SSID", "APISID", "SAPISID",
+                  "__Secure-1PSID", "__Secure-3PSID",
+                  "__Secure-1PSIDTS", "__Secure-3PSIDTS", "LOGIN_INFO"}
+    found_auth = sorted({c.name for c in yt_cookies if c.name in auth_names})
+    now = time.time()
+    expired_auth = [c.name for c in yt_cookies
+                    if c.name in auth_names and c.expires and c.expires < now]
+
+    info["total_cookies"] = len(cookies_list)
+    info["youtube_domain_cookies"] = len(yt_cookies)
+    info["auth_cookies_found"] = found_auth
+    info["auth_cookies_expired"] = expired_auth
+
+    if not found_auth:
+        info["status"] = "no_auth_cookies"
+        info["hint"] = (
+            "로그인 세션 쿠키가 없습니다 (SID/HSID/APISID/SAPISID 등 발견 실패). "
+            "youtube.com 에 로그인한 상태에서 cookies.txt 를 다시 내보내주세요."
+        )
+    elif expired_auth:
+        info["status"] = "expired"
+        info["hint"] = (
+            f"만료된 쿠키: {expired_auth}. 브라우저에서 쿠키를 새로 추출해주세요."
+        )
+    else:
+        info["status"] = "ok"
+        info["hint"] = "쿠키가 정상 적용되어 있습니다. '처리 시작' 시도해보세요."
+
+    return info
+
+
+@router.post("/diagnostics/test-youtube")
+def diag_test_youtube_access(user=Depends(get_current_user)):
+    """쿠키로 실제 youtube.com 접속 테스트 — 로그인 상태 확인."""
+    import requests
+    from services import cookies_manager
+
+    cookies_manager.reset_cache()
+    path = cookies_manager.get_cookies_file_path()
+    if path:
+        session = cookies_manager.build_session_with_cookies(path)
+    else:
+        session = requests.Session()
+
+    try:
+        r = session.get("https://www.youtube.com/", timeout=15, allow_redirects=True)
+        body_head = r.text[:8000]
+        is_consent = "consent.youtube.com" in r.url
+        looks_logged_in = (
+            '"isLoggedIn":true' in body_head
+            or 'accounts_switcher' in body_head
+            or any(c.name == "LOGIN_INFO" for c in session.cookies)
+        )
+        has_bot_guard = (
+            "unusual traffic" in body_head.lower()
+            or ("bot" in body_head.lower() and "detected" in body_head.lower())
+        )
+        return {
+            "ok": True,
+            "http_status": r.status_code,
+            "final_url": r.url,
+            "redirected_to_consent": is_consent,
+            "looks_logged_in": looks_logged_in,
+            "has_bot_guard": has_bot_guard,
+            "response_bytes": len(r.content),
+            "cookies_sent": len(session.cookies),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
 # ─── Video processing ─────────────────────────────────────── #
 
 
