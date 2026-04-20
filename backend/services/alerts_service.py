@@ -73,9 +73,11 @@ def send_slack(
 
 def llm_failure_rate(conn, window_hours: int = 24) -> dict:
     """Return % failed LLM calls over the last N hours."""
+    # success 컬럼은 PostgreSQL에선 BOOLEAN, SQLite에선 INTEGER.
+    # NOT success 는 둘 다 호환되며 가장 이식성 높음.
     row = conn.execute(
         """SELECT COUNT(*) AS total,
-                  SUM(CASE WHEN success=0 THEN 1 ELSE 0 END) AS failed
+                  SUM(CASE WHEN NOT success THEN 1 ELSE 0 END) AS failed
            FROM llm_call_logs
            WHERE called_at >= datetime('now', ?)""",
         (f"-{window_hours} hours",),

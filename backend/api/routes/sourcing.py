@@ -130,7 +130,7 @@ def list_channels(user=Depends(get_current_user)):
     rows = conn.execute(
         """SELECT id, channel_id, channel_handle, channel_title, category,
                   polling_mode, enabled, last_polled_at
-           FROM youtube_channels WHERE enabled=1 ORDER BY id DESC"""
+           FROM youtube_channels WHERE enabled=TRUE ORDER BY id DESC"""
     ).fetchall()
     cols = ["id", "channel_id", "channel_handle", "channel_title", "category",
             "polling_mode", "enabled", "last_polled_at"]
@@ -139,7 +139,7 @@ def list_channels(user=Depends(get_current_user)):
 
 @router.delete("/channels/{cid}")
 def soft_delete_channel(cid: int, user=Depends(get_current_user)):
-    _conn().execute("UPDATE youtube_channels SET enabled=0 WHERE id=?", (cid,))
+    _conn().execute("UPDATE youtube_channels SET enabled=FALSE WHERE id=?", (cid,))
     _conn().commit()
     return {"ok": True}
 

@@ -112,7 +112,7 @@ def score_vs_outcome(conn) -> list[dict]:
                   AVG(sp.revenue_krw_30d) AS avg_rev,
                   AVG(sp.return_rate_30d) AS avg_return
            FROM sourced_products sp
-           JOIN market_research mr ON mr.product_id=sp.id AND mr.is_latest=1
+           JOIN market_research mr ON mr.product_id=sp.id AND mr.is_latest=TRUE
            WHERE sp.sourcing_status='purchased'
            GROUP BY mr.market_size_score
            ORDER BY mr.market_size_score DESC""",

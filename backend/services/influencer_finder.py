@@ -215,7 +215,7 @@ def persist_matches(
                     quality_score=?, match_score=?, is_excluded=?, exclusion_reason=?
                    WHERE id=?""",
                 (c.quality_score, c.match_score,
-                 1 if c.excluded else 0, c.exclusion_reason, existing[0]),
+                 bool(c.excluded), c.exclusion_reason, existing[0]),
             )
             ids.append(existing[0])
         else:
@@ -225,7 +225,7 @@ def persist_matches(
                     is_excluded, exclusion_reason)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (product_id, inf_id, c.quality_score, c.match_score,
-                 1 if c.excluded else 0, c.exclusion_reason),
+                 bool(c.excluded), c.exclusion_reason),
             )
             ids.append(cur.lastrowid)
     conn.commit()

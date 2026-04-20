@@ -335,6 +335,6 @@ def test_end_to_end_pipeline_on_pilot_transcript():
     assert conn.execute("SELECT COUNT(*) FROM sourced_products").fetchone()[0] == 2
     assert conn.execute("SELECT COUNT(*) FROM market_research WHERE product_id=1").fetchone()[0] == 1
     assert conn.execute(
-        "SELECT COUNT(*) FROM market_research WHERE product_id=1 AND is_latest=1"
+        "SELECT COUNT(*) FROM market_research WHERE product_id=1 AND is_latest=TRUE"
     ).fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM marketing_assets WHERE product_id=1").fetchone()[0] == 1

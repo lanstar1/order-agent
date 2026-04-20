@@ -201,9 +201,9 @@ def persist_research(conn, result: MarketResearchResult) -> int:
     ).fetchone()
     prev_max = int(row[0] if row else 0)
     new_version = prev_max + 1
-    # Flip is_latest=0 on previous rows
+    # Flip is_latest=FALSE on previous rows (TRUE/FALSE 리터럴로 SQLite/PG 양쪽 호환)
     cur.execute(
-        "UPDATE market_research SET is_latest=0 WHERE product_id=?",
+        "UPDATE market_research SET is_latest=FALSE WHERE product_id=?",
         (result.product_id,),
     )
     cur.execute(
@@ -215,7 +215,7 @@ def persist_research(conn, result: MarketResearchResult) -> int:
             recommended_price_range_krw, target_persona_refined,
             positioning_statement, risk_factors,
             prompt_version, llm_raw_output
-        ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ) VALUES (?, ?, TRUE, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             result.product_id,
             new_version,
@@ -245,7 +245,7 @@ def load_latest_research(conn, product_id: int) -> Optional[dict]:
                   blue_ocean_signal, opportunity_summary,
                   recommended_price_range_krw, risk_factors, created_at
            FROM market_research
-           WHERE product_id=? AND is_latest=1""",
+           WHERE product_id=? AND is_latest=TRUE""",
         (product_id,),
     ).fetchone()
     if not row:

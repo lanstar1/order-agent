@@ -217,7 +217,7 @@ def test_persist_research_versioning_and_latest_flag():
     assert hist[1]["is_latest"] is False
     # Prior row demoted
     count_latest = conn.execute(
-        "SELECT COUNT(*) FROM market_research WHERE product_id=1 AND is_latest=1"
+        "SELECT COUNT(*) FROM market_research WHERE product_id=1 AND is_latest=TRUE"
     ).fetchone()[0]
     assert count_latest == 1
 

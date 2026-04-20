@@ -66,7 +66,7 @@ def log_llm_call(conn, record: LLMCallRecord) -> int:
             record.input_tokens,
             record.output_tokens,
             record.latency_ms,
-            1 if record.success else 0,
+            bool(record.success),  # psycopg2 → PostgreSQL BOOLEAN · SQLite → 1/0 자동
             record.error_message,
             record.related_entity,
             record.cost_usd,
