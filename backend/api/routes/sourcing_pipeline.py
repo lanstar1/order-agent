@@ -66,6 +66,10 @@ class OutreachDraftBody(BaseModel):
     offer_kind: str = Field(..., pattern="^(gift|paid)$")
 
 
+class ManualTranscriptBody(BaseModel):
+    raw_transcript: str
+
+
 # ─── Video processing ─────────────────────────────────────── #
 
 
@@ -93,6 +97,35 @@ def process_video(vid: int,
     except Exception as exc:  # noqa: BLE001
         logger.exception("[pipeline] video process failed")
         raise HTTPException(500, f"영상 처리 실패: {exc}")
+
+
+@router.post("/videos/{vid}/upload-transcript")
+def upload_manual_transcript(vid: int, body: ManualTranscriptBody,
+                             conn=Depends(get_db),
+                             user=Depends(get_current_user)):
+    """사용자가 직접 붙여넣은 자막으로 파이프라인 실행.
+
+    Render IP가 YouTube에 차단됐을 때 우회 경로. DownSub 같은 외부 서비스에서
+    받은 SRT 또는 평문을 body.raw_transcript 에 넣어 POST.
+    """
+    try:
+        result = video_processor.process_video_from_manual_transcript(
+            conn, vid, body.raw_transcript,
+        )
+        return {
+            "ok": True,
+            **result.to_dict(),
+            "message": (
+                f"완료! 제품 {result.products_created}개 추출됨"
+                if result.products_created
+                else "전사·보정은 됐지만 제품을 추출하지 못했습니다"
+            ),
+        }
+    except video_processor.ProcessingError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[pipeline] manual transcript failed")
+        raise HTTPException(500, f"자막 처리 실패: {exc}")
 
 
 @router.post("/videos/{vid}/process-async")

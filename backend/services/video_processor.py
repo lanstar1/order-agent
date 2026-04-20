@@ -140,9 +140,28 @@ def _step_transcribe(conn, video: dict) -> tuple[str, list]:
     if not cleaned or len(cleaned) < 200:
         reasons = []
         if api_err:
-            reasons.append(f"youtube-transcript-api: {api_err}")
+            reasons.append(f"youtube-transcript-api: {api_err[:200]}")
         if yt_dlp_err:
             reasons.append(f"yt-dlp: {yt_dlp_err[:200]}")
+        combined = " | ".join(reasons).lower()
+
+        # IP 차단 감지
+        ip_blocked = (
+            "blocking requests from your ip" in combined
+            or "too many requests" in combined
+            or "ip has been" in combined
+        )
+        if ip_blocked:
+            raise ProcessingError(
+                "🚫 YouTube가 서버 IP를 일시 차단했습니다 (클라우드 공용 IP라서 흔히 발생). "
+                "해결 방법 3가지: "
+                "① 영상 행의 '📋 자막 붙여넣기' 버튼으로 SRT를 직접 업로드 "
+                "(DownSub.com 같은 사이트에서 다운로드). "
+                "② Webshare 프록시를 Render 환경변수 "
+                "YT_TRANSCRIPT_PROXY_USERNAME/PASSWORD에 설정. "
+                "③ 몇 시간 기다린 후 재시도."
+            )
+
         raise ProcessingError(
             "자막을 가져올 수 없습니다. 자동자막 미생성 / 영상 비공개 / 자막 자체 없음 "
             "중 하나일 수 있습니다. " + " | ".join(reasons)
@@ -329,3 +348,76 @@ def process_video_full(
         logger.exception(f"[video_processor] 예기치 못한 오류 video={video_row_id}")
         _mark_failed(conn, video_row_id, f"내부 오류: {exc}")
         raise ProcessingError(f"처리 중 오류: {exc}") from exc
+
+
+def process_video_from_manual_transcript(
+    conn, video_row_id: int, raw_transcript: str,
+    *,
+    correct_llm_fn: Optional[Callable] = None,
+    extract_llm_fn: Optional[Callable] = None,
+) -> ProcessResult:
+    """자막을 사용자가 직접 붙여넣어 주입하는 경로.
+
+    Render IP가 YouTube에 차단된 상황 대응용.
+    사용자는 DownSub 등 외부 서비스로 받은 SRT 또는 일반 텍스트를 업로드.
+    """
+    video = _load_video(conn, video_row_id)
+
+    # SRT 형태로 들어오면 파싱, 아니면 그대로 text로 취급
+    raw = (raw_transcript or "").strip()
+    if not raw:
+        raise ProcessingError("자막 텍스트가 비어 있습니다.")
+    if len(raw) < 200:
+        raise ProcessingError(
+            f"자막이 너무 짧습니다 ({len(raw)}자). 최소 200자 이상 붙여넣어주세요."
+        )
+
+    segments: list[ts.Segment] = []
+    looks_like_srt = "-->" in raw and raw.split("\n", 3)[0].strip().isdigit()
+    if looks_like_srt:
+        segments = ts.parse_srt(raw)
+        cleaned = ts.clean_transcript_from_segments(segments) if segments else ts.dedupe_sliding_window(raw)
+    else:
+        # 단순 text — segments는 1개의 Segment로 포장
+        cleaned = ts.dedupe_sliding_window(raw)
+        segments = [ts.Segment(0.0, 0.0, cleaned)]
+
+    if len(cleaned) < 200:
+        raise ProcessingError(
+            f"정제 후 자막이 너무 짧습니다 ({len(cleaned)}자). 내용을 확인해주세요."
+        )
+
+    try:
+        _set_step(conn, video_row_id, "transcribing")
+        conn.execute(
+            """UPDATE youtube_videos
+               SET transcript_raw=?, transcript_segments=?
+               WHERE id=?""",
+            (
+                cleaned,
+                json.dumps([s.to_dict() for s in segments], ensure_ascii=False),
+                video_row_id,
+            ),
+        )
+        conn.commit()
+
+        corr = _step_correct(conn, video_row_id, cleaned, llm_fn=correct_llm_fn)
+        created = _step_extract(
+            conn, video_row_id, corr.corrected, segments,
+            llm_fn=extract_llm_fn,
+        )
+        _mark_done(conn, video_row_id)
+        return ProcessResult(
+            video_row_id=video_row_id,
+            transcript_chars=len(cleaned),
+            correction_ratio=corr.ratio,
+            needs_human_review=corr.needs_human_review,
+            products_created=created,
+        )
+    except ProcessingError as exc:
+        _mark_failed(conn, video_row_id, str(exc))
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[video_processor] manual transcript 처리 중 오류")
+        _mark_failed(conn, video_row_id, f"수동 자막 처리 실패: {exc}")
+        raise ProcessingError(f"수동 자막 처리 실패: {exc}") from exc

@@ -191,6 +191,20 @@ def download_auto_captions(
 # --------------------------------------------------------------------------- #
 
 
+def _build_proxy_config():
+    """환경변수에서 Webshare residential proxy 설정을 읽는다. 없으면 None."""
+    import os
+    user = os.environ.get("YT_TRANSCRIPT_PROXY_USERNAME", "").strip()
+    pw = os.environ.get("YT_TRANSCRIPT_PROXY_PASSWORD", "").strip()
+    if not user or not pw:
+        return None
+    try:
+        from youtube_transcript_api.proxies import WebshareProxyConfig  # type: ignore[import-not-found]
+    except Exception:  # noqa: BLE001
+        return None
+    return WebshareProxyConfig(proxy_username=user, proxy_password=pw)
+
+
 def fetch_captions_via_api(
     video_id: str,
     *,
@@ -198,8 +212,8 @@ def fetch_captions_via_api(
 ) -> tuple[list[Segment], str]:
     """youtube-transcript-api로 자막을 받아 (segments, language) 반환.
 
-    yt-dlp와 달리 JS 런타임 불필요. Render 같은 클라우드 환경에서 안정.
-    라이브러리 1.x / 0.6.x API 차이를 모두 흡수한다.
+    클라우드 공용 IP가 YouTube에 차단될 때는 ``YT_TRANSCRIPT_PROXY_USERNAME``
+    / ``YT_TRANSCRIPT_PROXY_PASSWORD`` 환경변수가 있으면 Webshare 프록시를 사용.
     """
     try:
         from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore[import-not-found]
@@ -216,12 +230,14 @@ def fetch_captions_via_api(
             "youtube-transcript-api 패키지가 설치되지 않았습니다."
         ) from exc
 
+    proxy_config = _build_proxy_config()
     last_err: Optional[str] = None
     for lang in lang_priority:
         try:
             # v1.x instance API 우선
             try:
-                ytt = YouTubeTranscriptApi()
+                ytt = (YouTubeTranscriptApi(proxy_config=proxy_config)
+                       if proxy_config else YouTubeTranscriptApi())
                 fetched = ytt.fetch(video_id, languages=[lang])
                 # FetchedTranscript iterable → snippets with .text .start .duration
                 raw = [

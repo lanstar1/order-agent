@@ -221,9 +221,10 @@
               <td style="padding:8px">${escape(v.video_type)}</td>
               <td style="padding:8px;color:#6b7280">${escape(v.internal_step || "-")}</td>
               <td style="padding:8px;color:#991b1b;font-size:12px">${escape(v.error_reason || "")}</td>
-              <td style="padding:8px">
+              <td style="padding:8px;white-space:nowrap">
                 ${canProcess
-                  ? `<button data-process="${v.id}" class="btn-small">${btnLabel}</button>`
+                  ? `<button data-process="${v.id}" class="btn-small" style="margin-right:4px">${btnLabel}</button>
+                     <button data-upload-transcript="${v.id}" data-title="${escape((v.title||'').replace(/"/g,'&quot;'))}" data-videoid="${escape(v.video_id)}" class="btn-small" title="IP 차단 시 수동 업로드">📋 자막 업로드</button>`
                   : v.processed_status === 'done' ? '<span style="color:#065f46;font-size:11px">✓</span>' : ''}
               </td>
             </tr>`;
@@ -231,7 +232,7 @@
         </tbody>
       </table>
       <p style="color:#6b7280;font-size:12px;margin-top:8px">
-        ℹ️ "처리 시작" = 자막 다운로드 → OpenAI 보정 → Claude 제품 추출 (영상당 15~60초 소요)
+        ℹ️ <b>처리 시작</b> = 자동 자막 다운로드 → 보정 → 제품 추출 · <b>자막 업로드</b> = YouTube IP 차단 시 수동 업로드 경로
       </p>`;
 
     // 영상 처리 트리거
@@ -251,6 +252,109 @@
           renderVideosPanel(container);
         }
       }));
+
+    // 자막 수동 업로드 (IP 차단 우회)
+    container.querySelectorAll("button[data-upload-transcript]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        openUploadTranscriptModal(
+          btn.dataset.uploadTranscript,
+          btn.dataset.videoid,
+          btn.dataset.title || "",
+          () => renderVideosPanel(container),
+        );
+      }));
+  }
+
+  // ─── 자막 수동 업로드 모달 ──────────────────────────────────
+  function openUploadTranscriptModal(vid, ytId, title, onDone) {
+    const modal = document.createElement("div");
+    modal.style.cssText =
+      "position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;" +
+      "align-items:center;justify-content:center;z-index:9999;padding:20px";
+    const downsubUrl = `https://downsub.com/?url=https://www.youtube.com/watch?v=${ytId}`;
+    const savesubsUrl = `https://savesubs.com/process?url=https://www.youtube.com/watch?v=${ytId}`;
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:10px;max-width:720px;width:100%;max-height:90vh;display:flex;flex-direction:column">
+        <div style="padding:20px 24px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0;font-size:16px">📋 자막 수동 업로드</h3>
+          <button style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280" onclick="this.closest('[style*=fixed]').remove()">×</button>
+        </div>
+        <div style="padding:20px 24px;overflow:auto">
+          <p style="color:#374151;font-size:13px;margin:0 0 8px">
+            <b>영상</b>: ${escape(title || ytId)}
+          </p>
+          <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 14px;margin:12px 0;border-radius:4px;font-size:13px;line-height:1.6">
+            <b>왜 이 기능이 필요한가요?</b><br>
+            Render 서버 IP가 YouTube에 일시 차단되면 자동 자막 수집이 실패합니다.
+            대신 본인 PC 브라우저에서 아래 서비스로 자막 파일을 받아
+            텍스트 박스에 붙여넣으면 자동으로 보정·제품 추출이 이어집니다.
+          </div>
+          <p style="font-weight:600;font-size:13px;margin:12px 0 6px">1️⃣ 자막 다운로드 (브라우저에서)</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <a href="${downsubUrl}" target="_blank" rel="noopener"
+               style="padding:6px 12px;background:#eef2ff;color:#4338ca;border-radius:6px;text-decoration:none;font-size:13px">
+               🔗 DownSub.com에서 열기</a>
+            <a href="${savesubsUrl}" target="_blank" rel="noopener"
+               style="padding:6px 12px;background:#eef2ff;color:#4338ca;border-radius:6px;text-decoration:none;font-size:13px">
+               🔗 SaveSubs.com에서 열기</a>
+          </div>
+          <p style="color:#6b7280;font-size:12px;margin:0 0 12px">
+            ↑ 한국어 자막을 <b>SRT 형식</b>으로 다운받거나 <b>Plain Text</b>로 복사해주세요.
+          </p>
+          <p style="font-weight:600;font-size:13px;margin:12px 0 6px">2️⃣ 아래에 붙여넣기</p>
+          <textarea id="transcript-input" rows="10"
+            placeholder="여기에 SRT 또는 평문 자막을 붙여넣어주세요&#10;&#10;예:&#10;1&#10;00:00:00,000 --> 00:00:05,000&#10;알리에서 실패없는 꿀템들 소개합니다"
+            style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+            <span id="char-count" style="color:#6b7280;font-size:12px">0자 / 최소 200자</span>
+            <div>
+              <button onclick="this.closest('[style*=fixed]').remove()"
+                style="padding:8px 14px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;margin-right:6px">취소</button>
+              <button id="do-upload"
+                style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer">
+                이 자막으로 처리하기
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const ta = modal.querySelector("#transcript-input");
+    const cnt = modal.querySelector("#char-count");
+    ta.addEventListener("input", () => {
+      const n = ta.value.length;
+      cnt.textContent = `${n.toLocaleString()}자 / 최소 200자`;
+      cnt.style.color = n >= 200 ? "#065f46" : "#6b7280";
+    });
+
+    modal.querySelector("#do-upload").addEventListener("click", async () => {
+      const raw = ta.value.trim();
+      if (raw.length < 200) {
+        alert("자막이 너무 짧습니다. 최소 200자 이상 붙여넣어주세요.");
+        return;
+      }
+      const btn = modal.querySelector("#do-upload");
+      btn.disabled = true; btn.textContent = "처리 중...";
+      try {
+        const r = await authFetch(`${API}/videos/${vid}/upload-transcript`, {
+          method: "POST",
+          body: JSON.stringify({ raw_transcript: raw }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) {
+          alert(data.message || "처리 완료!");
+          modal.remove();
+          if (onDone) onDone();
+        } else {
+          alert("처리 실패: " + (data.detail || r.status));
+          btn.disabled = false; btn.textContent = "이 자막으로 처리하기";
+        }
+      } catch (e) {
+        alert("오류: " + e.message);
+        btn.disabled = false; btn.textContent = "이 자막으로 처리하기";
+      }
+    });
   }
 
   // ─── 제품 목록 ──────────────────────────────────────────────
