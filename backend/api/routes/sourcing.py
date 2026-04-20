@@ -32,6 +32,7 @@ from services import influencer_pricing as pricing
 from services import outreach_service as outreach
 from services import feedback_service as fb
 from services import sourcing_scheduler as sched
+from services import channel_polling as polling
 from services.llm_logger import LLMCallRecord, log_llm_call
 
 
@@ -154,18 +155,52 @@ def soft_delete_channel(cid: int,
 def trigger_poll(cid: int,
                  conn=Depends(get_db),
                  user=Depends(get_current_user)):
-    conn.execute(
-        "UPDATE youtube_channels SET last_polled_at=NULL WHERE id=?", (cid,)
-    )
-    conn.commit()
-    return {"ok": True, "message": "다음 스케줄러 틱에 폴링됩니다"}
+    """즉시 폴링 — 최근 업로드 10개를 수집해 youtube_videos에 INSERT.
+
+    쿼터 약 3 units (channels.list forHandle + playlistItems + videos).
+    """
+    try:
+        result = polling.poll_channel_now(conn, cid, max_videos=10)
+    except polling.PollingError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[sourcing] poll_channel_now failed")
+        raise HTTPException(500, f"폴링 중 오류: {exc}")
+    return {
+        "ok": True,
+        "new_video_count": result.new_video_count,
+        "channel_title": result.updated_channel_title,
+        "message": (f"신규 영상 {result.new_video_count}개 수집"
+                    if result.new_video_count
+                    else "새로 수집된 영상이 없습니다"),
+    }
 
 
 @router.post("/channels/{cid}/poll-period")
 def trigger_poll_period(cid: int, body: ChannelPollPeriod,
                         conn=Depends(get_db),
                         user=Depends(get_current_user)):
-    return {"ok": True, "channel_id": cid, "start": body.start, "end": body.end}
+    """기간 지정 폴링 — start~end 날짜 범위 업로드 영상 수집.
+
+    쿼터 약 100 units per call — 자주 호출하지 말 것. 백필·시즌 회고용.
+    """
+    try:
+        result = polling.poll_channel_period(
+            conn, cid, start_date=body.start, end_date=body.end,
+        )
+    except polling.PollingError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[sourcing] poll_channel_period failed")
+        raise HTTPException(500, f"기간 폴링 중 오류: {exc}")
+    return {
+        "ok": True,
+        "channel_id": cid,
+        "start": body.start,
+        "end": body.end,
+        "new_video_count": result.new_video_count,
+        "message": f"{body.start}~{body.end} 기간 영상 {result.new_video_count}개 수집",
+    }
 
 
 # --------------------------------------------------------------- #

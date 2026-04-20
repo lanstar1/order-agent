@@ -112,12 +112,16 @@
               <td style="padding:8px">${escape(c.channel_title || "(미확인)")}</td>
               <td style="padding:8px">${escape(c.category || "")}</td>
               <td style="padding:8px">${escape(c.last_polled_at || "미실행")}</td>
-              <td style="padding:8px">
-                <button data-action="poll" data-id="${c.id}" class="btn-small">즉시 폴링</button>
+              <td style="padding:8px;white-space:nowrap">
+                <button data-action="poll" data-id="${c.id}" class="btn-small" style="margin-right:4px">즉시 폴링</button>
+                <button data-action="poll-period" data-id="${c.id}" class="btn-small">기간 폴링</button>
               </td>
             </tr>`).join("") || '<tr><td colspan="6" style="padding:20px;color:#9ca3af;text-align:center">등록된 채널이 없습니다</td></tr>'}
         </tbody>
-      </table>`;
+      </table>
+      <p style="color:#6b7280;font-size:12px;margin-top:8px">
+        ℹ️ 즉시 폴링: 최근 업로드 10개 수집 (~3 API units) · 기간 폴링: 날짜 범위 영상 수집 (~100 units, 신중히 사용)
+      </p>`;
 
     document.getElementById("chan-form").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -130,10 +134,50 @@
       if (r.ok) { renderChannelsPanel(container); }
       else alert("채널 추가 실패: " + (await r.text()));
     });
+
+    // ─ 즉시 폴링 ─
     container.querySelectorAll("button[data-action='poll']").forEach((btn) =>
       btn.addEventListener("click", async () => {
-        await authFetch(`${API}/channels/${btn.dataset.id}/poll`, { method: "POST" });
-        alert("다음 스케줄러 틱에 폴링됩니다.");
+        btn.disabled = true; btn.textContent = "수집 중...";
+        try {
+          const r = await authFetch(`${API}/channels/${btn.dataset.id}/poll`, { method: "POST" });
+          const data = await r.json().catch(() => ({}));
+          if (r.ok) {
+            alert(data.message || "폴링 완료");
+            renderChannelsPanel(container);  // 마지막 폴링·제목 갱신
+          } else {
+            alert("폴링 실패: " + (data.detail || r.status));
+          }
+        } finally {
+          btn.disabled = false; btn.textContent = "즉시 폴링";
+        }
+      }));
+
+    // ─ 기간 폴링 ─
+    container.querySelectorAll("button[data-action='poll-period']").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const weekAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString().slice(0, 10);
+        const start = prompt("시작일 (YYYY-MM-DD)", weekAgo);
+        if (!start) return;
+        const end = prompt("종료일 (YYYY-MM-DD)", today);
+        if (!end) return;
+        btn.disabled = true; btn.textContent = "수집 중...";
+        try {
+          const r = await authFetch(`${API}/channels/${btn.dataset.id}/poll-period`, {
+            method: "POST",
+            body: JSON.stringify({ start, end }),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (r.ok) {
+            alert(data.message || "기간 폴링 완료");
+            renderChannelsPanel(container);
+          } else {
+            alert("기간 폴링 실패: " + (data.detail || r.status));
+          }
+        } finally {
+          btn.disabled = false; btn.textContent = "기간 폴링";
+        }
       }));
   }
 

@@ -94,6 +94,74 @@ class YouTubeClient:
         qs = urllib.parse.urlencode(params)
         return self._fetch(f"{API_BASE}/{path}?{qs}")
 
+    # ---- channels.list with forHandle (1u) ---------------------------- #
+    def resolve_by_handle(self, handle: str) -> Optional[ChannelSnapshot]:
+        """Resolve ``@handle`` → ChannelSnapshot with real channelId and stats.
+
+        Uses channels.list?forHandle=@xxx (officially supported since 2023).
+        Returns None if the handle does not exist.
+        """
+        h = handle.lstrip("@")
+        data = self._get("channels", {
+            "part": "snippet,statistics,contentDetails",
+            "forHandle": f"@{h}",
+        })
+        items = data.get("items") or []
+        if not items:
+            return None
+        it = items[0]
+        stats = it.get("statistics") or {}
+        sn = it.get("snippet") or {}
+        return ChannelSnapshot(
+            channel_id=it.get("id", ""),
+            title=sn.get("title", ""),
+            handle=sn.get("customUrl", "") or f"@{h}",
+            subscriber_count=int(stats.get("subscriberCount") or 0),
+            video_count=int(stats.get("videoCount") or 0),
+            description=sn.get("description", ""),
+        )
+
+    # ---- search.list (100u) — channel-scoped video search ------------- #
+    def search_videos_by_channel(
+        self, channel_id: str, *,
+        published_after: Optional[str] = None,
+        published_before: Optional[str] = None,
+        max_results: int = 50,
+    ) -> list[dict]:
+        """Search video resources uploaded by a specific channel within a date
+        range. Each call costs 100 units so use sparingly (period-poll only).
+
+        ``published_after`` / ``published_before`` should be RFC3339 like
+        ``2026-04-01T00:00:00Z``.
+
+        Returns a list of dicts: {videoId, title, publishedAt}.
+        """
+        params = {
+            "part": "id,snippet",
+            "type": "video",
+            "channelId": channel_id,
+            "maxResults": min(max_results, 50),
+            "order": "date",
+        }
+        if published_after:
+            params["publishedAfter"] = published_after
+        if published_before:
+            params["publishedBefore"] = published_before
+        data = self._get("search", params)
+        out: list[dict] = []
+        for it in data.get("items", []):
+            vid = (it.get("id") or {}).get("videoId")
+            if not vid:
+                continue
+            sn = it.get("snippet") or {}
+            out.append({
+                "videoId": vid,
+                "title": sn.get("title", ""),
+                "publishedAt": sn.get("publishedAt", ""),
+                "thumbnail": ((sn.get("thumbnails") or {}).get("medium") or {}).get("url", ""),
+            })
+        return out
+
     # ---- search.list (100u) ------------------------------------------- #
     def search_channels(
         self, query: str, *, max_results: int = 10,
