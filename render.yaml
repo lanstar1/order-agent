@@ -74,3 +74,12 @@ services:
         sync: false
       - key: SOURCING_POLL_INTERVAL_HOURS
         value: "3"
+      # 자막 수집 IP 차단 우회 (선택)
+      - key: YOUTUBE_COOKIES_TEXT
+        sync: false
+      - key: YOUTUBE_COOKIES_FILE
+        sync: false
+      - key: YT_TRANSCRIPT_PROXY_USERNAME
+        sync: false
+      - key: YT_TRANSCRIPT_PROXY_PASSWORD
+        sync: false

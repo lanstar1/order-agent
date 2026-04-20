@@ -142,6 +142,10 @@ def download_auto_captions(
         out_path = work_dir / f"caption_{lang}.srt"
         if out_path.exists():
             out_path.unlink()
+        # ← cookies.txt 가 있으면 로그인 세션으로 접근 (IP 차단 우회)
+        from services import cookies_manager
+        cookie_file = cookies_manager.get_cookies_file_path()
+
         cmd = [
             yt_dlp_path,
             "--skip-download",
@@ -157,8 +161,10 @@ def download_auto_captions(
             "youtube:player_client=android,web;js_runtime=node",
             "-o",
             str(work_dir / "caption_%(subtitle_lang)s.%(ext)s"),
-            video_url,
         ]
+        if cookie_file:
+            cmd.extend(["--cookies", cookie_file])
+        cmd.append(video_url)
         try:
             proc = subprocess.run(
                 cmd,
@@ -231,13 +237,22 @@ def fetch_captions_via_api(
         ) from exc
 
     proxy_config = _build_proxy_config()
+    # ← Cookies 지원: 브라우저 쿠키로 YouTube IP 차단 우회
+    from services import cookies_manager
+    cookies_path = cookies_manager.get_cookies_file_path()
+
     last_err: Optional[str] = None
     for lang in lang_priority:
         try:
             # v1.x instance API 우선
             try:
-                ytt = (YouTubeTranscriptApi(proxy_config=proxy_config)
-                       if proxy_config else YouTubeTranscriptApi())
+                kwargs = {}
+                if proxy_config:
+                    kwargs["proxy_config"] = proxy_config
+                if cookies_path:
+                    # http_client에 쿠키 로드된 session 주입
+                    kwargs["http_client"] = cookies_manager.build_session_with_cookies(cookies_path)
+                ytt = YouTubeTranscriptApi(**kwargs) if kwargs else YouTubeTranscriptApi()
                 fetched = ytt.fetch(video_id, languages=[lang])
                 # FetchedTranscript iterable → snippets with .text .start .duration
                 raw = [
@@ -245,8 +260,11 @@ def fetch_captions_via_api(
                     for s in fetched
                 ]
             except (AttributeError, TypeError):
-                # v0.6.x 클래스 메서드 레거시
-                raw = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
+                # v0.6.x 클래스 메서드 레거시 — cookies 는 인자로 직접 전달
+                legacy_kwargs = {"languages": [lang]}
+                if cookies_path:
+                    legacy_kwargs["cookies"] = cookies_path
+                raw = YouTubeTranscriptApi.get_transcript(video_id, **legacy_kwargs)
         except (TranscriptsDisabled, NoTranscriptFound) as exc:
             last_err = f"{lang}: {type(exc).__name__}"
             continue
