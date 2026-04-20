@@ -41,11 +41,29 @@ def test_channel_snapshot_metrics():
     assert round(snap.sponsored_ratio, 2) == 0.33
 
 
+def test_search_channels_prefers_id_channelId_per_official_spec():
+    """Regression guard: youtube/api-samples uses item.id.channelId; we must
+    honour that even if a snippet.channelId alias is absent."""
+    resp = {"items": [
+        {"id": {"kind": "youtube#channel", "channelId": "UC_AAA"},
+         "snippet": {"title": "official shape"}},
+        # Legacy fallback: only snippet.channelId present
+        {"snippet": {"channelId": "UC_BBB", "title": "fallback shape"}},
+    ]}
+    yt = YouTubeClient("KEY", http_fetcher=lambda url: resp)
+    assert yt.search_channels("차박") == ["UC_AAA", "UC_BBB"]
+
+
 def test_youtube_client_search_and_get_channels_with_fake_fetcher():
+    # Mimic the canonical YouTube Data API v3 response shape
+    # (per github.com/youtube/api-samples python/search.py).
+    # `id.channelId` is the canonical field for type=channel searches.
     responses = {
         "search": {"items": [
-            {"snippet": {"channelId": "UC111"}},
-            {"snippet": {"channelId": "UC222"}},
+            {"id": {"kind": "youtube#channel", "channelId": "UC111"},
+             "snippet": {"title": "ch1"}},
+            {"id": {"kind": "youtube#channel", "channelId": "UC222"},
+             "snippet": {"title": "ch2"}},
         ]},
         "channels": {"items": [
             {"id": "UC111", "snippet": {"title": "ch1", "description": "차박"},

@@ -43,9 +43,9 @@ def _dialect() -> str:
 def _conn():
     """Acquire a DB connection + ensure sourcing tables exist.
 
-    init_sourcing_tables is idempotent (IF NOT EXISTS). Calling it on every
-    request is wasteful; we memoize the "already-initialised" flag per
-    process.
+    init_sourcing_tables is idempotent (IF NOT EXISTS). We memoize success so
+    we only run it once per process. On failure we rollback any aborted tx
+    and stay unmemoized so a later request can retry.
     """
     conn = get_connection()
     if not getattr(_conn, "_inited", False):
@@ -54,6 +54,10 @@ def _conn():
             _conn._inited = True  # type: ignore[attr-defined]
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"[sourcing] init_sourcing_tables failed: {exc}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
     return conn
 
 

@@ -105,16 +105,26 @@ class YouTubeClient:
         NOTE: 100 quota units. Use sparingly.
         """
         params = {
-            "part": "snippet", "type": "channel",
+            # Per YouTube Data API v3 docs: search.list responses always include
+            # `item.id` with a `kind`-specific identifier. When type=channel,
+            # `item.id.channelId` is the canonical field.
+            "part": "id,snippet", "type": "channel",
             "q": query, "maxResults": max_results, "order": order,
             "regionCode": region_code,
         }
         if published_after:
             params["publishedAfter"] = published_after
         data = self._get("search", params)
-        return [it["snippet"]["channelId"]
-                for it in data.get("items", [])
-                if "channelId" in it.get("snippet", {})]
+        out: list[str] = []
+        for it in data.get("items", []):
+            # Primary path — official sample pattern (search.py).
+            cid = (it.get("id") or {}).get("channelId")
+            # Fallback — still appears in snippet for type=channel results.
+            if not cid:
+                cid = (it.get("snippet") or {}).get("channelId")
+            if cid:
+                out.append(cid)
+        return out
 
     # ---- channels.list (1u) ------------------------------------------- #
     def get_channels(self, channel_ids: Iterable[str]) -> list[ChannelSnapshot]:
