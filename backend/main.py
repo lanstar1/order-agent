@@ -440,6 +440,7 @@ async def startup():
 
     # 신제품 소싱 모듈 테이블 초기화 (10개) — 모듈 로드 성공 시에만
     if _HAS_SOURCING:
+        _sconn = None
         try:
             from db.database import get_connection as _get_conn, USE_PG as _USE_PG
             from db.sourcing_schema import init_sourcing_tables
@@ -448,6 +449,13 @@ async def startup():
             logger.info("신제품 소싱 테이블 초기화 완료")
         except Exception as e:
             logger.warning(f"신제품 소싱 테이블 초기화 실패 (서비스는 계속): {e}")
+        finally:
+            # 중요: psycopg2 풀 고갈 방지 — startup에서도 conn 반납 필수
+            if _sconn is not None:
+                try:
+                    _sconn.close()
+                except Exception:
+                    pass
 
     # 통합 스캔 스케줄러 (매일 오전 8시 KST)
     try:

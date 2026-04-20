@@ -1,9 +1,13 @@
 """FastAPI routes for the sourcing module (order-agent integration).
 
-Wired to the order-agent project conventions:
-- `from db.database import get_connection`
-- `from security import get_current_user`
-- `from services.X import ...`
+**Connection management**: every endpoint declares ``conn=Depends(get_db)``.
+``get_db`` grabs one connection from the pool and returns it via
+``finally: conn.close()`` so psycopg2 pool is never exhausted.
+
+Wiring to order-agent conventions:
+- ``from db.database import get_connection`` (pool-backed)
+- ``from security import get_current_user``
+- ``from services.X import ...``
 """
 from __future__ import annotations
 
@@ -14,10 +18,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from db.database import get_connection, USE_PG
+from db.database import get_connection
 from security import get_current_user
 
-from db.sourcing_schema import init_sourcing_tables
 from services.youtube_url import parse_youtube_input
 from services import transcript_service as ts
 from services import transcript_corrector as tc
@@ -36,29 +39,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sourcing", tags=["sourcing"])
 
 
-def _dialect() -> str:
-    return "postgres" if USE_PG else "sqlite"
+# --------------------------------------------------------------- #
+# DB dependency — CRITICAL for pool safety
+# --------------------------------------------------------------- #
 
 
-def _conn():
-    """Acquire a DB connection + ensure sourcing tables exist.
+def get_db():
+    """Yield one DB connection per request; always return it to the pool.
 
-    init_sourcing_tables is idempotent (IF NOT EXISTS). We memoize success so
-    we only run it once per process. On failure we rollback any aborted tx
-    and stay unmemoized so a later request can retry.
+    Without this ``finally: conn.close()`` every sourcing request leaks a
+    psycopg2 pool connection, which exhausts the entire application's
+    connection pool (not just sourcing endpoints).
     """
     conn = get_connection()
-    if not getattr(_conn, "_inited", False):
+    try:
+        yield conn
+    finally:
         try:
-            init_sourcing_tables(conn, dialect=_dialect())
-            _conn._inited = True  # type: ignore[attr-defined]
+            conn.close()
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"[sourcing] init_sourcing_tables failed: {exc}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-    return conn
+            logger.debug(f"[sourcing] conn.close() failed silently: {exc}")
 
 
 # --------------------------------------------------------------- #
@@ -101,7 +101,9 @@ class PurchaseMark(BaseModel):
 
 
 @router.post("/channels")
-def create_channel(body: ChannelCreate, user=Depends(get_current_user)):
+def create_channel(body: ChannelCreate,
+                   conn=Depends(get_db),
+                   user=Depends(get_current_user)):
     parsed = parse_youtube_input(body.url_or_id)
     if not parsed:
         raise HTTPException(
@@ -109,17 +111,15 @@ def create_channel(body: ChannelCreate, user=Depends(get_current_user)):
             "YouTube URL / @핸들 / UCxxxx ID / 영상 URL 중 하나로 입력해주세요. "
             f"입력값: {body.url_or_id!r}",
         )
-    conn = _conn()
     raw_handle = None
     channel_id_val = None
     if parsed.kind == "handle":
         raw_handle = parsed.value
-        channel_id_val = parsed.value  # provisional — YouTube API will resolve
+        channel_id_val = parsed.value
     elif parsed.kind == "channel_id":
         channel_id_val = parsed.value
     else:
         channel_id_val = f"__provisional__{parsed.value}"
-    # order-agent 규약: conn.execute()는 _sql_to_pg 변환 + RETURNING id 자동 적용
     cur = conn.execute(
         "INSERT INTO youtube_channels (channel_id, channel_handle, category, polling_mode) VALUES (?, ?, ?, ?)",
         (channel_id_val, raw_handle, body.category, body.polling_mode),
@@ -129,8 +129,7 @@ def create_channel(body: ChannelCreate, user=Depends(get_current_user)):
 
 
 @router.get("/channels")
-def list_channels(user=Depends(get_current_user)):
-    conn = _conn()
+def list_channels(conn=Depends(get_db), user=Depends(get_current_user)):
     rows = conn.execute(
         """SELECT id, channel_id, channel_handle, channel_title, category,
                   polling_mode, enabled, last_polled_at
@@ -142,17 +141,19 @@ def list_channels(user=Depends(get_current_user)):
 
 
 @router.delete("/channels/{cid}")
-def soft_delete_channel(cid: int, user=Depends(get_current_user)):
-    _conn().execute("UPDATE youtube_channels SET enabled=FALSE WHERE id=?", (cid,))
-    _conn().commit()
+def soft_delete_channel(cid: int,
+                        conn=Depends(get_db),
+                        user=Depends(get_current_user)):
+    # 같은 conn으로 execute + commit — 별도 conn으로 commit 하면 반영 안 됨
+    conn.execute("UPDATE youtube_channels SET enabled=FALSE WHERE id=?", (cid,))
+    conn.commit()
     return {"ok": True}
 
 
 @router.post("/channels/{cid}/poll")
-def trigger_poll(cid: int, user=Depends(get_current_user)):
-    """Queue a poll job — actual YouTube Data API fetch is handled by the
-    scheduler loop. This endpoint only flips an internal marker."""
-    conn = _conn()
+def trigger_poll(cid: int,
+                 conn=Depends(get_db),
+                 user=Depends(get_current_user)):
     conn.execute(
         "UPDATE youtube_channels SET last_polled_at=NULL WHERE id=?", (cid,)
     )
@@ -162,9 +163,8 @@ def trigger_poll(cid: int, user=Depends(get_current_user)):
 
 @router.post("/channels/{cid}/poll-period")
 def trigger_poll_period(cid: int, body: ChannelPollPeriod,
+                        conn=Depends(get_db),
                         user=Depends(get_current_user)):
-    # Period-polling is implemented by the scheduler; we persist intent in a
-    # dedicated column or activity log in production. For now return ack.
     return {"ok": True, "channel_id": cid, "start": body.start, "end": body.end}
 
 
@@ -175,8 +175,8 @@ def trigger_poll_period(cid: int, body: ChannelPollPeriod,
 
 @router.get("/videos")
 def list_videos(channel_id: Optional[int] = None, status: Optional[str] = None,
+                conn=Depends(get_db),
                 user=Depends(get_current_user)):
-    conn = _conn()
     sql = ("SELECT id, channel_id, video_id, title, video_type, "
            "processed_status, internal_step, retry_count, error_reason, created_at "
            "FROM youtube_videos WHERE 1=1")
@@ -199,8 +199,7 @@ def list_videos(channel_id: Optional[int] = None, status: Optional[str] = None,
 
 
 @router.get("/products")
-def list_products(user=Depends(get_current_user)):
-    conn = _conn()
+def list_products(conn=Depends(get_db), user=Depends(get_current_user)):
     rows = conn.execute(
         """SELECT id, product_name, brand, category, subcategory,
                   sourcing_status, target_persona, thumbnail_url, created_at
@@ -220,8 +219,8 @@ def list_products(user=Depends(get_current_user)):
 
 @router.patch("/products/{pid}")
 def update_product(pid: int, body: ProductStatusUpdate,
+                   conn=Depends(get_db),
                    user=Depends(get_current_user)):
-    conn = _conn()
     conn.execute(
         "UPDATE sourced_products SET sourcing_status=?, sourcing_note=? WHERE id=?",
         (body.sourcing_status, body.sourcing_note, pid),
@@ -232,8 +231,9 @@ def update_product(pid: int, body: ProductStatusUpdate,
 
 @router.post("/products/{pid}/mark-purchased")
 def mark_purchased(pid: int, body: PurchaseMark,
+                   conn=Depends(get_db),
                    user=Depends(get_current_user)):
-    fb.mark_purchased(_conn(), product_id=pid, erp_item_code=body.erp_item_code)
+    fb.mark_purchased(conn, product_id=pid, erp_item_code=body.erp_item_code)
     return {"ok": True}
 
 
@@ -243,13 +243,17 @@ def mark_purchased(pid: int, body: PurchaseMark,
 
 
 @router.get("/products/{pid}/market-latest")
-def latest_research(pid: int, user=Depends(get_current_user)):
-    return ma.load_latest_research(_conn(), product_id=pid) or {}
+def latest_research(pid: int,
+                    conn=Depends(get_db),
+                    user=Depends(get_current_user)):
+    return ma.load_latest_research(conn, product_id=pid) or {}
 
 
 @router.get("/products/{pid}/market-history")
-def history(pid: int, user=Depends(get_current_user)):
-    return ma.load_research_history(_conn(), product_id=pid)
+def history(pid: int,
+            conn=Depends(get_db),
+            user=Depends(get_current_user)):
+    return ma.load_research_history(conn, product_id=pid)
 
 
 # --------------------------------------------------------------- #
@@ -258,8 +262,9 @@ def history(pid: int, user=Depends(get_current_user)):
 
 
 @router.get("/products/{pid}/marketing")
-def list_assets(pid: int, user=Depends(get_current_user)):
-    conn = _conn()
+def list_assets(pid: int,
+                conn=Depends(get_db),
+                user=Depends(get_current_user)):
     rows = conn.execute(
         "SELECT id, kind, title, created_at FROM marketing_assets "
         "WHERE product_id=? ORDER BY id DESC", (pid,),
@@ -268,8 +273,9 @@ def list_assets(pid: int, user=Depends(get_current_user)):
 
 
 @router.get("/marketing/{aid}")
-def get_asset(aid: int, user=Depends(get_current_user)):
-    conn = _conn()
+def get_asset(aid: int,
+              conn=Depends(get_db),
+              user=Depends(get_current_user)):
     row = conn.execute(
         "SELECT id, product_id, kind, title, body_markdown, metadata, prompt_version, created_at "
         "FROM marketing_assets WHERE id=?", (aid,),
@@ -291,8 +297,9 @@ def get_asset(aid: int, user=Depends(get_current_user)):
 
 
 @router.get("/products/{pid}/matches")
-def list_matches(pid: int, user=Depends(get_current_user)):
-    conn = _conn()
+def list_matches(pid: int,
+                 conn=Depends(get_db),
+                 user=Depends(get_current_user)):
     rows = conn.execute(
         """SELECT m.id, m.influencer_id, m.estimated_quote_krw,
                   m.quality_score, m.match_score, m.is_excluded,
@@ -312,8 +319,7 @@ def list_matches(pid: int, user=Depends(get_current_user)):
 
 
 @router.get("/outreach-drafts")
-def list_drafts(user=Depends(get_current_user)):
-    conn = _conn()
+def list_drafts(conn=Depends(get_db), user=Depends(get_current_user)):
     rows = conn.execute(
         """SELECT id, match_id, channel_kind, offer_kind, subject, message_body,
                   status, copied_at, created_at
@@ -325,15 +331,18 @@ def list_drafts(user=Depends(get_current_user)):
 
 
 @router.post("/outreach-drafts/{did}/mark-copied")
-def mark_copied(did: int, user=Depends(get_current_user)):
-    outreach.mark_copied(_conn(), draft_id=did)
+def mark_copied(did: int,
+                conn=Depends(get_db),
+                user=Depends(get_current_user)):
+    outreach.mark_copied(conn, draft_id=did)
     return {"ok": True}
 
 
 @router.patch("/outreach-drafts/{did}")
 def update_draft_status(did: int, body: OutreachStatusUpdate,
+                        conn=Depends(get_db),
                         user=Depends(get_current_user)):
-    outreach.update_status(_conn(), did, body.status, body.note)
+    outreach.update_status(conn, did, body.status, body.note)
     return {"ok": True}
 
 
@@ -343,8 +352,7 @@ def update_draft_status(did: int, body: OutreachStatusUpdate,
 
 
 @router.get("/dashboard")
-def dashboard(user=Depends(get_current_user)):
-    conn = _conn()
+def dashboard(conn=Depends(get_db), user=Depends(get_current_user)):
     daily_videos = conn.execute(
         "SELECT COUNT(*) FROM youtube_videos WHERE date(created_at)=date('now')"
     ).fetchone()[0]
@@ -372,8 +380,9 @@ def dashboard(user=Depends(get_current_user)):
 
 
 @router.get("/llm-logs")
-def recent_llm_calls(limit: int = 100, user=Depends(get_current_user)):
-    conn = _conn()
+def recent_llm_calls(limit: int = 100,
+                     conn=Depends(get_db),
+                     user=Depends(get_current_user)):
     rows = conn.execute(
         """SELECT id, called_at, service, provider, model, prompt_version,
                   input_tokens, output_tokens, latency_ms, success,
