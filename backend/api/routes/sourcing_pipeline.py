@@ -161,6 +161,52 @@ def diag_cookies(user=Depends(get_current_user)):
     return info
 
 
+@router.post("/diagnostics/test-gemini")
+def diag_test_gemini_transcript(body: dict = None,
+                                 user=Depends(get_current_user)):
+    """Gemini 전사 실제 호출 테스트 (IP 차단 회피 경로)."""
+    import os as _os
+    vid = (body or {}).get("video_id", "gZPdX8NRv24").strip()
+    url = f"https://www.youtube.com/watch?v={vid}"
+
+    has_key = bool(_os.environ.get("GOOGLE_API_KEY", "").strip())
+    model = _os.environ.get("GEMINI_TRANSCRIPT_MODEL", "gemini-2.5-flash").strip()
+
+    if not has_key:
+        return {
+            "ok": False,
+            "error": "GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.",
+            "hint": "Render Environment 에 GOOGLE_API_KEY 를 추가해주세요.",
+        }
+
+    try:
+        from services import gemini_transcript as gem
+        text, meta = gem.fetch_transcript_via_gemini(url)
+        return {
+            "ok": True,
+            "video_id": vid,
+            "model": meta.get("model"),
+            "chars": len(text),
+            "first_300_chars": text[:300],
+            "input_tokens": meta.get("input_tokens"),
+            "output_tokens": meta.get("output_tokens"),
+            "latency_ms": meta.get("latency_ms"),
+            "hint": "✅ Gemini 경로 정상 동작. 이제 '처리 시작'이 곧바로 성공합니다.",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "video_id": vid,
+            "model": model,
+            "error": str(exc)[:800],
+            "hint": (
+                "GOOGLE_API_KEY가 Gemini API 접근 권한이 없을 수 있습니다. "
+                "Google AI Studio (aistudio.google.com) 에서 API 키를 새로 발급받아 "
+                "GOOGLE_API_KEY 로 설정해주세요."
+            ),
+        }
+
+
 @router.post("/diagnostics/test-transcript")
 def diag_test_transcript_fetch(body: dict = None,
                                 user=Depends(get_current_user)):

@@ -358,15 +358,16 @@
         </details>
 
         <section style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb">
-          <h4 style="margin:0 0 10px">🎯 자막 API 실제 호출 테스트</h4>
+          <h4 style="margin:0 0 10px">🎯 자막 수집 경로 테스트</h4>
           <p style="color:#6b7280;font-size:12px;margin:0 0 8px">
-            youtube-transcript-api 를 직접 호출해 어디서 실패하는지 확인합니다.
+            <b>🌟 Gemini</b>: IP 차단 무관 (Google이 YouTube 직접 처리, 추천) · <b>transcript-api</b>: 기존 경로
           </p>
-          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
             <input id="diag-vid" type="text" placeholder="영상 ID (예: gZPdX8NRv24)"
               value="gZPdX8NRv24"
               style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-family:monospace">
-            <button id="diag-test-transcript" class="btn-small" style="background:#2563eb;color:#fff;padding:6px 14px">테스트 실행</button>
+            <button id="diag-test-gemini" class="btn-small" style="background:#059669;color:#fff;padding:6px 14px">🌟 Gemini 테스트</button>
+            <button id="diag-test-transcript" class="btn-small" style="background:#2563eb;color:#fff;padding:6px 14px">transcript-api 테스트</button>
           </div>
           <div id="diag-transcript-result" style="font-size:12px"></div>
         </section>
@@ -400,10 +401,48 @@
         </details>
       `;
 
-      // 자막 API 테스트 버튼 바인딩
+      // 자막 수집 경로 테스트 버튼 2종
       const testBtn = modal.querySelector("#diag-test-transcript");
+      const geminiBtn = modal.querySelector("#diag-test-gemini");
       const testResult = modal.querySelector("#diag-transcript-result");
       const vidInput = modal.querySelector("#diag-vid");
+
+      // 🌟 Gemini 테스트
+      if (geminiBtn) geminiBtn.addEventListener("click", async () => {
+        const vid = (vidInput.value || "").trim() || "gZPdX8NRv24";
+        geminiBtn.disabled = true; geminiBtn.textContent = "처리 중...";
+        testResult.innerHTML = `<div style="color:#6b7280;padding:8px">🌟 Gemini API 호출 중... (영상 분석이라 30초~3분 소요)</div>`;
+        try {
+          const r = await authFetch(`${API}/diagnostics/test-gemini`, {
+            method: "POST",
+            body: JSON.stringify({ video_id: vid }),
+          });
+          const d = await r.json();
+          if (d.ok) {
+            testResult.innerHTML = `
+              <div style="padding:10px 14px;background:#d1fae5;border-left:4px solid #065f46;border-radius:4px;margin-top:4px">
+                <b style="color:#065f46">✅ Gemini 전사 성공!</b><br>
+                모델: ${escape(d.model)} · ${d.chars}자 · ${(d.latency_ms||0)/1000}s<br>
+                토큰: in ${(d.input_tokens||0).toLocaleString()} / out ${(d.output_tokens||0).toLocaleString()}<br>
+                <small style="color:#374151">발췌: ${escape((d.first_300_chars||'')+'...')}</small><br>
+                <div style="margin-top:6px;color:#065f46">💡 ${escape(d.hint||'')}</div>
+              </div>`;
+          } else {
+            testResult.innerHTML = `
+              <div style="padding:10px 14px;background:#fef2f2;border-left:4px solid #991b1b;border-radius:4px;margin-top:4px">
+                <b style="color:#991b1b">❌ Gemini 실패</b><br>
+                <pre style="white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:#fff;padding:8px;border-radius:4px;margin:6px 0;border:1px solid #e5e7eb">${escape(d.error||'')}</pre>
+                <div style="color:#1e40af">💡 ${escape(d.hint||'')}</div>
+              </div>`;
+          }
+        } catch (e) {
+          testResult.innerHTML = `<div style="color:#991b1b">요청 실패: ${escape(e.message)}</div>`;
+        } finally {
+          geminiBtn.disabled = false; geminiBtn.textContent = "🌟 Gemini 테스트";
+        }
+      });
+
+      // transcript-api 테스트 (기존)
       if (testBtn) testBtn.addEventListener("click", async () => {
         const vid = (vidInput.value || "").trim() || "gZPdX8NRv24";
         testBtn.disabled = true; testBtn.textContent = "테스트 중...";
@@ -433,7 +472,7 @@
         } catch (e) {
           testResult.innerHTML = `<div style="color:#991b1b">요청 실패: ${escape(e.message)}</div>`;
         } finally {
-          testBtn.disabled = false; testBtn.textContent = "테스트 실행";
+          testBtn.disabled = false; testBtn.textContent = "transcript-api 테스트";
         }
       });
     } catch (e) {

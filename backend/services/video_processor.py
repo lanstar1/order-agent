@@ -106,29 +106,59 @@ def _mark_done(conn, video_row_id: int):
 def _step_transcribe(conn, video: dict) -> tuple[str, list]:
     """자막 수집 + sliding-window dedup.
 
+    0순위: Google Gemini (IP 차단 회피 — Google 서버에서 YouTube 처리)
     1순위: youtube-transcript-api (JS 런타임 불필요, 가볍고 빠름)
     2순위: yt-dlp (Node.js runtime hint 포함)
     """
     _set_step(conn, video["id"], "transcribing")
     vid = video["video_id"]
+    url = f"https://www.youtube.com/watch?v={vid}"
 
     cleaned = ""
     segments: list = []
+    gemini_err: Optional[str] = None
     api_err: Optional[str] = None
     yt_dlp_err: Optional[str] = None
 
-    # ─ 1순위 — youtube-transcript-api ─
+    # ─ 0순위 — Google Gemini (구글 자체 서버에서 YouTube 접근, IP 차단 무관) ─
     try:
-        segments, _lang = ts.fetch_captions_via_api(vid)
-        cleaned = ts.clean_transcript_from_segments(segments)
-        logger.info(f"[video_processor] transcript-api 성공 video={video['id']} chars={len(cleaned)}")
-    except ts.TranscriptFetchError as exc:
-        api_err = str(exc)
-        logger.info(f"[video_processor] transcript-api 실패, yt-dlp 폴백: {api_err}")
+        from services import gemini_transcript as gem
+        text, gmeta = gem.fetch_transcript_via_gemini(url)
+        cleaned = ts.dedupe_sliding_window(text)
+        duration = int(video.get("duration_seconds") or 0)
+        segments = [ts.Segment(0.0, float(duration or 0), cleaned)]
+        logger.info(
+            f"[video_processor] gemini 성공 video={video['id']} chars={len(cleaned)}"
+        )
+        try:
+            log_llm_call(conn, LLMCallRecord(
+                service="transcribe_gemini",
+                provider=gmeta.get("provider", "google"),
+                model=gmeta.get("model", "gemini-2.5-flash"),
+                prompt_version="gemini_transcribe@v1",
+                input_tokens=int(gmeta.get("input_tokens", 0)),
+                output_tokens=int(gmeta.get("output_tokens", 0)),
+                latency_ms=int(gmeta.get("latency_ms", 0)),
+                success=True,
+                related_entity=f"video:{video['id']}",
+            ))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[video_processor] gemini llm log 실패: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        gemini_err = str(exc)[:300]
+        logger.info(f"[video_processor] gemini 실패, 폴백: {gemini_err}")
 
-    # ─ 2순위 폴백 — yt-dlp ─
+    # ─ 1순위 — youtube-transcript-api (폴백) ─
     if not cleaned or len(cleaned) < 200:
-        url = f"https://www.youtube.com/watch?v={vid}"
+        try:
+            segments, _lang = ts.fetch_captions_via_api(vid)
+            cleaned = ts.clean_transcript_from_segments(segments)
+            logger.info(f"[video_processor] transcript-api 성공 video={video['id']} chars={len(cleaned)}")
+        except ts.TranscriptFetchError as exc:
+            api_err = str(exc)
+
+    # ─ 2순위 — yt-dlp (최종 폴백) ─
+    if not cleaned or len(cleaned) < 200:
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 srt_text, _lang = ts.download_auto_captions(url, work_dir=Path(tmp))
@@ -139,6 +169,8 @@ def _step_transcribe(conn, video: dict) -> tuple[str, list]:
 
     if not cleaned or len(cleaned) < 200:
         reasons = []
+        if gemini_err:
+            reasons.append(f"gemini: {gemini_err[:200]}")
         if api_err:
             reasons.append(f"youtube-transcript-api: {api_err[:200]}")
         if yt_dlp_err:
