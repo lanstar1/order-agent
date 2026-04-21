@@ -186,13 +186,14 @@ async def send_to_erp(req: ERPSendRequest):
             logger.info(f"[쿠팡ERP] sb_id={sb_id}, orderItems={len(order_items)}, keys={list(order.keys())[:10]}")
 
             for item in order_items:
-                seller_id = str(item.get("sellerProductId", "")).strip()
-                prod_cd = _resolve_erp_code(item)
+                seller_id = str(item.get("sellerProductId", "") or order.get("sellerProductId", "")).strip()
+                prod_cd = _resolve_erp_code(item, order)
                 qty = item.get("shippingCount", 1)
                 price = item.get("salesPrice", 0)
                 if isinstance(price, dict):
                     price = price.get("units", 0)
-                logger.info(f"[쿠팡ERP] item sellerProductId={seller_id}, prod_cd={prod_cd}, name={item.get('vendorItemName','')[:30]}")
+                vid = str(item.get("vendorItemId", "")).strip()
+                logger.info(f"[쿠팡ERP] item sellerProductId={seller_id}, vendorItemId={vid}, prod_cd={prod_cd}, name={item.get('vendorItemName','')[:30]}")
 
                 if not prod_cd:
                     unmatched_items.append({
@@ -546,16 +547,23 @@ def _save_mapping():
     logger.info(f"[쿠팡매핑] 저장 완료: {len(all_ids)}건 → {_MAPPING_FILE}")
 
 
-def _resolve_erp_code(order_item: dict) -> str:
+def _resolve_erp_code(order_item: dict, order: dict = None) -> str:
     """주문 아이템에서 ERP 품목코드 결정
-    우선순위: 1) 매핑테이블 2) externalVendorSku
+    우선순위: 1) 매핑테이블(sellerProductId) 2) vendorItemId 3) externalVendorSku
     """
-    # 1) sellerProductId로 매핑테이블 조회
+    # 1) sellerProductId로 매핑테이블 조회 (아이템 or 주문 최상위)
     seller_id = str(order_item.get("sellerProductId", "")).strip()
+    if not seller_id and order:
+        seller_id = str(order.get("sellerProductId", "")).strip()
     if seller_id and seller_id in _coupang_product_map:
         return _coupang_product_map[seller_id]
 
-    # 2) externalVendorSku 사용
+    # 2) vendorItemId로 매핑테이블 조회
+    vendor_item_id = str(order_item.get("vendorItemId", "")).strip()
+    if vendor_item_id and vendor_item_id in _coupang_product_map:
+        return _coupang_product_map[vendor_item_id]
+
+    # 3) externalVendorSku 사용
     sku = str(order_item.get("externalVendorSku", "")).strip()
     if sku:
         return sku
