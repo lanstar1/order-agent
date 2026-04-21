@@ -133,6 +133,7 @@ class ERPSendRequest(BaseModel):
     orders: list  # 주문 데이터 리스트
     io_date: str = ""  # 전표일자 (YYYY-MM-DD)
     emp_cd: str = ""  # 담당자 코드 (프론트 선택)
+    delivery_type: str = "logen"  # "logen" 또는 "kyungdong"
 
 
 @router.post("/send-to-erp")
@@ -143,15 +144,40 @@ async def send_to_erp(req: ERPSendRequest):
     if not COUPANG_CUST_CODE:
         return JSONResponse(status_code=400, content={"detail": "COUPANG_CUST_CODE가 설정되지 않았습니다."})
 
+    # 배송타입 라벨
+    dt_label = "경동택배선불" if req.delivery_type == "kyungdong" else "로젠택배선불"
+
     try:
         from services.erp_client_ss import ERPClientSS
         erp = ERPClientSS()
         await erp.ensure_session()
 
+        # 주문별 그룹화 (같은 주문의 상품은 같은 비고사항)
+        from collections import OrderedDict
+        order_groups: OrderedDict = OrderedDict()
+        for order in req.orders:
+            sb_id = str(order.get("shipmentBoxId", ""))
+            if sb_id not in order_groups:
+                order_groups[sb_id] = order
+
         # ERP 판매전표 라인 구성
         erp_lines = []
         unmatched_items = []
-        for order in req.orders:
+        for ser_no, (sb_id, order) in enumerate(order_groups.items(), start=1):
+            receiver = order.get("receiver") or order.get("orderer") or {}
+            rcv_name = receiver.get("name", "")
+            rcv_tel = receiver.get("safeNumber") or receiver.get("phone") or receiver.get("cellPhone", "")
+            rcv_addr = (receiver.get("addr1", "") + " " + receiver.get("addr2", "")).strip()
+            rcv_msg = receiver.get("message", "") or order.get("parcelDeliveryMessage", "") or ""
+
+            # 비고사항: 로젠택배선불 / 전표제외 / 수령인 / 연락처 / 주소 / 배송메세지
+            parts = [dt_label, "전표제외"]
+            if rcv_name: parts.append(rcv_name)
+            if rcv_tel:  parts.append(rcv_tel)
+            if rcv_addr: parts.append(rcv_addr)
+            if rcv_msg:  parts.append(rcv_msg)
+            remark = " / ".join(parts)
+
             order_items = order.get("orderItems", [])
             for item in order_items:
                 prod_cd = _resolve_erp_code(item)
@@ -159,7 +185,6 @@ async def send_to_erp(req: ERPSendRequest):
                 price = item.get("salesPrice", 0)
                 if isinstance(price, dict):
                     price = price.get("units", 0)
-                rcv_name = order.get("receiver", {}).get("name", "")
 
                 if not prod_cd:
                     unmatched_items.append({
@@ -176,6 +201,8 @@ async def send_to_erp(req: ERPSendRequest):
                     "qty": qty,
                     "price": round(price / qty, 2) if qty else 0,
                     "rcv_name": rcv_name,
+                    "remark": remark,
+                    "ser_no": str(ser_no),
                 })
 
         if not erp_lines:
@@ -186,7 +213,7 @@ async def send_to_erp(req: ERPSendRequest):
         result = await erp.save_sale(COUPANG_CUST_CODE, erp_lines, COUPANG_WH_CODE, _emp_cd)
         result["lines"] = len(erp_lines)
         result["unmatched_items"] = unmatched_items
-        logger.info(f"[쿠팡] ERP 전송 완료: {len(erp_lines)}건, 미매칭: {len(unmatched_items)}건")
+        logger.info(f"[쿠팡] ERP 전송 완료: {len(erp_lines)}건 ({dt_label}), 미매칭: {len(unmatched_items)}건")
         return result
 
     except Exception as e:
