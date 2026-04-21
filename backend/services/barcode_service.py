@@ -298,11 +298,20 @@ async def send_to_ecount(
     qty_col = "확정수량" if "확정수량" in df.columns else "발주수량"
     df[qty_col] = df[qty_col].str.strip().str.replace(",", "")
 
+    # 수량을 숫자로 변환하여 0 이하 제외 (0, 0.0, " 0" 등 모두 필터링)
+    def _is_positive_qty(val):
+        try:
+            return float(val) > 0
+        except (ValueError, TypeError):
+            return False
+
     valid = df[
         (df["_품목코드"] != "") &
-        (df[qty_col] != "") &
-        (df[qty_col] != "0")
+        (df[qty_col].apply(_is_positive_qty))
     ].copy()
+    zero_qty_cnt = int(((df["_품목코드"] != "") & (~df[qty_col].apply(_is_positive_qty))).sum())
+    if zero_qty_cnt > 0:
+        logger.info(f"[바코드] 수량 0 이하 제외: {zero_qty_cnt}건")
 
     unmatched = int((df["_품목코드"] == "").sum())
 
