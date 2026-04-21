@@ -195,12 +195,19 @@ async def send_to_erp(req: ERPSendRequest):
             for item in order_items:
                 seller_id = str(item.get("sellerProductId", "") or order.get("sellerProductId", "")).strip()
                 prod_cd = _resolve_erp_code(item, order)
-                qty = item.get("shippingCount", 1)
-                price = item.get("salesPrice", 0)
+                # 수량: shippingCount > quantity > purchaseCount > 1
+                qty = item.get("shippingCount") or item.get("quantity") or item.get("purchaseCount") or 1
+                qty = int(qty)
+                # 가격: salesPrice > orderPrice > unitPrice
+                price = item.get("salesPrice") or item.get("orderPrice") or item.get("unitPrice") or 0
                 if isinstance(price, dict):
-                    price = price.get("units", 0)
+                    price = price.get("units", 0) or price.get("amount", 0) or 0
+                price = float(price)
                 vid = str(item.get("vendorItemId", "")).strip()
-                logger.info(f"[쿠팡ERP] item sellerProductId={seller_id}, vendorItemId={vid}, prod_cd={prod_cd}, name={item.get('vendorItemName','')[:30]}")
+                logger.info(f"[쿠팡ERP] item sellerProductId={seller_id}, vendorItemId={vid}, prod_cd={prod_cd}, qty={qty}, price={price}, "
+                            f"shippingCount={item.get('shippingCount')}, quantity={item.get('quantity')}, "
+                            f"salesPrice={item.get('salesPrice')}, orderPrice={item.get('orderPrice')}, "
+                            f"name={item.get('vendorItemName','')[:30]}")
 
                 if not prod_cd:
                     unmatched_items.append({
@@ -220,6 +227,23 @@ async def send_to_erp(req: ERPSendRequest):
                     "remark": remark,
                     "ser_no": str(ser_no),
                 })
+
+        # 배송비 라인 추가 (주문별)
+        DELIVERY_PROD_CD = "DEL-매출배002"
+        for ser_no, (sb_id, order) in enumerate(order_groups.items(), start=1):
+            shipping_fee = float(order.get("shippingPrice", 0) or 0)
+            if shipping_fee > 0:
+                receiver = order.get("receiver") or order.get("orderer") or {}
+                rcv_name = receiver.get("name", "")
+                erp_lines.append({
+                    "prod_cd": DELIVERY_PROD_CD,
+                    "qty": 1,
+                    "price": int(shipping_fee),
+                    "rcv_name": rcv_name,
+                    "remark": f"{dt_label} / 전표제외 / 배송비",
+                    "ser_no": str(ser_no),
+                })
+                logger.info(f"[쿠팡ERP] 배송비 라인: sb_id={sb_id}, fee={shipping_fee}")
 
         if not erp_lines:
             return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
