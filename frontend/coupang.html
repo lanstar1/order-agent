@@ -535,7 +535,8 @@ async function sendToERP(deliveryType) {
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || 'API 오류');
 
-        const cnt = d.success_count || d.lines || 0;
+        const cnt = (d.detail && d.detail.success_count) || d.lines || 0;
+        if (d.success === false) throw new Error(d.error || 'ERP 전송 실패');
         sb('orders-sb', 'ok', `✅ ${dtLabel} ERP 등록 완료: ${cnt}건 성공`);
         log(`${dtLabel} ERP 등록 완료: ${cnt}건`);
     } catch (e) {
