@@ -146,6 +146,13 @@ async def send_to_erp(req: ERPSendRequest):
 
     # 배송타입 라벨
     dt_label = "경동택배선불" if req.delivery_type == "kyungdong" else "로젠택배선불"
+    logger.info(f"[쿠팡ERP] 매핑 상태: product_map={len(_coupang_product_map)}건, model_map={len(_coupang_model_map)}건, file={_MAPPING_FILE}")
+
+    # 매핑이 비어있으면 다시 로드 시도
+    if not _coupang_product_map:
+        logger.warning("[쿠팡ERP] 매핑이 비어있음! 다시 로드 시도")
+        _load_mapping()
+        logger.info(f"[쿠팡ERP] 재로드 결과: product_map={len(_coupang_product_map)}건")
 
     try:
         from services.erp_client_ss import ERPClientSS
@@ -488,8 +495,14 @@ def _load_mapping():
     _coupang_product_map.clear()
     _coupang_model_map.clear()
 
+    logger.info(f"[쿠팡매핑] 매핑 파일 경로: {_MAPPING_FILE} (exists={_MAPPING_FILE.exists()})")
+    logger.info(f"[쿠팡매핑] V2={_MAPPING_FILE_V2} (exists={_MAPPING_FILE_V2.exists()})")
+    logger.info(f"[쿠팡매핑] V1={_MAPPING_FILE_V1} (exists={_MAPPING_FILE_V1.exists()})")
     if not _MAPPING_FILE.exists():
-        logger.info("[쿠팡매핑] 매핑 파일 없음, 빈 맵 사용")
+        logger.warning(f"[쿠팡매핑] 매핑 파일 없음! DIR={_MAPPING_DIR}, DIR exists={_MAPPING_DIR.exists()}")
+        # data 디렉토리 내용 로그
+        if _MAPPING_DIR.exists():
+            logger.info(f"[쿠팡매핑] data/ 파일 목록: {list(_MAPPING_DIR.iterdir())}")
         return
 
     try:
