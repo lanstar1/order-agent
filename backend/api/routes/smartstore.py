@@ -522,7 +522,7 @@ async def excluded_send_erp(
                                    "prod_name": o.get("productName", ""),
                                    "price": round(settle / qty, 2) if qty else 0,
                                    "remark": remark, "ser_no": ser_no,
-                                   "p_remarks2": o.get("productOrderId", "")})
+                                   "rcv_name": o.get("rcvName", "")})
             else:
                 unmatched_items.append({
                     "orderId": oid,
@@ -541,9 +541,10 @@ async def excluded_send_erp(
             if matched and matched in _kd_delivery_map:
                 del_code = _kd_delivery_map[matched]
                 break
+        rcv_for_fee = group[0].get("rcvName", "") if group else ""
         erp_lines.append({"prod_cd": del_code, "qty": 1, "price": int(fee),
                            "remark": remark, "ser_no": ser_no,
-                           "p_remarks2": po_ids_str})
+                           "rcv_name": rcv_for_fee})
 
     if not erp_lines:
         return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}

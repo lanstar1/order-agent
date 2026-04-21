@@ -66,13 +66,12 @@ class ERPClientSS:
             remark = line.get("remark", "")
             if remark:
                 bulk["U_MEMO5"] = remark
-                bulk["DES"] = remark
+                bulk["REMARKS"] = remark
             elif rcv:
-                bulk["DES"] = rcv
-            # 적요2(P_REMARKS2): productOrderId 저장 (경동 자동발송처리용)
-            p_remarks2 = line.get("p_remarks2", "")
-            if p_remarks2:
-                bulk["P_REMARKS2"] = str(p_remarks2)[:100]
+                bulk["REMARKS"] = rcv
+            # 적요2(P_REMARKS2) = sole 업체 및 관리업체: 수취인 이름
+            if rcv:
+                bulk["P_REMARKS2"] = rcv[:100]
             if emp_cd:
                 bulk["EMP_CD"] = emp_cd
             price = float(line.get("price", 0) or 0)
