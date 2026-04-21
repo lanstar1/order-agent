@@ -193,126 +193,171 @@ async def send_to_erp(req: ERPSendRequest):
         return JSONResponse(status_code=500, content={"detail": str(e)})
 
 
-# ─── 로젠택배 등록 + 송장업로드 ───
-class LogenRegisterRequest(BaseModel):
-    orders: list  # 쿠팡 주문 데이터 리스트
-    warehouse: str = "gimpo"  # gimpo | yongsan
+# ─── 로젠 전송용 엑셀 다운로드 ───
+@router.post("/logen-export-excel")
+async def logen_export_excel(orders: list = Body(...)):
+    """선택한 쿠팡 주문을 로젠 전송용 엑셀로 다운로드
 
-
-@router.post("/register-logen")
-async def register_logen(req: LogenRegisterRequest):
-    """로젠택배 자동 등록 → 송장번호 발급 → 쿠팡 송장업로드
-
-    스마트스토어와 동일한 iLogen API 사용
+    로젠 구시스템양식 (A타입):
+    A:수하인명 B:수하인주소1 C:수하인전화 D:수하인휴대폰
+    E:택배수량 F:택배운임 G:운임구분 H:물품명 I:주문번호
+    J:제주운임구분 K:배송메세지
     """
-    from services.ilogen_client import register_orders, get_sender
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
 
-    if not req.orders:
-        return {"success": True, "message": "선택된 주문 없음"}
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "엑셀파일첫행-제목있음"
 
-    warehouse = req.warehouse
-    sender = get_sender(warehouse)
-    cp = _get_coupang()
+    headers = ["수하인명", "수하인주소1", "수하인전화", "수하인휴대폰",
+               "택배수량", "택배운임", "운임구분", "물품명", "주문번호",
+               None, "배송메세지"]
+    hdr_fill = PatternFill("solid", fgColor="1F4E79")
+    hdr_font = Font(bold=True, color="FFFFFF")
+    for ci, h in enumerate(headers, 1):
+        if h:
+            c = ws.cell(1, ci, h)
+            c.fill = hdr_fill; c.font = hdr_font; c.alignment = Alignment(horizontal="center")
 
-    # 1) 주문별 iLogen 데이터 구성
-    ilogen_orders = []
-    order_map = {}  # index → order data (for dispatch)
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 50
+    ws.column_dimensions["C"].width = 16
+    ws.column_dimensions["D"].width = 16
+    ws.column_dimensions["E"].width = 8
+    ws.column_dimensions["F"].width = 10
+    ws.column_dimensions["G"].width = 10
+    ws.column_dimensions["H"].width = 30
+    ws.column_dimensions["I"].width = 22
+    ws.column_dimensions["K"].width = 25
 
-    for i, order in enumerate(req.orders):
-        receiver = order.get("receiver") or order.get("orderer") or {}
+    # shipmentBoxId 기준으로 그룹화
+    groups: dict = {}
+    for o in orders:
+        sb_id = str(o.get("shipmentBoxId", ""))
+        if not sb_id:
+            continue
+        if sb_id not in groups:
+            groups[sb_id] = o
+        # 이미 있으면 첫번째 주문 사용 (같은 shipmentBox)
+
+    row_idx = 2
+    for sb_id, o in groups.items():
+        receiver = o.get("receiver") or o.get("orderer") or {}
         rcv_name = receiver.get("name", "")
-        rcv_tel = receiver.get("safeNumber") or receiver.get("phone", "")
+        rcv_tel = receiver.get("safeNumber") or receiver.get("phone") or receiver.get("cellPhone", "")
+        rcv_cell = receiver.get("cellPhone") or receiver.get("phone") or rcv_tel
         rcv_addr = (receiver.get("addr1", "") + " " + receiver.get("addr2", "")).strip()
 
-        if not rcv_name or not rcv_addr:
-            logger.warning(f"[쿠팡로젠] 수취인 정보 부족: orderId={order.get('orderId')}")
+        items = o.get("orderItems", [])
+        # 물품명: 모델코드 or 상품명 요약
+        goods_parts = []
+        total_qty = 0
+        for item in items:
+            name = item.get("vendorItemName", "상품")[:25]
+            qty = item.get("shippingCount", 1)
+            goods_parts.append(f"{name} x{qty}" if qty > 1 else name)
+            total_qty += qty
+        goods_nm = ", ".join(goods_parts)[:50]
+
+        # 주문번호: shipmentBoxId|orderId (송장 업로드 시 매칭용)
+        order_key = f"{sb_id}|{o.get('orderId', '')}"
+
+        fare_tp = "010"  # 선불
+
+        ws.cell(row_idx, 1, rcv_name)      # A: 수하인명
+        ws.cell(row_idx, 2, rcv_addr)      # B: 수하인주소1
+        ws.cell(row_idx, 3, rcv_tel)       # C: 수하인전화
+        ws.cell(row_idx, 4, rcv_cell)      # D: 수하인휴대폰
+        ws.cell(row_idx, 5, 1)             # E: 택배수량 (박스)
+        ws.cell(row_idx, 6, 0)             # F: 택배운임
+        ws.cell(row_idx, 7, fare_tp)       # G: 운임구분
+        ws.cell(row_idx, 8, goods_nm)      # H: 물품명
+        ws.cell(row_idx, 9, order_key)     # I: 주문번호 (매칭용)
+        jeju = "선착불" if "제주" in rcv_addr else None
+        ws.cell(row_idx, 10, jeju)         # J: 제주운임구분
+        ws.cell(row_idx, 11, receiver.get("message", ""))  # K: 배송메세지
+        row_idx += 1
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    filename = f"coupang_logen_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.xlsx"
+    logger.info(f"[쿠팡로젠] 엑셀 다운로드: {row_idx - 2}건")
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+    )
+
+
+# ─── 로젠 송장 엑셀 업로드 → 쿠팡 발송처리 ───
+@router.post("/logen-dispatch-excel")
+async def logen_dispatch_excel(
+    file: UploadFile = File(...),
+    carrier: str = Query("LOGEN", description="택배사코드"),
+):
+    """로젠에서 반환된 엑셀 업로드 → 쿠팡 송장업로드 자동 처리
+
+    로젠 반환 파일: D열(index 3)=운송장번호, S열(index 18)=주문번호(shipmentBoxId|orderId)
+    """
+    import openpyxl
+
+    content = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    ws = wb.active
+
+    cp = _get_coupang()
+    company_code = DELIVERY_COMPANIES.get(carrier, carrier)
+
+    results = []
+    skipped = []
+
+    # 로젠 반환 파일: 1행=타이틀, 2행=헤더, 3행=서브헤더, 4행~=데이터
+    for row in ws.iter_rows(min_row=4, values_only=True):
+        if not any(row):
+            continue
+        tracking = str(row[3] or "").strip()    # D열: 운송장번호
+        order_key = str(row[18] or "").strip()  # S열: 주문번호 (shipmentBoxId|orderId)
+
+        if not tracking or not order_key or tracking == "None" or order_key == "None":
+            skipped.append(order_key or str(row[0] or ""))
             continue
 
-        items = order.get("orderItems", [])
-        goods_nm = items[0].get("vendorItemName", "상품") if items else "상품"
-        if len(items) > 1:
-            goods_nm += f" 외 {len(items)-1}건"
+        # shipmentBoxId|orderId 파싱
+        parts = order_key.split("|")
+        sb_id = parts[0] if parts else ""
+        order_id = parts[1] if len(parts) > 1 else ""
 
-        # 착불 여부 (쿠팡: parcel_delivery, fare 정보)
-        fare_code = "030"  # 기본 선불
+        if not sb_id:
+            skipped.append(order_key)
+            continue
 
-        ilogen_orders.append({
-            "snd_name": sender["name"],
-            "snd_tel": sender["tel"],
-            "snd_addr": sender["addr"],
-            "rcv_name": rcv_name,
-            "rcv_tel": rcv_tel,
-            "rcv_addr": rcv_addr,
-            "fare_code": fare_code,
-            "goods_nm": goods_nm,
-        })
-        order_map[len(ilogen_orders) - 1] = order
+        try:
+            invoice_data = [{
+                "shipmentBoxId": int(sb_id),
+                "orderId": int(order_id) if order_id else 0,
+                "deliveryCompanyCode": company_code,
+                "invoiceNumber": tracking,
+                "splitShipping": False,
+                "preSplitShipped": False,
+                "estimatedShippingDate": "",
+            }]
+            result = await cp.upload_invoice(invoice_data)
+            results.append({"shipmentBoxId": sb_id, "tracking": tracking, "success": True})
+        except Exception as e:
+            results.append({"shipmentBoxId": sb_id, "tracking": tracking, "success": False, "error": str(e)})
 
-    if not ilogen_orders:
-        return {"success": False, "error": "등록 가능한 주문이 없습니다 (수취인 정보 부족)"}
+    success_cnt = sum(1 for r in results if r["success"])
+    fail_cnt = sum(1 for r in results if not r["success"])
+    logger.info(f"[쿠팡로젠] 송장업로드: 성공={success_cnt}, 실패={fail_cnt}, 건너뜀={len(skipped)}")
 
-    try:
-        # 2) iLogen 등록 → 송장번호 발급
-        logen_res = await register_orders(warehouse, ilogen_orders)
-        tns = logen_res.get("tracking_numbers", [])
-        logen_ok = logen_res.get("success", False) and len(tns) > 0
-
-        dispatch_result = {"dispatched": 0, "message": "로젠 등록 실패"}
-
-        if logen_ok:
-            # 3) 쿠팡 송장업로드
-            ship_results = []
-            for tn in tns:
-                idx = tn.get("index", 0)
-                slip_no = tn.get("slip_no", "")
-                if not slip_no or idx not in order_map:
-                    continue
-
-                order = order_map[idx]
-                items = order.get("orderItems", [])
-                for item in items:
-                    try:
-                        invoice_data = [{
-                            "shipmentBoxId": order.get("shipmentBoxId"),
-                            "orderId": order.get("orderId"),
-                            "vendorItemId": item.get("vendorItemId"),
-                            "deliveryCompanyCode": "LOGEN",
-                            "invoiceNumber": slip_no,
-                            "splitShipping": False,
-                            "preSplitShipped": False,
-                            "estimatedShippingDate": "",
-                        }]
-                        result = await cp.upload_invoice(invoice_data)
-                        ship_results.append({
-                            "shipmentBoxId": order.get("shipmentBoxId"),
-                            "success": True,
-                            "slip_no": slip_no,
-                        })
-                    except Exception as e:
-                        ship_results.append({
-                            "shipmentBoxId": order.get("shipmentBoxId"),
-                            "success": False,
-                            "error": str(e),
-                        })
-
-            dispatched = sum(1 for r in ship_results if r["success"])
-            dispatch_result = {
-                "dispatched": dispatched,
-                "total": len(ship_results),
-                "results": ship_results,
-            }
-
-        logger.info(f"[쿠팡로젠] 완료: 로젠={len(tns)}건, 송장업로드={dispatch_result.get('dispatched', 0)}건")
-        return {
-            "success": logen_ok,
-            "logen": logen_res,
-            "dispatch": dispatch_result,
-            "tracking_count": len(tns),
-            "total_orders": len(ilogen_orders),
-        }
-    except Exception as e:
-        logger.error(f"[쿠팡로젠] 오류: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": str(e)})
+    return {
+        "success": success_cnt > 0,
+        "dispatched_count": success_cnt,
+        "fail_count": fail_cnt,
+        "skipped_count": len(skipped),
+        "results": results,
+    }
 
 
 # ─── 송장업로드 (발송처리) - 수동 ───
