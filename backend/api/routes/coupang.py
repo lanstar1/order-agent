@@ -250,15 +250,15 @@ async def logen_export_excel(orders: list = Body(...)):
         rcv_addr = (receiver.get("addr1", "") + " " + receiver.get("addr2", "")).strip()
 
         items = o.get("orderItems", [])
-        # 물품명: LS-, LSP-, ZOT-, LSN- 모델코드만 추출
-        model_pat = re.compile(r'((?:LS|LSP|ZOT|LSN)-[\w\-]+)')
+        # 물품명: LS-, LSP-, ZOT-, LSN- 모델코드만 추출 (점(.) 포함)
+        model_pat = re.compile(r'((?:LS|LSP|ZOT|LSN)-[\w\.\-]+)')
         goods_parts = []
         for item in items:
             name = item.get("vendorItemName", "")
             qty = item.get("shippingCount", 1)
             match = model_pat.search(name)
             model = match.group(1) if match else name[:20]
-            goods_parts.append(f"{model} x{qty}" if qty > 1 else model)
+            goods_parts.append(f"{model} x{qty}")
         goods_nm = ", ".join(goods_parts)[:50]
 
         # 주문번호: shipmentBoxId만 (로젠 반환 시 S열 매칭용)
