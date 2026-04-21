@@ -482,7 +482,8 @@ _coupang_product_map: dict = {}   # sellerProductId → erp_code
 _coupang_model_map: dict = {}     # sellerProductId → model_name
 
 # 엑셀 파일 경로
-_MAPPING_DIR = Path(__file__).parent.parent.parent / "data"
+# backend/api/routes/coupang.py → 4단계 올라가면 프로젝트 루트
+_MAPPING_DIR = Path(__file__).parent.parent.parent.parent / "data"
 # v2 파일이 있으면 우선 사용 (실제 ERP 품목코드 매핑)
 _MAPPING_FILE_V2 = _MAPPING_DIR / "coupang_product_map_v2.xlsx"
 _MAPPING_FILE_V1 = _MAPPING_DIR / "coupang_product_map.xlsx"
