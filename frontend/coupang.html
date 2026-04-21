@@ -536,9 +536,14 @@ async function sendToERP(deliveryType) {
         if (!r.ok) throw new Error(d.detail || 'API 오류');
 
         const cnt = (d.detail && d.detail.success_count) || d.lines || 0;
-        if (d.success === false) throw new Error(d.error || 'ERP 전송 실패');
-        sb('orders-sb', 'ok', `✅ ${dtLabel} ERP 등록 완료: ${cnt}건 성공`);
-        log(`${dtLabel} ERP 등록 완료: ${cnt}건`);
+        if (d.success === false) {
+            const unmatchedMsg = (d.unmatched_items || []).map(u => `${u.item_name||''} (${u.sellerProductId||''})`).join(', ');
+            throw new Error((d.error || 'ERP 전송 실패') + (unmatchedMsg ? '\n미매칭: ' + unmatchedMsg : ''));
+        }
+        const unmatchCnt = (d.unmatched_items || []).length;
+        const okMsg = `✅ ${dtLabel} ERP 등록 완료: ${cnt}건 성공` + (unmatchCnt ? ` (미매칭 ${unmatchCnt}건)` : '');
+        sb('orders-sb', 'ok', okMsg);
+        log(`${dtLabel} ERP 등록 완료: ${cnt}건` + (unmatchCnt ? `, 미매칭 ${unmatchCnt}건` : ''));
     } catch (e) {
         sb('orders-sb', 'err', '❌ ERP 등록 실패: ' + e.message);
         log('ERP 등록 실패: ' + e.message);

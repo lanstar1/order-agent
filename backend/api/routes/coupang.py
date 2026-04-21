@@ -178,19 +178,27 @@ async def send_to_erp(req: ERPSendRequest):
             if rcv_msg:  parts.append(rcv_msg)
             remark = " / ".join(parts)
 
+            # orderItems 배열이 있으면 사용, 없으면 주문 자체를 아이템으로 취급
             order_items = order.get("orderItems", [])
+            if not order_items:
+                # 쿠팡 ordersheets API는 각 행이 개별 아이템일 수 있음
+                order_items = [order]
+            logger.info(f"[쿠팡ERP] sb_id={sb_id}, orderItems={len(order_items)}, keys={list(order.keys())[:10]}")
+
             for item in order_items:
+                seller_id = str(item.get("sellerProductId", "")).strip()
                 prod_cd = _resolve_erp_code(item)
                 qty = item.get("shippingCount", 1)
                 price = item.get("salesPrice", 0)
                 if isinstance(price, dict):
                     price = price.get("units", 0)
+                logger.info(f"[쿠팡ERP] item sellerProductId={seller_id}, prod_cd={prod_cd}, name={item.get('vendorItemName','')[:30]}")
 
                 if not prod_cd:
                     unmatched_items.append({
                         "order_id": order.get("orderId", ""),
                         "item_name": item.get("vendorItemName", ""),
-                        "sellerProductId": item.get("sellerProductId", ""),
+                        "sellerProductId": seller_id,
                         "reason": "매핑 없음 & externalVendorSku 없음",
                     })
                     continue
