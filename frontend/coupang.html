@@ -170,6 +170,7 @@
                             <th>상품명</th>
                             <th>수량</th>
                             <th>금액</th>
+                            <th>배송방법</th>
                             <th>송장번호</th>
                         </tr>
                     </thead>
@@ -181,7 +182,12 @@
                 <span class="sel-info"><em id="sel-cnt">0</em>건 선택</span>
                 <button class="btn btn-blue btn-sm" onclick="confirmOrders()">상품준비중 처리</button>
                 <button class="btn btn-green btn-sm" onclick="sendToERP()">ERP 전표등록</button>
-                <button class="btn btn-orange btn-sm" onclick="shipOrders()">발송처리 (송장업로드)</button>
+                <select id="wh-select" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;">
+                    <option value="gimpo">김포창고</option>
+                    <option value="yongsan">용산창고</option>
+                </select>
+                <button class="btn btn-orange btn-sm" onclick="registerLogen()">로젠 보내기</button>
+                <button class="btn btn-gray btn-sm" onclick="shipOrders()">수동 송장업로드</button>
             </div>
         </div>
 
@@ -402,11 +408,12 @@ function renderOrders() {
             <td>${firstItem.vendorItemName || '-'}${items.length > 1 ? ` 외 ${items.length-1}건` : ''}</td>
             <td>${items.reduce((s, it) => s + (it.shippingCount || 0), 0)}</td>
             <td>₩${items.reduce((s, it) => s + (it.orderPrice?.units || 0), 0).toLocaleString()}</td>
+            <td>${o.parcelDelivery ? '로켓그로스' : '판매자배송'}</td>
             <td>
                 <select class="inp-sm" data-idx="${i}" data-field="company" style="width:100px;margin-right:4px;">
                     ${compOpts}
                 </select>
-                <input class="inp-sm" data-idx="${i}" data-field="invoice" placeholder="송장번호">
+                <input class="inp-sm" data-idx="${i}" data-field="invoice" placeholder="송장번호" style="width:120px;">
             </td>
         `;
         tbody.appendChild(tr);
@@ -499,7 +506,56 @@ async function sendToERP() {
 
 
 // ──────────────────────────────
-//  발송처리 (송장업로드)
+//  로젠택배 등록 + 자동 송장업로드
+// ──────────────────────────────
+async function registerLogen() {
+    const sel = getSelectedOrders();
+    if (!sel.length) return alert('주문을 선택하세요.');
+
+    const wh = document.getElementById('wh-select').value;
+    const whLabel = wh === 'gimpo' ? '김포' : '용산';
+
+    if (!confirm(`${sel.length}건을 ${whLabel}창고 → 로젠택배로 등록하시겠습니까?\n(송장번호 자동 발급 + 쿠팡 업로드)`)) return;
+
+    sb('orders-sb', 'load', `⏳ 로젠택배 등록 중 (${whLabel}창고)...`);
+    log(`로젠 등록 시작: ${sel.length}건, 창고=${whLabel}`);
+
+    try {
+        const r = await fetch('/api/coupang/register-logen', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ orders: sel, warehouse: wh }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'API 오류');
+
+        if (d.success) {
+            const tCnt = d.tracking_count || 0;
+            const dCnt = d.dispatch?.dispatched || 0;
+            sb('orders-sb', 'ok', `✅ 로젠 등록 완료! 송장 ${tCnt}건 발급, 쿠팡 업로드 ${dCnt}건`);
+            log(`로젠 등록 완료: 송장 ${tCnt}건, 쿠팡 업로드 ${dCnt}건`);
+
+            // 송장번호 로그
+            if (d.logen?.tracking_numbers) {
+                d.logen.tracking_numbers.forEach(t => {
+                    log(`  📦 송장번호: ${t.slip_no}`);
+                });
+            }
+        } else {
+            sb('orders-sb', 'err', `❌ 로젠 등록 실패: ${d.logen?.error || d.error || '알 수 없는 오류'}`);
+            log('로젠 등록 실패: ' + JSON.stringify(d.logen || d));
+        }
+
+        setTimeout(() => fetchOrders(), 1500);
+    } catch (e) {
+        sb('orders-sb', 'err', '❌ 로젠 등록 오류: ' + e.message);
+        log('로젠 등록 오류: ' + e.message);
+    }
+}
+
+
+// ──────────────────────────────
+//  발송처리 (수동 송장업로드)
 // ──────────────────────────────
 async function shipOrders() {
     const sel = getSelectedOrders();

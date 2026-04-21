@@ -193,7 +193,129 @@ async def send_to_erp(req: ERPSendRequest):
         return JSONResponse(status_code=500, content={"detail": str(e)})
 
 
-# ─── 송장업로드 (발송처리) ───
+# ─── 로젠택배 등록 + 송장업로드 ───
+class LogenRegisterRequest(BaseModel):
+    orders: list  # 쿠팡 주문 데이터 리스트
+    warehouse: str = "gimpo"  # gimpo | yongsan
+
+
+@router.post("/register-logen")
+async def register_logen(req: LogenRegisterRequest):
+    """로젠택배 자동 등록 → 송장번호 발급 → 쿠팡 송장업로드
+
+    스마트스토어와 동일한 iLogen API 사용
+    """
+    from services.ilogen_client import register_orders, get_sender
+
+    if not req.orders:
+        return {"success": True, "message": "선택된 주문 없음"}
+
+    warehouse = req.warehouse
+    sender = get_sender(warehouse)
+    cp = _get_coupang()
+
+    # 1) 주문별 iLogen 데이터 구성
+    ilogen_orders = []
+    order_map = {}  # index → order data (for dispatch)
+
+    for i, order in enumerate(req.orders):
+        receiver = order.get("receiver") or order.get("orderer") or {}
+        rcv_name = receiver.get("name", "")
+        rcv_tel = receiver.get("safeNumber") or receiver.get("phone", "")
+        rcv_addr = (receiver.get("addr1", "") + " " + receiver.get("addr2", "")).strip()
+
+        if not rcv_name or not rcv_addr:
+            logger.warning(f"[쿠팡로젠] 수취인 정보 부족: orderId={order.get('orderId')}")
+            continue
+
+        items = order.get("orderItems", [])
+        goods_nm = items[0].get("vendorItemName", "상품") if items else "상품"
+        if len(items) > 1:
+            goods_nm += f" 외 {len(items)-1}건"
+
+        # 착불 여부 (쿠팡: parcel_delivery, fare 정보)
+        fare_code = "030"  # 기본 선불
+
+        ilogen_orders.append({
+            "snd_name": sender["name"],
+            "snd_tel": sender["tel"],
+            "snd_addr": sender["addr"],
+            "rcv_name": rcv_name,
+            "rcv_tel": rcv_tel,
+            "rcv_addr": rcv_addr,
+            "fare_code": fare_code,
+            "goods_nm": goods_nm,
+        })
+        order_map[len(ilogen_orders) - 1] = order
+
+    if not ilogen_orders:
+        return {"success": False, "error": "등록 가능한 주문이 없습니다 (수취인 정보 부족)"}
+
+    try:
+        # 2) iLogen 등록 → 송장번호 발급
+        logen_res = await register_orders(warehouse, ilogen_orders)
+        tns = logen_res.get("tracking_numbers", [])
+        logen_ok = logen_res.get("success", False) and len(tns) > 0
+
+        dispatch_result = {"dispatched": 0, "message": "로젠 등록 실패"}
+
+        if logen_ok:
+            # 3) 쿠팡 송장업로드
+            ship_results = []
+            for tn in tns:
+                idx = tn.get("index", 0)
+                slip_no = tn.get("slip_no", "")
+                if not slip_no or idx not in order_map:
+                    continue
+
+                order = order_map[idx]
+                items = order.get("orderItems", [])
+                for item in items:
+                    try:
+                        invoice_data = [{
+                            "shipmentBoxId": order.get("shipmentBoxId"),
+                            "orderId": order.get("orderId"),
+                            "vendorItemId": item.get("vendorItemId"),
+                            "deliveryCompanyCode": "LOGEN",
+                            "invoiceNumber": slip_no,
+                            "splitShipping": False,
+                            "preSplitShipped": False,
+                            "estimatedShippingDate": "",
+                        }]
+                        result = await cp.upload_invoice(invoice_data)
+                        ship_results.append({
+                            "shipmentBoxId": order.get("shipmentBoxId"),
+                            "success": True,
+                            "slip_no": slip_no,
+                        })
+                    except Exception as e:
+                        ship_results.append({
+                            "shipmentBoxId": order.get("shipmentBoxId"),
+                            "success": False,
+                            "error": str(e),
+                        })
+
+            dispatched = sum(1 for r in ship_results if r["success"])
+            dispatch_result = {
+                "dispatched": dispatched,
+                "total": len(ship_results),
+                "results": ship_results,
+            }
+
+        logger.info(f"[쿠팡로젠] 완료: 로젠={len(tns)}건, 송장업로드={dispatch_result.get('dispatched', 0)}건")
+        return {
+            "success": logen_ok,
+            "logen": logen_res,
+            "dispatch": dispatch_result,
+            "tracking_count": len(tns),
+            "total_orders": len(ilogen_orders),
+        }
+    except Exception as e:
+        logger.error(f"[쿠팡로젠] 오류: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
+# ─── 송장업로드 (발송처리) - 수동 ───
 class ShipRequest(BaseModel):
     shipments: list  # [{"shipment_box_id": ..., "order_id": ..., "vendor_item_id": ..., "delivery_company": "CJ대한통운", "invoice_number": "..."}, ...]
 
