@@ -181,6 +181,12 @@
             <div class="sel-bar" id="sel-bar" style="display:none;">
                 <span class="sel-info"><em id="sel-cnt">0</em>건 선택</span>
                 <button class="btn btn-blue btn-sm" onclick="confirmOrders()">상품준비중 처리</button>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <label style="font-size:12px;font-weight:600;color:#475569;white-space:nowrap;">담당자</label>
+                    <select id="sel-emp" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff;color:#1e293b;min-width:100px;">
+                        <option value="">-- 선택 --</option>
+                    </select>
+                </div>
                 <button class="btn btn-green btn-sm" onclick="sendToERP()">ERP 전표등록</button>
                 <button class="btn btn-orange btn-sm" onclick="exportLogenExcel()">로젠 엑셀 다운로드</button>
                 <label class="btn btn-gray btn-sm" style="cursor:pointer;">
@@ -248,6 +254,24 @@ const STATUS_BADGE = {
     'ACCEPT': 'badge-pay', 'INSTRUCT': 'badge-ready',
     'DEPARTURE': 'badge-ship', 'DELIVERING': 'badge-ship',
 };
+
+// ── 담당자 목록 로드 ──
+(async function loadEmployees(){
+    try {
+        const r = await(await fetch('/api/auth/employees')).json();
+        const sel = document.getElementById('sel-emp');
+        (r.employees || []).forEach(emp => {
+            const opt = document.createElement('option');
+            opt.value = emp.emp_cd;
+            opt.textContent = emp.name;
+            sel.appendChild(opt);
+        });
+    } catch(e) { console.warn('담당자 목록 로드 실패', e); }
+})();
+
+function getSelectedEmpCd() {
+    return document.getElementById('sel-emp')?.value || '';
+}
 
 // ──────────────────────────────
 //  유틸
@@ -491,7 +515,7 @@ async function sendToERP() {
         const r = await fetch('/api/coupang/send-to-erp', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ orders: sel }),
+            body: JSON.stringify({ orders: sel, emp_cd: getSelectedEmpCd() }),
         });
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || 'API 오류');

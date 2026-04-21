@@ -132,6 +132,7 @@ async def confirm_orders(req: ConfirmRequest):
 class ERPSendRequest(BaseModel):
     orders: list  # 주문 데이터 리스트
     io_date: str = ""  # 전표일자 (YYYY-MM-DD)
+    emp_cd: str = ""  # 담당자 코드 (프론트 선택)
 
 
 @router.post("/send-to-erp")
@@ -181,7 +182,7 @@ async def send_to_erp(req: ERPSendRequest):
             return {"success": False, "error": "ERP 전송 대상 없음", "unmatched_items": unmatched_items}
 
         # ERPClientSS.save_sale() 호출 (스마트스토어와 동일)
-        _emp_cd = COUPANG_EMP_CODE or ""
+        _emp_cd = req.emp_cd or COUPANG_EMP_CODE or ""
         result = await erp.save_sale(COUPANG_CUST_CODE, erp_lines, COUPANG_WH_CODE, _emp_cd)
         result["lines"] = len(erp_lines)
         result["unmatched_items"] = unmatched_items
