@@ -11,10 +11,10 @@ API_TOKEN = "UWVuoDFvxpBEhQSRViOnNJ_mhcxRGCZvGG_ToeKvVAc"
 USER_ID = "34850417"
 CUST_CD = "34850417"
 
-# 운영계 URL
-BASE_URL = "https://openapi.ilogen.com/lrm02b-edi/edi"
-# 개발계 URL (운영계 안 되면 이걸로)
-# BASE_URL = "https://topenapi.ilogen.com/lrm02b-edi/edi"
+# 개발계 URL (테스트용)
+BASE_URL = "https://topenapi.ilogen.com/lrm02b-edi/edi"
+# 운영계 URL (실제 운영시)
+# BASE_URL = "https://openapi.ilogen.com/lrm02b-edi/edi"
 
 TODAY = datetime.today().strftime("%Y%m%d")
 
