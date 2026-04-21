@@ -250,18 +250,19 @@ async def logen_export_excel(orders: list = Body(...)):
         rcv_addr = (receiver.get("addr1", "") + " " + receiver.get("addr2", "")).strip()
 
         items = o.get("orderItems", [])
-        # 물품명: 모델코드 or 상품명 요약
+        # 물품명: LS-, LSP-, ZOT-, LSN- 모델코드만 추출
+        model_pat = re.compile(r'((?:LS|LSP|ZOT|LSN)-[\w\-]+)')
         goods_parts = []
-        total_qty = 0
         for item in items:
-            name = item.get("vendorItemName", "상품")[:25]
+            name = item.get("vendorItemName", "")
             qty = item.get("shippingCount", 1)
-            goods_parts.append(f"{name} x{qty}" if qty > 1 else name)
-            total_qty += qty
+            match = model_pat.search(name)
+            model = match.group(1) if match else name[:20]
+            goods_parts.append(f"{model} x{qty}" if qty > 1 else model)
         goods_nm = ", ".join(goods_parts)[:50]
 
-        # 주문번호: shipmentBoxId|orderId (송장 업로드 시 매칭용)
-        order_key = f"{sb_id}|{o.get('orderId', '')}"
+        # 주문번호: shipmentBoxId만 (로젠 반환 시 S열 매칭용)
+        order_key = sb_id
 
         fare_tp = "010"  # 선불
 
@@ -298,7 +299,7 @@ async def logen_dispatch_excel(
 ):
     """로젠에서 반환된 엑셀 업로드 → 쿠팡 송장업로드 자동 처리
 
-    로젠 반환 파일: D열(index 3)=운송장번호, S열(index 18)=주문번호(shipmentBoxId|orderId)
+    로젠 반환 파일: D열(index 3)=운송장번호, S열(index 18)=주문번호(shipmentBoxId)
     """
     import openpyxl
 
@@ -317,25 +318,23 @@ async def logen_dispatch_excel(
         if not any(row):
             continue
         tracking = str(row[3] or "").strip()    # D열: 운송장번호
-        order_key = str(row[18] or "").strip()  # S열: 주문번호 (shipmentBoxId|orderId)
+        sb_id = str(row[18] or "").strip()      # S열: shipmentBoxId
 
-        if not tracking or not order_key or tracking == "None" or order_key == "None":
-            skipped.append(order_key or str(row[0] or ""))
+        if not tracking or not sb_id or tracking == "None" or sb_id == "None":
+            skipped.append(sb_id or str(row[0] or ""))
             continue
 
-        # shipmentBoxId|orderId 파싱
-        parts = order_key.split("|")
-        sb_id = parts[0] if parts else ""
-        order_id = parts[1] if len(parts) > 1 else ""
+        # "|" 포함 시 하위호환 (이전 버전 파일)
+        if "|" in sb_id:
+            sb_id = sb_id.split("|")[0]
 
         if not sb_id:
-            skipped.append(order_key)
+            skipped.append(str(row[0] or ""))
             continue
 
         try:
             invoice_data = [{
                 "shipmentBoxId": int(sb_id),
-                "orderId": int(order_id) if order_id else 0,
                 "deliveryCompanyCode": company_code,
                 "invoiceNumber": tracking,
                 "splitShipping": False,
