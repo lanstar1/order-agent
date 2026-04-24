@@ -4086,22 +4086,205 @@ function csApplyFilters() {
 
 function csSwitchView(el, view) {
   _csView = view;
-  el.parentElement.querySelectorAll(".cs-pipe-tab").forEach(t => t.classList.remove("active"));
-  el.classList.add("active");
-  document.getElementById("cs-kanban-board").style.display = view === "kanban" ? "flex" : "none";
-  document.getElementById("cs-list-view").style.display = view === "list" ? "block" : "none";
-  document.getElementById("cs-backorder-view").style.display = view === "backorder" ? "block" : "none";
+  if (el && el.parentElement) {
+    el.parentElement.querySelectorAll(".cs-pipe-tab").forEach(t => t.classList.remove("active"));
+    el.classList.add("active");
+  } else {
+    // 외부에서 view 직접 전환한 경우(예: 전역 검색), 해당 탭 강조
+    const btn = document.querySelector(`#page-cs_rma .cs-pipe-tab[onclick*="csSwitchView"][onclick*="'${view}'"]`);
+    if (btn && btn.parentElement) {
+      btn.parentElement.querySelectorAll(".cs-pipe-tab").forEach(t => t.classList.remove("active"));
+      btn.classList.add("active");
+    }
+  }
+  const kb = document.getElementById("cs-kanban-board");
+  const lv = document.getElementById("cs-list-view");
+  const cv = document.getElementById("cs-calendar-view");
+  const bo = document.getElementById("cs-backorder-view");
+  if (kb) kb.style.display = view === "kanban" ? "flex" : "none";
+  if (lv) lv.style.display = view === "list" ? "block" : "none";
+  if (cv) cv.style.display = view === "calendar" ? "block" : "none";
+  if (bo) bo.style.display = view === "backorder" ? "block" : "none";
   csRenderView();
 }
 
 async function csRenderView() {
   if (_csView === "kanban") {
     await csLoadKanban();
+  } else if (_csView === "calendar") {
+    await csLoadCalendar();
   } else if (_csView === "backorder") {
     await csLoadBackorder();
   } else {
     await csLoadTickets();
   }
+}
+
+// ═══════════════════════════════════════════════
+//  CS/RMA 캘린더 뷰
+// ═══════════════════════════════════════════════
+const _csCalState = { year: null, month: null, days: {} };
+const CS_STAGE_COLORS = {
+  "접수완료":   { bg: "#fef3c7", accent: "#d97706" },
+  "물류수령":   { bg: "#dbeafe", accent: "#2563eb" },
+  "기술인계":   { bg: "#e0e7ff", accent: "#4f46e5" },
+  "테스트완료": { bg: "#d1fae5", accent: "#059669" },
+  "처리종결":   { bg: "#f3f4f6", accent: "#6b7280" },
+};
+
+function _csCalCurrentKST() {
+  // 서버가 KST 로 기록하므로 브라우저 로컬 시각 그대로 사용 (UI 편의)
+  return new Date();
+}
+
+async function csLoadCalendar() {
+  const grid = document.getElementById("cs-calendar-grid");
+  const title = document.getElementById("cs-cal-title");
+  if (!grid) return;
+
+  if (_csCalState.year == null) {
+    const now = _csCalCurrentKST();
+    _csCalState.year = now.getFullYear();
+    _csCalState.month = now.getMonth() + 1;
+  }
+  const y = _csCalState.year, m = _csCalState.month;
+  if (title) title.textContent = `${y}년 ${m}월`;
+
+  const params = new URLSearchParams({ year: y, month: m });
+  if (_csChannel) params.set("channel", _csChannel);
+  if (_csType) params.set("cs_type", _csType);
+  if (_csReason) params.set("reason", _csReason);
+  if (_csSearch) params.set("search", _csSearch);
+
+  grid.innerHTML = `<div style="padding:40px;text-align:center;color:#9ca3af">⏳ 캘린더 로딩 중...</div>`;
+  try {
+    const res = await api.get(`/api/cs/calendar?${params}`);
+    _csCalState.days = res.days || {};
+    _csRenderCalendarGrid(y, m);
+  } catch (e) {
+    grid.innerHTML = `<div style="color:red;padding:20px">로딩 오류: ${e?.message || e}</div>`;
+  }
+}
+
+function csCalendarShift(delta) {
+  let y = _csCalState.year, m = _csCalState.month + delta;
+  while (m < 1) { m += 12; y -= 1; }
+  while (m > 12) { m -= 12; y += 1; }
+  _csCalState.year = y; _csCalState.month = m;
+  csLoadCalendar();
+}
+
+function csCalendarToday() {
+  const now = _csCalCurrentKST();
+  _csCalState.year = now.getFullYear();
+  _csCalState.month = now.getMonth() + 1;
+  csLoadCalendar();
+}
+
+function _csRenderCalendarGrid(year, month) {
+  const grid = document.getElementById("cs-calendar-grid");
+  if (!grid) return;
+
+  const first = new Date(year, month - 1, 1);
+  const firstWeekday = first.getDay(); // 0=일
+  const lastDay = new Date(year, month, 0).getDate();
+  const prevLastDay = new Date(year, month - 1, 0).getDate();
+
+  const today = _csCalCurrentKST();
+  const todayYmd = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
+  let html = `<div class="cs-cal-weekrow"><div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div>`;
+
+  const weeks = Math.ceil((firstWeekday + lastDay) / 7);
+  let dayCount = 1 - firstWeekday;
+
+  for (let w = 0; w < weeks; w++) {
+    html += `<div class="cs-cal-row">`;
+    for (let dow = 0; dow < 7; dow++, dayCount++) {
+      let cellY = year, cellM = month, cellD = dayCount, muted = false;
+      if (dayCount < 1) {
+        // 이전 달
+        cellD = prevLastDay + dayCount;
+        cellM = month - 1;
+        if (cellM < 1) { cellM = 12; cellY -= 1; }
+        muted = true;
+      } else if (dayCount > lastDay) {
+        cellD = dayCount - lastDay;
+        cellM = month + 1;
+        if (cellM > 12) { cellM = 1; cellY += 1; }
+        muted = true;
+      }
+      const ymd = `${cellY}-${String(cellM).padStart(2,"0")}-${String(cellD).padStart(2,"0")}`;
+      const isToday = ymd === todayYmd;
+      const dayTickets = muted ? [] : (_csCalState.days[ymd] || []);
+      const classes = ["cs-cal-cell"];
+      if (muted) classes.push("muted");
+      if (isToday) classes.push("today");
+      if (dow === 0) classes.push("sun");
+      if (dow === 6) classes.push("sat");
+
+      html += `<div class="${classes.join(" ")}" data-ymd="${ymd}">
+        <div class="cs-cal-daynum">${cellD}</div>`;
+
+      const MAX_VISIBLE = 4;
+      const visible = dayTickets.slice(0, MAX_VISIBLE);
+      visible.forEach(t => {
+        html += _csCalChipHtml(t);
+      });
+      if (dayTickets.length > MAX_VISIBLE) {
+        const more = dayTickets.length - MAX_VISIBLE;
+        html += `<div class="cs-cal-more" onclick="csCalShowDayList('${ymd}')">+${more}개 더 보기</div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  grid.innerHTML = html;
+}
+
+function _csCalChipHtml(t) {
+  const color = CS_STAGE_COLORS[t.current_status] || CS_STAGE_COLORS["접수완료"];
+  const style = `--chip-bg:${color.bg};--chip-accent:${color.accent}`;
+  const name = escapeHtml(t.customer_name || "");
+  const ch = t.sales_channel ? `<span class="ch">${escapeHtml(t.sales_channel)}</span>` : "";
+  const title = `${t.customer_name || ""} · ${t.current_status || ""} · ${t.sales_channel || ""}\n${t.product_name || ""}${t.quantity > 1 ? " x" + t.quantity : ""}`;
+  return `<div class="cs-cal-chip" style="${style}" title="${escapeHtml(title)}" onclick="csShowDetail('${t.ticket_id}')">
+    <span class="name">${name}</span>
+    ${ch}
+  </div>`;
+}
+
+function csCalShowDayList(ymd) {
+  const tickets = _csCalState.days[ymd] || [];
+  if (!tickets.length) return;
+  let inner = `<div class="cs-cal-popover-head">
+    <span>${ymd} · ${tickets.length}건</span>
+    <button class="cs-cal-popover-close" onclick="csCalCloseDayList()">×</button>
+  </div>
+  <div class="cs-cal-popover-body">
+    ${tickets.map(t => _csCalChipHtml(t)).join("")}
+  </div>`;
+
+  let overlay = document.getElementById("cs-cal-popover-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "cs-cal-popover-overlay";
+    overlay.className = "cs-cal-popover-overlay";
+    overlay.onclick = (e) => { if (e.target === overlay) csCalCloseDayList(); };
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `<div class="cs-cal-popover">${inner}</div>`;
+  overlay.style.display = "flex";
+
+  // 칩 클릭 시 팝오버 닫고 상세 열림
+  overlay.querySelectorAll(".cs-cal-chip").forEach(el => {
+    el.addEventListener("click", () => { csCalCloseDayList(); }, { once: true });
+  });
+}
+
+function csCalCloseDayList() {
+  const ov = document.getElementById("cs-cal-popover-overlay");
+  if (ov) ov.style.display = "none";
 }
 
 // ── 미출고/지연 뷰 ──
@@ -4422,7 +4605,7 @@ async function csLoadKanban() {
             <div class="prod">${t.product_name}${t.quantity>1?` x${t.quantity}`:''}</div>
             <div class="meta">
               ${t.sales_channel ? `<span class="cs-ch-badge" style="background:${chColor}15;color:${chColor}">${t.sales_channel}</span>` : '<span></span>'}
-              <span>${_csDateShort(t.created_at)}${isOverdue ? ' ⚠️' : ''}</span>
+              <span>${_csDateShort(t.current_stage_at || t.created_at)}${isOverdue ? ' ⚠️' : ''}</span>
             </div>
           </div>`;
         }).join("")
@@ -4486,7 +4669,7 @@ async function csLoadTickets() {
         </div>
         <div style="margin-top:6px;font-size:13px;color:#4b5563">${t.product_name}${t.quantity > 1 ? ` x${t.quantity}` : ''}</div>
         <div style="margin-top:4px;font-size:12px;color:#9ca3af;display:flex;gap:12px;flex-wrap:wrap">
-          <span>${t.created_at?.slice(0,10) || ''}</span>
+          <span>${(t.current_stage_at || t.created_at || '').slice(0,10)}</span>
           ${t.reason_category ? `<span>${t.reason_category}</span>` : ''}
           ${t.order_number ? `<span>주문: ${t.order_number.slice(-8)}</span>` : ''}
           ${isOverdue ? '<span style="color:#ef4444;font-weight:600">⚠ 7일+ 지연</span>' : ''}
@@ -10371,6 +10554,7 @@ const GLOBAL_FEATURES = [
   { title: "CS / RMA", group: "물류", keywords: ["cs", "rma", "반품", "교환", "지원"], page: "cs_rma" },
   { title: "CS/RMA · 대시보드", group: "물류", keywords: ["cs", "대시보드", "kanban"], page: "cs_rma", run: () => _tryCallView("csSwitchView", "kanban") },
   { title: "CS/RMA · 리스트", group: "물류", keywords: ["cs", "list", "리스트"], page: "cs_rma", run: () => _tryCallView("csSwitchView", "list") },
+  { title: "CS/RMA · 캘린더", group: "물류", keywords: ["cs", "캘린더", "calendar", "일정", "달력"], page: "cs_rma", run: () => _tryCallView("csSwitchView", "calendar") },
   { title: "CS/RMA · 미출고/지연", group: "물류", keywords: ["cs", "미출고", "지연", "backorder"], page: "cs_rma", run: () => _tryCallView("csSwitchView", "backorder") },
   { title: "데이터랩", group: "물류", keywords: ["데이터랩", "datalab", "네이버", "트렌드"], page: "datalab" },
   { title: "데이터랩 · 트렌드", group: "물류", keywords: ["데이터랩", "트렌드", "trend"], page: "datalab", run: () => _tryCallTab("dlSwitchTab", "trend") },

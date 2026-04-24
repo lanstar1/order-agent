@@ -117,6 +117,26 @@ def _generate_ticket_id() -> str:
         conn.close()
 
 
+# ─── 현재 단계 진입 시각 계산 ───────────────────
+_STATUS_TS_FIELD = {
+    "접수완료": "created_at",
+    "물류수령": "received_at",
+    "기술인계": "handover_at",
+    "테스트완료": "tested_at",
+    "처리종결": "resolved_at",
+}
+
+
+def _current_stage_at(ticket: dict) -> str:
+    """현재 상태에 해당하는 타임스탬프 반환 (비어있으면 created_at fallback)"""
+    status = ticket.get("current_status") or "접수완료"
+    field = _STATUS_TS_FIELD.get(status, "created_at")
+    ts = ticket.get(field) or ""
+    if not ts:
+        ts = ticket.get("created_at") or ""
+    return ts
+
+
 # ─── 이력 기록 헬퍼 ───────────────────
 def _log_action(conn, ticket_id: str, action_type: str, actor_cd: str, actor_name: str, detail: str = ""):
     """타임스탬프 포함 이력 기록"""
@@ -192,6 +212,9 @@ async def list_tickets(
         ).fetchall()
 
         tickets = [dict(r) for r in rows]
+        # 각 티켓에 "현재 단계 진입 시각" 계산
+        for t in tickets:
+            t["current_stage_at"] = _current_stage_at(t)
 
         # 상태별 카운트 (대시보드 통계용)
         stats_rows = conn.execute(
@@ -206,6 +229,75 @@ async def list_tickets(
             "size": size,
             "status_counts": status_counts,
         }
+    finally:
+        conn.close()
+
+
+# ── 캘린더 뷰 (현재 단계 진입일 기준 월별 그룹) ──
+@router.get("/calendar")
+async def cs_calendar(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    channel: str = Query(""),
+    cs_type: str = Query(""),
+    reason: str = Query(""),
+    search: str = Query(""),
+    user: dict = Depends(get_current_user),
+):
+    """
+    지정한 연/월의 달력에 표시할 티켓 목록.
+    각 티켓의 '현재 단계 진입일'이 해당 월에 들어오는 것만 반환.
+    응답: { days: { "YYYY-MM-DD": [ {ticket_id, customer_name, current_status, sales_channel, cs_type, product_name, current_stage_at}, ... ] } }
+    """
+    conn = get_connection()
+    try:
+        where_clauses = []
+        params: list = []
+        if channel:
+            where_clauses.append("t.sales_channel = ?")
+            params.append(channel)
+        if cs_type:
+            where_clauses.append("t.cs_type = ?")
+            params.append(cs_type)
+        if reason:
+            where_clauses.append("t.reason_category = ?")
+            params.append(reason)
+        if search:
+            term = f"%{search}%"
+            where_clauses.append(
+                "(t.ticket_id LIKE ? OR t.customer_name LIKE ? OR t.contact_info LIKE ? OR t.order_number LIKE ?)"
+            )
+            params.extend([term, term, term, term])
+
+        where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        rows = conn.execute(
+            f"SELECT t.* FROM cs_tickets t{where_sql}", params
+        ).fetchall()
+
+        month_key = f"{year:04d}-{month:02d}"
+        days: dict = {}
+        for r in rows:
+            t = dict(r)
+            stage_at = _current_stage_at(t)
+            if not stage_at:
+                continue
+            day_key = str(stage_at)[:10]  # YYYY-MM-DD
+            if not day_key.startswith(month_key):
+                continue
+            days.setdefault(day_key, []).append({
+                "ticket_id": t.get("ticket_id"),
+                "customer_name": t.get("customer_name"),
+                "product_name": t.get("product_name"),
+                "current_status": t.get("current_status"),
+                "sales_channel": t.get("sales_channel"),
+                "cs_type": t.get("cs_type"),
+                "current_stage_at": stage_at,
+                "quantity": t.get("quantity") or 1,
+            })
+        # 날짜별로 시간순 정렬
+        for k in days:
+            days[k].sort(key=lambda x: x.get("current_stage_at", ""))
+        return {"year": year, "month": month, "days": days}
     finally:
         conn.close()
 

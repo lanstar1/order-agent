@@ -1511,15 +1511,34 @@ C규격품 200개
         </div>
       </div>
 
-      <!-- 뷰 탭 (대시보드 / 리스트 / 미출고) -->
+      <!-- 뷰 탭 (대시보드 / 리스트 / 캘린더 / 미출고) -->
       <div style="display:flex;gap:2px;margin-bottom:12px;border-bottom:2px solid #e5e7eb;overflow-x:auto">
         <button class="cs-pipe-tab active" onclick="csSwitchView(this,'kanban')">📊 대시보드</button>
         <button class="cs-pipe-tab" onclick="csSwitchView(this,'list')">📄 리스트</button>
+        <button class="cs-pipe-tab" onclick="csSwitchView(this,'calendar')">📅 캘린더</button>
         <button class="cs-pipe-tab" onclick="csSwitchView(this,'backorder')">📦 미출고/지연</button>
       </div>
 
       <!-- 칸반 보드 -->
       <div id="cs-kanban-board" class="cs-kanban"></div>
+
+      <!-- 캘린더 뷰 (숨김) -->
+      <div id="cs-calendar-view" style="display:none">
+        <div class="cs-cal-toolbar">
+          <button class="cs-cal-navbtn" onclick="csCalendarShift(-1)" title="이전 달">‹</button>
+          <span class="cs-cal-title" id="cs-cal-title">—</span>
+          <button class="cs-cal-navbtn" onclick="csCalendarShift(1)" title="다음 달">›</button>
+          <button class="cs-cal-todaybtn" onclick="csCalendarToday()">오늘</button>
+          <span class="cs-cal-legend">
+            <span><i style="background:#fef3c7"></i>접수완료</span>
+            <span><i style="background:#dbeafe"></i>물류수령</span>
+            <span><i style="background:#e0e7ff"></i>기술인계</span>
+            <span><i style="background:#d1fae5"></i>테스트완료</span>
+            <span><i style="background:#f3f4f6;border:1px solid #d1d5db"></i>처리종결</span>
+          </span>
+        </div>
+        <div id="cs-calendar-grid" class="cs-calendar-grid"></div>
+      </div>
 
       <!-- 리스트 뷰 (숨김) -->
       <div id="cs-list-view" style="display:none">
@@ -5091,8 +5110,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
-<script src="/static/js/api.js?v=20260424c"></script>
-<script src="/static/js/app.js?v=20260424c"></script>
+<script src="/static/js/api.js?v=20260424d"></script>
+<script src="/static/js/app.js?v=20260424d"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>
