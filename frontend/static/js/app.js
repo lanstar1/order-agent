@@ -4200,7 +4200,7 @@ async function csDeleteBackorder(id) {
 
 function csShowBackorderForm(editData) {
   const d = editData || {};
-  const channels = (_csOptions?.sales_channels) || ["스마트스토어","G마켓","옥션","쿠팡","오늘의집","나비엠알오","자사몰","기타"];
+  const channels = (_csOptions?.sales_channels) || ["스마트스토어","G마켓","옥션","쿠팡","컴퓨존","오늘의집","나비엠알오","자사몰","기타"];
   document.getElementById("cs-modal-content").innerHTML = `
     <div class="cs-modal-header"><h3 style="margin:0">${d.id ? '✏️ 미출고 수정' : '📦 미출고 접수'}</h3></div>
     <div class="cs-modal-body">
@@ -4545,7 +4545,7 @@ function csCloseModal() {
 // ── 새 접수 폼 (확장) ──
 function csShowCreateForm() {
   const opts = _csOptions || {};
-  const channels = opts.sales_channels || ["스마트스토어","G마켓","옥션","쿠팡","오늘의집","나비엠알오","자사몰","기타"];
+  const channels = opts.sales_channels || ["스마트스토어","G마켓","옥션","쿠팡","컴퓨존","오늘의집","나비엠알오","자사몰","기타"];
   const types = opts.cs_types || ["반품","교환","A/S수리","미출고"];
   const reasons = opts.reason_categories || ["파손 및 불량","단순 변심","주문 실수","오배송 및 지연","재고 부족","기타"];
   const shipCosts = opts.shipping_cost_statuses || ["환불금에서 차감","판매자에게 직접 송금","추가결제","무료반품","해당없음"];
