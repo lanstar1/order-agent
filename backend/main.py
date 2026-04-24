@@ -618,10 +618,7 @@ async def startup():
     # 거래처 자동 동기화: customers 테이블이 비어있으면 ERP에서 자동 가져오기
     asyncio.create_task(_auto_sync_customers())
 
-    # 자료관리: 서버 시작 시 마지막 동기화가 오래됐으면 자동 동기화
-    asyncio.create_task(_auto_sync_on_startup())
-
-    # SmartLogen 택배 자동 동기화 스케줄러 (매일 09:00 KST)
+    # SmartLogen 택배 자동 동기화 스케줄러 (1시간 간격)
     try:
         from services.scheduler_service import start_scheduler, check_and_run_on_startup
         start_scheduler()
@@ -629,6 +626,21 @@ async def startup():
         logger.info("SmartLogen 자동 동기화 스케줄러 등록 완료 (1시간 간격)")
     except Exception as e:
         logger.warning(f"택배 스케줄러 시작 실패: {e}")
+
+    # 자료/오더리스트 자동 동기화 스케줄러 (기본 매일 08:00 KST, 설정 가능)
+    try:
+        from services.data_sync_scheduler import (
+            apply_schedule as _apply_data_sync_schedule,
+            check_and_run_on_startup as _data_sync_startup,
+        )
+        info = _apply_data_sync_schedule()
+        logger.info(
+            f"자료/오더리스트 스케줄러 등록: hour={info.get('hour')} minute={info.get('minute')} "
+            f"enabled={info.get('enabled')} next={info.get('next_run')}"
+        )
+        asyncio.create_task(_data_sync_startup(stale_hours=12))
+    except Exception as e:
+        logger.warning(f"자료/오더리스트 스케줄러 시작 실패: {e}")
 
     # 재고 변동 모니터링 스케줄러 (평일 09:00 KST = UTC 00:00)
     try:
@@ -799,98 +811,6 @@ async def shutdown():
         logger.info("ERP Web Scraper 브라우저 종료 완료")
     except Exception as e:
         logger.warning(f"ERP Web Scraper 종료 중 오류: {e}")
-
-
-async def _auto_sync_on_startup():
-    """
-    서버 시작 시 마지막 동기화가 6시간 이상 지났으면 자동 동기화.
-    Render 무료 플랜은 5분 후 서버가 꺼지므로, 오전 9시 스케줄러 방식은 작동하지 않음.
-    대신 서버가 깨어날 때마다 동기화 필요 여부를 체크.
-    """
-    from datetime import datetime, timedelta
-
-    # 서버 시작 직후 약간의 딜레이 (DB 초기화 완료 대기)
-    await asyncio.sleep(5)
-
-    try:
-        from db.database import get_connection
-        conn = get_connection()
-
-        # 소스 유형별 가장 오래된 동기화 시간 확인
-        row = conn.execute(
-            "SELECT MIN(last_synced) as oldest FROM material_sources WHERE last_synced != '' AND is_active=1"
-        ).fetchone()
-        conn.close()
-
-        oldest_sync = row["oldest"] if row and row["oldest"] else None
-        need_sync = True
-
-        if oldest_sync:
-            try:
-                last_dt = datetime.strptime(str(oldest_sync)[:19], "%Y-%m-%d %H:%M:%S")
-                hours_ago = (datetime.now() - last_dt).total_seconds() / 3600
-                logger.info(f"[자동동기화] 가장 오래된 동기화: {oldest_sync} ({hours_ago:.1f}시간 전)")
-                if hours_ago < 6:
-                    need_sync = False
-                    logger.info("[자동동기화] 모든 소스 최근 동기화됨 → 스킵")
-            except (ValueError, TypeError) as e:
-                logger.warning(f"[자동동기화] 날짜 파싱 실패: {e}")
-
-        if need_sync:
-            logger.info("[자동동기화] 동기화 시작...")
-            from services.materials_service import sync_all as sync_all_sources
-            result = await sync_all_sources()
-            sheets = result.get("sheets", {})
-            drive = result.get("drive", {})
-            logger.info(
-                f"[자동동기화] 완료: "
-                f"시트 {sheets.get('success_count',0)}/{sheets.get('total_sources',0)}개, "
-                f"총 {sheets.get('total_rows',0)}행 / "
-                f"Drive {drive.get('success_count',0)}/{drive.get('total_sources',0)}개, "
-                f"총 {drive.get('total_files',0)}파일"
-            )
-            # Drive 동기화 실패 상세 로깅
-            for d in drive.get("details", []):
-                if not d.get("success"):
-                    logger.warning(f"[자동동기화] Drive 실패: {d.get('name','?')} - {d.get('error','알 수 없음')}")
-
-    except Exception as e:
-        logger.error(f"[자동동기화] 오류: {e}", exc_info=True)
-
-    # ── 오더리스트 자동동기화 ──
-    try:
-        from db.database import get_connection as _gc2
-        conn2 = _gc2()
-        ol_row = conn2.execute(
-            "SELECT MAX(synced_at) as ts FROM orderlist_sync_log"
-        ).fetchone()
-        conn2.close()
-
-        ol_last = ol_row["ts"] if ol_row and ol_row["ts"] else None
-        ol_need_sync = True
-
-        if ol_last:
-            try:
-                ol_dt = datetime.strptime(str(ol_last)[:19], "%Y-%m-%d %H:%M:%S")
-                ol_hours = (datetime.now() - ol_dt).total_seconds() / 3600
-                logger.info(f"[자동동기화] 오더리스트 마지막 동기화: {ol_last} ({ol_hours:.1f}시간 전)")
-                if ol_hours < 6:
-                    ol_need_sync = False
-                    logger.info("[자동동기화] 오더리스트 최근 동기화됨 → 스킵")
-            except (ValueError, TypeError) as e:
-                logger.warning(f"[자동동기화] 오더리스트 날짜 파싱 실패: {e}")
-
-        if ol_need_sync:
-            logger.info("[자동동기화] 오더리스트 동기화 시작...")
-            from services.orderlist_service import sync_orderlist
-            ol_result = sync_orderlist()
-            if ol_result.get("success"):
-                logger.info(f"[자동동기화] 오더리스트 완료: {ol_result.get('total_items', 0)}건")
-            else:
-                logger.warning(f"[자동동기화] 오더리스트 실패: {ol_result.get('error', '알 수 없음')}")
-
-    except Exception as e:
-        logger.error(f"[자동동기화] 오더리스트 오류: {e}", exc_info=True)
 
 
 # ─────────────────────────────────────────

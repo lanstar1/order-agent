@@ -389,6 +389,51 @@ async def set_model(req: ModelSettingRequest, user: dict = Depends(get_current_u
     }
 
 
+# ─────────────────────────────────────────
+#  자료/오더리스트 자동 동기화 스케줄
+# ─────────────────────────────────────────
+class SyncScheduleRequest(BaseModel):
+    hour: int
+    minute: int
+    enabled: bool = True
+
+
+@router.get("/sync-schedule")
+async def get_sync_schedule(user: dict = Depends(get_current_user)):
+    """자료/오더리스트 자동 동기화 스케줄 현재 상태"""
+    from services.data_sync_scheduler import get_status
+    return get_status()
+
+
+@router.put("/sync-schedule")
+async def set_sync_schedule(req: SyncScheduleRequest, user: dict = Depends(get_current_user)):
+    """자동 동기화 시각(KST) 및 활성화 여부 변경"""
+    if not (0 <= req.hour <= 23):
+        raise HTTPException(400, "hour는 0~23 범위여야 합니다")
+    if not (0 <= req.minute <= 59):
+        raise HTTPException(400, "minute는 0~59 범위여야 합니다")
+
+    from services.data_sync_scheduler import save_schedule_config, apply_schedule, get_status
+    ensure_settings_table()
+    save_schedule_config(req.hour, req.minute, req.enabled)
+    apply_schedule(hour=req.hour, minute=req.minute, enabled=req.enabled)
+    status = get_status()
+    logger.info(
+        f"[설정] 자료 동기화 스케줄 변경: "
+        f"{req.hour:02d}:{req.minute:02d} enabled={req.enabled} by {user['emp_cd']}"
+    )
+    return {"success": True, **status}
+
+
+@router.post("/sync-schedule/run-now")
+async def run_sync_now(user: dict = Depends(get_current_user)):
+    """자료/오더리스트 동기화 즉시 실행"""
+    from services.data_sync_scheduler import trigger_now
+    logger.info(f"[설정] 자료 동기화 수동 실행 by {user['emp_cd']}")
+    result = await trigger_now()
+    return {"success": True, "result": result}
+
+
 @router.get("/")
 async def get_all_settings():
     """전체 설정 조회"""

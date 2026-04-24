@@ -291,6 +291,11 @@ const api = {
   setModel:     (modelId) => api.post("/api/settings/models", { model_id: modelId }),
   getSettings:  () => api.get("/api/settings/"),
 
+  // ── 자료/오더리스트 자동 동기화 스케줄 ──
+  syncScheduleGet: () => api.get("/api/settings/sync-schedule"),
+  syncScheduleSet: (hour, minute, enabled) => api.request("PUT", "/api/settings/sync-schedule", { hour, minute, enabled }),
+  syncScheduleRunNow: () => api.post("/api/settings/sync-schedule/run-now"),
+
   // ── 활동 로그 (관리자) ──
   activityLogs(page = 1, pageSize = 50, empCd = "", action = "", dateFrom = "", dateTo = "") {
     const params = new URLSearchParams({ page, page_size: pageSize });

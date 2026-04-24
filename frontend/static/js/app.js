@@ -2018,6 +2018,43 @@ async function initDocSearchPage() {
     const ok = await loadDocCategories();
     if (ok) _docSearchState.categoriesLoaded = true;
   }
+  loadLastSyncBadge("doc").catch(() => {});
+}
+
+// ── 마지막 동기화 배지 공통 유틸 ──
+function _fmtSyncTs(s) {
+  if (!s) return "—";
+  try {
+    const d = new Date(s.replace(" ", "T"));
+    if (Number.isNaN(d.getTime())) return s;
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch(_) { return s; }
+}
+
+async function loadLastSyncBadge(kind) {
+  // kind: "doc" | "price" | "orderlist"
+  const elId = kind === "doc" ? "doc-last-sync"
+             : kind === "price" ? "ps-last-sync"
+             : "ol-last-sync";
+  const el = document.getElementById(elId);
+  if (!el) return;
+  try {
+    if (kind === "orderlist") {
+      const s = await api.orderlistSummary();
+      el.textContent = s.last_sync ? `마지막 동기화: ${_fmtSyncTs(s.last_sync)}` : "미동기화";
+    } else {
+      const data = await api.materialsSources();
+      const list = (data.sources || []).filter(x => kind === "doc"
+        ? x.source_type === "drive_folder"
+        : x.source_type === "sheet");
+      const ts = list.map(x => x.last_synced).filter(Boolean).sort();
+      const latest = ts.length ? ts[ts.length - 1] : null;
+      el.textContent = latest ? `마지막 동기화: ${_fmtSyncTs(latest)}` : "미동기화";
+    }
+  } catch (e) {
+    el.textContent = "";
+  }
 }
 
 async function loadDocCategories() {
@@ -2173,6 +2210,7 @@ async function docSearchSync() {
     _docSearchState.categoriesLoaded = false;
     await loadDocCategories();
     loadDocuments(0);
+    loadLastSyncBadge("doc").catch(() => {});
   } catch (e) {
     statusEl.textContent = `❌ 동기화 실패: ${e.message}`;
     toast("동기화 실패: " + e.message, "error");
@@ -2193,6 +2231,7 @@ async function initPriceSheetPage() {
     const ok = await loadPSVendors();
     if (ok) _psState.vendorsLoaded = true;
   }
+  loadLastSyncBadge("price").catch(() => {});
 }
 
 async function loadPSVendors() {
@@ -2402,6 +2441,7 @@ async function priceSheetSyncAll() {
     if (document.getElementById("ps-vendor-select").value) {
       loadPriceSheet(0);
     }
+    loadLastSyncBadge("price").catch(() => {});
   } catch (e) {
     statusEl.textContent = `❌ 동기화 실패: ${e.message}`;
     toast("동기화 실패: " + e.message, "error");
@@ -3199,6 +3239,7 @@ async function syncOrderList() {
       toast(`오더리스트 동기화 완료: ${data.total_items}건`, "success");
       loadOrderListTabs();
       loadOrderList();
+      loadLastSyncBadge("orderlist").catch(() => {});
     } else {
       toast(`동기화 실패: ${data.error || ""}`, "error");
     }
@@ -3413,6 +3454,7 @@ async function loadOrderList(page = 1) {
     olNav.addEventListener("click", () => {
       loadOrderListTabs();
       loadOrderList();
+      loadLastSyncBadge("orderlist").catch(() => {});
     });
   }
 })();

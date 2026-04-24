@@ -721,7 +721,10 @@ C규격품 200개
       <div class="card">
         <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>자료검색</span>
-          <button class="btn btn-outline btn-sm" onclick="docSearchSync()" id="doc-sync-btn">🔄 동기화</button>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span id="doc-last-sync" style="font-size:12px;color:var(--gray-500)"></span>
+            <button class="btn btn-outline btn-sm" onclick="docSearchSync()" id="doc-sync-btn">🔄 동기화</button>
+          </div>
         </div>
         <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
           Google Drive에 저장된 데이터시트, KC인증서, ROHS, UL, Fluke, Test 리포트 등을 검색합니다.
@@ -766,7 +769,10 @@ C규격품 200개
       <div class="card">
         <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>단가표 조회</span>
-          <button class="btn btn-outline btn-sm" onclick="priceSheetSyncAll()" id="ps-sync-btn">🔄 전체 동기화</button>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span id="ps-last-sync" style="font-size:12px;color:var(--gray-500)"></span>
+            <button class="btn btn-outline btn-sm" onclick="priceSheetSyncAll()" id="ps-sync-btn">🔄 전체 동기화</button>
+          </div>
         </div>
         <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
           거래처별 단가표를 조회하고 검색할 수 있습니다.
@@ -813,7 +819,10 @@ C규격품 200개
       <div class="card">
         <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>오더리스트</span>
-          <button class="btn btn-outline btn-sm" onclick="syncOrderList()" id="ol-sync-btn">🔄 동기화</button>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span id="ol-last-sync" style="font-size:12px;color:var(--gray-500)"></span>
+            <button class="btn btn-outline btn-sm" onclick="syncOrderList()" id="ol-sync-btn">🔄 동기화</button>
+          </div>
         </div>
         <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">
           해외 공장 발주(오더) 진행 현황을 조회합니다.
@@ -2638,6 +2647,31 @@ www.lanstar.co.kr</textarea>
           </div>
         </div>
 
+        <!-- 자동 동기화 스케줄 -->
+        <div class="card">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>자동 동기화 스케줄</span>
+            <button class="btn btn-outline btn-sm" onclick="syncScheduleRunNow()" id="sync-now-btn">
+              ▶️ 지금 실행
+            </button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">
+            매일 지정한 시각(KST)에 <strong>단가표·자료검색·오더리스트</strong>를 자동으로 동기화합니다.
+          </p>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
+            <div>
+              <label class="form-label">실행 시각 (KST)</label>
+              <input type="time" class="form-control" id="sync-schedule-time" value="08:00" style="width:140px">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;padding-bottom:8px">
+              <input type="checkbox" id="sync-schedule-enabled" checked>
+              <label for="sync-schedule-enabled" style="font-size:13px;color:var(--gray-700);cursor:pointer">활성화</label>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="saveSyncSchedule()" id="sync-schedule-save-btn">저장</button>
+          </div>
+          <div id="sync-schedule-status" style="font-size:12px;color:var(--gray-500)"></div>
+        </div>
+
         <!-- 동기화 상태 -->
         <div class="card">
           <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
@@ -3429,7 +3463,7 @@ function switchSettingsTab(tab) {
 
   // 탭별 초기화
   if (tab === "api") { loadLLMConfig(); loadApiKeys(); }
-  if (tab === "materials") { loadMaterialSources(); loadSettingsOlStatus(); }
+  if (tab === "materials") { loadMaterialSources(); loadSettingsOlStatus(); loadSyncSchedule(); }
   if (tab === "customers") {
     const searchEl = document.getElementById("settings-cust-search");
     if (searchEl) setTimeout(() => searchEl.focus(), 50);
@@ -4023,6 +4057,99 @@ async function materialsyncAll() {
   } finally {
     btn.disabled = false;
     btn.textContent = "🔄 전체 동기화";
+  }
+}
+
+// ── 자동 동기화 스케줄 (자료/오더리스트) ──
+function _fmtKst(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch(_) { return iso; }
+}
+
+async function loadSyncSchedule() {
+  const timeEl = document.getElementById("sync-schedule-time");
+  const enEl = document.getElementById("sync-schedule-enabled");
+  const statusEl = document.getElementById("sync-schedule-status");
+  if (!timeEl || !enEl || !statusEl) return;
+  try {
+    const s = await api.syncScheduleGet();
+    const hh = String(s.hour ?? 8).padStart(2, "0");
+    const mm = String(s.minute ?? 0).padStart(2, "0");
+    timeEl.value = `${hh}:${mm}`;
+    enEl.checked = !!s.enabled;
+    const next = s.next_run ? _fmtKst(s.next_run) : (s.enabled ? "등록 대기 중" : "비활성화됨");
+    const last = s.last_run ? _fmtKst(s.last_run) : "—";
+    let resultTxt = "";
+    if (s.last_result) {
+      const sheets = s.last_result?.materials?.sheets || {};
+      const drive = s.last_result?.materials?.drive || {};
+      const ol = s.last_result?.orderlist || {};
+      const parts = [];
+      if (sheets.total_sources != null)
+        parts.push(`시트 ${sheets.success_count||0}/${sheets.total_sources||0}(${sheets.total_rows||0}행)`);
+      if (drive.total_sources != null)
+        parts.push(`Drive ${drive.success_count||0}/${drive.total_sources||0}(${drive.total_files||0}파일)`);
+      if (ol && ol.success)
+        parts.push(`오더 ${ol.total_items||0}건`);
+      if (parts.length) resultTxt = ` · ${parts.join(" · ")}`;
+    }
+    statusEl.innerHTML =
+      `<strong>다음 실행:</strong> ${next} · <strong>마지막 실행:</strong> ${last}${resultTxt}`;
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:var(--danger)">스케줄 상태 조회 실패: ${escapeHtml(e.message)}</span>`;
+  }
+}
+
+async function saveSyncSchedule() {
+  const timeEl = document.getElementById("sync-schedule-time");
+  const enEl = document.getElementById("sync-schedule-enabled");
+  const btn = document.getElementById("sync-schedule-save-btn");
+  const val = (timeEl.value || "08:00").split(":");
+  const hour = parseInt(val[0], 10);
+  const minute = parseInt(val[1] || "0", 10);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) {
+    toast("시각 형식이 올바르지 않습니다", "error");
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "저장 중...";
+  try {
+    await api.syncScheduleSet(hour, minute, enEl.checked);
+    toast(`자동 동기화 스케줄 저장 완료 (매일 ${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")} KST)`, "success");
+    loadSyncSchedule();
+  } catch (e) {
+    toast("저장 실패: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "저장";
+  }
+}
+
+async function syncScheduleRunNow() {
+  const btn = document.getElementById("sync-now-btn");
+  if (!confirm("자료·오더리스트를 지금 동기화할까요? 수 분 걸릴 수 있습니다.")) return;
+  btn.disabled = true;
+  btn.textContent = "실행 중...";
+  try {
+    const res = await api.syncScheduleRunNow();
+    const r = res.result || {};
+    const sheets = r.materials?.sheets || {};
+    const drive = r.materials?.drive || {};
+    const ol = r.orderlist || {};
+    const msg = `✅ 완료: 시트 ${sheets.success_count||0}/${sheets.total_sources||0}, Drive ${drive.success_count||0}/${drive.total_sources||0}, 오더 ${ol.total_items||0}건`;
+    toast(msg, "success");
+    loadSyncSchedule();
+    loadMaterialSources();
+    loadSettingsOlStatus();
+  } catch (e) {
+    toast("실행 실패: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶️ 지금 실행";
   }
 }
 
@@ -4953,8 +5080,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
-<script src="/static/js/api.js?v=20260420l"></script>
-<script src="/static/js/app.js?v=20260420l"></script>
+<script src="/static/js/api.js?v=20260424a"></script>
+<script src="/static/js/app.js?v=20260424a"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>
