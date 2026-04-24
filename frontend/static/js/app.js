@@ -10319,3 +10319,323 @@ async function dlExportExcel() {
     alert('엑셀 다운로드 실패: ' + e.message);
   }
 }
+
+// ═══════════════════════════════════════════════
+//  전역 기능 검색 (Ctrl/Cmd+K)
+// ═══════════════════════════════════════════════
+// 각 항목: { title, group, keywords, page, run? }
+// - page: navigateTo 로 이동할 페이지 id
+// - run: 페이지 이동 후 실행할 함수 (서브탭 스위처 등). 선택사항.
+const GLOBAL_FEATURES = [
+  // ── 업무 입력 ──
+  { title: "판매입력", group: "업무 입력", keywords: ["판매", "발주", "order", "sales"], page: "new_order" },
+  { title: "판매입력 · 텍스트 붙여넣기", group: "업무 입력", keywords: ["텍스트", "paste"], page: "new_order", run: () => _tryCallTab("switchTab", "text") },
+  { title: "판매입력 · 이미지 업로드", group: "업무 입력", keywords: ["이미지", "사진", "image", "pdf"], page: "new_order", run: () => _tryCallTab("switchTab", "image") },
+  { title: "견적서입력", group: "업무 입력", keywords: ["견적", "quotation", "quote"], page: "sale_order" },
+  { title: "견적서입력 · 텍스트 붙여넣기", group: "업무 입력", keywords: ["견적", "텍스트"], page: "sale_order", run: () => _tryCallTab("switchSOTab", "text") },
+  { title: "견적서입력 · 이미지 업로드", group: "업무 입력", keywords: ["견적", "이미지"], page: "sale_order", run: () => _tryCallTab("switchSOTab", "image") },
+  { title: "구매입력", group: "업무 입력", keywords: ["구매", "purchase", "po"], page: "purchase" },
+  { title: "구매입력 · 텍스트 붙여넣기", group: "업무 입력", keywords: ["구매", "텍스트"], page: "purchase", run: () => _tryCallTab("switchPOTab", "text") },
+  { title: "구매입력 · 이미지 업로드", group: "업무 입력", keywords: ["구매", "이미지"], page: "purchase", run: () => _tryCallTab("switchPOTab", "image") },
+  { title: "매입정산", group: "업무 입력", keywords: ["매입", "정산", "reconcile"], page: "reconcile" },
+  { title: "리베이트", group: "업무 입력", keywords: ["리베이트", "rebate"], page: "rebate" },
+  { title: "리베이트 · 계산", group: "업무 입력", keywords: ["리베이트", "계산", "csv"], page: "rebate", run: () => _tryCallTab("switchRebateTab", "calc") },
+  { title: "리베이트 · 실행 이력", group: "업무 입력", keywords: ["리베이트", "이력", "history"], page: "rebate", run: () => _tryCallTab("switchRebateTab", "history") },
+  { title: "리베이트 · 설정", group: "업무 입력", keywords: ["리베이트", "설정"], page: "rebate", run: () => _tryCallTab("switchRebateTab", "rsettings") },
+
+  // ── 조회 ──
+  { title: "처리 이력", group: "조회", keywords: ["이력", "history", "처리"], page: "history" },
+  { title: "재고 조회", group: "조회", keywords: ["재고", "inventory", "stock"], page: "inventory" },
+  { title: "자료검색", group: "조회", keywords: ["자료", "검색", "drive", "데이터시트", "kc", "rohs", "ul", "fluke"], page: "doc_search" },
+  { title: "단가표", group: "조회", keywords: ["단가", "가격", "price", "sheet"], page: "price_sheet" },
+  { title: "오더리스트", group: "조회", keywords: ["오더", "발주", "해외", "order", "orderlist"], page: "orderlist" },
+
+  // ── 물류 ──
+  { title: "스마트스토어", group: "물류", keywords: ["스마트스토어", "네이버", "smartstore"], page: "smartstore_bridge" },
+  { title: "쿠팡", group: "물류", keywords: ["쿠팡", "바코드", "coupang", "barcode"], page: "barcode_bridge" },
+  { title: "택배조회", group: "물류", keywords: ["택배", "배송", "운송장", "shipping"], page: "shipping" },
+  { title: "택배조회 · 받는사람 검색", group: "물류", keywords: ["받는사람", "수취", "수령", "이름"], page: "shipping", run: () => _tryCallTab("switchShipTab", "search") },
+  { title: "택배조회 · 일별 조회", group: "물류", keywords: ["일별", "날짜", "daily"], page: "shipping", run: () => _tryCallTab("switchShipTab", "daily") },
+  { title: "택배조회 · 운송장 추적", group: "물류", keywords: ["운송장", "추적", "track"], page: "shipping", run: () => _tryCallTab("switchShipTab", "track") },
+  { title: "택배조회 · 자동 동기화", group: "물류", keywords: ["자동", "동기화", "sync", "smartlogen"], page: "shipping", run: () => _tryCallTab("switchShipTab", "sync") },
+  { title: "택배조회 · 발송 등록", group: "물류", keywords: ["발송", "등록", "운송장발급"], page: "shipping", run: () => _tryCallTab("switchShipTab", "register") },
+  { title: "재고모니터", group: "물류", keywords: ["재고", "모니터", "monitor", "알림"], page: "inventory_monitor" },
+  { title: "재고모니터 · 전체제품", group: "물류", keywords: ["재고", "전체제품", "전체"], page: "inventory_monitor", run: () => _tryCallTab("switchInvTab", "all") },
+  { title: "재고모니터 · 온라인관리품목", group: "물류", keywords: ["재고", "온라인", "관리품목", "planning"], page: "inventory_monitor", run: () => _tryCallTab("switchInvTab", "planning") },
+  { title: "지도가감시", group: "물류", keywords: ["지도가", "map", "감시", "위반"], page: "map_monitor" },
+  { title: "지도가감시 · 대시보드", group: "물류", keywords: ["지도가", "대시보드", "dashboard"], page: "map_monitor", run: () => _tryCallTab("switchMapTab", "dashboard") },
+  { title: "지도가감시 · 위반현황", group: "물류", keywords: ["지도가", "위반", "violation"], page: "map_monitor", run: () => _tryCallTab("switchMapTab", "violations") },
+  { title: "지도가감시 · 제품·지도가", group: "물류", keywords: ["지도가", "제품", "product"], page: "map_monitor", run: () => _tryCallTab("switchMapTab", "products") },
+  { title: "지도가감시 · 셀러관리", group: "물류", keywords: ["지도가", "셀러", "seller"], page: "map_monitor", run: () => _tryCallTab("switchMapTab", "sellers") },
+  { title: "지도가감시 · 설정", group: "물류", keywords: ["지도가", "설정"], page: "map_monitor", run: () => _tryCallTab("switchMapTab", "settings") },
+  { title: "CS / RMA", group: "물류", keywords: ["cs", "rma", "반품", "교환", "지원"], page: "cs_rma" },
+  { title: "CS/RMA · 대시보드", group: "물류", keywords: ["cs", "대시보드", "kanban"], page: "cs_rma", run: () => _tryCallView("csSwitchView", "kanban") },
+  { title: "CS/RMA · 리스트", group: "물류", keywords: ["cs", "list", "리스트"], page: "cs_rma", run: () => _tryCallView("csSwitchView", "list") },
+  { title: "CS/RMA · 미출고/지연", group: "물류", keywords: ["cs", "미출고", "지연", "backorder"], page: "cs_rma", run: () => _tryCallView("csSwitchView", "backorder") },
+  { title: "데이터랩", group: "물류", keywords: ["데이터랩", "datalab", "네이버", "트렌드"], page: "datalab" },
+  { title: "데이터랩 · 트렌드", group: "물류", keywords: ["데이터랩", "트렌드", "trend"], page: "datalab", run: () => _tryCallTab("dlSwitchTab", "trend") },
+  { title: "데이터랩 · 데이터 테이블", group: "물류", keywords: ["데이터랩", "테이블", "table"], page: "datalab", run: () => _tryCallTab("dlSwitchTab", "table") },
+  { title: "데이터랩 · 인구통계", group: "물류", keywords: ["데이터랩", "인구", "demographic", "성별", "연령"], page: "datalab", run: () => _tryCallTab("dlSwitchTab", "demographic") },
+  { title: "데이터랩 · AI 인사이트", group: "물류", keywords: ["데이터랩", "ai", "인사이트", "insight"], page: "datalab", run: () => _tryCallTab("dlSwitchTab", "ai") },
+
+  // ── AI 서비스 ──
+  { title: "AI 상담 (AICC)", group: "AI 서비스", keywords: ["ai", "상담", "aicc", "챗봇"], page: "aicc" },
+  { title: "AI 대시보드", group: "AI 서비스", keywords: ["ai", "대시보드", "통계", "dashboard"], page: "ai_dashboard" },
+  { title: "일별 판매현황", group: "AI 서비스", keywords: ["일별", "판매", "sales", "daily"], page: "sales_daily" },
+  { title: "AI 메일", group: "AI 서비스", keywords: ["ai", "메일", "mail", "email"], page: "mail_agent" },
+  { title: "신제품 소싱", group: "AI 서비스", keywords: ["신제품", "소싱", "sourcing", "youtube"], page: "sourcing" },
+
+  // ── 관리 ──
+  { title: "발주서 학습", group: "관리", keywords: ["발주", "학습", "training", "ai학습"], page: "training" },
+  { title: "설정", group: "관리", keywords: ["설정", "settings", "환경"], page: "settings" },
+  { title: "설정 · AI 모델 / API 키", group: "관리", keywords: ["설정", "ai", "모델", "api", "key"], page: "settings", run: () => _tryCallTab("switchSettingsTab", "api") },
+  { title: "설정 · 거래처 관리", group: "관리", keywords: ["설정", "거래처", "customer"], page: "settings", run: () => _tryCallTab("switchSettingsTab", "customers") },
+  { title: "설정 · 자료관리 (단가표/자료/자동동기화)", group: "관리", keywords: ["설정", "자료", "단가", "스케줄", "자동동기화"], page: "settings", run: () => _tryCallTab("switchSettingsTab", "materials") },
+  { title: "설정 · 내 계정", group: "관리", keywords: ["설정", "계정", "비밀번호", "account"], page: "settings", run: () => _tryCallTab("switchSettingsTab", "account") },
+  { title: "설정 · 활동 로그", group: "관리", keywords: ["설정", "활동", "로그", "activity"], page: "settings", run: () => _tryCallTab("switchSettingsTab", "activity") },
+];
+
+// 주 인덱스 상태
+const _gsState = {
+  results: [],
+  activeIdx: -1,
+};
+
+function _tryCallTab(fnName, arg) {
+  const fn = window[fnName];
+  if (typeof fn === "function") {
+    try { fn(arg); } catch (e) { console.warn(`[검색] ${fnName} 실행 실패:`, e); }
+  }
+}
+function _tryCallView(fnName, arg) {
+  // csSwitchView(btn, view) 형식 — btn 찾기
+  const fn = window[fnName];
+  if (typeof fn !== "function") return;
+  try {
+    // onclick="csSwitchView(this,'kanban')" 형식의 버튼을 찾아 넘김
+    const btn = document.querySelector(`.cs-pipe-tab[onclick*="${fnName}"][onclick*="'${arg}'"]`);
+    fn(btn || null, arg);
+  } catch (e) { console.warn(`[검색] ${fnName} 실행 실패:`, e); }
+}
+
+function _gsScore(item, query) {
+  if (!query) return 0;
+  const q = query.toLowerCase().trim();
+  if (!q) return 0;
+  const title = item.title.toLowerCase();
+  const group = (item.group || "").toLowerCase();
+  const kws = (item.keywords || []).map(k => k.toLowerCase());
+
+  let score = 0;
+  const tokens = q.split(/\s+/).filter(Boolean);
+
+  for (const t of tokens) {
+    let tokScore = 0;
+    if (title.startsWith(t)) tokScore = 100;
+    else if (title.includes(t)) tokScore = 60;
+    else if (group.includes(t)) tokScore = 30;
+    else if (kws.some(k => k.includes(t))) tokScore = 40;
+
+    if (tokScore === 0) return 0; // 모든 토큰이 매칭돼야 함
+    score += tokScore;
+  }
+
+  // 타이틀 길이 짧을수록 가점 (더 정확한 매칭 우선)
+  score += Math.max(0, 20 - title.length * 0.5);
+  return score;
+}
+
+function _gsFilter(query) {
+  const q = (query || "").trim();
+  if (!q) {
+    // 빈 쿼리 → 전체를 group 순으로 표시 (topbar에서 focus 시 힌트)
+    return GLOBAL_FEATURES.map(f => ({ item: f, score: 0 }));
+  }
+  const scored = GLOBAL_FEATURES
+    .map(item => ({ item, score: _gsScore(item, q) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 20);
+  return scored;
+}
+
+function _gsHighlight(text, query) {
+  if (!query) return escapeHtml(text);
+  const q = query.trim().toLowerCase();
+  if (!q) return escapeHtml(text);
+  const tokens = q.split(/\s+/).filter(Boolean)
+    .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!tokens.length) return escapeHtml(text);
+  const re = new RegExp(`(${tokens.join("|")})`, "gi");
+  return escapeHtml(text).replace(re, "<mark>$1</mark>");
+}
+
+function _gsRender(query) {
+  const dropdown = document.getElementById("global-search-dropdown");
+  if (!dropdown) return;
+  const results = _gsFilter(query);
+  _gsState.results = results;
+  _gsState.activeIdx = results.length ? 0 : -1;
+
+  if (!results.length) {
+    dropdown.innerHTML = `<div class="gs-empty">일치하는 기능이 없습니다</div>`;
+    dropdown.classList.add("show");
+    return;
+  }
+
+  let html = "";
+  if (!query) {
+    // 그룹별 렌더 (focus 시 전체 목록 카테고리별 표시)
+    const byGroup = {};
+    results.forEach(r => {
+      const g = r.item.group || "기타";
+      (byGroup[g] = byGroup[g] || []).push(r);
+    });
+    const order = ["업무 입력", "조회", "물류", "AI 서비스", "관리"];
+    let idx = 0;
+    order.concat(Object.keys(byGroup).filter(g => !order.includes(g))).forEach(g => {
+      const arr = byGroup[g];
+      if (!arr || !arr.length) return;
+      html += `<div class="gs-group-label">${escapeHtml(g)}</div>`;
+      arr.forEach(r => {
+        html += _gsItemHtml(r.item, idx, "");
+        idx++;
+      });
+    });
+  } else {
+    results.forEach((r, i) => {
+      html += _gsItemHtml(r.item, i, query);
+    });
+  }
+
+  dropdown.innerHTML = html;
+  dropdown.classList.add("show");
+  _gsBindItemClicks();
+}
+
+function _gsItemHtml(item, idx, query) {
+  const title = _gsHighlight(item.title, query);
+  const sub = escapeHtml(item.group || "");
+  const cls = idx === _gsState.activeIdx ? "gs-item active" : "gs-item";
+  return `<div class="${cls}" data-gs-idx="${idx}">
+    <div class="gs-item-title">${title}</div>
+    <div class="gs-item-sub">${sub}</div>
+  </div>`;
+}
+
+function _gsBindItemClicks() {
+  const dropdown = document.getElementById("global-search-dropdown");
+  if (!dropdown) return;
+  dropdown.querySelectorAll(".gs-item").forEach(el => {
+    el.addEventListener("mouseenter", () => {
+      const i = parseInt(el.getAttribute("data-gs-idx"), 10);
+      if (!Number.isNaN(i)) _gsSetActive(i);
+    });
+    el.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const i = parseInt(el.getAttribute("data-gs-idx"), 10);
+      if (!Number.isNaN(i)) _gsPickIndex(i);
+    });
+  });
+}
+
+function _gsSetActive(idx) {
+  _gsState.activeIdx = idx;
+  const dropdown = document.getElementById("global-search-dropdown");
+  if (!dropdown) return;
+  dropdown.querySelectorAll(".gs-item").forEach(el => {
+    const i = parseInt(el.getAttribute("data-gs-idx"), 10);
+    el.classList.toggle("active", i === idx);
+  });
+  const active = dropdown.querySelector(".gs-item.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+function _gsPickIndex(idx) {
+  const entry = _gsState.results[idx];
+  if (!entry) return;
+  _gsPickItem(entry.item);
+}
+
+function _gsPickItem(item) {
+  const input = document.getElementById("global-search-input");
+  const dropdown = document.getElementById("global-search-dropdown");
+  if (input) input.value = "";
+  if (dropdown) { dropdown.classList.remove("show"); dropdown.innerHTML = ""; }
+  _gsState.results = [];
+  _gsState.activeIdx = -1;
+
+  try {
+    if (typeof navigateTo === "function") navigateTo(item.page);
+  } catch (e) { console.error("[검색] navigateTo 실패:", e); }
+
+  if (typeof item.run === "function") {
+    // 페이지 전환 직후 서브탭 스위치 — 초기화 코드가 나중에 덮어쓸 수 있으므로 약간 지연
+    setTimeout(() => { try { item.run(); } catch (e) { console.warn("[검색] run 실패:", e); } }, 60);
+  }
+}
+
+function globalSearchOnInput(value) {
+  _gsRender(value);
+}
+
+function globalSearchOnFocus() {
+  const input = document.getElementById("global-search-input");
+  _gsRender(input ? input.value : "");
+}
+
+function globalSearchOnKeydown(e) {
+  const dropdown = document.getElementById("global-search-dropdown");
+  const visible = dropdown && dropdown.classList.contains("show");
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (!visible) { _gsRender(e.target.value); return; }
+    const next = Math.min(_gsState.results.length - 1, _gsState.activeIdx + 1);
+    _gsSetActive(next);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!visible) return;
+    const prev = Math.max(0, _gsState.activeIdx - 1);
+    _gsSetActive(prev);
+  } else if (e.key === "Enter") {
+    if (!visible || _gsState.activeIdx < 0) return;
+    e.preventDefault();
+    _gsPickIndex(_gsState.activeIdx);
+  } else if (e.key === "Escape") {
+    e.target.blur();
+    if (dropdown) { dropdown.classList.remove("show"); }
+  }
+}
+
+// 바깥 클릭 시 드롭다운 닫기
+document.addEventListener("click", (e) => {
+  const wrap = document.getElementById("topbar-search");
+  const dropdown = document.getElementById("global-search-dropdown");
+  if (!wrap || !dropdown) return;
+  if (!wrap.contains(e.target)) dropdown.classList.remove("show");
+});
+
+// Ctrl/Cmd + K 전역 포커스
+document.addEventListener("keydown", (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && (e.key === "k" || e.key === "K")) {
+    const input = document.getElementById("global-search-input");
+    if (input) {
+      e.preventDefault();
+      input.focus();
+      input.select();
+    }
+  }
+});
+
+// 플랫폼에 맞춰 단축키 힌트 라벨 조정
+(function() {
+  const kbd = document.getElementById("topbar-search-kbd");
+  if (!kbd) return;
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+  kbd.textContent = isMac ? "⌘K" : "Ctrl+K";
+  const input = document.getElementById("global-search-input");
+  if (input) {
+    input.placeholder = isMac ? "기능 검색 (⌘K)" : "기능 검색 (Ctrl+K)";
+  }
+})();

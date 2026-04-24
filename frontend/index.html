@@ -207,6 +207,17 @@
     <!-- 상단 바 -->
     <div class="topbar">
       <div class="topbar-title" id="topbar-title">판매입력</div>
+      <div class="topbar-search" id="topbar-search">
+        <span class="topbar-search-icon">🔍</span>
+        <input type="text" id="global-search-input"
+          placeholder="기능 검색 (Ctrl+K)"
+          autocomplete="off" spellcheck="false"
+          oninput="globalSearchOnInput(this.value)"
+          onfocus="globalSearchOnFocus()"
+          onkeydown="globalSearchOnKeydown(event)">
+        <kbd class="topbar-search-kbd" id="topbar-search-kbd">⌘K</kbd>
+        <div id="global-search-dropdown" class="global-search-dropdown"></div>
+      </div>
       <div class="topbar-right" id="topbar-right"></div>
     </div>
 
@@ -5080,8 +5091,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
-<script src="/static/js/api.js?v=20260424a"></script>
-<script src="/static/js/app.js?v=20260424a"></script>
+<script src="/static/js/api.js?v=20260424b"></script>
+<script src="/static/js/app.js?v=20260424b"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>
