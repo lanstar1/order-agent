@@ -481,61 +481,69 @@ async def create_purchase_slip(
         io_date = (datetime.now(KST) + timedelta(days=8)).strftime("%Y%m%d")
     
     # 라인 변환 (모델명 → 품목코드)
+    # 한 conn으로 모든 라인 조회 (PG 풀 누수 방지)
     lines = []
     skipped = []
-    for item in erp_lines:
-        model = item["prod_cd"]
-        # DB에서 품목코드 조회 (정확→전방→역방 매칭)
-        try:
-            from db.database import get_connection as _gc
-            _conn = _gc()
-            row = _conn.execute(
-                "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?", (model,)
-            ).fetchone()
-            if not row:
+    from db.database import get_connection as _gc
+    _conn = _gc()
+    try:
+        for item in erp_lines:
+            model = item["prod_cd"]
+            # DB에서 품목코드 조회 (정확→전방→역방 매칭)
+            try:
                 row = _conn.execute(
-                    "SELECT prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY LENGTH(model_name) LIMIT 1",
-                    (model + "%",)
+                    "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?", (model,)
                 ).fetchone()
-            if not row:
-                # 역방향: LS-5STPD-2MG → LS-5STPD-2M
-                prefix = model[:-1] if len(model) > 3 else model
-                cands = _conn.execute(
-                    "SELECT model_name, prod_cd FROM product_code_mapping WHERE model_name LIKE ?",
-                    (prefix + "%",)
-                ).fetchall()
-                best = ("", "")
-                for mname, pcd in cands:
-                    clean = mname.split(",")[0].strip()
-                    if model.startswith(clean) and len(clean) > len(best[0]):
-                        best = (clean, pcd)
-                if best[1]:
-                    row = (best[1],)
-            prod_cd = row[0] if row else ""
+                if not row:
+                    row = _conn.execute(
+                        "SELECT prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY LENGTH(model_name) LIMIT 1",
+                        (model + "%",)
+                    ).fetchone()
+                if not row:
+                    # 역방향: LS-5STPD-2MG → LS-5STPD-2M
+                    prefix = model[:-1] if len(model) > 3 else model
+                    cands = _conn.execute(
+                        "SELECT model_name, prod_cd FROM product_code_mapping WHERE model_name LIKE ?",
+                        (prefix + "%",)
+                    ).fetchall()
+                    best = ("", "")
+                    for mname, pcd in cands:
+                        clean = mname.split(",")[0].strip()
+                        if model.startswith(clean) and len(clean) > len(best[0]):
+                            best = (clean, pcd)
+                    if best[1]:
+                        row = (best[1],)
+                prod_cd = row[0] if row else ""
+            except Exception as e:
+                logger.warning(f"[구매전표] 매핑 조회 실패 model={model}: {e}")
+                prod_cd = ""
+
+            if not prod_cd:
+                skipped.append(model)
+                continue
+
+            price_usd = item.get("price_usd", 0)
+            tax_rate = item.get("tax_rate", 1.18)
+            price_krw = round(price_usd * tax_rate * exchange_rate)
+
+            lines.append({
+                "prod_cd": prod_cd,
+                "qty": item["qty"],
+                "unit": "EA",
+                "price": price_krw,
+            })
+    finally:
+        try:
+            _conn.close()
         except Exception:
-            prod_cd = ""
-        
-        if not prod_cd:
-            skipped.append(model)
-            continue
-        
-        price_usd = item.get("price_usd", 0)
-        tax_rate = item.get("tax_rate", 1.18)
-        price_krw = round(price_usd * tax_rate * exchange_rate)
-        
-        lines.append({
-            "prod_cd": prod_cd,
-            "qty": item["qty"],
-            "unit": "EA",
-            "price": price_krw,
-        })
-    
+            pass
+
     if skipped:
         logger.warning(f"[구매전표] 미매핑 품목 {len(skipped)}건 제외: {skipped[:5]}")
-    
+
     if not lines:
         return {"success": False, "error": "매핑된 품목 없음", "skipped": skipped}
-    
+
     logger.info(f"[구매전표] {len(lines)}개 품목, 환율={exchange_rate}, 일자={io_date}")
     
     try:

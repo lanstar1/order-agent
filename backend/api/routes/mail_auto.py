@@ -148,42 +148,56 @@ def _load_product_mapping_from_file(conn):
     return count
 
 
-def _lookup_prod_cd(model_name: str) -> str:
-    """모델명 → 품목코드 조회. 정확→전방→역방→클린 순서"""
-    conn = get_connection()
-    # 1. 정확 매칭
-    row = conn.execute(
-        "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?",
-        (model_name,)
-    ).fetchone()
-    if row:
-        return row[0]
-    
-    # 2. 매핑 model_name이 검색어로 시작 (매핑에 추가 텍스트 있는 경우)
-    #    예: 매핑 "LSP-GIC-FJM, STP" → 검색 "LSP-GIC-FJM"
-    row = conn.execute(
-        "SELECT prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY LENGTH(model_name) LIMIT 1",
-        (model_name + "%",)
-    ).fetchone()
-    if row:
-        return row[0]
-    
-    # 3. 검색어가 매핑 model_name으로 시작 (색상 접미사 등)
-    #    예: 검색 "LS-5STPD-2MG" → 매핑 "LS-5STPD-2M" (가장 긴 매칭 우선)
-    prefix = model_name[:-1] if len(model_name) > 3 else model_name
-    rows = conn.execute(
-        "SELECT model_name, prod_cd FROM product_code_mapping WHERE model_name LIKE ?",
-        (prefix + "%",)
-    ).fetchall()
-    best = ("", "")
-    for mname, pcd in rows:
-        clean = mname.split(",")[0].strip()
-        if model_name.startswith(clean) and len(clean) > len(best[0]):
-            best = (clean, pcd)
-    if best[1]:
-        return best[1]
-    
-    return ""
+def _lookup_prod_cd(model_name: str, conn=None) -> str:
+    """모델명 → 품목코드 조회. 정확→전방→역방→클린 순서.
+
+    `conn`을 외부에서 주입하면 그것을 그대로 쓰고 close하지 않는다.
+    내부에서 새로 연 경우에만 close를 보장(try/finally) — PG 풀 누수 방지.
+    """
+    own_conn = False
+    if conn is None:
+        conn = get_connection()
+        own_conn = True
+    try:
+        # 1. 정확 매칭
+        row = conn.execute(
+            "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?",
+            (model_name,)
+        ).fetchone()
+        if row:
+            return row[0]
+
+        # 2. 매핑 model_name이 검색어로 시작 (매핑에 추가 텍스트 있는 경우)
+        #    예: 매핑 "LSP-GIC-FJM, STP" → 검색 "LSP-GIC-FJM"
+        row = conn.execute(
+            "SELECT prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY LENGTH(model_name) LIMIT 1",
+            (model_name + "%",)
+        ).fetchone()
+        if row:
+            return row[0]
+
+        # 3. 검색어가 매핑 model_name으로 시작 (색상 접미사 등)
+        #    예: 검색 "LS-5STPD-2MG" → 매핑 "LS-5STPD-2M" (가장 긴 매칭 우선)
+        prefix = model_name[:-1] if len(model_name) > 3 else model_name
+        rows = conn.execute(
+            "SELECT model_name, prod_cd FROM product_code_mapping WHERE model_name LIKE ?",
+            (prefix + "%",)
+        ).fetchall()
+        best = ("", "")
+        for mname, pcd in rows:
+            clean = mname.split(",")[0].strip()
+            if model_name.startswith(clean) and len(clean) > len(best[0]):
+                best = (clean, pcd)
+        if best[1]:
+            return best[1]
+
+        return ""
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 _ensure_tables()
@@ -470,32 +484,40 @@ async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float =
                     rate = 1400.0
 
         # ERP 라인 미리보기 생성 (모델명 → 품목코드 변환)
+        # 한 conn으로 N개 모델 조회 (풀 고갈 방지)
         erp_preview = []
         unmapped_models = []
-        for item in result.get("erp_lines") or []:
-            try:
-                price_usd = float(item.get("price_usd") or 0)
-                tax_rate = float(item.get("tax_rate") or 1.18)
-                qty = float(item.get("qty") or 0)
-                price_krw = round(price_usd * tax_rate * rate)
-                model = item.get("prod_cd") or ""
-                prod_cd = _lookup_prod_cd(model) if model else ""
+        lookup_conn = get_connection()
+        try:
+            for item in result.get("erp_lines") or []:
+                try:
+                    price_usd = float(item.get("price_usd") or 0)
+                    tax_rate = float(item.get("tax_rate") or 1.18)
+                    qty = float(item.get("qty") or 0)
+                    price_krw = round(price_usd * tax_rate * rate)
+                    model = item.get("prod_cd") or ""
+                    prod_cd = _lookup_prod_cd(model, conn=lookup_conn) if model else ""
 
-                erp_preview.append({
-                    "model_name": model,
-                    "prod_cd": prod_cd,
-                    "qty": qty,
-                    "price_usd": price_usd,
-                    "tax_rate": tax_rate,
-                    "price_krw": price_krw,
-                    "supply_amt": round(price_krw * qty),
-                    "description": item.get("description", ""),
-                })
-                if not prod_cd:
-                    unmapped_models.append(model)
-            except Exception as e:
-                logger.error(f"[ERP 미리보기] 라인 변환 실패 item={item}: {e}")
-                continue
+                    erp_preview.append({
+                        "model_name": model,
+                        "prod_cd": prod_cd,
+                        "qty": qty,
+                        "price_usd": price_usd,
+                        "tax_rate": tax_rate,
+                        "price_krw": price_krw,
+                        "supply_amt": round(price_krw * qty),
+                        "description": item.get("description", ""),
+                    })
+                    if not prod_cd:
+                        unmapped_models.append(model)
+                except Exception as e:
+                    logger.error(f"[ERP 미리보기] 라인 변환 실패 item={item}: {e}")
+                    continue
+        finally:
+            try:
+                lookup_conn.close()
+            except Exception:
+                pass
 
         # 전표일자 (오늘 +8일)
         io_date = (datetime.now(KST) + timedelta(days=8)).strftime("%Y-%m-%d")
