@@ -60,6 +60,14 @@ _auto_state = {
 
 # ─── 유틸리티 ────────────────────────────────────────────
 
+def _json_dumps_safe(obj) -> str:
+    """직렬화 실패 시에도 죽지 않고 문자열을 반환"""
+    try:
+        return json.dumps(obj, ensure_ascii=False, default=str)
+    except Exception:
+        return str(obj)
+
+
 def _decode_header_value(value):
     if not value:
         return ""
@@ -701,9 +709,40 @@ async def run_mail_automation_pipeline(
         hs_filled = sum(r["stats"]["hs_filled"] for r in processed_excels if r.get("success"))
         hs_skipped = sum(r["stats"]["skipped"] for r in processed_excels if r.get("success"))
         hs_unknown = sum(r["stats"]["unknown"] for r in processed_excels if r.get("success"))
-        erp_success = mail_result.get("erp_result", {}).get("success", False)
-        erp_skipped = mail_result.get("erp_result", {}).get("skipped", [])
-        
+        erp_obj = mail_result.get("erp_result") or {}
+        erp_success = erp_obj.get("success", False)
+        erp_skipped = erp_obj.get("skipped") or erp_obj.get("skipped_models") or []
+        # ERP 실패 사유 추출 — eCount API 응답 구조에 따라 다양한 키에서 시도
+        erp_error_msg = ""
+        if not erp_success:
+            err = erp_obj.get("error")
+            if isinstance(err, dict):
+                erp_error_msg = (
+                    err.get("Message")
+                    or err.get("message")
+                    or err.get("ErrorMessage")
+                    or _json_dumps_safe(err)
+                )
+            elif isinstance(err, str):
+                erp_error_msg = err
+            elif erp_obj.get("data"):
+                # ERP에서 Status!=200으로 떨어진 응답 본문도 일부 첨부
+                d = erp_obj.get("data")
+                erp_error_msg = _json_dumps_safe(d)[:300]
+            else:
+                erp_error_msg = "원인 불명 (응답에 error/Message 키 없음)"
+        # 메일별로 ERP가 실패하는 흔한 케이스 사전 분류
+        erp_failure_kind = ""
+        if not erp_success:
+            if not all_erp_lines:
+                erp_failure_kind = "no_erp_target"  # ERP 대상 모델 자체가 없음
+            elif erp_obj.get("error") == "매핑된 품목 없음":
+                erp_failure_kind = "all_unmapped"   # 모든 라인이 품목코드 미매핑
+            elif "DUPL" in str(erp_error_msg).upper() or "중복" in str(erp_error_msg):
+                erp_failure_kind = "duplicate_slip"
+            else:
+                erp_failure_kind = "ecount_api_error"
+
         mail_result["detail_stats"] = {
             "total_items": total_items,
             "hs_filled": hs_filled,
@@ -712,6 +751,8 @@ async def run_mail_automation_pipeline(
             "erp_success": erp_success,
             "erp_lines_sent": mail_result["erp_lines_count"] - len(erp_skipped),
             "erp_unmapped": erp_skipped,
+            "erp_error": erp_error_msg,
+            "erp_failure_kind": erp_failure_kind,
             "reply_sent": mail_result.get("reply_sent", False),
             "filenames": [a["filename"] for a in mail_info["attachments"]],
         }

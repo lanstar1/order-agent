@@ -9601,6 +9601,19 @@ function reconcileNewMatch() {
       if (ds.erp_unmapped && ds.erp_unmapped.length > 0) {
         html += `<tr><td style="color:#dc2626">⚠️ 품목코드 미매핑</td><td>${ds.erp_unmapped.length}건: ${ds.erp_unmapped.join(', ')}</td></tr>`;
       }
+      if (!ds.erp_success && (ds.erp_error || ds.erp_failure_kind)) {
+        const kindLabel = {
+          'no_erp_target': 'ERP 대상 모델 없음',
+          'all_unmapped': '전체 품목 미매핑',
+          'duplicate_slip': 'eCount 중복 전표',
+          'ecount_api_error': 'eCount API 거부'
+        }[ds.erp_failure_kind] || (ds.erp_failure_kind || '원인 불명');
+        const errStr = (ds.erp_error || '').toString();
+        html += `<tr><td style="color:#dc2626">❌ ERP 실패 사유</td><td>
+          <span style="display:inline-block;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:600;margin-right:6px">${kindLabel}</span>
+          ${errStr ? `<code style="font-size:11px;background:#f8fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0;word-break:break-all">${errStr.replace(/</g,'&lt;').slice(0,500)}</code>` : ''}
+        </td></tr>`;
+      }
       html += `<tr><td>✉️ 회신 발송</td><td>${ds.reply_sent ? '✅ 발송 완료' : '⏭ 미발송'}</td></tr>
         </table></div>`;
       div.innerHTML = html;
