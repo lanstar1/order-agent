@@ -27,13 +27,35 @@ if USE_PG:
     from psycopg2 import pool as _pg_pool
     _pg_connection_pool = None
 
+# PG 풀 크기 — 환경변수 PG_POOL_MAX로 조정 가능 (기본 16)
+_PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "1"))
+_PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "16"))
+
+
 def _get_pg_pool():
     global _pg_connection_pool
     if _pg_connection_pool is None:
         _pg_connection_pool = _pg_pool.ThreadedConnectionPool(
-            minconn=1, maxconn=8, dsn=DATABASE_URL
+            minconn=_PG_POOL_MIN, maxconn=_PG_POOL_MAX, dsn=DATABASE_URL
         )
     return _pg_connection_pool
+
+
+def _reset_pg_pool():
+    """풀 자가복구 — 풀이 broken 상태일 때 강제 재생성.
+
+    psycopg2 PoolError(\"connection pool exhausted\") 같은 상황에서
+    한 번 호출하면 누수된 conn들이 모두 폐기되고 새 풀이 만들어진다.
+    """
+    global _pg_connection_pool
+    old_pool = _pg_connection_pool
+    _pg_connection_pool = None
+    if old_pool is not None:
+        try:
+            old_pool.closeall()
+        except Exception as e:
+            logger.warning(f"[DB/PG] 기존 풀 closeall 실패(무시): {e}")
+    logger.warning("[DB/PG] connection pool 재생성됨")
 
 
 # ─── SQL 변환 유틸 (SQLite → PostgreSQL) ───────────────
@@ -294,10 +316,21 @@ def safe_add_column(conn, table_name, column_name, column_def):
 
 # ─── 연결 함수 ──────────────────────────────────
 def get_connection():
-    """데이터베이스 연결 반환 (PG 또는 SQLite 자동 선택)"""
+    """데이터베이스 연결 반환 (PG 또는 SQLite 자동 선택).
+
+    PG의 경우 풀 고갈(PoolError) 시 1회에 한해 풀을 재생성하고 재시도한다.
+    이는 라우트 어디선가 conn close 누락이 누적되어 풀이 막혔을 때
+    서비스가 영구히 죽지 않도록 하는 자가복구 안전망이다.
+    """
     if USE_PG:
         pg_pool = _get_pg_pool()
-        conn = pg_pool.getconn()
+        try:
+            conn = pg_pool.getconn()
+        except _pg_pool.PoolError as e:
+            logger.error(f"[DB/PG] 풀 고갈 — 자가복구 시도: {e}")
+            _reset_pg_pool()
+            pg_pool = _get_pg_pool()
+            conn = pg_pool.getconn()
         return _PgConnectionWrapper(conn, pool=pg_pool)
     else:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -309,6 +342,26 @@ def get_connection():
         conn.execute("PRAGMA cache_size=-8000")  # 8MB 캐시
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
+
+
+# ─── 컨텍스트 매니저 — close 누락 방지 ─────────────────
+from contextlib import contextmanager  # noqa: E402
+
+
+@contextmanager
+def db_session():
+    """`with db_session() as conn:` 패턴으로 close 강제.
+
+    예외 발생/조기 return 어떤 경로로 빠져나가도 finally에서 conn.close().
+    """
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _sa_init_tables(conn, cur_or_conn):
