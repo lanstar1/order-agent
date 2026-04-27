@@ -78,9 +78,24 @@ def _ensure_tables():
             model_name TEXT NOT NULL,
             prod_cd TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS mail_attachment_processed (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            log_id INTEGER DEFAULT 0,
+            message_id TEXT DEFAULT '',
+            bor_number TEXT DEFAULT '',
+            filename TEXT DEFAULT '',
+            hs_filled INTEGER DEFAULT 0,
+            hs_unknown INTEGER DEFAULT 0,
+            erp_success INTEGER DEFAULT 0,
+            erp_lines_count INTEGER DEFAULT 0,
+            erp_error TEXT DEFAULT '',
+            erp_failure_kind TEXT DEFAULT '',
+            file_b64 TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
     """)
     conn.commit()
-    
+
     # 매핑 데이터 초기 로드 (비어있으면)
     cnt = conn.execute("SELECT COUNT(*) FROM product_code_mapping").fetchone()[0]
     if cnt == 0:
@@ -365,14 +380,60 @@ async def process_and_download(file: UploadFile = File(...)):
     """업로드 Excel → HS코드 입력 → 다운로드"""
     data = await file.read()
     result = process_excel_hs_code(data, file.filename)
-    
+
     if not result["success"]:
         raise HTTPException(400, result.get("error"))
-    
+
     return StreamingResponse(
         io.BytesIO(result["output_data"]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=HS_{file.filename}"},
+    )
+
+
+@router.get("/attachment/{att_id}/download")
+async def download_processed_attachment(att_id: int):
+    """자동 파이프라인이 처리한 첨부 Excel(HS코드 입력 완료) 다운로드"""
+    import base64 as _b64
+    from urllib.parse import quote as _urlquote
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT filename, file_b64 FROM mail_attachment_processed WHERE id = ?",
+            (att_id,)
+        ).fetchone()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    if not row:
+        raise HTTPException(404, "첨부를 찾을 수 없습니다")
+
+    # sqlite3.Row, dict, tuple 모두 호환
+    try:
+        filename = row["filename"]
+        file_b64 = row["file_b64"]
+    except Exception:
+        filename, file_b64 = row[0], row[1]
+
+    if not file_b64:
+        raise HTTPException(410, "처리된 파일 데이터가 없습니다 (이전 버전에서 처리된 메일은 재실행 필요)")
+
+    try:
+        file_bytes = _b64.b64decode(file_b64)
+    except Exception as e:
+        raise HTTPException(500, f"파일 디코딩 실패: {e}")
+
+    safe_name = _urlquote(f"HS_{filename}")
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}"
+        },
     )
 
 

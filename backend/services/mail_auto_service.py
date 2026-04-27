@@ -618,70 +618,186 @@ async def run_mail_automation_pipeline(
         rate_info = {"rate": exchange_rate, "base_rate": exchange_rate, "spread": 0, "source": "manual"}
     
     # 처리된 메일 ID 조회 (중복 방지)
+    # status='completed' 또는 'pending'(승인 대기)이면 모두 스킵
+    # message_id가 비어있는 케이스 대비 → uid도 보조 키로 사용
+    # 추가로 BOR 번호 기반 dedupe (메일이 재발송되거나 Message-ID가 일관되지 않을 때)
     processed_ids = set()
+    processed_bors = set()  # (bor_number, filename) 조합으로 중복 차단
     if db_conn:
         try:
             cursor = db_conn.execute(
-                "SELECT message_id FROM mail_processing_log WHERE status='completed'"
+                "SELECT message_id FROM mail_processing_log WHERE status IN ('completed','pending')"
             )
-            processed_ids = {row[0] for row in cursor.fetchall()}
-        except Exception:
-            pass
-    
+            processed_ids = {row[0] for row in cursor.fetchall() if row[0]}
+        except Exception as e:
+            logger.warning(f"[파이프라인] 처리이력 조회 실패: {e}")
+        try:
+            cur = db_conn.execute(
+                "SELECT bor_number, filename FROM mail_attachment_processed "
+                "WHERE bor_number != ''"
+            )
+            for row in cur.fetchall():
+                bor = row[0] if not isinstance(row, dict) else row.get("bor_number", "")
+                fn = row[1] if not isinstance(row, dict) else row.get("filename", "")
+                processed_bors.add((bor, fn))
+        except Exception as e:
+            logger.warning(f"[파이프라인] BOR 처리이력 조회 실패: {e}")
+
     # 메일 수신
     emails = fetch_bor_emails(days_back=days_back)
-    
+
     pipeline_results = []
-    
+    skipped_already = 0
+
     for mail_info in emails:
-        msg_id = mail_info["message_id"]
-        
-        # 이미 처리된 메일 건너뜀
+        msg_id = mail_info["message_id"] or f"uid:{mail_info.get('uid','')}"
+
+        # 이미 처리된 메일 건너뜀 (1차: message_id 매칭)
         if msg_id in processed_ids:
+            skipped_already += 1
+            logger.info(f"[파이프라인] 이미 처리됨(msg_id) → 스킵: {mail_info.get('subject','')[:40]}")
             continue
-        
+
+        # 2차: 첨부의 BOR 번호+파일명이 모두 처리된 적 있으면 스킵
+        # (Message-ID가 다르게 들어왔지만 같은 BOR을 재발송한 경우 대비)
+        atts_meta = mail_info.get("attachments") or []
+        if atts_meta and processed_bors:
+            all_bor_seen = all(
+                (a.get("bor_number") or "", a.get("filename") or "") in processed_bors
+                for a in atts_meta if a.get("bor_number")
+            ) and any(a.get("bor_number") for a in atts_meta)
+            if all_bor_seen:
+                skipped_already += 1
+                logger.info(
+                    f"[파이프라인] 이미 처리된 BOR → 스킵: "
+                    f"{mail_info.get('subject','')[:40]} ({[a.get('bor_number') for a in atts_meta]})"
+                )
+                continue
+
         mail_result = {
             "message_id": msg_id,
             "subject": mail_info["subject"],
             "date": str(mail_info.get("date_kst", "")),
-            "attachments_processed": [],
-            "erp_result": None,
+            "attachments_processed": [],   # 첨부별 결과
             "reply_sent": False,
             "status": "processing",
         }
-        
-        all_erp_lines = []
-        all_oem_items = []
-        processed_excels = []
-        
+
+        # ─── 첨부별로 분리 처리 (HS코드 입력 + ERP 전송 각각) ───
+        attachments_summary = []
+        any_processed_excel = None  # 회신 첨부용 (첫 번째 성공 Excel)
+
         for att in mail_info["attachments"]:
+            att_summary = {
+                "filename": att["filename"],
+                "bor_number": att.get("bor_number", ""),
+                "success": False,
+                "stats": {},
+                "erp_lines_count": 0,
+                "erp_success": False,
+                "erp_error": "",
+                "erp_failure_kind": "",
+                "erp_unmapped": [],
+                "attachment_id": None,
+            }
+
             # HS코드 처리
             excel_result = process_excel_hs_code(att["data"], att["filename"])
-            
-            if excel_result["success"]:
-                mail_result["attachments_processed"].append({
-                    "filename": att["filename"],
-                    "bor_number": att.get("bor_number", ""),
-                    "stats": excel_result["stats"],
-                    "items_count": len(excel_result["items"]),
-                    "hs_items": [i for i in excel_result["items"] if i["hs_code"]],
-                })
-                all_erp_lines.extend(excel_result["erp_lines"])
-                all_oem_items.extend(excel_result["oem_items"])
-                processed_excels.append(excel_result)
-        
-        # ERP 구매전표
-        if auto_erp and all_erp_lines:
-            erp_result = await create_purchase_slip(
-                erp_lines=all_erp_lines,
-                exchange_rate=exchange_rate,
-                email_date=mail_info.get("date_kst"),
-            )
-            mail_result["erp_result"] = erp_result
-        
+            if not excel_result["success"]:
+                att_summary["erp_error"] = excel_result.get("error", "엑셀 처리 실패")
+                att_summary["erp_failure_kind"] = "excel_error"
+                attachments_summary.append(att_summary)
+                continue
+
+            att_summary["success"] = True
+            att_summary["stats"] = excel_result["stats"]
+            att_summary["erp_lines_count"] = len(excel_result["erp_lines"])
+            if any_processed_excel is None:
+                any_processed_excel = excel_result
+
+            # ─── 첨부별 ERP 전송 ───
+            erp_obj = {}
+            if auto_erp and excel_result["erp_lines"]:
+                erp_obj = await create_purchase_slip(
+                    erp_lines=excel_result["erp_lines"],
+                    exchange_rate=exchange_rate,
+                    email_date=mail_info.get("date_kst"),
+                )
+            elif not excel_result["erp_lines"]:
+                erp_obj = {"success": False, "error": "ERP 대상 라인 없음"}
+            else:
+                erp_obj = {"success": False, "error": "auto_erp 비활성"}
+
+            erp_success = bool(erp_obj.get("success"))
+            erp_skipped = erp_obj.get("skipped") or erp_obj.get("skipped_models") or []
+            # ERP 실패 사유 추출
+            erp_error_msg = ""
+            erp_failure_kind = ""
+            if not erp_success:
+                err = erp_obj.get("error")
+                if isinstance(err, dict):
+                    erp_error_msg = (err.get("Message") or err.get("message")
+                                    or err.get("ErrorMessage") or _json_dumps_safe(err))
+                elif isinstance(err, str):
+                    erp_error_msg = err
+                elif erp_obj.get("data"):
+                    erp_error_msg = _json_dumps_safe(erp_obj.get("data"))[:300]
+                else:
+                    erp_error_msg = "원인 불명 (응답에 error/Message 키 없음)"
+
+                if not excel_result["erp_lines"]:
+                    erp_failure_kind = "no_erp_target"
+                elif err == "매핑된 품목 없음":
+                    erp_failure_kind = "all_unmapped"
+                elif "DUPL" in str(erp_error_msg).upper() or "중복" in str(erp_error_msg):
+                    erp_failure_kind = "duplicate_slip"
+                elif not auto_erp:
+                    erp_failure_kind = "auto_erp_disabled"
+                else:
+                    erp_failure_kind = "ecount_api_error"
+
+            att_summary["erp_success"] = erp_success
+            att_summary["erp_error"] = erp_error_msg
+            att_summary["erp_failure_kind"] = erp_failure_kind
+            att_summary["erp_unmapped"] = erp_skipped
+
+            # ─── 첨부 결과 + 처리된 Excel 파일 DB 저장 ───
+            if db_conn:
+                try:
+                    import base64 as _b64
+                    file_b64 = _b64.b64encode(excel_result["output_data"]).decode("ascii")
+                    cur = db_conn.execute("""
+                        INSERT INTO mail_attachment_processed
+                        (log_id, message_id, bor_number, filename,
+                         hs_filled, hs_unknown, erp_success, erp_lines_count,
+                         erp_error, erp_failure_kind, file_b64, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        0, msg_id, att.get("bor_number", ""), att["filename"],
+                        excel_result["stats"].get("hs_filled", 0),
+                        excel_result["stats"].get("unknown", 0),
+                        1 if erp_success else 0,
+                        len(excel_result["erp_lines"]),
+                        erp_error_msg[:500],
+                        erp_failure_kind,
+                        file_b64,
+                        datetime.now(KST).isoformat(),
+                    ))
+                    att_summary["attachment_id"] = getattr(cur, "lastrowid", None)
+                    db_conn.commit()
+                    # 같은 호출 내 BOR dedupe 갱신
+                    bor_key = (att.get("bor_number") or "", att.get("filename") or "")
+                    if bor_key[0]:
+                        processed_bors.add(bor_key)
+                except Exception as e:
+                    logger.error(f"[DB] 첨부 결과 저장 실패: {e}")
+
+            attachments_summary.append(att_summary)
+
+        mail_result["attachments_processed"] = attachments_summary
+
         # 자동 회신 (첫 번째 처리된 Excel 첨부)
-        if auto_reply and processed_excels:
-            first_excel = processed_excels[0]
+        if auto_reply and any_processed_excel:
             reply_body = reply_template if reply_template.strip() else (
                 "Dear Mr. Gu,\n\n"
                 "We have reviewed the packing list and added the HS codes accordingly.\n"
@@ -693,77 +809,52 @@ async def run_mail_automation_pipeline(
                 to_address=TARGET_SENDER,
                 subject=mail_info["subject"],
                 body=reply_body,
-                attachment_data=first_excel["output_data"],
-                attachment_filename=first_excel["filename"],
+                attachment_data=any_processed_excel["output_data"],
+                attachment_filename=any_processed_excel["filename"],
                 in_reply_to=msg_id,
             )
             mail_result["reply_sent"] = reply_sent
-        
-        mail_result["oem_items"] = all_oem_items
-        mail_result["erp_lines_count"] = len(all_erp_lines)
-        mail_result["exchange_rate"] = exchange_rate
-        mail_result["status"] = "completed"
-        
-        # 상세 통계 집계
-        total_items = sum(r["stats"]["total"] for r in processed_excels if r.get("success"))
-        hs_filled = sum(r["stats"]["hs_filled"] for r in processed_excels if r.get("success"))
-        hs_skipped = sum(r["stats"]["skipped"] for r in processed_excels if r.get("success"))
-        hs_unknown = sum(r["stats"]["unknown"] for r in processed_excels if r.get("success"))
-        erp_obj = mail_result.get("erp_result") or {}
-        erp_success = erp_obj.get("success", False)
-        erp_skipped = erp_obj.get("skipped") or erp_obj.get("skipped_models") or []
-        # ERP 실패 사유 추출 — eCount API 응답 구조에 따라 다양한 키에서 시도
-        erp_error_msg = ""
-        if not erp_success:
-            err = erp_obj.get("error")
-            if isinstance(err, dict):
-                erp_error_msg = (
-                    err.get("Message")
-                    or err.get("message")
-                    or err.get("ErrorMessage")
-                    or _json_dumps_safe(err)
-                )
-            elif isinstance(err, str):
-                erp_error_msg = err
-            elif erp_obj.get("data"):
-                # ERP에서 Status!=200으로 떨어진 응답 본문도 일부 첨부
-                d = erp_obj.get("data")
-                erp_error_msg = _json_dumps_safe(d)[:300]
-            else:
-                erp_error_msg = "원인 불명 (응답에 error/Message 키 없음)"
-        # 메일별로 ERP가 실패하는 흔한 케이스 사전 분류
-        erp_failure_kind = ""
-        if not erp_success:
-            if not all_erp_lines:
-                erp_failure_kind = "no_erp_target"  # ERP 대상 모델 자체가 없음
-            elif erp_obj.get("error") == "매핑된 품목 없음":
-                erp_failure_kind = "all_unmapped"   # 모든 라인이 품목코드 미매핑
-            elif "DUPL" in str(erp_error_msg).upper() or "중복" in str(erp_error_msg):
-                erp_failure_kind = "duplicate_slip"
-            else:
-                erp_failure_kind = "ecount_api_error"
 
+        # ─── 메일 단위 집계 ───
+        total_items = sum(a["stats"].get("total", 0) for a in attachments_summary if a.get("success"))
+        hs_filled = sum(a["stats"].get("hs_filled", 0) for a in attachments_summary if a.get("success"))
+        hs_skipped_cnt = sum(a["stats"].get("skipped", 0) for a in attachments_summary if a.get("success"))
+        hs_unknown_cnt = sum(a["stats"].get("unknown", 0) for a in attachments_summary if a.get("success"))
+        erp_total = len(attachments_summary)
+        erp_ok = sum(1 for a in attachments_summary if a.get("erp_success"))
+        erp_lines_sent = sum(
+            (a.get("erp_lines_count", 0) - len(a.get("erp_unmapped") or []))
+            for a in attachments_summary if a.get("erp_success")
+        )
+        all_erp_unmapped = []
+        for a in attachments_summary:
+            for m in (a.get("erp_unmapped") or []):
+                if m not in all_erp_unmapped:
+                    all_erp_unmapped.append(m)
+
+        mail_result["status"] = "completed"
+        mail_result["exchange_rate"] = exchange_rate
         mail_result["detail_stats"] = {
             "total_items": total_items,
             "hs_filled": hs_filled,
-            "hs_skipped": hs_skipped,
-            "hs_unknown": hs_unknown,
-            "erp_success": erp_success,
-            "erp_lines_sent": mail_result["erp_lines_count"] - len(erp_skipped),
-            "erp_unmapped": erp_skipped,
-            "erp_error": erp_error_msg,
-            "erp_failure_kind": erp_failure_kind,
+            "hs_skipped": hs_skipped_cnt,
+            "hs_unknown": hs_unknown_cnt,
+            "erp_total": erp_total,
+            "erp_success_count": erp_ok,
+            "erp_lines_sent": erp_lines_sent,
+            "erp_unmapped": all_erp_unmapped,
+            "attachments": attachments_summary,
             "reply_sent": mail_result.get("reply_sent", False),
             "filenames": [a["filename"] for a in mail_info["attachments"]],
         }
-        
-        # DB 로그 저장 (상세 결과 JSON 포함)
+
+        # DB 로그 저장 (메일 단위)
         if db_conn:
             try:
                 import json as _json
                 result_json = _json.dumps(mail_result.get("detail_stats", {}), ensure_ascii=False)
                 db_conn.execute("""
-                    INSERT OR REPLACE INTO mail_processing_log 
+                    INSERT OR REPLACE INTO mail_processing_log
                     (message_id, subject, sender, received_at, attachment_count,
                      status, hs_code_count, reply_sent, processed_at, result_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -780,9 +871,10 @@ async def run_mail_automation_pipeline(
                     result_json,
                 ))
                 db_conn.commit()
+                processed_ids.add(msg_id)  # 같은 호출 내 중복 방지
             except Exception as e:
                 logger.error(f"[DB] 로그 저장 실패: {e}")
-        
+
         pipeline_results.append(mail_result)
     
     return {
@@ -792,7 +884,7 @@ async def run_mail_automation_pipeline(
         "rate_source": rate_info.get("source", ""),
         "total_emails": len(emails),
         "new_processed": len(pipeline_results),
-        "already_processed": len(processed_ids),
+        "already_processed": skipped_already,
         "results": pipeline_results,
     }
 

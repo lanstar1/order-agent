@@ -9579,43 +9579,79 @@ function reconcileNewMatch() {
       if (!log) return;
       
       const ds = log.result || {};
+      const atts = ds.attachments || [];
+      const erpTotal = ds.erp_total || atts.length;
+      const erpOk = ds.erp_success_count || 0;
       const div = document.getElementById('mail-run-result');
+      const escapeHtml = (s) => (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const kindLabel = (k) => ({
+        'no_erp_target': 'ERP 대상 모델 없음',
+        'all_unmapped': '전체 품목 미매핑',
+        'duplicate_slip': 'eCount 중복 전표',
+        'ecount_api_error': 'eCount API 거부',
+        'auto_erp_disabled': 'auto_erp 비활성',
+        'excel_error': 'Excel 처리 실패'
+      }[k] || (k || '원인 불명'));
+
       let html = `<div class="card" style="padding:16px;margin-top:12px;border:2px solid #2563eb20">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h4 style="margin:0">📋 처리 상세 — ${log.subject?.substring(0,50)}</h4>
+          <h4 style="margin:0">📋 처리 상세 — ${escapeHtml(log.subject||'').substring(0,50)}</h4>
           <button onclick="this.parentElement.parentElement.remove()" class="btn btn-sm">✕ 닫기</button>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;margin-bottom:12px">
           <div>📅 처리일시: <b>${(log.processed_at||'').substring(0,16)}</b></div>
-          <div>📨 발신자: ${log.sender}</div>
-          <div>📎 첨부파일: ${ds.filenames?.join(', ') || log.attachment_count+'개'}</div>
+          <div>📨 발신자: ${escapeHtml(log.sender||'')}</div>
+          <div>📎 첨부파일: ${escapeHtml((ds.filenames||[]).join(', ')) || log.attachment_count+'개'}</div>
           <div>💱 환율: ${log.result?.exchange_rate || '—'}</div>
         </div>
-        <table class="table table-sm" style="font-size:13px">
+        <table class="table table-sm" style="font-size:13px;margin-bottom:12px">
           <tr><td style="width:150px;color:#64748b">HS코드 총 품목</td><td><b>${ds.total_items||0}</b>개</td></tr>
           <tr><td style="color:#059669">✅ HS코드 입력</td><td><b>${ds.hs_filled||0}</b>건</td></tr>
           <tr><td style="color:#64748b">⏭ HS코드 스킵</td><td>${ds.hs_skipped||0}건 (패치코드/케이블 등)</td></tr>
           <tr><td style="color:#dc2626">⚠️ HS코드 미매칭</td><td>${ds.hs_unknown||0}건</td></tr>
           <tr><td colspan="2" style="border-top:2px solid #e2e8f0"></td></tr>
-          <tr><td style="color:#7c3aed">📊 ERP 전표</td><td>${ds.erp_success ? '✅ 성공' : (ds.erp_lines_sent > 0 ? '❌ 실패' : '⏭ 미실행')} (${ds.erp_lines_sent||0}건 전송)</td></tr>`;
+          <tr><td style="color:#7c3aed">📊 ERP 전표</td><td><b>${erpOk}/${erpTotal}</b> 첨부 전송 성공 (${ds.erp_lines_sent||0}건 라인 전송)</td></tr>`;
       if (ds.erp_unmapped && ds.erp_unmapped.length > 0) {
-        html += `<tr><td style="color:#dc2626">⚠️ 품목코드 미매핑</td><td>${ds.erp_unmapped.length}건: ${ds.erp_unmapped.join(', ')}</td></tr>`;
-      }
-      if (!ds.erp_success && (ds.erp_error || ds.erp_failure_kind)) {
-        const kindLabel = {
-          'no_erp_target': 'ERP 대상 모델 없음',
-          'all_unmapped': '전체 품목 미매핑',
-          'duplicate_slip': 'eCount 중복 전표',
-          'ecount_api_error': 'eCount API 거부'
-        }[ds.erp_failure_kind] || (ds.erp_failure_kind || '원인 불명');
-        const errStr = (ds.erp_error || '').toString();
-        html += `<tr><td style="color:#dc2626">❌ ERP 실패 사유</td><td>
-          <span style="display:inline-block;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:600;margin-right:6px">${kindLabel}</span>
-          ${errStr ? `<code style="font-size:11px;background:#f8fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0;word-break:break-all">${errStr.replace(/</g,'&lt;').slice(0,500)}</code>` : ''}
-        </td></tr>`;
+        html += `<tr><td style="color:#dc2626">⚠️ 품목코드 미매핑</td><td>${ds.erp_unmapped.length}건: ${escapeHtml(ds.erp_unmapped.join(', '))}</td></tr>`;
       }
       html += `<tr><td>✉️ 회신 발송</td><td>${ds.reply_sent ? '✅ 발송 완료' : '⏭ 미발송'}</td></tr>
-        </table></div>`;
+        </table>`;
+
+      // ─── 첨부별 상세 + 다운로드 ───
+      if (atts.length) {
+        html += `<div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-top:8px">
+          <div style="background:#f1f5f9;padding:8px 12px;font-size:12px;font-weight:600;color:#475569">📎 첨부별 처리 결과 (${atts.length}건)</div>
+          <table class="table table-sm" style="font-size:12px;margin:0">
+            <thead><tr style="background:#f8fafc">
+              <th style="text-align:left">파일명</th>
+              <th style="text-align:right">HS</th>
+              <th style="text-align:right">ERP라인</th>
+              <th style="text-align:center">ERP</th>
+              <th>실패사유</th>
+              <th style="text-align:center">다운로드</th>
+            </tr></thead><tbody>`;
+        atts.forEach(a => {
+          const erpBadge = a.erp_success
+            ? '<span style="color:#059669;font-weight:600">✅</span>'
+            : '<span style="color:#dc2626;font-weight:600">❌</span>';
+          const reasonHtml = a.erp_success ? '—' :
+            `<span style="display:inline-block;padding:1px 6px;border-radius:8px;background:#fee2e2;color:#991b1b;font-size:10px;font-weight:600">${kindLabel(a.erp_failure_kind)}</span>` +
+            (a.erp_error ? ` <code style="font-size:10px;color:#64748b">${escapeHtml(a.erp_error).slice(0,120)}</code>` : '');
+          const downloadBtn = a.attachment_id
+            ? `<a href="/api/mail-auto/attachment/${a.attachment_id}/download" target="_blank" class="btn btn-sm" style="padding:2px 8px;font-size:11px">⬇️ XLSX</a>`
+            : '<span style="color:#cbd5e1;font-size:11px">—</span>';
+          html += `<tr>
+            <td style="font-size:11px">${escapeHtml(a.filename||'')}</td>
+            <td style="text-align:right">${(a.stats||{}).hs_filled||0}/${(a.stats||{}).total||0}</td>
+            <td style="text-align:right">${a.erp_lines_count||0}</td>
+            <td style="text-align:center">${erpBadge}</td>
+            <td>${reasonHtml}</td>
+            <td style="text-align:center">${downloadBtn}</td>
+          </tr>`;
+        });
+        html += `</tbody></table></div>`;
+      }
+      html += `</div>`;
       div.innerHTML = html;
     } catch(e) { console.error('상세 로드 실패:', e); }
   };
