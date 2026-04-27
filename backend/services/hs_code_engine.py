@@ -247,8 +247,21 @@ class HSCodeEngine:
                 confidence="skip",
                 note=rule["note"],
             )
-        
-        # ===== 3단계: 미매칭 =====
+
+        # ===== 4단계: CABLE fallback =====
+        # SKIP 규칙(patch/cat/utp/ftp/fiber optic/lan 등)에 잡히지 않은 채
+        # 카테고리에 'CABLE'이 포함되면 일반 AV/데이터 케이블로 간주 → 8544.42
+        # 예: HD CCTV CABLE, S-VGA CABLE(RGB 3+4), NULLMODEM CABLE,
+        #     FIBER AUDIO CABLE, KEYBOARD CABLE 등
+        if "CABLE" in cat_upper:
+            return HSCodeResult(
+                hs_code="8544.42",
+                rule_name="av_data_cable",
+                confidence="category",
+                note="일반 케이블 fallback (카테고리 CABLE)",
+            )
+
+        # ===== 5단계: 미매칭 =====
         return HSCodeResult(
             hs_code=None,
             rule_name="unknown",

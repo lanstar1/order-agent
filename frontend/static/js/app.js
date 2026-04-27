@@ -9691,7 +9691,28 @@ function reconcileNewMatch() {
     btn.disabled = true; btn.textContent = '조회 중...';
     try {
       const r = await fetch('/api/mail-auto/test-erp', {method:'POST', body: fd});
-      const d = await r.json();
+      let d;
+      try {
+        d = await r.json();
+      } catch (jsonErr) {
+        const txt = await r.text().catch(()=> '');
+        throw new Error(`서버 응답 파싱 실패 (HTTP ${r.status}): ${(txt||'').slice(0,200) || jsonErr.message}`);
+      }
+      if (!r.ok) {
+        const msg = (d && (d.detail || d.error)) || JSON.stringify(d);
+        throw new Error(`HTTP ${r.status} - ${msg}`);
+      }
+      if (!d || !Array.isArray(d.erp_lines)) {
+        throw new Error('서버가 erp_lines 배열을 반환하지 않았습니다: ' + JSON.stringify(d).slice(0, 200));
+      }
+      if (d.erp_lines.length === 0) {
+        document.getElementById('mail-erp-result').innerHTML =
+          `<div class="card" style="padding:16px;margin-top:8px;border:1px dashed #cbd5e1;color:#64748b">
+            ⚠️ ERP 전송 대상 라인이 없습니다 (LS-/LSP-/LSN-/ZOT- 모델만 ERP 대상). OEM 항목 ${(d.oem_items||[]).length}건은 별도 매핑이 필요합니다.
+          </div>`;
+        btn.disabled = false; btn.textContent = '📋 ERP 전표 미리보기';
+        return;
+      }
       const div = document.getElementById('mail-erp-result');
       let html = `<div class="card" style="padding:16px;margin-top:8px;border:2px solid #7c3aed20">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">

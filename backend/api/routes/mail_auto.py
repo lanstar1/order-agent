@@ -381,54 +381,80 @@ async def process_and_download(file: UploadFile = File(...)):
 @router.post("/test-erp")
 async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float = Form(0)):
     """업로드 Excel → ERP 구매전표 미리보기 (실제 전송 안함)"""
-    data = await file.read()
-    result = process_excel_hs_code(data, file.filename)
-    
-    if not result["success"]:
-        raise HTTPException(400, result.get("error"))
-    
-    # 환율 조회
-    rate = exchange_rate
-    if rate <= 0:
-        rate_info = await fetch_exchange_rate()
-        rate = rate_info["rate"]
-    
-    # ERP 라인 미리보기 생성 (모델명 → 품목코드 변환)
-    erp_preview = []
-    unmapped_models = []
-    for item in result["erp_lines"]:
-        price_usd = item.get("price_usd", 0)
-        tax_rate = item.get("tax_rate", 1.18)
-        price_krw = round(price_usd * tax_rate * rate)
-        model = item["prod_cd"]
-        prod_cd = _lookup_prod_cd(model)
-        
-        erp_preview.append({
-            "model_name": model,
-            "prod_cd": prod_cd,
-            "qty": item["qty"],
-            "price_usd": price_usd,
-            "tax_rate": tax_rate,
-            "price_krw": price_krw,
-            "supply_amt": round(price_krw * item["qty"]),
-            "description": item.get("description", ""),
-        })
-        if not prod_cd:
-            unmapped_models.append(model)
-    
-    # 전표일자 (오늘 +8일)
-    io_date = (datetime.now(KST) + timedelta(days=8)).strftime("%Y-%m-%d")
-    
-    return {
-        "erp_lines": erp_preview,
-        "oem_items": result["oem_items"],
-        "unmapped_models": unmapped_models,
-        "total_lines": len(erp_preview),
-        "total_amount": sum(l["supply_amt"] for l in erp_preview),
-        "exchange_rate": rate,
-        "io_date": io_date,
-        "cust_code": ERP_SUPPLIER_CODE,
-    }
+    try:
+        data = await file.read()
+        result = process_excel_hs_code(data, file.filename)
+
+        if not result.get("success"):
+            raise HTTPException(400, result.get("error", "Excel 처리 실패"))
+
+        # 환율 조회 (실패해도 계속 진행)
+        rate = exchange_rate
+        if rate <= 0:
+            try:
+                rate_info = await fetch_exchange_rate()
+                rate = float(rate_info.get("rate") or 0)
+            except Exception as e:
+                logger.warning(f"[ERP 미리보기] 환율 조회 실패, fallback 사용: {e}")
+                rate = 0
+            if rate <= 0:
+                # 마지막 fallback - DB의 가장 최근 환율
+                try:
+                    conn = get_connection()
+                    row = conn.execute(
+                        "SELECT rate FROM mail_auto_exchange_rate ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    rate = float(row[0]) if row and row[0] else 1400.0
+                except Exception:
+                    rate = 1400.0
+
+        # ERP 라인 미리보기 생성 (모델명 → 품목코드 변환)
+        erp_preview = []
+        unmapped_models = []
+        for item in result.get("erp_lines") or []:
+            try:
+                price_usd = float(item.get("price_usd") or 0)
+                tax_rate = float(item.get("tax_rate") or 1.18)
+                qty = float(item.get("qty") or 0)
+                price_krw = round(price_usd * tax_rate * rate)
+                model = item.get("prod_cd") or ""
+                prod_cd = _lookup_prod_cd(model) if model else ""
+
+                erp_preview.append({
+                    "model_name": model,
+                    "prod_cd": prod_cd,
+                    "qty": qty,
+                    "price_usd": price_usd,
+                    "tax_rate": tax_rate,
+                    "price_krw": price_krw,
+                    "supply_amt": round(price_krw * qty),
+                    "description": item.get("description", ""),
+                })
+                if not prod_cd:
+                    unmapped_models.append(model)
+            except Exception as e:
+                logger.error(f"[ERP 미리보기] 라인 변환 실패 item={item}: {e}")
+                continue
+
+        # 전표일자 (오늘 +8일)
+        io_date = (datetime.now(KST) + timedelta(days=8)).strftime("%Y-%m-%d")
+
+        return {
+            "success": True,
+            "erp_lines": erp_preview,
+            "oem_items": result.get("oem_items") or [],
+            "unmapped_models": unmapped_models,
+            "total_lines": len(erp_preview),
+            "total_amount": sum(l["supply_amt"] for l in erp_preview),
+            "exchange_rate": rate,
+            "io_date": io_date,
+            "cust_code": ERP_SUPPLIER_CODE,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[ERP 미리보기] 처리 중 예외: {e}")
+        raise HTTPException(500, f"ERP 미리보기 처리 실패: {e}")
 
 
 @router.post("/submit-erp")
