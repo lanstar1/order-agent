@@ -195,6 +195,7 @@
                         <div style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#fff'" onclick="this.parentElement.classList.remove('show');sendToERP('kyungdong')">🚚 경동택배 ERP</div>
                     </div>
                 </div>
+                <button class="btn btn-sm" onclick="sendToLogenAPI()" style="background:#e11d48;color:#fff;">📮 로젠API 발송</button>
                 <button class="btn btn-orange btn-sm" onclick="exportLogenExcel()">로젠 엑셀 다운로드</button>
                 <label class="btn btn-gray btn-sm" style="cursor:pointer;">
                     로젠 송장 업로드
@@ -550,6 +551,75 @@ async function sendToERP(deliveryType) {
     }
 }
 
+
+// ──────────────────────────────
+//  로젠 OpenAPI 발송
+// ──────────────────────────────
+async function sendToLogenAPI() {
+    const sel = getSelectedOrders();
+    if (!sel.length) return sb('orders-sb', 'err', '주문을 선택하세요.');
+
+    // 주문별 수하인 정보 추출
+    const logenOrders = [];
+    for (const o of sel) {
+        const recv = o.receiver || o.orderer || {};
+        const rcvName = recv.name || '';
+        const rcvTel = recv.safeNumber || recv.phone || recv.cellPhone || '';
+        const rcvAddr = ((recv.addr1 || '') + ' ' + (recv.addr2 || '')).trim();
+        const sndMsg = recv.message || o.parcelDeliveryMessage || '';
+        const goodsNm = (o.orderItems || []).map(i => i.vendorItemName || i.itemName || '').filter(Boolean).join(', ') || '상품';
+
+        if (!rcvName || !rcvAddr || !rcvTel) {
+            sb('orders-sb', 'err', `수하인 정보 누락: ${o.orderId || '?'} (이름/주소/연락처 확인)`);
+            return;
+        }
+
+        logenOrders.push({
+            rcv_name: rcvName,
+            rcv_addr: rcvAddr,
+            rcv_tel: rcvTel,
+            qty: 1,
+            goods_nm: goodsNm.substring(0, 100),
+            goods_amt: 0,
+            snd_msg: sndMsg,
+        });
+    }
+
+    if (!confirm(`로젠택배 API 발송\n\n${logenOrders.length}건 등록합니다.\n(송장번호 자동 발급)`)) return;
+
+    sb('orders-sb', 'load', `📮 로젠API 발송 중... (${logenOrders.length}건)`);
+    log(`=== 로젠API 발송 (${logenOrders.length}건) ===`);
+
+    try {
+        const resp = await fetch('/api/logen/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orders: logenOrders }),
+        });
+        const d = await resp.json();
+
+        if (d.success) {
+            const slipCount = d.total_slips || 0;
+            sb('orders-sb', 'ok', `✅ 로젠API 발송 완료! 송장 ${slipCount}건 발급`);
+            log(`로젠API 성공: ${d.total_orders}건 등록 → ${slipCount}건 송장 발급`);
+
+            // 결과 상세 표시
+            let detail = '<h3>📮 로젠API 발송 결과</h3><table style="width:100%;font-size:12px;border-collapse:collapse;"><tr style="background:#f1f5f9;"><th style="padding:4px 8px;text-align:left;">수하인</th><th>송장번호</th></tr>';
+            for (const r of (d.results || [])) {
+                const slips = (r.slip_nos || []).join(', ') || '발급 대기';
+                detail += `<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:4px 8px;">${r.rcv_name}</td><td style="padding:4px 8px;">${slips}</td></tr>`;
+            }
+            detail += '</table>';
+            document.getElementById('orders-sb').innerHTML += `<div style="margin-top:8px;">${detail}</div>`;
+        } else {
+            sb('orders-sb', 'err', `❌ 로젠API 실패: ${d.error || '알 수 없는 오류'}`);
+            log('로젠API 실패: ' + (d.error || JSON.stringify(d)));
+        }
+    } catch (e) {
+        sb('orders-sb', 'err', `❌ 로젠API 오류: ${e.message}`);
+        log('로젠API 오류: ' + e.message);
+    }
+}
 
 // ──────────────────────────────
 //  로젠 엑셀 다운로드 (수동 등록용)

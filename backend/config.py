@@ -111,7 +111,7 @@ SMARTSTORE_CUST_CODE = os.getenv("SMARTSTORE_CUST_CODE", "")   # 스마트스토
 SMARTSTORE_EMP_CODE  = os.getenv("SMARTSTORE_EMP_CODE", "")    # 담당자 코드
 SMARTSTORE_WH_CODE   = os.getenv("SMARTSTORE_WH_CODE", "30")   # 출하창고 코드
 
-# iLogen 택배 계정 (창고별)
+# iLogen 택배 계정 (창고별) — 레거시 웹 스크래핑용
 LOGEN_GIMPO_ID       = os.getenv("LOGEN_GIMPO_ID", "")
 LOGEN_GIMPO_PW       = os.getenv("LOGEN_GIMPO_PW", "")
 LOGEN_GIMPO_PW_PREV  = os.getenv("LOGEN_GIMPO_PW_PREV", "")
@@ -126,6 +126,20 @@ SENDER_GIMPO_ADDR    = os.getenv("SENDER_GIMPO_ADDR", "")
 SENDER_YONGSAN_NAME  = os.getenv("SENDER_YONGSAN_NAME", "랜스타")
 SENDER_YONGSAN_TEL   = os.getenv("SENDER_YONGSAN_TEL", "")
 SENDER_YONGSAN_ADDR  = os.getenv("SENDER_YONGSAN_ADDR", "")
+
+# ─────────────────────────────────────────
+#  iLOGEN OpenAPI (REST API 방식)
+# ─────────────────────────────────────────
+ILOGEN_SECRET_KEY  = os.getenv("ILOGEN_SECRET_KEY", "")
+ILOGEN_USER_ID     = os.getenv("ILOGEN_USER_ID", "34850417")
+ILOGEN_CUST_CD     = os.getenv("ILOGEN_CUST_CD", "34850417")
+ILOGEN_BASE_URL    = os.getenv("ILOGEN_BASE_URL", "https://openapi.ilogen.com")
+ILOGEN_BOX_FARE    = int(os.getenv("ILOGEN_BOX_FARE", "2150"))
+ILOGEN_FARE_TY     = os.getenv("ILOGEN_FARE_TY", "030")  # 030=신용
+ILOGEN_SND_NM      = os.getenv("ILOGEN_SND_NM", "라인업시스템(주)")
+ILOGEN_SND_ADDR    = os.getenv("ILOGEN_SND_ADDR", "경기 김포시 마송2로104번길 132-21  (통진읍 마송리 462-7)")
+ILOGEN_SND_TEL     = os.getenv("ILOGEN_SND_TEL", "0319983386")
+ILOGEN_SND_CELL    = os.getenv("ILOGEN_SND_CELL", "0319983386")
 
 # 스마트스토어 상품매핑 경로
 SMARTSTORE_PRODUCT_MAP_PATH    = BASE_DIR / "data" / "smartstore" / "smartstore_product_map.json"      # 시트1: 메인상품
