@@ -452,8 +452,23 @@ class ERPClient:
                 return {"success": False, "error": err}
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"[ERP] HTTP 상태 오류 (시도 {attempt+1}): {e.response.status_code} {e.response.text}")
+                body_txt = e.response.text or ""
+                logger.error(f"[ERP] HTTP 상태 오류 (시도 {attempt+1}): {e.response.status_code} {body_txt[:300]}")
+                looks_like_session_expired = (
+                    "Please login" in body_txt
+                    or "EXP00001" in body_txt
+                    or e.response.status_code in (401, 412, 500)
+                )
                 if attempt < 2:
+                    if looks_like_session_expired:
+                        logger.warning("[ERP] 세션 만료 감지 (HTTP 오류) → 강제 재로그인")
+                        self._session_id = None
+                        try:
+                            await self.ensure_session()
+                            import re as _re
+                            url = _re.sub(r"SESSION_ID=[^&]*", f"SESSION_ID={self._session_id}", url)
+                        except Exception as relog_err:
+                            logger.error(f"[ERP] 재로그인 실패: {relog_err}")
                     await asyncio.sleep(2 ** attempt)
             except httpx.HTTPError as e:
                 logger.error(f"[ERP] HTTP 오류 (시도 {attempt+1}): {e}")
@@ -562,8 +577,23 @@ class ERPClient:
                 return {"success": False, "error": err}
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"[ERP] HTTP 상태 오류 (시도 {attempt+1}): {e.response.status_code} {e.response.text}")
+                body_txt = e.response.text or ""
+                logger.error(f"[ERP] HTTP 상태 오류 (시도 {attempt+1}): {e.response.status_code} {body_txt[:300]}")
+                looks_like_session_expired = (
+                    "Please login" in body_txt
+                    or "EXP00001" in body_txt
+                    or e.response.status_code in (401, 412, 500)
+                )
                 if attempt < 2:
+                    if looks_like_session_expired:
+                        logger.warning("[ERP] 세션 만료 감지 (HTTP 오류) → 강제 재로그인")
+                        self._session_id = None
+                        try:
+                            await self.ensure_session()
+                            import re as _re
+                            url = _re.sub(r"SESSION_ID=[^&]*", f"SESSION_ID={self._session_id}", url)
+                        except Exception as relog_err:
+                            logger.error(f"[ERP] 재로그인 실패: {relog_err}")
                     await asyncio.sleep(2 ** attempt)
             except httpx.HTTPError as e:
                 logger.error(f"[ERP] HTTP 오류 (시도 {attempt+1}): {e}")
@@ -683,8 +713,23 @@ class ERPClient:
                 return {"success": False, "error": err}
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"[ERP] HTTP 상태 오류 (시도 {attempt+1}): {e.response.status_code} {e.response.text}")
+                body_txt = e.response.text or ""
+                logger.error(f"[ERP] HTTP 상태 오류 (시도 {attempt+1}): {e.response.status_code} {body_txt[:300]}")
+                looks_like_session_expired = (
+                    "Please login" in body_txt
+                    or "EXP00001" in body_txt
+                    or e.response.status_code in (401, 412, 500)
+                )
                 if attempt < 2:
+                    if looks_like_session_expired:
+                        logger.warning("[ERP] 세션 만료 감지 (HTTP 오류) → 강제 재로그인")
+                        self._session_id = None
+                        try:
+                            await self.ensure_session()
+                            import re as _re
+                            url = _re.sub(r"SESSION_ID=[^&]*", f"SESSION_ID={self._session_id}", url)
+                        except Exception as relog_err:
+                            logger.error(f"[ERP] 재로그인 실패: {relog_err}")
                     await asyncio.sleep(2 ** attempt)
             except httpx.HTTPError as e:
                 logger.error(f"[ERP] HTTP 오류 (시도 {attempt+1}): {e}")
