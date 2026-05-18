@@ -3934,6 +3934,7 @@ let _csSearch = "";
 let _csChannel = "";
 let _csType = "";
 let _csReason = "";
+let _csQuickFilter = ""; // overdue | today | active
 let _csView = "kanban";
 let _csOptions = null;
 
@@ -3950,6 +3951,7 @@ async function csInit() {
   _csChannel = "";
   _csType = "";
   _csReason = "";
+  _csQuickFilter = "";
   const searchInput = document.getElementById("cs-search-input");
   if (searchInput) searchInput.value = "";
 
@@ -4010,7 +4012,7 @@ function csRenderStatsBar(stats) {
   const items = [
     { label: "전체", num: stats.total||0, color: "#111827", filter: "" },
     { label: "처리중", num: processing, color: "#2563eb", filter: "active" },
-    { label: "미출고", num: tc["미출고"]||0, color: "#ea580c", filter: "backorder" },
+    { label: "미출고(유형)", num: tc["미출고"]||0, color: "#ea580c", filter: "type_backorder" },
     { label: "지연 (7일+)", num: stats.overdue_count||0, color: "#ef4444", filter: "overdue" },
     { label: "오늘 접수", num: stats.today_count||0, color: "#7c3aed", filter: "today" },
     { label: "평균 처리일", num: (stats.avg_resolution_days||0)+"일", color: "#0891b2", filter: "" },
@@ -4087,6 +4089,8 @@ function csApplyFilters() {
 
 function csSwitchView(el, view) {
   _csView = view;
+  // 리스트 뷰 외에는 quick 드릴다운 필터 의미가 없으므로 초기화
+  if (view !== "list") _csQuickFilter = "";
   if (el && el.parentElement) {
     el.parentElement.querySelectorAll(".cs-pipe-tab").forEach(t => t.classList.remove("active"));
     el.classList.add("active");
@@ -4645,6 +4649,7 @@ async function csLoadTickets() {
   if (_csType) params.set("cs_type", _csType);
   if (_csReason) params.set("reason", _csReason);
   if (_csSearch) params.set("search", _csSearch);
+  if (_csQuickFilter) params.set("quick", _csQuickFilter);
   try {
     const res = await api.get(`/api/cs/tickets?${params}`);
     const tickets = res.tickets || [];
@@ -4700,26 +4705,80 @@ function csSwitchTab(el, status) {
 }
 
 function csStatCardClick(filter) {
+  // 평균 처리일 카드는 클릭 동작 없음
+  if (filter === "") {
+    // "전체" 카드 → 리스트 뷰 전체
+    _csToListView({ quick: "", status: "" });
+    return;
+  }
+  if (filter === "active") {
+    // "처리중" 카드 → 처리종결 제외
+    _csToListView({ quick: "active", status: "" });
+    return;
+  }
+  if (filter === "overdue") {
+    // "지연 (7일+)" 카드 → 7일+ 미처리
+    _csToListView({ quick: "overdue", status: "" });
+    return;
+  }
+  if (filter === "today") {
+    // "오늘 접수" 카드 → 오늘 created
+    _csToListView({ quick: "today", status: "" });
+    return;
+  }
+  if (filter === "type_backorder") {
+    // "미출고(유형)" 카드 → cs_type='미출고'인 티켓
+    _csToListView({ quick: "", status: "", cs_type: "미출고" });
+    return;
+  }
   if (filter === "처리종결") {
-    _csStatus = "처리종결";
-    _csView = "list";
-    const tabs = document.querySelectorAll("#page-cs_rma .cs-pipe-tab");
-    tabs.forEach(t => t.classList.remove("active"));
-    tabs.forEach(t => { if(t.textContent.includes('리스트')) t.classList.add("active"); });
-    document.getElementById("cs-kanban-board").style.display = "none";
-    document.getElementById("cs-list-view").style.display = "block";
-    document.getElementById("cs-backorder-view").style.display = "none";
-    csLoadTickets();
-  } else if (filter === "backorder") {
+    _csToListView({ quick: "", status: "처리종결" });
+    return;
+  }
+  if (filter === "backorder") {
+    // 좌측 탭의 별도 미출고 관리 뷰로 이동
     _csView = "backorder";
     const tabs = document.querySelectorAll("#page-cs_rma .cs-pipe-tab");
     tabs.forEach(t => t.classList.remove("active"));
-    tabs.forEach(t => { if(t.textContent.includes('미출고')) t.classList.add("active"); });
+    tabs.forEach(t => { if(t.textContent.includes('미출고 관리')) t.classList.add("active"); });
     document.getElementById("cs-kanban-board").style.display = "none";
     document.getElementById("cs-list-view").style.display = "none";
     document.getElementById("cs-backorder-view").style.display = "block";
     csLoadBackorder();
   }
+}
+
+function _csToListView({ quick = "", status = "", cs_type = "" } = {}) {
+  // 다른 필터 초기화하여 카드 의도대로 진입
+  _csChannel = ""; _csType = cs_type; _csReason = ""; _csSearch = "";
+  _csStatus = status; _csQuickFilter = quick; _csPage = 1;
+  _csView = "list";
+
+  // 상단 메인 탭 ("대시보드/리스트/캘린더/미출고 관리") 중 "리스트" 활성화
+  const mainTabs = document.querySelectorAll("#page-cs_rma > div > .cs-pipe-tab");
+  // 위 셀렉터가 환경에 따라 안 잡힐 수 있어, 보수적으로 onclick 기준으로 다시 탐색
+  const allMain = document.querySelectorAll("#page-cs_rma .cs-pipe-tab[onclick*=\"csSwitchView\"]");
+  allMain.forEach(t => t.classList.remove("active"));
+  allMain.forEach(t => { if (t.getAttribute("onclick").includes("'list'")) t.classList.add("active"); });
+
+  // 리스트 뷰 내부 상태 탭 동기화 (data-status 사용)
+  const subTabs = document.querySelectorAll("#cs-list-view .cs-pipe-tab[data-status]");
+  subTabs.forEach(t => t.classList.remove("active"));
+  subTabs.forEach(t => { if (t.getAttribute("data-status") === status) t.classList.add("active"); });
+
+  // 필터 입력 UI 동기화
+  const chSel = document.getElementById("cs-filter-channel"); if (chSel) chSel.value = "";
+  const tySel = document.getElementById("cs-filter-type"); if (tySel) tySel.value = cs_type || "";
+  const reSel = document.getElementById("cs-filter-reason"); if (reSel) reSel.value = "";
+  const sInp = document.getElementById("cs-search-input"); if (sInp) sInp.value = "";
+
+  // 뷰 전환
+  document.getElementById("cs-kanban-board").style.display = "none";
+  document.getElementById("cs-list-view").style.display = "block";
+  const cv = document.getElementById("cs-calendar-view"); if (cv) cv.style.display = "none";
+  document.getElementById("cs-backorder-view").style.display = "none";
+
+  csLoadTickets();
 }
 
 function csCloseModal() {

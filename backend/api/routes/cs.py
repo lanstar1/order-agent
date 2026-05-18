@@ -159,6 +159,7 @@ async def list_tickets(
     channel: str = Query("", description="판매채널 필터"),
     cs_type: str = Query("", description="CS유형 필터"),
     reason: str = Query("", description="사유 필터"),
+    quick: str = Query("", description="상단 카드 드릴다운: overdue|today|active"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
     user: dict = Depends(get_current_user),
@@ -186,6 +187,24 @@ async def list_tickets(
             else:
                 where_clauses.append("t.reason_category = ?")
                 params.append(reason)
+
+        if quick == "active":
+            where_clauses.append("t.current_status != '처리종결'")
+        elif quick == "today":
+            KST = timezone(timedelta(hours=9))
+            today_kst = datetime.now(KST).strftime("%Y-%m-%d")
+            where_clauses.append("t.created_at LIKE ?")
+            params.append(f"{today_kst}%")
+        elif quick == "overdue":
+            from db.database import USE_PG
+            if USE_PG:
+                where_clauses.append(
+                    "t.current_status != '처리종결' AND t.created_at::timestamp < NOW() - INTERVAL '7 days'"
+                )
+            else:
+                where_clauses.append(
+                    "t.current_status != '처리종결' AND t.created_at < datetime('now', '-7 days', 'localtime')"
+                )
 
         if search:
             search_term = f"%{search}%"
