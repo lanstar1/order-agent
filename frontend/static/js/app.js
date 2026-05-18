@@ -3983,7 +3983,8 @@ function csPopulateFilters() {
   }
   if (reSel) {
     reSel.innerHTML = '<option value="">전체 사유</option>' +
-      (_csOptions.reason_categories||[]).map(c => `<option value="${c}">${c}</option>`).join("");
+      (_csOptions.reason_categories||[]).map(c => `<option value="${c}">${c}</option>`).join("") +
+      '<option value="미분류">미분류</option>';
   }
 }
 

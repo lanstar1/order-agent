@@ -181,8 +181,11 @@ async def list_tickets(
             params.append(cs_type)
 
         if reason:
-            where_clauses.append("t.reason_category = ?")
-            params.append(reason)
+            if reason == "미분류":
+                where_clauses.append("(t.reason_category IS NULL OR t.reason_category = '')")
+            else:
+                where_clauses.append("t.reason_category = ?")
+                params.append(reason)
 
         if search:
             search_term = f"%{search}%"
@@ -260,8 +263,11 @@ async def cs_calendar(
             where_clauses.append("t.cs_type = ?")
             params.append(cs_type)
         if reason:
-            where_clauses.append("t.reason_category = ?")
-            params.append(reason)
+            if reason == "미분류":
+                where_clauses.append("(t.reason_category IS NULL OR t.reason_category = '')")
+            else:
+                where_clauses.append("t.reason_category = ?")
+                params.append(reason)
         if search:
             term = f"%{search}%"
             where_clauses.append(
