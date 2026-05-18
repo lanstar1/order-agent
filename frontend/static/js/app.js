@@ -4051,7 +4051,7 @@ function csRenderReasonPanel(stats) {
     panel.innerHTML = '<div style="font-size:13px;color:#9ca3af;text-align:center;padding:20px">사유 정보가 등록된 티켓이 없습니다</div>';
     return;
   }
-  const reasonColors = { "파손 및 불량":"#ef4444", "단순 변심":"#f59e0b", "주문 실수":"#3b82f6", "오배송 및 지연":"#6b7280", "재고 부족":"#8b5cf6", "기타":"#9ca3af" };
+  const reasonColors = { "파손 및 불량":"#ef4444", "단순 변심":"#f59e0b", "주문 실수":"#3b82f6", "오배송 및 지연":"#6b7280", "재고 부족":"#8b5cf6", "기타":"#9ca3af", "미분류":"#d1d5db" };
   panel.innerHTML = Object.entries(rc).map(([name, cnt]) => {
     const pct = total > 0 ? Math.round(cnt/total*100) : 0;
     return `<div class="cs-ch-row" onclick="csFilterByReason('${name}')" style="cursor:pointer">
@@ -4729,7 +4729,7 @@ function csCloseModal() {
 function csShowCreateForm() {
   const opts = _csOptions || {};
   const channels = opts.sales_channels || ["스마트스토어","G마켓","옥션","쿠팡","컴퓨존","오늘의집","나비엠알오","자사몰","기타"];
-  const types = opts.cs_types || ["반품","교환","A/S수리","미출고"];
+  const types = opts.cs_types || ["반품","교환","A/S수리","미출고","과출고/회수","누락/재출고"];
   const reasons = opts.reason_categories || ["파손 및 불량","단순 변심","주문 실수","오배송 및 지연","재고 부족","기타"];
   const shipCosts = opts.shipping_cost_statuses || ["환불금에서 차감","판매자에게 직접 송금","추가결제","무료반품","해당없음"];
 

@@ -31,7 +31,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 CS_STATUSES = ["접수완료", "물류수령", "기술인계", "테스트완료", "처리종결"]
 FINAL_ACTIONS = ["교환발송", "환불처리", "정상반송", "단순변심 반송"]
 TEST_RESULTS = ["정상", "의심", "불량"]
-CS_TYPES = ["반품", "교환", "A/S수리", "미출고"]
+CS_TYPES = ["반품", "교환", "A/S수리", "미출고", "과출고/회수", "누락/재출고"]
 SALES_CHANNELS = ["스마트스토어", "G마켓", "옥션", "쿠팡", "컴퓨존", "오늘의집", "나비엠알오", "자사몰", "기타"]
 REASON_CATEGORIES = ["파손 및 불량", "단순 변심", "주문 실수", "오배송 및 지연", "재고 부족", "기타"]
 SHIPPING_COST_STATUSES = ["환불금에서 차감", "판매자에게 직접 송금", "추가결제", "무료반품", "해당없음"]
@@ -1217,11 +1217,14 @@ async def cs_stats(user: dict = Depends(get_current_user)):
         ).fetchall()
         channel_active = {r["sales_channel"]: r["cnt"] for r in channel_active_rows}
 
-        # 사유별 카운트
+        # 사유별 카운트 (빈 값은 "미분류"로 묶어 전체와 합이 맞도록)
         reason_rows = conn.execute(
-            "SELECT reason_category, COUNT(*) as cnt FROM cs_tickets WHERE reason_category != '' GROUP BY reason_category ORDER BY cnt DESC"
+            "SELECT reason_category, COUNT(*) as cnt FROM cs_tickets GROUP BY reason_category ORDER BY cnt DESC"
         ).fetchall()
-        reason_counts = {r["reason_category"]: r["cnt"] for r in reason_rows}
+        reason_counts = {}
+        for r in reason_rows:
+            key = r["reason_category"] if r["reason_category"] else "미분류"
+            reason_counts[key] = reason_counts.get(key, 0) + r["cnt"]
 
         # CS유형별 카운트
         type_rows = conn.execute(
