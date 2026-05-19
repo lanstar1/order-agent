@@ -28,13 +28,13 @@ COPY data/ /app/data/
 # 업로드/피드백 디렉토리 보장
 RUN mkdir -p /app/data/uploads /app/data/feedback /app/data/cs_files
 
-# 포트
+# 포트 (Render는 PORT 환경변수로 주입; 로컬은 8000 fallback)
 EXPOSE 8000
 
-# 헬스체크
+# 헬스체크 (로컬용 8000 기준; Render는 자체 헬스체크 사용)
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# 서버 실행 (reload 없이 - 프로덕션)
+# 서버 실행 (reload 없이 - 프로덕션). shell form 으로 $PORT 치환.
 WORKDIR /app/backend
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
