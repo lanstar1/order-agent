@@ -104,6 +104,21 @@ def is_pi_document(filename: str, subject: str = "") -> bool:
     return False
 
 
+def is_past_delivery(delivery_date: str, today: str = "") -> bool:
+    """
+    납기일(delivery_date, YYYY-MM-DD)이 오늘보다 이전이면 True → 이미 입고된 건으로 간주.
+    납기일이 비어있으면 판단 불가이므로 False (가져옴).
+    """
+    if not delivery_date:
+        return False
+    if not today:
+        today = datetime.now(KST).strftime("%Y-%m-%d")
+    try:
+        return str(delivery_date).strip() < today
+    except Exception:
+        return False
+
+
 # ─────────────────────────────────────────
 #  Claude API로 PI PDF 분석
 # ─────────────────────────────────────────
@@ -538,12 +553,14 @@ def _sheets_api_request(method: str, url: str, body=None):
     return resp.json() if resp.content else {}
 
 
-def write_po_to_sheet(scan_results: list, sheet_tab_prefix: str = "PO") -> dict:
+def write_po_to_sheet(scan_results: list, sheet_tab_prefix: str = "PO",
+                      clear_if_empty: bool = False) -> dict:
     """
     PO 메일 결과를 구글시트의 거래처별 탭에 추가/덮어쓰기
 
     scan_results: [{"mail_meta": {...}, "extracted": {...}}, ...]
     sheet_tab_prefix: 탭 이름 prefix (예: "T3" → "T3-2026")
+    clear_if_empty: scan_results가 비어도 시트를 비움 (전 PI 만료 시 사용)
 
     BOR/NAM 패턴과 동일한 헤더 구조:
       Seller: | <PO_NO>
@@ -551,7 +568,7 @@ def write_po_to_sheet(scan_results: list, sheet_tab_prefix: str = "PO") -> dict:
       Item | Description | Quantity | Unit | Order Date | Shipping Date | Arrival Date
       ... 품목들 ...
     """
-    if not scan_results:
+    if not scan_results and not clear_if_empty:
         return {"status": "no_data"}
 
     year = datetime.now(KST).strftime("%Y")
@@ -634,7 +651,9 @@ def run_po_mail_scan_all(
     total_imported = 0
     total_skipped = 0
     total_failed = 0
+    total_expired = 0
     per_sender_results = []
+    today = datetime.now(KST).strftime("%Y-%m-%d")
 
     conn = get_connection()
     try:
@@ -663,6 +682,7 @@ def run_po_mail_scan_all(
             sender_imported = 0
             sender_skipped = 0
             sender_failed = 0
+            sender_expired = 0
             sheet_payload = []
 
             for mail_meta in mails:
@@ -685,6 +705,18 @@ def run_po_mail_scan_all(
                     sender_failed += 1
                     continue
 
+                # 납기일 필터: delivery_date가 오늘 이전이면 이미 입고된 건 → 제외
+                delivery_date = extracted.get("delivery_date", "")
+                if is_past_delivery(delivery_date, today):
+                    logger.info(
+                        f"[PO메일] {extracted.get('po_number', '?')} 납기일 {delivery_date} 경과 "
+                        f"→ 입고완료로 제외 (DB/시트 미등록)"
+                    )
+                    # 이력만 expired로 남겨 재분석 방지 (orderlist_items는 저장 안 함)
+                    log_po_import(conn, mail_meta, extracted, sheet_tab, 0, status="expired")
+                    sender_expired += 1
+                    continue
+
                 # DB 저장
                 try:
                     item_count = save_po_to_orderlist(conn, mail_meta, extracted, sheet_tab)
@@ -700,22 +732,48 @@ def run_po_mail_scan_all(
                                   status="failed", error=str(e))
                     sender_failed += 1
 
+            # 기존에 success로 등록됐지만 이제 납기일이 지난 PI 정리 (시트/DB 일관성)
+            try:
+                stale_rows = conn.execute("""
+                    SELECT id, po_number FROM po_mail_imports
+                    WHERE sender_email = ? AND status = 'success'
+                      AND delivery_date != '' AND delivery_date < ?
+                """, (email_addr, today)).fetchall()
+                for sr in stale_rows:
+                    imp_id, po_no = sr[0], sr[1]
+                    if po_no:
+                        conn.execute(
+                            "DELETE FROM orderlist_items WHERE sheet_tab = ? AND order_no = ?",
+                            (sheet_tab, po_no)
+                        )
+                    conn.execute(
+                        "UPDATE po_mail_imports SET status = 'expired' WHERE id = ?",
+                        (imp_id,)
+                    )
+                    sender_expired += 1
+                    logger.info(f"[PO메일] {po_no} 납기 경과 → expired 전환 + orderlist 정리")
+            except Exception as e:
+                logger.warning(f"[PO메일] 만료 PI 정리 실패: {e}")
+
             conn.commit()
 
             # 구글시트 동기화 (발신자 단위로 탭에 누적)
+            # 신규 import가 있거나 만료 정리가 발생하면 시트를 다시 씀
             sheet_result = {}
-            if sheet_payload:
+            if sheet_payload or sender_expired > 0:
                 try:
                     # 기존 동일 탭 데이터에 PI들 누적 (모든 활성 PI 다시 쓰기)
                     # 현재 발신자의 모든 임포트된 PO를 다시 모아서 시트에 기록
+                    # 납기일 경과(입고완료) PI는 제외
                     all_imports = conn.execute("""
                         SELECT pi.po_number, pi.pi_number, pi.delivery_date,
                                pi.email_date, pi.subject, pi.filename
                         FROM po_mail_imports pi
                         WHERE pi.sender_email = ? AND pi.status = 'success'
+                          AND (pi.delivery_date = '' OR pi.delivery_date >= ?)
                         ORDER BY pi.email_date DESC
                         LIMIT 20
-                    """, (email_addr,)).fetchall()
+                    """, (email_addr, today)).fetchall()
 
                     # 발신자가 등록된 모든 품목을 orderlist_items에서 다시 조회
                     rebuild_payload = []
@@ -756,6 +814,9 @@ def run_po_mail_scan_all(
 
                     if rebuild_payload:
                         sheet_result = write_po_to_sheet(rebuild_payload, sheet_prefix)
+                    elif sender_expired > 0:
+                        # 활성 PI가 하나도 없음(전부 만료) → 시트 비우기
+                        sheet_result = write_po_to_sheet([], sheet_prefix, clear_if_empty=True)
                 except Exception as e:
                     logger.error(f"[PO메일] 구글시트 동기화 실패 ({email_addr}): {e}", exc_info=True)
                     sheet_result = {"status": "error", "error": str(e)}
@@ -767,7 +828,7 @@ def run_po_mail_scan_all(
                 WHERE email = ?
             """, (
                 datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
-                sender_imported + sender_skipped,
+                sender_imported + sender_skipped + sender_expired,
                 email_addr,
             ))
             conn.commit()
@@ -777,12 +838,14 @@ def run_po_mail_scan_all(
                 "scanned": len(mails),
                 "imported": sender_imported,
                 "skipped": sender_skipped,
+                "expired": sender_expired,
                 "failed": sender_failed,
                 "sheet": sheet_result,
             })
             total_imported += sender_imported
             total_skipped += sender_skipped
             total_failed += sender_failed
+            total_expired += sender_expired
 
     finally:
         conn.close()
@@ -792,6 +855,7 @@ def run_po_mail_scan_all(
         "total_senders": len(senders),
         "total_imported": total_imported,
         "total_skipped": total_skipped,
+        "total_expired": total_expired,
         "total_failed": total_failed,
         "per_sender": per_sender_results,
     }

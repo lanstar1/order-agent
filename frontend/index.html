@@ -3700,11 +3700,12 @@ async function scanPoMailNow() {
     const res = await api.post("/api/po-mail/scan?days_back=90&skip_duplicates=true", {});
     const totalImp = res.total_imported || 0;
     const totalSkp = res.total_skipped || 0;
+    const totalExp = res.total_expired || 0;
     const totalFail = res.total_failed || 0;
-    let h = `<p style="margin-bottom:10px"><b>전체 결과:</b> 신규 ${totalImp}건 / 중복 ${totalSkp}건 / 실패 ${totalFail}건</p>`;
+    let h = `<p style="margin-bottom:10px"><b>전체 결과:</b> 신규 ${totalImp}건 / 중복 ${totalSkp}건 / 입고완료(제외) ${totalExp}건 / 실패 ${totalFail}건</p>`;
     h += '<table style="width:100%;font-size:12px"><thead><tr style="text-align:left;border-bottom:1px solid var(--gray-200)">';
     h += '<th style="padding:6px">거래처</th><th style="padding:6px">발신자</th><th style="padding:6px">스캔</th>';
-    h += '<th style="padding:6px">신규</th><th style="padding:6px">중복</th><th style="padding:6px">실패</th><th style="padding:6px">시트</th>';
+    h += '<th style="padding:6px">신규</th><th style="padding:6px">중복</th><th style="padding:6px" title="납기일 경과 = 이미 입고">입고완료</th><th style="padding:6px">실패</th><th style="padding:6px">시트</th>';
     h += '</tr></thead><tbody>';
     for (const s of (res.per_sender || [])) {
       const sheetStatus = s.sheet && s.sheet.status === "ok"
@@ -3716,6 +3717,7 @@ async function scanPoMailNow() {
         <td style="padding:6px">${s.scanned}</td>
         <td style="padding:6px;color:var(--success);font-weight:600">${s.imported}</td>
         <td style="padding:6px;color:var(--gray-500)">${s.skipped}</td>
+        <td style="padding:6px;color:var(--gray-500)">${s.expired || 0}</td>
         <td style="padding:6px;color:${s.failed ? 'var(--danger)' : 'var(--gray-400)'}">${s.failed}</td>
         <td style="padding:6px">${sheetStatus}</td>
       </tr>`;
@@ -5388,8 +5390,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
-<script src="/static/js/api.js?v=20260520a"></script>
-<script src="/static/js/app.js?v=20260520a"></script>
+<script src="/static/js/api.js?v=20260520b"></script>
+<script src="/static/js/app.js?v=20260520b"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>

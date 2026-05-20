@@ -379,8 +379,9 @@ async def scan_all_shipping():
                 )
                 imp = po_result.get("total_imported", 0)
                 skp = po_result.get("total_skipped", 0)
+                exp = po_result.get("total_expired", 0)
                 fail = po_result.get("total_failed", 0)
-                yield send(f"✅ [4/6] PO 메일: 신규 {imp}건 / 중복 {skp}건 / 실패 {fail}건", 78, "po_mail_done")
+                yield send(f"✅ [4/6] PO 메일: 신규 {imp}건 / 중복 {skp}건 / 입고완료 {exp}건 / 실패 {fail}건", 78, "po_mail_done")
             else:
                 yield send("⏭️ [4/6] PO 발신자 미등록 또는 메일 미설정", 78, "po_mail_skip")
         except Exception as e:
