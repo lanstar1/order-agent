@@ -6188,6 +6188,87 @@ function ipCloseAddModal() {
   document.getElementById('ip-add-modal').style.display = 'none';
 }
 
+// ─────────────────────────────────────────────────────────
+//  WeChat 발주 PI PDF 수동 업로드 → AI 분석 → 구글시트 등록
+// ─────────────────────────────────────────────────────────
+function ipShowWechatUpload() {
+  const modal = document.getElementById('ip-wechat-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  document.getElementById('ip-wechat-result').innerHTML = '';
+  document.getElementById('ip-wechat-file').value = '';
+}
+
+function ipCloseWechatModal() {
+  document.getElementById('ip-wechat-modal').style.display = 'none';
+}
+
+async function ipUploadWechatPi() {
+  const fileInput = document.getElementById('ip-wechat-file');
+  const supplier = (document.getElementById('ip-wechat-supplier').value || '').trim();
+  const prefix = (document.getElementById('ip-wechat-prefix').value || 'WECHAT').trim() || 'WECHAT';
+  const resultEl = document.getElementById('ip-wechat-result');
+  const btn = document.getElementById('ip-wechat-btn');
+
+  if (!fileInput.files || fileInput.files.length === 0) {
+    resultEl.innerHTML = '<p style="color:#dc2626">PDF 파일을 선택하세요.</p>';
+    return;
+  }
+  const file = fileInput.files[0];
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    resultEl.innerHTML = '<p style="color:#dc2626">PDF 파일만 지원합니다.</p>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ AI 분석 중... (30초~1분)';
+  resultEl.innerHTML = '<p style="color:#64748b">Claude AI가 PDF를 분석하고 있습니다...</p>';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('supplier_name', supplier);
+  fd.append('sheet_tab_prefix', prefix);
+  fd.append('source', 'wechat');
+  fd.append('sender_label', 'wechat');
+
+  try {
+    const res = await api.postForm('/api/po-mail/upload', fd);
+    let h = '<div style="padding:12px;background:#dcfce7;border-radius:8px;border-left:4px solid #16a34a">';
+    h += `<p style="margin:0 0 8px 0"><b>✓ 업로드 + 등록 완료</b></p>`;
+    h += `<div style="font-size:12px;line-height:1.6">`;
+    h += `<div><b>PO 번호:</b> ${res.po_number || '-'}</div>`;
+    if (res.pi_number && res.pi_number !== res.po_number) h += `<div><b>PI 번호:</b> ${res.pi_number}</div>`;
+    if (res.delivery_date) h += `<div><b>예상 납기:</b> ${res.delivery_date}</div>`;
+    h += `<div><b>품목 수:</b> ${res.item_count}개</div>`;
+    if (res.sheet && res.sheet.status === 'ok') {
+      h += `<div><b>구글시트:</b> <code>${res.sheet.tab}</code> 등록 완료</div>`;
+    } else if (res.sheet && res.sheet.error) {
+      h += `<div style="color:#dc2626"><b>구글시트:</b> ${res.sheet.error}</div>`;
+    }
+    h += `</div></div>`;
+    if (res.items && res.items.length) {
+      h += '<table style="width:100%;font-size:12px;margin-top:12px"><thead><tr style="text-align:left;border-bottom:1px solid #e2e8f0">';
+      h += '<th style="padding:6px">모델</th><th style="padding:6px">설명</th><th style="padding:6px;text-align:right">수량</th><th style="padding:6px">단위</th>';
+      h += '</tr></thead><tbody>';
+      for (const it of res.items) {
+        h += `<tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:6px"><code>${it.model_name || it.part_no || ''}</code></td>
+          <td style="padding:6px;color:#64748b">${it.description || ''}</td>
+          <td style="padding:6px;text-align:right;font-weight:600">${it.qty || 0}</td>
+          <td style="padding:6px">${it.unit || ''}</td>
+        </tr>`;
+      }
+      h += '</tbody></table>';
+    }
+    resultEl.innerHTML = h;
+  } catch (e) {
+    resultEl.innerHTML = `<p style="color:#dc2626">업로드 실패: ${e.message || e}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📤 업로드 + AI 분석';
+  }
+}
+
 let _ipSearchTimer = null;
 function ipSearchProducts(q) {
   clearTimeout(_ipSearchTimer);

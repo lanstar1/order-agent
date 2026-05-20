@@ -365,18 +365,38 @@ async def scan_all_shipping():
         except Exception as e:
             yield send(f"⚠️ [3/5] NAM 오류: {str(e)[:100]}", 70, "nam_error")
 
-        # ─── [4/5] 구글시트 → DB 동기화 ───
-        # ─── [4/5] 구글시트 → DB 동기화 ───
-        yield send("🔄 [4/5] 오더리스트 DB 동기화 중...", 75, "db_sync")
+        # ─── [4/6] PO/PI 메일 자동 등록 (화이트리스트 발신자) ───
+        yield send("📧 [4/6] PO/PI 메일 자동 등록 중...", 72, "po_mail_start")
+        try:
+            from config import MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD
+            from services.po_mail_service import list_po_senders, run_po_mail_scan_all
+            active_senders = list_po_senders(active_only=True)
+            if MAIL_USER and MAIL_PASSWORD and active_senders:
+                yield send(f"📧 [4/6] PO 발신자 {len(active_senders)}명 스캔 중...", 73, "po_mail_scan")
+                po_result = run_po_mail_scan_all(
+                    MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD,
+                    MAIL_IMAP_PORT, days_back=90, skip_duplicates=True
+                )
+                imp = po_result.get("total_imported", 0)
+                skp = po_result.get("total_skipped", 0)
+                fail = po_result.get("total_failed", 0)
+                yield send(f"✅ [4/6] PO 메일: 신규 {imp}건 / 중복 {skp}건 / 실패 {fail}건", 78, "po_mail_done")
+            else:
+                yield send("⏭️ [4/6] PO 발신자 미등록 또는 메일 미설정", 78, "po_mail_skip")
+        except Exception as e:
+            yield send(f"⚠️ [4/6] PO 메일 오류: {str(e)[:100]}", 78, "po_mail_error")
+
+        # ─── [5/6] 구글시트 → DB 동기화 ───
+        yield send("🔄 [5/6] 오더리스트 DB 동기화 중...", 80, "db_sync")
         try:
             from services.orderlist_service import sync_orderlist
             sync_orderlist()
-            yield send("✅ [4/5] DB 동기화 완료", 85, "db_done")
+            yield send("✅ [5/6] DB 동기화 완료", 88, "db_done")
         except Exception as e:
-            yield send(f"⚠️ [4/5] DB 동기화 오류: {str(e)[:80]}", 85, "db_error")
+            yield send(f"⚠️ [5/6] DB 동기화 오류: {str(e)[:80]}", 88, "db_error")
 
-        # ─── [5/5] 스캔 이력 저장 ───
-        yield send("📝 [5/5] 스캔 이력 저장 중...", 90, "log_save")
+        # ─── [6/6] 스캔 이력 저장 ───
+        yield send("📝 [6/6] 스캔 이력 저장 중...", 92, "log_save")
         try:
             from services.shipping_mail_service import save_scan_log
             conn = get_connection()

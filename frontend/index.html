@@ -1035,6 +1035,7 @@ C규격품 200개
             <div style="display:flex;gap:8px">
               <button class="btn btn-sm" onclick="ipRefreshAnalysis()" style="background:#2563eb;color:#fff">🔄 분석 새로고침</button>
               <button class="btn btn-sm" onclick="ipScanShippingMails()" style="background:#7c3aed;color:#fff">📧 통합 스캔 (메일+오더)</button>
+              <button class="btn btn-sm" onclick="ipShowWechatUpload()" style="background:#16a34a;color:#fff" title="WeChat/메신저로 받은 PI를 직접 업로드">💬 WeChat 발주 업로드</button>
               <button class="btn btn-sm" onclick="ipExportExcel()" style="background:#059669;color:#fff">📥 엑셀 내보내기</button>
               <button class="btn btn-sm" onclick="ipShowSchedulerModal()" style="background:#d97706;color:#fff">⏰ 자동 스캔 설정</button>
               <button class="btn btn-sm" onclick="ipShowAddModal()" style="background:#64748b;color:#fff">+ 관리품목 추가</button>
@@ -1125,6 +1126,32 @@ C규격품 200개
               </div>
             </div>
             <button id="ip-add-btn" onclick="ipAddTarget()" disabled style="width:100%;padding:10px;background:#2563eb;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;opacity:0.5">관리품목 추가</button>
+          </div>
+        </div>
+        <!-- WeChat 발주 업로드 모달 -->
+        <div id="ip-wechat-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:999;justify-content:center;align-items:center">
+          <div style="background:white;border-radius:12px;padding:24px;width:90%;max-width:560px;max-height:85vh;overflow-y:auto">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <h3 style="margin:0">💬 WeChat 발주 업로드</h3>
+              <button onclick="ipCloseWechatModal()" style="background:none;border:none;font-size:20px;cursor:pointer">&times;</button>
+            </div>
+            <p style="font-size:13px;color:#64748b;margin-bottom:16px;line-height:1.5">
+              WeChat이나 메신저로 받은 <b>PI(Proforma Invoice) PDF</b>를 업로드하면 Claude AI가 분석해서 오더리스트에 자동 등록합니다.
+            </p>
+            <div style="margin-bottom:14px">
+              <label style="font-size:13px;font-weight:600">거래처명</label>
+              <input type="text" id="ip-wechat-supplier" placeholder="예: T3 INDUSTRIAL" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+            </div>
+            <div style="margin-bottom:14px">
+              <label style="font-size:13px;font-weight:600">시트 탭 prefix</label>
+              <input type="text" id="ip-wechat-prefix" value="WECHAT" placeholder="예: T3 → T3-2026" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+            </div>
+            <div style="margin-bottom:14px">
+              <label style="font-size:13px;font-weight:600">PI PDF 파일</label>
+              <input type="file" id="ip-wechat-file" accept=".pdf" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+            </div>
+            <button onclick="ipUploadWechatPi()" id="ip-wechat-btn" style="width:100%;padding:10px;background:#16a34a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px">📤 업로드 + AI 분석</button>
+            <div id="ip-wechat-result" style="margin-top:16px;font-size:13px"></div>
           </div>
         </div>
         <!-- 상세 모달 -->
@@ -2546,6 +2573,11 @@ www.lanstar.co.kr</textarea>
           style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s">
           내 계정
         </button>
+        <button class="settings-tab-btn" data-settings-tab="po-mail"
+          onclick="switchSettingsTab('po-mail')"
+          style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s">
+          PO 메일 자동등록
+        </button>
         <button class="settings-tab-btn" data-settings-tab="activity" id="settings-activity-tab-btn"
           onclick="switchSettingsTab('activity')"
           style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;display:none">
@@ -2853,6 +2885,71 @@ www.lanstar.co.kr</textarea>
               <div style="font-weight:600;font-size:14px;margin-bottom:12px;color:var(--gray-700)">현재 담당자 목록</div>
               <div id="emp-manage-table">로딩 중...</div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── 탭: PO 메일 자동 등록 ─── -->
+      <div class="settings-panel" id="settings-tab-po-mail" style="display:none">
+
+        <!-- 안내 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title">PO/PI 메일 자동 등록</div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:8px">
+            화이트리스트에 등록된 발신자가 보낸 <b>PI(Proforma Invoice) PDF 첨부 메일</b>을 자동으로 검색하여
+            Claude AI로 분석한 뒤 오더리스트 구글시트에 자동 기록합니다.
+          </p>
+          <p style="font-size:12px;color:var(--gray-500);margin:0">
+            ℹ️ <b>PK(Packing List, 선적 통지)</b> 메일은 발주가 아니라 이미 출고된 건이므로 자동으로 제외됩니다.
+            새 거래처 발신자를 추가하면 다음 통합 스캔부터 자동으로 처리됩니다.
+          </p>
+        </div>
+
+        <!-- 발신자 화이트리스트 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>발신자 화이트리스트</span>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-outline btn-sm" onclick="loadPoSenders()">🔄 새로고침</button>
+              <button class="btn btn-primary btn-sm" onclick="scanPoMailNow()" id="po-scan-btn">📧 지금 스캔</button>
+            </div>
+          </div>
+          <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">
+            발신자 이메일 / 거래처명 / 시트 탭 prefix를 등록하세요. (예: T3 INDUSTRIAL → 시트 탭은 <code>T3-2026</code>)
+          </p>
+
+          <!-- 신규 등록 폼 -->
+          <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+            <input type="email" class="form-control" id="po-new-email"
+              placeholder="발신자 이메일 (예: ianhung@livewire-asiapacific.com)"
+              style="flex:1;min-width:280px;font-size:13px">
+            <input type="text" class="form-control" id="po-new-supplier"
+              placeholder="거래처명 (예: T3 INDUSTRIAL)" style="width:200px;font-size:13px">
+            <input type="text" class="form-control" id="po-new-prefix"
+              placeholder="시트 prefix (예: T3)" style="width:140px;font-size:13px">
+            <button class="btn btn-primary btn-sm" onclick="addPoSender()">+ 추가</button>
+          </div>
+
+          <!-- 목록 -->
+          <div id="po-senders-list" style="font-size:13px">
+            <p style="color:var(--gray-400);text-align:center;padding:16px">로딩 중...</p>
+          </div>
+        </div>
+
+        <!-- 스캔 결과 -->
+        <div class="card" id="po-scan-result-card" style="margin-bottom:16px;display:none">
+          <div class="card-title">최근 스캔 결과</div>
+          <div id="po-scan-result" style="font-size:13px"></div>
+        </div>
+
+        <!-- 임포트 이력 -->
+        <div class="card">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>최근 임포트 이력</span>
+            <button class="btn btn-outline btn-sm" onclick="loadPoImports()">🔄 새로고침</button>
+          </div>
+          <div id="po-imports-list" style="font-size:13px">
+            <p style="color:var(--gray-400);text-align:center;padding:16px">로딩 중...</p>
           </div>
         </div>
       </div>
@@ -3504,6 +3601,187 @@ function switchSettingsTab(tab) {
     loadActivitySummary();
     loadActivityEmployeeFilter();
     loadActivityLogs(1);
+  }
+  if (tab === "po-mail") {
+    loadPoSenders();
+    loadPoImports();
+  }
+}
+
+// ───────────────────────────────────────────────────────
+//  PO/PI 메일 자동 등록 — 발신자 화이트리스트 관리
+// ───────────────────────────────────────────────────────
+
+async function loadPoSenders() {
+  const el = document.getElementById("po-senders-list");
+  if (!el) return;
+  el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px">로딩 중...</p>';
+  try {
+    const res = await api.get("/api/po-mail/senders");
+    const senders = res.senders || [];
+    if (!senders.length) {
+      el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px">등록된 발신자가 없습니다. 위에서 추가해주세요.</p>';
+      return;
+    }
+    let h = '<table style="width:100%;font-size:13px"><thead><tr style="text-align:left;border-bottom:1px solid var(--gray-200)">';
+    h += '<th style="padding:8px 4px">활성</th><th style="padding:8px 4px">이메일</th><th style="padding:8px 4px">거래처</th>';
+    h += '<th style="padding:8px 4px">시트 prefix</th><th style="padding:8px 4px">최근 스캔</th><th style="padding:8px 4px;text-align:right">관리</th>';
+    h += '</tr></thead><tbody>';
+    for (const s of senders) {
+      const checked = s.is_active ? "checked" : "";
+      const lastScan = s.last_scanned_at ? `${s.last_scanned_at} (${s.last_scanned_count || 0}건)` : '<span style="color:var(--gray-400)">미실행</span>';
+      h += `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:8px 4px"><input type="checkbox" ${checked} onchange="togglePoSender(${s.id}, this.checked)"></td>
+        <td style="padding:8px 4px"><code>${s.email}</code></td>
+        <td style="padding:8px 4px">${s.supplier_name || '<span style="color:var(--gray-400)">-</span>'}</td>
+        <td style="padding:8px 4px"><code>${s.sheet_tab_prefix || 'PO'}-${new Date().getFullYear()}</code></td>
+        <td style="padding:8px 4px;font-size:12px;color:var(--gray-600)">${lastScan}</td>
+        <td style="padding:8px 4px;text-align:right">
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px" onclick="deletePoSender(${s.id}, '${s.email}')">삭제</button>
+        </td>
+      </tr>`;
+    }
+    h += '</tbody></table>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = `<p style="color:var(--danger)">로드 실패: ${e.message || e}</p>`;
+  }
+}
+
+async function addPoSender() {
+  const email = (document.getElementById("po-new-email").value || "").trim();
+  const supplier = (document.getElementById("po-new-supplier").value || "").trim();
+  const prefix = (document.getElementById("po-new-prefix").value || "").trim();
+  if (!email || !email.includes("@")) {
+    alert("유효한 이메일 주소를 입력하세요.");
+    return;
+  }
+  try {
+    await api.post("/api/po-mail/senders", {
+      email, supplier_name: supplier, sheet_tab_prefix: prefix,
+    });
+    document.getElementById("po-new-email").value = "";
+    document.getElementById("po-new-supplier").value = "";
+    document.getElementById("po-new-prefix").value = "";
+    await loadPoSenders();
+  } catch (e) {
+    alert("발신자 추가 실패: " + (e.message || e));
+  }
+}
+
+async function togglePoSender(id, isActive) {
+  try {
+    await api.patch(`/api/po-mail/senders/${id}`, { is_active: isActive ? 1 : 0 });
+  } catch (e) {
+    alert("상태 변경 실패: " + (e.message || e));
+    loadPoSenders();
+  }
+}
+
+async function deletePoSender(id, email) {
+  if (!confirm(`발신자 '${email}'을(를) 삭제하시겠습니까?\n(연관 임포트 이력은 유지됩니다)`)) return;
+  try {
+    await api.delete(`/api/po-mail/senders/${id}`);
+    await loadPoSenders();
+  } catch (e) {
+    alert("삭제 실패: " + (e.message || e));
+  }
+}
+
+async function scanPoMailNow() {
+  const btn = document.getElementById("po-scan-btn");
+  const resultCard = document.getElementById("po-scan-result-card");
+  const resultEl = document.getElementById("po-scan-result");
+  btn.disabled = true;
+  btn.textContent = "📧 스캔 중...";
+  resultCard.style.display = "block";
+  resultEl.innerHTML = '<p style="color:var(--gray-500)">메일 스캔 + Claude AI PDF 분석 중... (메일 건수에 따라 30초~수분 소요)</p>';
+  try {
+    const res = await api.post("/api/po-mail/scan?days_back=90&skip_duplicates=true", {});
+    const totalImp = res.total_imported || 0;
+    const totalSkp = res.total_skipped || 0;
+    const totalFail = res.total_failed || 0;
+    let h = `<p style="margin-bottom:10px"><b>전체 결과:</b> 신규 ${totalImp}건 / 중복 ${totalSkp}건 / 실패 ${totalFail}건</p>`;
+    h += '<table style="width:100%;font-size:12px"><thead><tr style="text-align:left;border-bottom:1px solid var(--gray-200)">';
+    h += '<th style="padding:6px">거래처</th><th style="padding:6px">발신자</th><th style="padding:6px">스캔</th>';
+    h += '<th style="padding:6px">신규</th><th style="padding:6px">중복</th><th style="padding:6px">실패</th><th style="padding:6px">시트</th>';
+    h += '</tr></thead><tbody>';
+    for (const s of (res.per_sender || [])) {
+      const sheetStatus = s.sheet && s.sheet.status === "ok"
+        ? `<span style="color:var(--success)">✓ ${s.sheet.tab}</span>`
+        : (s.sheet && s.sheet.error ? `<span style="color:var(--danger)" title="${s.sheet.error}">✗ 실패</span>` : '-');
+      h += `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:6px">${s.supplier || '-'}</td>
+        <td style="padding:6px"><code style="font-size:11px">${s.email}</code></td>
+        <td style="padding:6px">${s.scanned}</td>
+        <td style="padding:6px;color:var(--success);font-weight:600">${s.imported}</td>
+        <td style="padding:6px;color:var(--gray-500)">${s.skipped}</td>
+        <td style="padding:6px;color:${s.failed ? 'var(--danger)' : 'var(--gray-400)'}">${s.failed}</td>
+        <td style="padding:6px">${sheetStatus}</td>
+      </tr>`;
+    }
+    h += '</tbody></table>';
+    resultEl.innerHTML = h;
+    await loadPoSenders();
+    await loadPoImports();
+  } catch (e) {
+    resultEl.innerHTML = `<p style="color:var(--danger)">스캔 실패: ${e.message || e}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📧 지금 스캔";
+  }
+}
+
+async function loadPoImports() {
+  const el = document.getElementById("po-imports-list");
+  if (!el) return;
+  el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px">로딩 중...</p>';
+  try {
+    const res = await api.get("/api/po-mail/imports?limit=30");
+    const imports = res.imports || [];
+    if (!imports.length) {
+      el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px">임포트 이력이 없습니다.</p>';
+      return;
+    }
+    let h = '<table style="width:100%;font-size:12px"><thead><tr style="text-align:left;border-bottom:1px solid var(--gray-200)">';
+    h += '<th style="padding:6px">일시</th><th style="padding:6px">발신자</th><th style="padding:6px">파일</th>';
+    h += '<th style="padding:6px">PO</th><th style="padding:6px">납기</th><th style="padding:6px">품목</th>';
+    h += '<th style="padding:6px">상태</th><th style="padding:6px;text-align:right">관리</th>';
+    h += '</tr></thead><tbody>';
+    for (const imp of imports) {
+      const statusBadge = imp.status === "success"
+        ? '<span style="color:var(--success);font-weight:600">✓</span>'
+        : `<span style="color:var(--danger)" title="${imp.error_message || ''}">✗</span>`;
+      const srcBadge = imp.source === "wechat"
+        ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-size:10px">WeChat</span>'
+        : '';
+      h += `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:6px;white-space:nowrap">${(imp.created_at || '').slice(0, 19)}</td>
+        <td style="padding:6px"><code style="font-size:11px">${imp.sender_email}</code> ${srcBadge}</td>
+        <td style="padding:6px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${imp.filename}">${imp.filename}</td>
+        <td style="padding:6px"><code>${imp.po_number || '-'}</code></td>
+        <td style="padding:6px">${imp.delivery_date || '-'}</td>
+        <td style="padding:6px;text-align:center">${imp.item_count}</td>
+        <td style="padding:6px;text-align:center">${statusBadge}</td>
+        <td style="padding:6px;text-align:right">
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px" onclick="deletePoImport(${imp.id})">삭제</button>
+        </td>
+      </tr>`;
+    }
+    h += '</tbody></table>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = `<p style="color:var(--danger)">로드 실패: ${e.message || e}</p>`;
+  }
+}
+
+async function deletePoImport(id) {
+  if (!confirm("이 임포트 이력과 연관된 오더리스트 데이터를 삭제하시겠습니까?")) return;
+  try {
+    await api.delete(`/api/po-mail/imports/${id}`);
+    await loadPoImports();
+  } catch (e) {
+    alert("삭제 실패: " + (e.message || e));
   }
 }
 
@@ -5110,8 +5388,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
-<script src="/static/js/api.js?v=20260518d"></script>
-<script src="/static/js/app.js?v=20260518d"></script>
+<script src="/static/js/api.js?v=20260520a"></script>
+<script src="/static/js/app.js?v=20260520a"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>

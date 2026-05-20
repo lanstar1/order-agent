@@ -91,6 +91,7 @@ def _sql_to_pg(sql):
                 'super_agent_jobs', 'super_agent_tasks', 'super_agent_artifacts',
                 'super_agent_uploads', 'super_agent_events',
                 'erp_cache',
+                'po_mail_senders', 'po_mail_imports',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -867,6 +868,40 @@ def init_db():
         dispatched_at   TIMESTAMP
     )""")
 
+    # ── PO/PI 메일 발신자 화이트리스트 (자동 발주 등록) ──
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS po_mail_senders (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        email               TEXT NOT NULL UNIQUE,
+        supplier_name       TEXT NOT NULL DEFAULT '',
+        sheet_tab_prefix    TEXT NOT NULL DEFAULT '',
+        is_active           INTEGER NOT NULL DEFAULT 1,
+        last_scanned_at     TEXT DEFAULT '',
+        last_scanned_count  INTEGER DEFAULT 0,
+        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+    # ── PO 메일 자동 등록 이력 (중복 방지 + 추적) ──
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS po_mail_imports (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_email        TEXT NOT NULL,
+        message_uid         TEXT NOT NULL DEFAULT '',
+        subject             TEXT NOT NULL DEFAULT '',
+        email_date          TEXT NOT NULL DEFAULT '',
+        filename            TEXT NOT NULL DEFAULT '',
+        po_number           TEXT NOT NULL DEFAULT '',
+        pi_number           TEXT NOT NULL DEFAULT '',
+        delivery_date       TEXT NOT NULL DEFAULT '',
+        sheet_tab           TEXT NOT NULL DEFAULT '',
+        item_count          INTEGER NOT NULL DEFAULT 0,
+        status              TEXT NOT NULL DEFAULT 'success',
+        error_message       TEXT NOT NULL DEFAULT '',
+        source              TEXT NOT NULL DEFAULT 'mail',
+        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
     # ── 인덱스 추가 (성능 최적화) ──
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
@@ -907,7 +942,19 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_kd_order_rcv ON kd_order_map(rcv_name);
         CREATE INDEX IF NOT EXISTS idx_kd_order_tel ON kd_order_map(tel);
         CREATE INDEX IF NOT EXISTS idx_kd_order_status ON kd_order_map(status);
+
+        CREATE INDEX IF NOT EXISTS idx_po_mail_senders_active ON po_mail_senders(is_active);
+        CREATE INDEX IF NOT EXISTS idx_po_mail_imports_sender ON po_mail_imports(sender_email);
+        CREATE INDEX IF NOT EXISTS idx_po_mail_imports_uid ON po_mail_imports(message_uid);
+        CREATE INDEX IF NOT EXISTS idx_po_mail_imports_po ON po_mail_imports(po_number);
     """)
+
+    # ── 기본 PO 발신자 시드 (T3 INDUSTRIAL) ──
+    conn.execute("""
+        INSERT OR IGNORE INTO po_mail_senders
+            (email, supplier_name, sheet_tab_prefix, is_active)
+        VALUES (?, ?, ?, ?)
+    """, ("ianhung@livewire-asiapacific.com", "T3 INDUSTRIAL", "T3", 1))
 
     conn.commit()
     conn.close()
