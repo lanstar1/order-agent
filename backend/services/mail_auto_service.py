@@ -313,7 +313,7 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
     erp_lines = []
     oem_items = []
     current_category = ""
-    stats = {"total": 0, "hs_filled": 0, "skipped": 0, "unknown": 0}
+    stats = {"total": 0, "hs_filled": 0, "skipped": 0, "unknown": 0, "unmatched": 0}
     
     def _safe_float(val):
         """수식('=1.62*0.97') 등 변환 불가 셀 안전 처리"""
@@ -439,7 +439,32 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
                         "description": str(a_val)[:100],
                         "category": current_category,
                     })
-    
+            else:
+                # 모델명이 LS/LSP/LSN/ZOT 패턴이 아니라 인식 실패한 경우.
+                # 실제 품목행(수량·단가 모두 존재)이면 누락시키지 않고 '미매칭'으로 노출 →
+                # 사용자가 품목코드 매핑을 추가할 수 있게 한다.
+                _qty = _safe_float(c_val)
+                _price = _safe_float(f_val)
+                if _qty > 0 and _price > 0:
+                    raw_model = str(a_val).split(",")[0].strip()
+                    stats["total"] += 1
+                    stats["unmatched"] += 1
+                    items.append({
+                        "row": row_idx, "model": raw_model,
+                        "category": current_category,
+                        "hs_code": "",
+                        "rule": "",
+                        "confidence": "unmatched",
+                    })
+                    erp_lines.append({
+                        "prod_cd": raw_model,
+                        "qty": _qty,
+                        "price_usd": _price,
+                        "tax_rate": 1.18,
+                        "description": str(a_val)[:100],
+                        "unmatched_model": True,
+                    })
+
     # 수정된 Excel 저장
     output = io.BytesIO()
     wb.save(output)

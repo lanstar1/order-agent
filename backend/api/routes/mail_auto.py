@@ -507,6 +507,7 @@ async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float =
                         "price_krw": price_krw,
                         "supply_amt": round(price_krw * qty),
                         "description": item.get("description", ""),
+                        "unmatched_model": bool(item.get("unmatched_model", False)),
                     })
                     if not prod_cd:
                         unmapped_models.append(model)

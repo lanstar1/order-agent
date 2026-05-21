@@ -9810,10 +9810,11 @@ function reconcileNewMatch() {
       const d = await r.json();
       const div = document.getElementById('mail-test-result');
       const unknowns = d.items.filter(i => i.confidence === 'unknown');
+      const unmatchedCnt = d.stats.unmatched || 0;
       let html = `<div class="card" style="padding:12px;margin-top:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <div>
-            <p style="margin:0"><b>통계:</b> 총 ${d.stats.total}개 | HS입력: <b style="color:#059669">${d.stats.hs_filled}</b>개 | 스킵: ${d.stats.skipped}개 | <span style="color:#dc2626">미매칭: ${d.stats.unknown}개</span></p>
+            <p style="margin:0"><b>통계:</b> 총 ${d.stats.total}개 | HS입력: <b style="color:#059669">${d.stats.hs_filled}</b>개 | 스킵: ${d.stats.skipped}개 | <span style="color:#dc2626">HS미매칭: ${d.stats.unknown}개</span>${unmatchedCnt ? ` | <span style="color:#dc2626">모델미인식: ${unmatchedCnt}개</span>` : ''}</p>
             <p style="margin:4px 0 0"><b>ERP 대상:</b> ${d.erp_lines.length}개 | <b>OEM:</b> ${d.oem_items.length}개</p>
           </div>
           <button onclick="mailDownloadProcessed()" class="btn btn-primary" style="padding:8px 16px">📥 HS코드 입력된 Excel 다운로드</button>
@@ -9833,9 +9834,11 @@ function reconcileNewMatch() {
         html += '<table class="table table-sm" style="font-size:12px"><thead><tr><th>모델명</th><th>카테고리</th><th>HS코드</th><th>규칙</th></tr></thead><tbody>';
         d.items.forEach(i => {
           const isUnknown = i.confidence === 'unknown';
-          const rowStyle = isUnknown ? 'background:#fef2f2;color:#dc2626' : '';
+          const isUnmatched = i.confidence === 'unmatched';
+          const rowStyle = (isUnknown || isUnmatched) ? 'background:#fef2f2;color:#dc2626' : '';
           const hsDisplay = i.hs_code ? `<b style="color:#059669">${i.hs_code}</b>` : '<span style="color:#999">—</span>';
-          html += `<tr style="${rowStyle}"><td>${i.model}</td><td>${i.category}</td><td>${hsDisplay}</td><td>${i.rule}${isUnknown ? ' ⚠️' : ''}</td></tr>`;
+          const ruleCell = isUnmatched ? '모델 미인식' : `${i.rule}${isUnknown ? ' ⚠️' : ''}`;
+          html += `<tr style="${rowStyle}"><td>${i.model}</td><td>${i.category}</td><td>${hsDisplay}</td><td>${ruleCell}</td></tr>`;
         });
         html += '</tbody></table>';
       }
@@ -9919,7 +9922,11 @@ function reconcileNewMatch() {
           <tbody>`;
       d.erp_lines.forEach(l => {
         const taxLabel = l.tax_rate === 1.22 ? '<span style="color:#dc2626">×1.22</span>' : '<span style="color:#2563eb">×1.18</span>';
-        const prodLabel = l.prod_cd ? l.prod_cd : '<span style="color:#dc2626">⚠️ 미매핑</span>';
+        const prodLabel = l.prod_cd
+          ? l.prod_cd
+          : (l.unmatched_model
+              ? '<span style="color:#dc2626">⚠️ 모델 미인식 (매핑 필요)</span>'
+              : '<span style="color:#dc2626">⚠️ 미매핑</span>');
         const rowStyle = l.prod_cd ? '' : 'background:#fef2f2';
         html += `<tr style="${rowStyle}">
           <td style="font-size:11px">${l.model_name||l.prod_cd}</td>
