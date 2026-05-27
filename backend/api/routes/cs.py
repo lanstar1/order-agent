@@ -102,19 +102,37 @@ class BackorderCreate(BaseModel):
 
 # ─── 티켓 ID 생성 ───────────────────
 def _generate_ticket_id() -> str:
-    """고유 접수번호 생성: CS-YYYYMMDD-XXXX"""
+    """고유 접수번호 생성: CS-YYYYMMDD-XXXX
+
+    오늘자 마지막 번호 +1로 산출한다. COUNT 기반은 중간 티켓이 삭제되면
+    번호가 줄어 이미 존재하는 번호를 재발급 → UNIQUE 충돌을 일으키므로
+    MAX(시퀀스) 기반으로 계산한다. 시퀀스가 4자리 0-패딩 고정폭이라
+    문자열 MAX가 곧 숫자 MAX와 같다.
+    """
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).strftime("%Y%m%d")
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM cs_tickets WHERE ticket_id LIKE ?",
+            "SELECT MAX(ticket_id) as max_id FROM cs_tickets WHERE ticket_id LIKE ?",
             (f"CS-{today}-%",)
         ).fetchone()
-        seq = (row["cnt"] if row else 0) + 1
+        max_id = (row["max_id"] if row else None) or ""
+        seq = 1
+        if max_id:
+            try:
+                seq = int(max_id.rsplit("-", 1)[1]) + 1
+            except (ValueError, IndexError):
+                seq = 1
         return f"CS-{today}-{seq:04d}"
     finally:
         conn.close()
+
+
+def _is_duplicate_ticket_error(e: Exception) -> bool:
+    """접수번호 UNIQUE 충돌 여부 (SQLite/PostgreSQL 메시지 모두 대응)"""
+    msg = str(e).lower()
+    return "unique" in msg or "duplicate" in msg
 
 
 # ─── 현재 단계 진입 시각 계산 ───────────────────
@@ -366,32 +384,39 @@ async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
 # ── [3] 신규 접수 (Step 1: CS 직원) ──
 @router.post("/tickets")
 async def create_ticket(data: TicketCreate, user: dict = Depends(get_current_user)):
-    ticket_id = _generate_ticket_id()
     now = now_kst()
 
     conn = get_connection()
     try:
-        conn.execute(
-            """INSERT INTO cs_tickets
-               (ticket_id, customer_name, contact_info, product_name, serial_number,
-                defect_symptom, courier, tracking_no, current_status, created_by, created_at, updated_at,
-                sales_channel, order_number, cs_type, reason_category, quantity, shipping_cost_status,
-                return_courier, return_tracking_no)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (ticket_id, data.customer_name, data.contact_info, data.product_name,
-             data.serial_number, data.defect_symptom, data.courier, data.tracking_no,
-             "접수완료", user["emp_cd"], now, now,
-             data.sales_channel, data.order_number, data.cs_type, data.reason_category,
-             data.quantity, data.shipping_cost_status, data.return_courier, data.return_tracking_no)
-        )
-        _log_action(conn, ticket_id, "접수완료", user["emp_cd"], user["name"],
-                     data.memo or f"CS 접수: {data.product_name} - {data.defect_symptom[:50]}")
-        conn.commit()
-
-        return {"success": True, "ticket_id": ticket_id, "message": f"접수 완료 ({ticket_id})"}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(500, f"접수 실패: {e}")
+        # 동시 접수로 같은 번호를 읽어 충돌해도 번호를 다시 받아 재시도한다.
+        last_err = None
+        for _ in range(5):
+            ticket_id = _generate_ticket_id()
+            try:
+                conn.execute(
+                    """INSERT INTO cs_tickets
+                       (ticket_id, customer_name, contact_info, product_name, serial_number,
+                        defect_symptom, courier, tracking_no, current_status, created_by, created_at, updated_at,
+                        sales_channel, order_number, cs_type, reason_category, quantity, shipping_cost_status,
+                        return_courier, return_tracking_no)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (ticket_id, data.customer_name, data.contact_info, data.product_name,
+                     data.serial_number, data.defect_symptom, data.courier, data.tracking_no,
+                     "접수완료", user["emp_cd"], now, now,
+                     data.sales_channel, data.order_number, data.cs_type, data.reason_category,
+                     data.quantity, data.shipping_cost_status, data.return_courier, data.return_tracking_no)
+                )
+                _log_action(conn, ticket_id, "접수완료", user["emp_cd"], user["name"],
+                             data.memo or f"CS 접수: {data.product_name} - {data.defect_symptom[:50]}")
+                conn.commit()
+                return {"success": True, "ticket_id": ticket_id, "message": f"접수 완료 ({ticket_id})"}
+            except Exception as e:
+                conn.rollback()
+                if _is_duplicate_ticket_error(e):
+                    last_err = e
+                    continue  # 번호 충돌 → 다음 번호로 재시도
+                raise HTTPException(500, f"접수 실패: {e}")
+        raise HTTPException(500, f"접수 실패: 접수번호 충돌이 반복됩니다. ({last_err})")
     finally:
         conn.close()
 
