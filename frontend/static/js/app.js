@@ -3966,6 +3966,10 @@ async function csInit() {
     csPopulateFilters();
   } catch(e) { console.error("CS options load error:", e); }
 
+  // 스마트스토어 클레임 배지 (비동기 — 화면 로딩 비차단)
+  csNaverRefreshBadge();
+  csNaverBackgroundSync();
+
   await csLoadDashboard();
   csRenderView();
 }
@@ -5139,6 +5143,158 @@ async function csQuickResolve(ticketId) {
     csCloseModal();
     csLoadDashboard();
     csRenderView();
+  } catch(e) { alert("오류: " + (e.message||e)); }
+}
+
+// ── 네이버 스마트스토어 반품/교환 클레임 알람 ──
+let _csNaverSyncedAt = 0;
+let _csNaverFilter = "신규";
+
+async function csNaverRefreshBadge() {
+  try {
+    const res = await api.get("/api/cs/naver-claims?status=" + encodeURIComponent("신규"));
+    const n = res.new_count || 0;
+    const badge = document.getElementById("cs-naver-badge");
+    if (badge) {
+      badge.textContent = n > 99 ? "99+" : n;
+      badge.style.display = n > 0 ? "inline-block" : "none";
+    }
+    return n;
+  } catch(e) { return 0; }
+}
+
+async function csNaverBackgroundSync() {
+  // 페이지 재진입 시 10분 이내 재동기화 방지
+  if (Date.now() - _csNaverSyncedAt < 10 * 60 * 1000) return;
+  _csNaverSyncedAt = Date.now();
+  try {
+    await api.post("/api/cs/naver-claims/sync?days=7", {});
+    await csNaverRefreshBadge();
+  } catch(e) { console.warn("스마트스토어 클레임 동기화 실패:", e.message||e); }
+}
+
+async function csShowNaverClaims() {
+  _csNaverFilter = "신규";
+  document.getElementById("cs-modal-overlay").style.display = "block";
+  document.getElementById("cs-modal-content").innerHTML =
+    `<div style="padding:40px;text-align:center;color:#6b7280">클레임 목록 로딩 중...</div>`;
+  await csNaverRenderClaims();
+}
+
+async function csNaverSyncNow() {
+  const btn = document.getElementById("cs-naver-sync-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "동기화 중..."; }
+  try {
+    await api.post("/api/cs/naver-claims/sync?days=14", {});
+    _csNaverSyncedAt = Date.now();
+    csNaverRefreshBadge();
+    await csNaverRenderClaims();
+  } catch(e) {
+    alert("동기화 실패: " + (e.message||e));
+    if (btn) { btn.disabled = false; btn.textContent = "🔄 동기화"; }
+  }
+}
+
+function csNaverSetFilter(f) {
+  _csNaverFilter = f;
+  csNaverRenderClaims();
+}
+
+async function csNaverRenderClaims() {
+  const box = document.getElementById("cs-modal-content");
+  let data;
+  try {
+    const qs = _csNaverFilter ? `?status=${encodeURIComponent(_csNaverFilter)}` : "";
+    data = await api.get(`/api/cs/naver-claims${qs}`);
+  } catch(e) {
+    box.innerHTML = `<div class="cs-modal-body" style="text-align:center;padding:40px;color:#6b7280">
+      <p>클레임 목록 로딩 실패: ${escapeHtml(e.message||String(e))}</p>
+      <button onclick="csNaverRenderClaims()" class="btn btn-primary" style="margin-top:12px;font-size:13px">다시 시도</button></div>`;
+    return;
+  }
+
+  const counts = data.counts || {};
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const tabs = [
+    { key: "신규", label: `신규 ${counts["신규"] || 0}` },
+    { key: "접수됨", label: `접수됨 ${counts["접수됨"] || 0}` },
+    { key: "무시", label: `무시 ${counts["무시"] || 0}` },
+    { key: "", label: `전체 ${total}` },
+  ];
+  const tabHtml = tabs.map(t => {
+    const active = _csNaverFilter === t.key;
+    const style = active
+      ? "background:#6366f1;color:#fff;border:1px solid #6366f1"
+      : "background:#fff;color:#374151;border:1px solid #d1d5db";
+    return `<button onclick="csNaverSetFilter('${t.key}')" style="${style};padding:4px 12px;border-radius:14px;font-size:12px;cursor:pointer">${t.label}</button>`;
+  }).join("");
+
+  const rows = (data.claims || []).map(c => {
+    const typeBadge = c.claim_type === "교환"
+      ? `<span style="background:#dbeafe;color:#1d4ed8;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700">교환</span>`
+      : `<span style="background:#fee2e2;color:#b91c1c;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700">반품</span>`;
+    const date = (c.claim_request_date || "").replace("T", " ").slice(0, 16);
+    const reason = [c.reason_text, c.detailed_reason].filter(Boolean).join(" / ");
+    let actions = "";
+    if (c.status === "접수됨") {
+      actions = c.ticket_id
+        ? `<button onclick="csShowDetail('${c.ticket_id}')" class="btn" style="font-size:12px">📄 ${c.ticket_id}</button>`
+        : `<span style="font-size:12px;color:#6b7280">접수됨</span>`;
+    } else {
+      actions = `<button onclick="csNaverRegister('${c.product_order_id}')" class="btn btn-primary" style="font-size:12px">📥 접수하기</button>`;
+      actions += c.status === "무시"
+        ? `<button onclick="csNaverDismiss('${c.product_order_id}', true)" class="btn" style="font-size:12px">복원</button>`
+        : `<button onclick="csNaverDismiss('${c.product_order_id}')" class="btn" style="font-size:12px;color:#6b7280">무시</button>`;
+    }
+    return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div style="min-width:0">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${typeBadge}
+            <b style="font-size:13px">${escapeHtml(c.customer_name || "-")}</b>
+            <span style="font-size:12px;color:#6b7280">${escapeHtml(c.contact_info || "")}</span>
+            <span style="font-size:11px;color:#9ca3af">${escapeHtml(c.claim_status_text || "")}</span>
+          </div>
+          <div style="font-size:13px;margin-top:4px">${escapeHtml(c.product_name || "")}${c.product_option ? ` <span style="color:#6b7280">/ ${escapeHtml(c.product_option)}</span>` : ""} <span style="color:#6b7280">× ${c.quantity || 1}</span></div>
+          ${reason ? `<div style="font-size:12px;color:#b91c1c;margin-top:2px">${escapeHtml(reason)}</div>` : ""}
+          <div style="font-size:11px;color:#9ca3af;margin-top:2px">주문 ${escapeHtml(c.order_id || c.product_order_id)} · ${date}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">${actions}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  box.innerHTML = `
+    <div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700">🔔 스마트스토어 반품/교환 요청</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="cs-naver-sync-btn" onclick="csNaverSyncNow()" class="btn" style="font-size:12px">🔄 동기화</button>
+        <button onclick="csCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280">&times;</button>
+      </div>
+    </div>
+    <div class="cs-modal-body">
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">${tabHtml}</div>
+      ${rows || `<div style="text-align:center;padding:30px;color:#9ca3af">표시할 클레임이 없습니다.<br><span style="font-size:12px">🔄 동기화를 누르면 네이버에서 최근 14일 클레임을 다시 가져옵니다.</span></div>`}
+    </div>`;
+}
+
+async function csNaverRegister(poId) {
+  if (!confirm("이 클레임을 CS 접수하시겠습니까?\n정보가 자동으로 채워져 접수완료 카드가 생성됩니다.")) return;
+  try {
+    const res = await api.post(`/api/cs/naver-claims/${encodeURIComponent(poId)}/register`, {});
+    alert(res.message || "접수 완료");
+    csNaverRefreshBadge();
+    csLoadDashboard();
+    csRenderView();
+    await csNaverRenderClaims();
+  } catch(e) { alert("접수 실패: " + (e.message||e)); }
+}
+
+async function csNaverDismiss(poId, restore = false) {
+  try {
+    await api.put(`/api/cs/naver-claims/${encodeURIComponent(poId)}/dismiss${restore ? "?restore=true" : ""}`, {});
+    csNaverRefreshBadge();
+    await csNaverRenderClaims();
   } catch(e) { alert("오류: " + (e.message||e)); }
 }
 

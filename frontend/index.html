@@ -1500,6 +1500,10 @@ C규격품 200개
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
         <h2 style="margin:0">🔧 CS / RMA 관리</h2>
         <div style="display:flex;gap:8px">
+          <button class="btn" onclick="csShowNaverClaims()" style="font-size:13px;position:relative">
+            🔔 스마트스토어 반품/교환
+            <span id="cs-naver-badge" style="display:none;position:absolute;top:-7px;right:-7px;background:#ef4444;color:#fff;border-radius:10px;min-width:18px;height:18px;line-height:18px;font-size:11px;font-weight:700;text-align:center;padding:0 4px">0</span>
+          </button>
           <button class="btn btn-primary" onclick="csShowCreateForm()" style="font-size:13px">+ 새 접수</button>
         </div>
       </div>
@@ -5391,7 +5395,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
 <script src="/static/js/api.js?v=20260520b"></script>
-<script src="/static/js/app.js?v=20260611b"></script>
+<script src="/static/js/app.js?v=20260611c"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>

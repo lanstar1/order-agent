@@ -14,3 +14,5 @@ data/sa_outputs/
 
 # 사내 레퍼런스 (자격증명 포함 가능) — 공개 레포 푸시 금지
 docs/
+data/order_agent.db-shm
+data/order_agent.db-wal

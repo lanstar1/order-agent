@@ -85,6 +85,7 @@ def _sql_to_pg(sql):
                 'activity_log', 'orderlist_items', 'orderlist_sync_log',
                 'shipments',
                 'cs_tickets', 'cs_test_results', 'cs_files', 'cs_action_logs',
+                'cs_naver_claims',
                 'aicc_sessions', 'aicc_messages',
                 'aicc_product_knowledge', 'aicc_unanswered',
                 'sales_records', 'sales_fetch_log', 'sales_price_standards', 'sales_alerts',
@@ -616,6 +617,49 @@ def init_db():
         FOREIGN KEY (ticket_id) REFERENCES cs_tickets(ticket_id)
     )""")
 
+    # ── 네이버 스마트스토어 반품/교환 클레임 (CS 알람/접수용) ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS cs_naver_claims (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_order_id    TEXT UNIQUE NOT NULL,
+        order_id            TEXT DEFAULT '',
+        claim_type          TEXT DEFAULT '',
+        claim_status        TEXT DEFAULT '',
+        customer_name       TEXT DEFAULT '',
+        contact_info        TEXT DEFAULT '',
+        product_name        TEXT DEFAULT '',
+        product_option      TEXT DEFAULT '',
+        quantity            INTEGER DEFAULT 1,
+        reason_code         TEXT DEFAULT '',
+        detailed_reason     TEXT DEFAULT '',
+        claim_request_date  TEXT DEFAULT '',
+        collect_courier     TEXT DEFAULT '',
+        collect_tracking_no TEXT DEFAULT '',
+        status              TEXT DEFAULT '신규',
+        ticket_id           TEXT DEFAULT '',
+        created_at          TEXT DEFAULT (datetime('now','localtime')),
+        updated_at          TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+
+    # ── CS 마이그레이션: v2.2 확장 컬럼 (운영 DB엔 수동 추가됐었음 — 신규 DB 대비) ──
+    _cs_ticket_v22_columns = [
+        ("sales_channel", "TEXT DEFAULT ''"),
+        ("order_number", "TEXT DEFAULT ''"),
+        ("cs_type", "TEXT DEFAULT '반품'"),
+        ("reason_category", "TEXT DEFAULT ''"),
+        ("quantity", "INTEGER DEFAULT 1"),
+        ("shipping_cost_status", "TEXT DEFAULT ''"),
+        ("return_courier", "TEXT DEFAULT ''"),
+        ("return_tracking_no", "TEXT DEFAULT ''"),
+    ]
+    for _col, _ctype in _cs_ticket_v22_columns:
+        if not column_exists(conn, 'cs_tickets', _col):
+            try:
+                cur_or_conn.execute(f"ALTER TABLE cs_tickets ADD COLUMN {_col} {_ctype}")
+                logger.info(f"[DB] cs_tickets.{_col} 컬럼 추가")
+            except Exception as e:
+                logger.debug(f"[DB] cs_tickets.{_col} 추가 스킵: {e}")
 
     # ── CS 마이그레이션: drive_file_id 컬럼 추가 ──
     if not column_exists(conn, 'cs_files', 'drive_file_id'):
@@ -921,6 +965,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_created ON cs_tickets(created_at);
         CREATE INDEX IF NOT EXISTS idx_cs_tickets_customer ON cs_tickets(customer_name);
         CREATE INDEX IF NOT EXISTS idx_cs_action_logs_ticket ON cs_action_logs(ticket_id);
+        CREATE INDEX IF NOT EXISTS idx_cs_naver_claims_status ON cs_naver_claims(status);
 
         CREATE INDEX IF NOT EXISTS idx_sr_date ON sales_records(slip_date);
         CREATE INDEX IF NOT EXISTS idx_sr_customer ON sales_records(customer_name);

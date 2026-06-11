@@ -382,41 +382,50 @@ async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
 
 
 # ── [3] 신규 접수 (Step 1: CS 직원) ──
+def _insert_ticket(conn, data: TicketCreate, user: dict, log_detail: str = "") -> str:
+    """접수완료 티켓 INSERT. 성공 시 ticket_id 반환.
+
+    동시 접수로 같은 번호를 읽어 충돌해도 번호를 다시 받아 재시도한다.
+    """
+    now = now_kst()
+    last_err = None
+    for _ in range(5):
+        ticket_id = _generate_ticket_id()
+        try:
+            conn.execute(
+                """INSERT INTO cs_tickets
+                   (ticket_id, customer_name, contact_info, product_name, serial_number,
+                    defect_symptom, courier, tracking_no, current_status, created_by, created_at, updated_at,
+                    sales_channel, order_number, cs_type, reason_category, quantity, shipping_cost_status,
+                    return_courier, return_tracking_no)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (ticket_id, data.customer_name, data.contact_info, data.product_name,
+                 data.serial_number, data.defect_symptom, data.courier, data.tracking_no,
+                 "접수완료", user["emp_cd"], now, now,
+                 data.sales_channel, data.order_number, data.cs_type, data.reason_category,
+                 data.quantity, data.shipping_cost_status, data.return_courier, data.return_tracking_no)
+            )
+            _log_action(conn, ticket_id, "접수완료", user["emp_cd"], user["name"],
+                         log_detail or f"CS 접수: {data.product_name} - {data.defect_symptom[:50]}")
+            conn.commit()
+            return ticket_id
+        except Exception as e:
+            conn.rollback()
+            if _is_duplicate_ticket_error(e):
+                last_err = e
+                continue  # 번호 충돌 → 다음 번호로 재시도
+            raise
+    raise RuntimeError(f"접수번호 충돌이 반복됩니다. ({last_err})")
+
+
 @router.post("/tickets")
 async def create_ticket(data: TicketCreate, user: dict = Depends(get_current_user)):
-    now = now_kst()
-
     conn = get_connection()
     try:
-        # 동시 접수로 같은 번호를 읽어 충돌해도 번호를 다시 받아 재시도한다.
-        last_err = None
-        for _ in range(5):
-            ticket_id = _generate_ticket_id()
-            try:
-                conn.execute(
-                    """INSERT INTO cs_tickets
-                       (ticket_id, customer_name, contact_info, product_name, serial_number,
-                        defect_symptom, courier, tracking_no, current_status, created_by, created_at, updated_at,
-                        sales_channel, order_number, cs_type, reason_category, quantity, shipping_cost_status,
-                        return_courier, return_tracking_no)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (ticket_id, data.customer_name, data.contact_info, data.product_name,
-                     data.serial_number, data.defect_symptom, data.courier, data.tracking_no,
-                     "접수완료", user["emp_cd"], now, now,
-                     data.sales_channel, data.order_number, data.cs_type, data.reason_category,
-                     data.quantity, data.shipping_cost_status, data.return_courier, data.return_tracking_no)
-                )
-                _log_action(conn, ticket_id, "접수완료", user["emp_cd"], user["name"],
-                             data.memo or f"CS 접수: {data.product_name} - {data.defect_symptom[:50]}")
-                conn.commit()
-                return {"success": True, "ticket_id": ticket_id, "message": f"접수 완료 ({ticket_id})"}
-            except Exception as e:
-                conn.rollback()
-                if _is_duplicate_ticket_error(e):
-                    last_err = e
-                    continue  # 번호 충돌 → 다음 번호로 재시도
-                raise HTTPException(500, f"접수 실패: {e}")
-        raise HTTPException(500, f"접수 실패: 접수번호 충돌이 반복됩니다. ({last_err})")
+        ticket_id = _insert_ticket(conn, data, user, data.memo)
+        return {"success": True, "ticket_id": ticket_id, "message": f"접수 완료 ({ticket_id})"}
+    except Exception as e:
+        raise HTTPException(500, f"접수 실패: {e}")
     finally:
         conn.close()
 
@@ -1339,3 +1348,218 @@ async def cs_options(user: dict = Depends(get_current_user)):
         "reason_categories": REASON_CATEGORIES,
         "shipping_cost_statuses": SHIPPING_COST_STATUSES,
     }
+
+
+# ═══════════════════════════════════════
+#  [15] 네이버 스마트스토어 반품/교환 클레임 연동
+#  - 커머스 API에서 클레임 수집 → cs_naver_claims 저장 (알람)
+#  - "접수하기" → 클레임 정보 자동 채움 → 접수완료 티켓 생성
+# ═══════════════════════════════════════
+
+# 네이버 클레임 사유 코드 → 한글 라벨 (미등록 코드는 원문 표시)
+NAVER_REASON_LABELS = {
+    "INTENT_CHANGED": "단순 변심",
+    "COLOR_AND_SIZE": "색상/사이즈 변경",
+    "WRONG_ORDER": "다른 상품 잘못 주문",
+    "PRODUCT_UNSATISFIED": "상품 불만족",
+    "INCORRECT_INFO": "상품 정보 상이",
+    "DELAYED_DELIVERY": "배송 지연",
+    "DROPPED_DELIVERY": "배송 누락",
+    "WRONG_DELIVERY": "오배송",
+    "WRONG_OPTION": "다른 옵션 배송",
+    "BROKEN": "파손",
+    "BROKEN_AND_BAD": "파손 및 불량",
+    "DEFECT": "불량",
+    "SOLD_OUT": "재고 부족(품절)",
+    "ETC": "기타",
+}
+
+# 네이버 사유 코드 → CS 사유 분류 (REASON_CATEGORIES)
+NAVER_REASON_CATEGORY = {
+    "INTENT_CHANGED": "단순 변심",
+    "COLOR_AND_SIZE": "단순 변심",
+    "WRONG_ORDER": "주문 실수",
+    "PRODUCT_UNSATISFIED": "기타",
+    "INCORRECT_INFO": "기타",
+    "DELAYED_DELIVERY": "오배송 및 지연",
+    "DROPPED_DELIVERY": "오배송 및 지연",
+    "WRONG_DELIVERY": "오배송 및 지연",
+    "WRONG_OPTION": "오배송 및 지연",
+    "BROKEN": "파손 및 불량",
+    "BROKEN_AND_BAD": "파손 및 불량",
+    "DEFECT": "파손 및 불량",
+    "SOLD_OUT": "재고 부족",
+}
+
+NAVER_CLAIM_STATUS_LABELS = {
+    "RETURN_REQUEST": "반품요청",
+    "COLLECTING": "수거중",
+    "COLLECT_DONE": "수거완료",
+    "RETURN_DONE": "반품완료",
+    "RETURN_REJECT": "반품거부",
+    "EXCHANGE_REQUEST": "교환요청",
+    "EXCHANGE_REDELIVERING": "교환 재배송중",
+    "EXCHANGE_DONE": "교환완료",
+    "EXCHANGE_REJECT": "교환거부",
+}
+
+
+@router.post("/naver-claims/sync")
+async def sync_naver_claims(days: int = Query(7, ge=1, le=60), user: dict = Depends(get_current_user)):
+    """네이버 커머스 API에서 반품/교환 클레임을 수집하여 저장 (신규건만 INSERT)"""
+    from services.naver_client import naver_client
+    try:
+        claims = await naver_client.fetch_claims(days=days)
+    except Exception as e:
+        raise HTTPException(502, f"네이버 클레임 조회 실패: {e}")
+
+    conn = get_connection()
+    new_count, updated = 0, 0
+    try:
+        now = now_kst()
+        for c in claims:
+            if not c["product_order_id"]:
+                continue
+            row = conn.execute(
+                "SELECT id, status FROM cs_naver_claims WHERE product_order_id = ?",
+                (c["product_order_id"],)
+            ).fetchone()
+            if row:
+                # 클레임 상태/수거정보만 갱신 (접수됨/무시 상태는 유지)
+                conn.execute(
+                    """UPDATE cs_naver_claims SET claim_type = ?, claim_status = ?, reason_code = ?,
+                       detailed_reason = ?, collect_courier = ?, collect_tracking_no = ?, updated_at = ?
+                       WHERE product_order_id = ?""",
+                    (c["claim_type"], c["claim_status"], c["reason_code"], c["detailed_reason"],
+                     c["collect_courier"], c["collect_tracking_no"], now, c["product_order_id"])
+                )
+                updated += 1
+            else:
+                conn.execute(
+                    """INSERT INTO cs_naver_claims
+                       (product_order_id, order_id, claim_type, claim_status, customer_name, contact_info,
+                        product_name, product_option, quantity, reason_code, detailed_reason,
+                        claim_request_date, collect_courier, collect_tracking_no, status, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '신규', ?, ?)""",
+                    (c["product_order_id"], c["order_id"], c["claim_type"], c["claim_status"],
+                     c["customer_name"], c["contact_info"], c["product_name"], c["product_option"],
+                     int(c["quantity"] or 1), c["reason_code"], c["detailed_reason"],
+                     c["claim_request_date"], c["collect_courier"], c["collect_tracking_no"], now, now)
+                )
+                new_count += 1
+        conn.commit()
+        return {"success": True, "fetched": len(claims), "new": new_count, "updated": updated}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, f"클레임 저장 실패: {e}")
+    finally:
+        conn.close()
+
+
+@router.get("/naver-claims")
+async def list_naver_claims(status: str = Query(""), user: dict = Depends(get_current_user)):
+    """저장된 클레임 목록 + 상태별 건수 (배지용 new_count 포함)"""
+    conn = get_connection()
+    try:
+        where, params = "", []
+        if status:
+            where = "WHERE status = ?"
+            params.append(status)
+        rows = conn.execute(
+            f"SELECT * FROM cs_naver_claims {where} ORDER BY claim_request_date DESC, id DESC LIMIT 300",
+            params
+        ).fetchall()
+        count_rows = conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM cs_naver_claims GROUP BY status"
+        ).fetchall()
+        counts = {r["status"]: r["cnt"] for r in count_rows}
+
+        claims = []
+        for r in rows:
+            d = dict(r)
+            d["reason_text"] = NAVER_REASON_LABELS.get(d.get("reason_code", ""), d.get("reason_code", ""))
+            d["claim_status_text"] = NAVER_CLAIM_STATUS_LABELS.get(d.get("claim_status", ""), d.get("claim_status", ""))
+            claims.append(d)
+        return {"claims": claims, "counts": counts, "new_count": counts.get("신규", 0)}
+    finally:
+        conn.close()
+
+
+@router.post("/naver-claims/{product_order_id}/register")
+async def register_naver_claim(product_order_id: str, user: dict = Depends(get_current_user)):
+    """클레임 정보를 자동으로 채워 접수완료 티켓 생성"""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM cs_naver_claims WHERE product_order_id = ?", (product_order_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "클레임을 찾을 수 없습니다. 동기화 후 다시 시도해주세요.")
+        claim = dict(row)
+        if claim["status"] == "접수됨" and claim.get("ticket_id"):
+            raise HTTPException(400, f"이미 접수된 클레임입니다. ({claim['ticket_id']})")
+
+        reason_label = NAVER_REASON_LABELS.get(claim["reason_code"], claim["reason_code"] or "")
+        symptom = " / ".join(p for p in [reason_label, claim["detailed_reason"]] if p)
+        product_full = claim["product_name"] or "-"
+        if claim["product_option"]:
+            product_full += f" / {claim['product_option']}"
+
+        data = TicketCreate(
+            customer_name=claim["customer_name"] or "스마트스토어 고객",
+            contact_info=claim["contact_info"] or "-",
+            product_name=product_full,
+            defect_symptom=symptom or f"{claim['claim_type']} 요청",
+            sales_channel="스마트스토어",
+            order_number=claim["order_id"] or claim["product_order_id"],
+            cs_type=claim["claim_type"] if claim["claim_type"] in CS_TYPES else "반품",
+            reason_category=NAVER_REASON_CATEGORY.get(claim["reason_code"], "기타"),
+            quantity=int(claim["quantity"] or 1),
+            return_courier=claim["collect_courier"] or "",
+            return_tracking_no=claim["collect_tracking_no"] or "",
+        )
+        ticket_id = _insert_ticket(
+            conn, data, user,
+            f"스마트스토어 {claim['claim_type']} 자동 접수 (주문번호 {data.order_number}): {data.defect_symptom[:80]}"
+        )
+        conn.execute(
+            "UPDATE cs_naver_claims SET status = '접수됨', ticket_id = ?, updated_at = ? WHERE product_order_id = ?",
+            (ticket_id, now_kst(), product_order_id)
+        )
+        conn.commit()
+        return {"success": True, "ticket_id": ticket_id, "message": f"접수 완료 ({ticket_id})"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, f"클레임 접수 실패: {e}")
+    finally:
+        conn.close()
+
+
+@router.put("/naver-claims/{product_order_id}/dismiss")
+async def dismiss_naver_claim(product_order_id: str, restore: bool = Query(False), user: dict = Depends(get_current_user)):
+    """클레임 무시 처리 (restore=true면 신규로 복원)"""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT status FROM cs_naver_claims WHERE product_order_id = ?", (product_order_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "클레임을 찾을 수 없습니다.")
+        if row["status"] == "접수됨":
+            raise HTTPException(400, "이미 접수된 클레임은 무시할 수 없습니다.")
+        target = "신규" if restore else "무시"
+        conn.execute(
+            "UPDATE cs_naver_claims SET status = ?, updated_at = ? WHERE product_order_id = ?",
+            (target, now_kst(), product_order_id)
+        )
+        conn.commit()
+        return {"success": True, "status": target}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        conn.close()
