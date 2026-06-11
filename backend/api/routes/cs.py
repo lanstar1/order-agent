@@ -1404,6 +1404,48 @@ NAVER_CLAIM_STATUS_LABELS = {
 }
 
 
+def _upsert_naver_claims(conn, claims: list) -> tuple:
+    """클레임 리스트를 cs_naver_claims에 upsert. (new, updated) 반환.
+
+    기존 행은 클레임 상태/수거정보만 갱신하고 접수됨/무시 상태는 유지한다.
+    """
+    now = now_kst()
+    new_count, updated = 0, 0
+    for c in claims:
+        if not isinstance(c, dict) or not c.get("product_order_id"):
+            continue
+        row = conn.execute(
+            "SELECT id, status FROM cs_naver_claims WHERE product_order_id = ?",
+            (c["product_order_id"],)
+        ).fetchone()
+        if row:
+            conn.execute(
+                """UPDATE cs_naver_claims SET claim_type = ?, claim_status = ?, reason_code = ?,
+                   detailed_reason = ?, collect_courier = ?, collect_tracking_no = ?, updated_at = ?
+                   WHERE product_order_id = ?""",
+                (c.get("claim_type", ""), c.get("claim_status", ""), c.get("reason_code", ""),
+                 c.get("detailed_reason", ""), c.get("collect_courier", ""),
+                 c.get("collect_tracking_no", ""), now, c["product_order_id"])
+            )
+            updated += 1
+        else:
+            conn.execute(
+                """INSERT INTO cs_naver_claims
+                   (product_order_id, order_id, claim_type, claim_status, customer_name, contact_info,
+                    product_name, product_option, quantity, reason_code, detailed_reason,
+                    claim_request_date, collect_courier, collect_tracking_no, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '신규', ?, ?)""",
+                (c["product_order_id"], c.get("order_id", ""), c.get("claim_type", ""),
+                 c.get("claim_status", ""), c.get("customer_name", ""), c.get("contact_info", ""),
+                 c.get("product_name", ""), c.get("product_option", ""),
+                 int(c.get("quantity") or 1), c.get("reason_code", ""), c.get("detailed_reason", ""),
+                 c.get("claim_request_date", ""), c.get("collect_courier", ""),
+                 c.get("collect_tracking_no", ""), now, now)
+            )
+            new_count += 1
+    return new_count, updated
+
+
 @router.post("/naver-claims/sync")
 async def sync_naver_claims(days: int = Query(7, ge=1, le=60), user: dict = Depends(get_current_user)):
     """네이버 커머스 API에서 반품/교환 클레임을 수집하여 저장 (신규건만 INSERT)"""
@@ -1414,41 +1456,42 @@ async def sync_naver_claims(days: int = Query(7, ge=1, le=60), user: dict = Depe
         raise HTTPException(502, f"네이버 클레임 조회 실패: {e}")
 
     conn = get_connection()
-    new_count, updated = 0, 0
     try:
-        now = now_kst()
-        for c in claims:
-            if not c["product_order_id"]:
-                continue
-            row = conn.execute(
-                "SELECT id, status FROM cs_naver_claims WHERE product_order_id = ?",
-                (c["product_order_id"],)
-            ).fetchone()
-            if row:
-                # 클레임 상태/수거정보만 갱신 (접수됨/무시 상태는 유지)
-                conn.execute(
-                    """UPDATE cs_naver_claims SET claim_type = ?, claim_status = ?, reason_code = ?,
-                       detailed_reason = ?, collect_courier = ?, collect_tracking_no = ?, updated_at = ?
-                       WHERE product_order_id = ?""",
-                    (c["claim_type"], c["claim_status"], c["reason_code"], c["detailed_reason"],
-                     c["collect_courier"], c["collect_tracking_no"], now, c["product_order_id"])
-                )
-                updated += 1
-            else:
-                conn.execute(
-                    """INSERT INTO cs_naver_claims
-                       (product_order_id, order_id, claim_type, claim_status, customer_name, contact_info,
-                        product_name, product_option, quantity, reason_code, detailed_reason,
-                        claim_request_date, collect_courier, collect_tracking_no, status, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '신규', ?, ?)""",
-                    (c["product_order_id"], c["order_id"], c["claim_type"], c["claim_status"],
-                     c["customer_name"], c["contact_info"], c["product_name"], c["product_option"],
-                     int(c["quantity"] or 1), c["reason_code"], c["detailed_reason"],
-                     c["claim_request_date"], c["collect_courier"], c["collect_tracking_no"], now, now)
-                )
-                new_count += 1
+        new_count, updated = _upsert_naver_claims(conn, claims)
         conn.commit()
         return {"success": True, "fetched": len(claims), "new": new_count, "updated": updated}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, f"클레임 저장 실패: {e}")
+    finally:
+        conn.close()
+
+
+class ClaimIngest(BaseModel):
+    claims: List[dict]
+
+
+@router.post("/naver-claims/ingest")
+async def ingest_naver_claims(data: ClaimIngest, request: Request):
+    """외부 릴레이(사무실 NAS)가 수집한 클레임 수신.
+
+    Render 출구 IP를 네이버 API 센터에 등록할 수 없는 환경 대비:
+    네이버에 IP가 이미 등록된 NAS가 fetch_claims()로 수집한 결과를
+    이 엔드포인트로 푸시한다 (scripts/push_naver_claims.py).
+    JWT 대신 X-Relay-Key 헤더를 CLAIMS_RELAY_KEY 환경변수와 대조해 인증.
+    """
+    import hmac
+    relay_key = os.getenv("CLAIMS_RELAY_KEY", "")
+    provided = request.headers.get("X-Relay-Key", "")
+    if not relay_key or not hmac.compare_digest(provided, relay_key):
+        raise HTTPException(403, "릴레이 키가 올바르지 않습니다 (설정 → API 키 → 클레임 릴레이 키)")
+
+    conn = get_connection()
+    try:
+        new_count, updated = _upsert_naver_claims(conn, data.claims)
+        conn.commit()
+        logger.info(f"[CS] 클레임 릴레이 수신: {len(data.claims)}건 (신규 {new_count}, 갱신 {updated})")
+        return {"success": True, "received": len(data.claims), "new": new_count, "updated": updated}
     except Exception as e:
         conn.rollback()
         raise HTTPException(500, f"클레임 저장 실패: {e}")

@@ -8,7 +8,7 @@ data/uploads/*
 data/feedback/*
 *.command
 start.bat
-scripts/
+/scripts/
 .DS_Store
 data/sa_outputs/
 

@@ -274,6 +274,8 @@ API_KEY_DEFINITIONS = [
      "description": "데이터랩 쇼핑인사이트 API (네이버 개발자 센터 발급)", "prefix": ""},
     {"key": "api_naver_datalab_secret", "label": "네이버 DataLab Client Secret", "env_var": "NAVER_CLIENT_SECRET",
      "description": "데이터랩 쇼핑인사이트 API 시크릿", "prefix": ""},
+    {"key": "api_claims_relay", "label": "클레임 릴레이 키", "env_var": "CLAIMS_RELAY_KEY",
+     "description": "NAS → 서버 스마트스토어 반품/교환 클레임 푸시 인증 키 (NAS와 동일 값)", "prefix": ""},
 ]
 
 
