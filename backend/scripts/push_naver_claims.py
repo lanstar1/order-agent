@@ -89,6 +89,19 @@ def normalize_claim(item: dict):
     }
 
 
+def _request_throttled(method: str, url: str, *, max_tries: int = 4, **kwargs) -> httpx.Response:
+    """레이트리밋 대응 요청 — 호출 간 0.4초 간격 + 429 시 지수 백오프 재시도"""
+    time.sleep(0.4)
+    for attempt in range(1, max_tries + 1):
+        r = httpx.request(method, url, **kwargs)
+        if r.status_code != 429:
+            return r
+        wait = 1.5 * attempt
+        logger.warning(f"429 레이트리밋 — {wait:.1f}초 대기 후 재시도 ({attempt}/{max_tries})")
+        time.sleep(wait)
+    return r
+
+
 def fetch_claims(token: str, days: int) -> list:
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     now = datetime.now(KST)
@@ -104,7 +117,7 @@ def fetch_claims(token: str, days: int) -> list:
             "lastChangedType": "CLAIM_REQUESTED",
         }
         for _ in range(5):  # 구간당 300건 초과 시 more 페이징
-            r = httpx.get(url, headers=headers, params=params, timeout=30)
+            r = _request_throttled("GET", url, headers=headers, params=params, timeout=30)
             r.raise_for_status()
             data = r.json().get("data", {}) or {}
             items = data.get("lastChangeStatuses", []) or []
@@ -123,7 +136,7 @@ def fetch_claims(token: str, days: int) -> list:
     detail_url = f"{COMMERCE_URL}/external/v1/pay-order/seller/product-orders/query"
     for i in range(0, len(product_order_ids), 50):
         batch = product_order_ids[i:i + 50]
-        r = httpx.post(detail_url, headers=headers, json={"productOrderIds": batch}, timeout=30)
+        r = _request_throttled("POST", detail_url, headers=headers, json={"productOrderIds": batch}, timeout=30)
         if r.status_code != 200:
             logger.warning(f"클레임 상세 조회 실패 ({r.status_code}): {r.text[:200]}")
             continue

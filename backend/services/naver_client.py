@@ -281,6 +281,21 @@ class NaverCommerceClient:
             time_chunks.append((chunk_start, chunk_end))
             chunk_start = chunk_end + timedelta(seconds=1)
 
+        import asyncio
+
+        async def request_throttled(method, req_url, **kwargs):
+            """레이트리밋 대응 — 호출 간 0.4초 간격 + 429 시 지수 백오프 재시도"""
+            await asyncio.sleep(0.4)
+            for attempt in range(1, 5):
+                async with httpx.AsyncClient(timeout=30) as client:
+                    r = await client.request(method, req_url, headers=headers, **kwargs)
+                if r.status_code != 429:
+                    return r
+                wait = 1.5 * attempt
+                logger.warning(f"[Naver] 429 레이트리밋 — {wait:.1f}초 대기 후 재시도 ({attempt}/4)")
+                await asyncio.sleep(wait)
+            return r
+
         try:
             product_order_ids = []
             for c_from, c_to in time_chunks:
@@ -291,10 +306,9 @@ class NaverCommerceClient:
                 }
                 # 구간당 300건 초과 시 more 페이징
                 for _ in range(5):
-                    async with httpx.AsyncClient(timeout=30) as client:
-                        r = await client.get(url, headers=headers, params=params)
-                        r.raise_for_status()
-                        data = r.json().get("data", {}) or {}
+                    r = await request_throttled("GET", url, params=params)
+                    r.raise_for_status()
+                    data = r.json().get("data", {}) or {}
                     items = data.get("lastChangeStatuses", []) or []
                     product_order_ids.extend(i["productOrderId"] for i in items if i.get("productOrderId"))
                     more = data.get("more") or {}
@@ -311,8 +325,7 @@ class NaverCommerceClient:
             detail_url = f"{NAVER_COMMERCE_URL}/external/v1/pay-order/seller/product-orders/query"
             for i in range(0, len(product_order_ids), 50):
                 batch = product_order_ids[i:i+50]
-                async with httpx.AsyncClient(timeout=30) as client:
-                    r2 = await client.post(detail_url, headers=headers, json={"productOrderIds": batch})
+                r2 = await request_throttled("POST", detail_url, json={"productOrderIds": batch})
                 if r2.status_code != 200:
                     logger.warning(f"[Naver] 클레임 상세 조회 실패 ({r2.status_code}): {r2.text[:200]}")
                     continue
