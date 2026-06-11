@@ -5041,7 +5041,7 @@ async function csShowDetail(ticketId) {
     if (st === "물류수령") html += `<button onclick="csAction('${t.ticket_id}','handover')" class="btn" style="font-size:13px">🔬 기술 인계</button>`;
     if (st === "기술인계") html += `<button onclick="csShowTestForm('${t.ticket_id}')" class="btn" style="font-size:13px">📝 테스트 결과</button>`;
     if (st === "테스트완료") html += `<button onclick="csResolveWithPrompt('${t.ticket_id}')" class="btn" style="font-size:13px;background:#2563eb;color:#fff;border-color:#2563eb">🏁 처리종결</button>`;
-    if (st === "물류수령") html += `<button onclick="csQuickResolve('${t.ticket_id}')" class="btn" style="font-size:13px;background:#059669;color:#fff;border-color:#059669">⚡ 빠른 종결</button>`;
+    if (st !== "처리종결") html += `<button onclick="csQuickResolve('${t.ticket_id}')" class="btn" style="font-size:13px;background:#059669;color:#fff;border-color:#059669">⚡ 빠른 종결</button>`;
     html += `<button onclick="csDeleteTicket('${t.ticket_id}')" class="btn" style="font-size:13px;color:#ef4444;margin-left:auto">🗑 삭제</button>`;
     html += `</div></div>`;
 
