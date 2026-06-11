@@ -1509,6 +1509,15 @@ class ClaimIngest(BaseModel):
     claims: List[dict]
 
 
+def _check_relay_key(request: Request):
+    """릴레이 엔드포인트 인증 — X-Relay-Key를 CLAIMS_RELAY_KEY와 상수시간 비교"""
+    import hmac
+    relay_key = os.getenv("CLAIMS_RELAY_KEY", "")
+    provided = request.headers.get("X-Relay-Key", "")
+    if not relay_key or not hmac.compare_digest(provided, relay_key):
+        raise HTTPException(403, "릴레이 키가 올바르지 않습니다 (설정 → API 키 → 클레임 릴레이 키)")
+
+
 @router.post("/naver-claims/ingest")
 async def ingest_naver_claims(data: ClaimIngest, request: Request):
     """외부 릴레이(사무실 NAS)가 수집한 클레임 수신.
@@ -1518,21 +1527,54 @@ async def ingest_naver_claims(data: ClaimIngest, request: Request):
     이 엔드포인트로 푸시한다 (scripts/push_naver_claims.py).
     JWT 대신 X-Relay-Key 헤더를 CLAIMS_RELAY_KEY 환경변수와 대조해 인증.
     """
-    import hmac
-    relay_key = os.getenv("CLAIMS_RELAY_KEY", "")
-    provided = request.headers.get("X-Relay-Key", "")
-    if not relay_key or not hmac.compare_digest(provided, relay_key):
-        raise HTTPException(403, "릴레이 키가 올바르지 않습니다 (설정 → API 키 → 클레임 릴레이 키)")
+    _check_relay_key(request)
 
+    from api.routes.settings import ensure_settings_table, _upsert_setting
+    ensure_settings_table()
     conn = get_connection()
     try:
         new_count, updated = _upsert_naver_claims(conn, data.claims)
+        _upsert_setting(conn, "naver_claims_last_ingest", now_kst())
         conn.commit()
         logger.info(f"[CS] 클레임 릴레이 수신: {len(data.claims)}건 (신규 {new_count}, 갱신 {updated})")
         return {"success": True, "received": len(data.claims), "new": new_count, "updated": updated}
     except Exception as e:
         conn.rollback()
         raise HTTPException(500, f"클레임 저장 실패: {e}")
+    finally:
+        conn.close()
+
+
+@router.post("/naver-claims/request-sync")
+async def request_naver_sync(user: dict = Depends(get_current_user)):
+    """즉시 동기화 요청 — NAS 릴레이가 1분 주기 폴링으로 감지해 곧바로 수집한다."""
+    from api.routes.settings import ensure_settings_table, _upsert_setting
+    ensure_settings_table()
+    conn = get_connection()
+    try:
+        _upsert_setting(conn, "naver_claims_sync_requested", "1")
+        conn.commit()
+        return {"success": True, "message": "동기화 요청됨 — 1~2분 내 반영됩니다"}
+    finally:
+        conn.close()
+
+
+@router.get("/naver-claims/relay-poll")
+async def relay_poll(request: Request):
+    """NAS 릴레이의 1분 주기 폴링 — 즉시 동기화 요청 여부를 반환하고 플래그를 소비한다."""
+    _check_relay_key(request)
+    from api.routes.settings import ensure_settings_table, _upsert_setting
+    ensure_settings_table()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'naver_claims_sync_requested'"
+        ).fetchone()
+        requested = bool(row and row["value"] == "1")
+        if requested:
+            _upsert_setting(conn, "naver_claims_sync_requested", "0")
+            conn.commit()
+        return {"sync_requested": requested}
     finally:
         conn.close()
 
@@ -1561,7 +1603,16 @@ async def list_naver_claims(status: str = Query(""), user: dict = Depends(get_cu
             d["reason_text"] = NAVER_REASON_LABELS.get(d.get("reason_code", ""), d.get("reason_code", ""))
             d["claim_status_text"] = NAVER_CLAIM_STATUS_LABELS.get(d.get("claim_status", ""), d.get("claim_status", ""))
             claims.append(d)
-        return {"claims": claims, "counts": counts, "new_count": counts.get("신규", 0)}
+
+        last_sync = ""
+        try:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'naver_claims_last_ingest'"
+            ).fetchone()
+            last_sync = row["value"] if row else ""
+        except Exception:
+            pass  # app_settings 미생성 등 — 표시용 값이라 무시
+        return {"claims": claims, "counts": counts, "new_count": counts.get("신규", 0), "last_sync": last_sync}
     finally:
         conn.close()
 

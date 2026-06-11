@@ -16,6 +16,11 @@ NAS 사용 예 (data 볼륨에 두면 컨테이너 안에서 /app/data/로 보�
     CLAIMS_RELAY_KEY    : Render 설정 페이지의 '클레임 릴레이 키'와 동일 값 (필수)
     CLAIMS_RELAY_TARGET : 푸시 대상 URL (기본 https://order-agent-ffr7.onrender.com)
     CLAIMS_RELAY_DAYS   : 수집 기간 일수 (기본 7)
+    CLAIMS_RELAY_MODE   : full(기본) — 무조건 수집·푸시
+                          poll — 1분 크론용. Render에 즉시 동기화 요청이 있거나
+                                 마지막 전체 실행 후 INTERVAL_MIN 경과 시에만 전체 실행
+    CLAIMS_RELAY_INTERVAL_MIN : poll 모드 자동 전체 실행 주기 (기본 30분)
+    CLAIMS_RELAY_STATE  : poll 모드 상태 파일 경로 (기본 /app/data/_claims_relay_state)
     NAVER_COMMERCE_CLIENT_ID/SECRET 또는 NAVER_CLIENT_ID/SECRET : 커머스 API 키
 """
 import os
@@ -37,6 +42,9 @@ COMMERCE_URL = os.getenv("NAVER_COMMERCE_URL", "https://api.commerce.naver.com")
 TARGET = os.getenv("CLAIMS_RELAY_TARGET", "https://order-agent-ffr7.onrender.com").rstrip("/")
 RELAY_KEY = os.getenv("CLAIMS_RELAY_KEY", "")
 DAYS = int(os.getenv("CLAIMS_RELAY_DAYS", "7"))
+MODE = os.getenv("CLAIMS_RELAY_MODE", "full")
+INTERVAL_MIN = int(os.getenv("CLAIMS_RELAY_INTERVAL_MIN", "30"))
+STATE_FILE = os.getenv("CLAIMS_RELAY_STATE", "/app/data/_claims_relay_state")
 KST = timezone(timedelta(hours=9))
 
 
@@ -147,6 +155,28 @@ def fetch_claims(token: str, days: int) -> list:
     return claims
 
 
+def _should_full_run() -> str:
+    """poll 모드 — 전체 실행 사유 반환 (빈 문자열이면 스킵)"""
+    try:
+        r = httpx.get(
+            f"{TARGET}/api/cs/naver-claims/relay-poll",
+            headers={"X-Relay-Key": RELAY_KEY},
+            timeout=30,
+        )
+        if r.status_code == 200 and r.json().get("sync_requested"):
+            return "사용자 즉시 동기화 요청"
+    except Exception as e:
+        logger.warning(f"relay-poll 실패 (무시하고 주기 판정): {e}")
+
+    try:
+        last = float(open(STATE_FILE).read().strip())
+    except Exception:
+        last = 0
+    if time.time() - last >= INTERVAL_MIN * 60:
+        return f"주기 도래 ({INTERVAL_MIN}분)"
+    return ""
+
+
 def main() -> int:
     if not RELAY_KEY:
         logger.error("CLAIMS_RELAY_KEY 미설정 — 푸시 인증 키가 필요합니다.")
@@ -154,6 +184,12 @@ def main() -> int:
     if not CLIENT_ID or not CLIENT_SECRET:
         logger.error("네이버 커머스 API 키 미설정 (NAVER_CLIENT_ID/SECRET)")
         return 1
+
+    if MODE == "poll":
+        reason = _should_full_run()
+        if not reason:
+            return 0  # 조용히 종료 (1분 크론 로그 비대 방지)
+        logger.info(f"전체 동기화 실행 — {reason}")
 
     token = get_token()
     claims = fetch_claims(token, DAYS)
@@ -171,6 +207,10 @@ def main() -> int:
 
     body = r.json()
     logger.info(f"푸시 완료: 수신 {body.get('received')}건, 신규 {body.get('new')}건, 갱신 {body.get('updated')}건")
+    try:
+        open(STATE_FILE, "w").write(str(time.time()))
+    except Exception as e:
+        logger.warning(f"상태 파일 기록 실패: {e}")
     return 0
 
 

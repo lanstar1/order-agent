@@ -3967,8 +3967,8 @@ async function csInit() {
   } catch(e) { console.error("CS options load error:", e); }
 
   // 스마트스토어 클레임 배지 (비동기 — 화면 로딩 비차단)
+  // 수집은 NAS 릴레이가 30분 주기로 푸시하므로 여기서는 배지만 갱신한다.
   csNaverRefreshBadge();
-  csNaverBackgroundSync();
 
   await csLoadDashboard();
   csRenderView();
@@ -5147,7 +5147,6 @@ async function csQuickResolve(ticketId) {
 }
 
 // ── 네이버 스마트스토어 반품/교환 클레임 알람 ──
-let _csNaverSyncedAt = 0;
 let _csNaverFilter = "신규";
 
 async function csNaverRefreshBadge() {
@@ -5163,14 +5162,25 @@ async function csNaverRefreshBadge() {
   } catch(e) { return 0; }
 }
 
-async function csNaverBackgroundSync() {
-  // 페이지 재진입 시 10분 이내 재동기화 방지
-  if (Date.now() - _csNaverSyncedAt < 10 * 60 * 1000) return;
-  _csNaverSyncedAt = Date.now();
+async function csNaverRequestSync() {
+  // Render는 네이버 직접 호출 불가(IP 미등록) — NAS 릴레이에 즉시 실행을 요청한다.
+  // NAS가 1분 주기로 요청 플래그를 폴링하므로 보통 1~2분 내 반영된다.
+  const btn = document.getElementById("cs-naver-sync-btn");
   try {
-    await api.post("/api/cs/naver-claims/sync?days=7", {});
-    await csNaverRefreshBadge();
-  } catch(e) { console.warn("스마트스토어 클레임 동기화 실패:", e.message||e); }
+    await api.post("/api/cs/naver-claims/request-sync", {});
+    if (btn) { btn.disabled = true; btn.textContent = "⏱ 요청됨 — 1~2분 내 반영"; }
+    // 90초 후 자동 새로고침 (모달이 열려 있으면 목록도 갱신)
+    setTimeout(async () => {
+      await csNaverRefreshBadge();
+      const overlay = document.getElementById("cs-modal-overlay");
+      const stillOpen = overlay && overlay.style.display !== "none" && document.getElementById("cs-naver-sync-btn");
+      if (stillOpen) await csNaverRenderClaims();
+      csLoadDashboard();
+    }, 90 * 1000);
+  } catch(e) {
+    alert("동기화 요청 실패: " + (e.message||e));
+    if (btn) { btn.disabled = false; btn.textContent = "⚡ 지금 동기화"; }
+  }
 }
 
 async function csShowNaverClaims() {
@@ -5179,20 +5189,6 @@ async function csShowNaverClaims() {
   document.getElementById("cs-modal-content").innerHTML =
     `<div style="padding:40px;text-align:center;color:#6b7280">클레임 목록 로딩 중...</div>`;
   await csNaverRenderClaims();
-}
-
-async function csNaverSyncNow() {
-  const btn = document.getElementById("cs-naver-sync-btn");
-  if (btn) { btn.disabled = true; btn.textContent = "동기화 중..."; }
-  try {
-    await api.post("/api/cs/naver-claims/sync?days=14", {});
-    _csNaverSyncedAt = Date.now();
-    csNaverRefreshBadge();
-    await csNaverRenderClaims();
-  } catch(e) {
-    alert("동기화 실패: " + (e.message||e));
-    if (btn) { btn.disabled = false; btn.textContent = "🔄 동기화"; }
-  }
 }
 
 function csNaverSetFilter(f) {
@@ -5264,17 +5260,21 @@ async function csNaverRenderClaims() {
     </div>`;
   }).join("");
 
+  const lastSync = (data.last_sync || "").slice(0, 16);
+  const syncInfo = `🕒 30분마다 자동 동기화${lastSync ? ` · 마지막 ${lastSync}` : ""}`;
+
   box.innerHTML = `
-    <div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
+    <div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-weight:700">🔔 스마트스토어 반품/교환 요청</span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button id="cs-naver-sync-btn" onclick="csNaverSyncNow()" class="btn" style="font-size:12px">🔄 동기화</button>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:11px;color:#6b7280;white-space:nowrap">${syncInfo}</span>
+        <button id="cs-naver-sync-btn" onclick="csNaverRequestSync()" class="btn" style="font-size:12px">⚡ 지금 동기화</button>
         <button onclick="csCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280">&times;</button>
       </div>
     </div>
     <div class="cs-modal-body">
       <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">${tabHtml}</div>
-      ${rows || `<div style="text-align:center;padding:30px;color:#9ca3af">표시할 클레임이 없습니다.<br><span style="font-size:12px">🔄 동기화를 누르면 네이버에서 최근 14일 클레임을 다시 가져옵니다.</span></div>`}
+      ${rows || `<div style="text-align:center;padding:30px;color:#9ca3af">표시할 클레임이 없습니다.<br><span style="font-size:12px">⚡ 지금 동기화를 누르면 NAS 릴레이가 1~2분 내 네이버에서 가져옵니다.</span></div>`}
     </div>`;
 }
 
