@@ -1446,7 +1446,27 @@ def _register_claim_row(conn, claim: dict, actor: dict) -> str:
     """클레임(API dict 또는 DB row dict) → 접수완료 티켓 생성 + 클레임 '접수됨' 갱신. ticket_id 반환.
 
     수동 접수 엔드포인트와 ingest 자동 접수가 공유하는 코어.
+
+    중복 방지(주문번호 기준): 같은 order_number의 티켓이 이미 있으면 새로 만들지 않고
+    클레임을 기존 티켓에 연결만 한다. 한 주문에 상품이 여러 개여도 티켓은 1개로 합쳐진다.
     """
+    order_number = claim.get("order_id") or claim.get("product_order_id") or ""
+
+    # 같은 주문번호의 기존 티켓이 있으면 중복 생성 금지 → 기존 티켓에 연결
+    if order_number:
+        dup = conn.execute(
+            "SELECT ticket_id FROM cs_tickets WHERE order_number = ? ORDER BY created_at LIMIT 1",
+            (order_number,)
+        ).fetchone()
+        if dup:
+            existing_tid = dup["ticket_id"]
+            conn.execute(
+                "UPDATE cs_naver_claims SET status = '접수됨', ticket_id = ?, updated_at = ? WHERE product_order_id = ?",
+                (existing_tid, now_kst(), claim.get("product_order_id"))
+            )
+            conn.commit()
+            return existing_tid
+
     reason_label = NAVER_REASON_LABELS.get(claim.get("reason_code"), claim.get("reason_code") or "")
     symptom = " / ".join(p for p in [reason_label, claim.get("detailed_reason")] if p)
     product_full = claim.get("product_name") or "-"
