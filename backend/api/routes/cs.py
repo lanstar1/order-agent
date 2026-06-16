@@ -430,6 +430,93 @@ async def create_ticket(data: TicketCreate, user: dict = Depends(get_current_use
         conn.close()
 
 
+# ── 중복 티켓 정리 (주문번호 기준) ──
+def _compute_ticket_dedupe_plan(conn) -> list:
+    """스마트스토어 클레임 티켓 중 같은 order_number로 중복 생성된 그룹의 정리 계획.
+
+    각 그룹에서 가장 진행된(동률이면 가장 먼저 생성된) 티켓 1개를 keep,
+    나머지 중 '접수완료'(작업 흔적 없는) 건만 delete 후보로, 이미 진행된 중복은
+    needs_review로 분류해 자동 삭제하지 않는다.
+    """
+    rows = conn.execute(
+        """SELECT ticket_id, order_number, current_status, customer_name, product_name, created_at
+           FROM cs_tickets
+           WHERE sales_channel = '스마트스토어' AND order_number IS NOT NULL AND order_number != ''
+           ORDER BY order_number, created_at"""
+    ).fetchall()
+    groups = {}
+    for r in rows:
+        groups.setdefault(r["order_number"], []).append(dict(r))
+
+    def prog(t):
+        try:
+            return CS_STATUSES.index(t["current_status"])
+        except ValueError:
+            return -1
+
+    plan = []
+    for order_number, tickets in groups.items():
+        if len(tickets) < 2:
+            continue
+        keeper = sorted(tickets, key=lambda t: (-prog(t), t["created_at"] or ""))[0]
+        to_delete, needs_review = [], []
+        for t in tickets:
+            if t["ticket_id"] == keeper["ticket_id"]:
+                continue
+            (to_delete if t["current_status"] == "접수완료" else needs_review).append(t)
+        plan.append({"order_number": order_number, "keep": keeper,
+                     "delete": to_delete, "needs_review": needs_review})
+    return plan
+
+
+@router.get("/ticket-duplicates")
+async def list_duplicate_tickets(user: dict = Depends(get_current_user)):
+    """같은 주문번호로 중복 생성된 스마트스토어 티켓 미리보기 (삭제 안 함)."""
+    conn = get_connection()
+    try:
+        plan = _compute_ticket_dedupe_plan(conn)
+        return {
+            "groups": plan,
+            "group_count": len(plan),
+            "delete_count": sum(len(g["delete"]) for g in plan),
+            "review_count": sum(len(g["needs_review"]) for g in plan),
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/ticket-duplicates/cleanup")
+async def cleanup_duplicate_tickets(user: dict = Depends(get_current_user)):
+    """미리보기 계획의 delete 후보('접수완료' 중복)를 삭제하고 클레임을 keeper로 재연결."""
+    conn = get_connection()
+    try:
+        plan = _compute_ticket_dedupe_plan(conn)
+        deleted, relinked = 0, 0
+        for g in plan:
+            keeper_tid = g["keep"]["ticket_id"]
+            for t in g["delete"]:
+                tid = t["ticket_id"]
+                cur = conn.execute(
+                    "UPDATE cs_naver_claims SET ticket_id = ?, updated_at = ? WHERE ticket_id = ?",
+                    (keeper_tid, now_kst(), tid)
+                )
+                relinked += (cur.rowcount or 0) if cur.rowcount and cur.rowcount > 0 else 0
+                conn.execute("DELETE FROM cs_action_logs WHERE ticket_id = ?", (tid,))
+                conn.execute("DELETE FROM cs_files WHERE ticket_id = ?", (tid,))
+                conn.execute("DELETE FROM cs_test_results WHERE ticket_id = ?", (tid,))
+                conn.execute("DELETE FROM cs_tickets WHERE ticket_id = ?", (tid,))
+                deleted += 1
+        conn.commit()
+        logger.info(f"[CS] 중복 티켓 정리: {deleted}건 삭제, 클레임 {relinked}건 재연결 by {user['emp_cd']}")
+        return {"success": True, "deleted": deleted, "relinked_claims": relinked,
+                "groups": len(plan)}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, f"중복 정리 실패: {e}")
+    finally:
+        conn.close()
+
+
 # ── [4] 물류 수령 (Step 2-1) ──
 @router.put("/tickets/{ticket_id}/receive")
 async def receive_package(ticket_id: str, data: StatusUpdate, user: dict = Depends(get_current_user)):

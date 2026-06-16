@@ -5146,6 +5146,59 @@ async function csQuickResolve(ticketId) {
   } catch(e) { alert("오류: " + (e.message||e)); }
 }
 
+// ── 중복 티켓 정리 (주문번호 기준) ──
+async function csShowDedupe() {
+  const modal = document.getElementById("cs-modal-content");
+  modal.innerHTML = '<div style="padding:40px;text-align:center;color:#9ca3af">중복 검사 중...</div>';
+  document.getElementById("cs-modal-overlay").style.display = "block";
+  try {
+    const d = await api.get("/api/cs/ticket-duplicates");
+    const groups = d.groups || [];
+    let body;
+    if (!groups.length) {
+      body = '<div style="padding:30px;text-align:center;color:#6b7280">중복 티켓이 없습니다 ✅</div>';
+    } else {
+      body = groups.map(g => {
+        const dels = g.delete || [], rev = g.needs_review || [];
+        return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+          <div style="font-size:12px;color:#6b7280;margin-bottom:4px">주문번호 <b>${_esc(g.order_number)}</b></div>
+          <div style="font-size:13px;color:#059669">✅ 유지: ${_esc(g.keep.ticket_id)} · ${_esc(g.keep.customer_name)} · ${_esc(g.keep.current_status)}</div>
+          ${dels.map(t=>`<div style="font-size:13px;color:#dc2626">🗑️ 삭제: ${_esc(t.ticket_id)} · ${_esc(t.customer_name)} · ${_esc(t.current_status)}</div>`).join("")}
+          ${rev.map(t=>`<div style="font-size:12px;color:#b45309">⚠️ 수동확인(진행됨, 자동삭제 안 함): ${_esc(t.ticket_id)} · ${_esc(t.current_status)}</div>`).join("")}
+        </div>`;
+      }).join("");
+    }
+    modal.innerHTML = `
+      <div class="cs-modal-header" style="display:flex;justify-content:space-between;align-items:center">
+        <h3 style="margin:0;font-size:18px">🧹 중복 티켓 정리</h3>
+        <button onclick="csCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280">&times;</button>
+      </div>
+      <div class="cs-modal-body">
+        <div style="font-size:13px;color:#6b7280;margin-bottom:10px">같은 <b>주문번호</b>로 중복 생성된 스마트스토어 티켓입니다. 그룹당 가장 진행된(동률이면 가장 오래된) 1개만 남기고 '접수완료' 중복만 삭제합니다. 이미 진행된 중복은 자동 삭제하지 않습니다.</div>
+        <div style="margin-bottom:12px;font-weight:600">중복 그룹 ${d.group_count} · 삭제 대상 ${d.delete_count}건${d.review_count?` · 수동확인 ${d.review_count}건`:''}</div>
+        ${body}
+        <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button onclick="csCloseModal()" style="padding:8px 20px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:14px">닫기</button>
+          ${d.delete_count? `<button onclick="csRunDedupe()" class="btn btn-primary" style="padding:8px 24px;font-size:14px">${d.delete_count}건 정리 실행</button>`:''}
+        </div>
+      </div>`;
+  } catch(e) {
+    modal.innerHTML = `<div style="padding:30px;text-align:center;color:#dc2626">불러오기 실패: ${_esc(e.message||String(e))}</div>`;
+  }
+}
+
+async function csRunDedupe() {
+  if (!confirm("중복 '접수완료' 티켓을 삭제하고 해당 클레임을 유지 티켓으로 연결합니다.\n진행할까요?")) return;
+  try {
+    const res = await api.post("/api/cs/ticket-duplicates/cleanup", {});
+    alert(`정리 완료: ${res.deleted}건 삭제, 클레임 ${res.relinked_claims}건 재연결`);
+    csCloseModal();
+    csInit();
+  } catch(e) {
+    alert("정리 실패: " + (e.message||e));
+  }
+}
+
 // ── 네이버 스마트스토어 반품/교환 클레임 알람 ──
 let _csNaverFilter = "신규";
 
