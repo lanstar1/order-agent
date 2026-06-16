@@ -1528,6 +1528,9 @@ NAVER_CLAIM_STATUS_LABELS = {
     "ADMIN_CANCEL_REJECT": "직권 취소 철회",
 }
 
+# 수거가 완료(또는 그 이후)된 것으로 보는 클레임 상태 — 접수완료 티켓을 물류수령으로 자동 전환
+COLLECTED_CLAIM_STATUSES = {"COLLECT_DONE", "EXCHANGE_REDELIVERING", "RETURN_DONE", "EXCHANGE_DONE"}
+
 
 def _register_claim_row(conn, claim: dict, actor: dict) -> str:
     """클레임(API dict 또는 DB row dict) → 접수완료 티켓 생성 + 클레임 '접수됨' 갱신. ticket_id 반환.
@@ -1584,6 +1587,25 @@ def _register_claim_row(conn, claim: dict, actor: dict) -> str:
     )
     conn.commit()
     return ticket_id
+
+
+def _auto_advance_to_received(conn, ticket_id: str, actor: dict) -> bool:
+    """티켓이 '접수완료'이면 '물류수령'으로 자동 전환 (수거완료 클레임용). 그 외 상태는 무시."""
+    if not ticket_id:
+        return False
+    t = conn.execute(
+        "SELECT current_status FROM cs_tickets WHERE ticket_id = ?", (ticket_id,)
+    ).fetchone()
+    if not t or t["current_status"] != "접수완료":
+        return False
+    now = now_kst()
+    conn.execute(
+        "UPDATE cs_tickets SET current_status = '물류수령', received_by = ?, received_at = ?, updated_at = ? WHERE ticket_id = ?",
+        (actor["emp_cd"], now, now, ticket_id)
+    )
+    _log_action(conn, ticket_id, "물류수령", actor["emp_cd"], actor["name"], "수거완료 자동 물류수령")
+    conn.commit()
+    return True
 
 
 def _upsert_naver_claims(conn, claims: list, auto_register_actor: dict = None) -> tuple:
@@ -1643,6 +1665,19 @@ def _upsert_naver_claims(conn, claims: list, auto_register_actor: dict = None) -
             except Exception as e:
                 conn.rollback()
                 logger.warning(f"[CS] 클레임 자동 접수 실패 ({c.get('product_order_id')}): {e} — '신규'로 유지")
+
+        # 수거완료(또는 그 이후) 클레임이면 연결된 '접수완료' 티켓을 '물류수령'으로 자동 전환
+        if auto_register_actor and c.get("claim_status") in COLLECTED_CLAIM_STATUSES:
+            try:
+                trow = conn.execute(
+                    "SELECT ticket_id, status FROM cs_naver_claims WHERE product_order_id = ?",
+                    (c["product_order_id"],)
+                ).fetchone()
+                if trow and trow["status"] == "접수됨" and trow["ticket_id"]:
+                    _auto_advance_to_received(conn, trow["ticket_id"], auto_register_actor)
+            except Exception as e:
+                conn.rollback()
+                logger.warning(f"[CS] 수거완료 자동 물류수령 실패 ({c.get('product_order_id')}): {e}")
     return new_count, updated
 
 
