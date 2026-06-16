@@ -1510,9 +1510,14 @@ class ClaimIngest(BaseModel):
 
 
 def _check_relay_key(request: Request):
-    """릴레이 엔드포인트 인증 — X-Relay-Key를 CLAIMS_RELAY_KEY와 상수시간 비교"""
+    """릴레이 엔드포인트 인증 — X-Relay-Key를 CLAIMS_RELAY_KEY와 상수시간 비교.
+
+    Render 무료 플랜은 재시작/재배포 시 런타임 os.environ(설정 UI가 주입한 값)가
+    초기화되므로, env가 비어 있으면 DB(app_settings.api_claims_relay)에 영속 저장된
+    값을 폴백으로 사용한다 (Postgres라 재시작에도 살아남음)."""
     import hmac
-    relay_key = os.getenv("CLAIMS_RELAY_KEY", "")
+    from api.routes.settings import get_llm_setting
+    relay_key = os.getenv("CLAIMS_RELAY_KEY", "") or get_llm_setting("api_claims_relay", "")
     provided = request.headers.get("X-Relay-Key", "")
     if not relay_key or not hmac.compare_digest(provided, relay_key):
         raise HTTPException(403, "릴레이 키가 올바르지 않습니다 (설정 → API 키 → 클레임 릴레이 키)")
