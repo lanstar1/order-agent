@@ -94,6 +94,8 @@ def normalize_claim(item: dict):
         "claim_request_date": detail.get("claimRequestDate") or "",
         "collect_courier": detail.get("collectDeliveryCompany") or "",
         "collect_tracking_no": detail.get("collectTrackingNumber") or "",
+        # 반품 배송비 처리(이미 한글). 청구 없으면 빈 값.
+        "shipping_cost_status": detail.get("claimDeliveryFeePayMethod") or "",
     }
 
 

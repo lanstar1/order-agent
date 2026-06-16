@@ -365,6 +365,8 @@ class NaverCommerceClient:
             "claim_request_date": detail.get("claimRequestDate") or "",
             "collect_courier": detail.get("collectDeliveryCompany") or "",
             "collect_tracking_no": detail.get("collectTrackingNumber") or "",
+            # 반품 배송비 처리(이미 한글: '환불금에서 차감'/'판매자에게 직접 송금' 등). 청구 없으면 빈 값.
+            "shipping_cost_status": detail.get("claimDeliveryFeePayMethod") or "",
         }
 
 

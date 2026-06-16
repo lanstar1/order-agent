@@ -1574,6 +1574,7 @@ def _register_claim_row(conn, claim: dict, actor: dict) -> str:
         cs_type=claim_type if claim_type in CS_TYPES else "반품",
         reason_category=NAVER_REASON_CATEGORY.get(claim.get("reason_code"), "기타"),
         quantity=int(claim.get("quantity") or 1),
+        shipping_cost_status=claim.get("shipping_cost_status") or "",
         return_courier=claim.get("collect_courier") or "",
         return_tracking_no=claim.get("collect_tracking_no") or "",
     )
@@ -1587,6 +1588,37 @@ def _register_claim_row(conn, claim: dict, actor: dict) -> str:
     )
     conn.commit()
     return ticket_id
+
+
+def _sync_ticket_from_claim(conn, ticket_id: str, claim: dict) -> None:
+    """클레임의 수거 송장/택배사/반품배송비 처리를 연결된 티켓에 보강(빈 값만 채움).
+
+    수거 송장번호는 접수 후 나중에 부여되므로, 재수집 때 비어 있던 필드를 채운다.
+    사용자가 직접 입력한 값은 덮지 않는다(빈 값일 때만 채움).
+    """
+    if not ticket_id:
+        return
+    t = conn.execute(
+        "SELECT return_tracking_no, return_courier, shipping_cost_status FROM cs_tickets WHERE ticket_id = ?",
+        (ticket_id,)
+    ).fetchone()
+    if not t:
+        return
+    sets, params = [], []
+    tn = claim.get("collect_tracking_no") or ""
+    if tn and not (t["return_tracking_no"] or ""):
+        sets.append("return_tracking_no = ?"); params.append(tn)
+    cc = claim.get("collect_courier") or ""
+    if cc and not (t["return_courier"] or ""):
+        sets.append("return_courier = ?"); params.append(cc)
+    sc = claim.get("shipping_cost_status") or ""
+    if sc and not (t["shipping_cost_status"] or ""):
+        sets.append("shipping_cost_status = ?"); params.append(sc)
+    if sets:
+        sets.append("updated_at = ?"); params.append(now_kst())
+        params.append(ticket_id)
+        conn.execute(f"UPDATE cs_tickets SET {', '.join(sets)} WHERE ticket_id = ?", params)
+        conn.commit()
 
 
 def _auto_advance_to_received(conn, ticket_id: str, actor: dict) -> bool:
@@ -1666,18 +1698,21 @@ def _upsert_naver_claims(conn, claims: list, auto_register_actor: dict = None) -
                 conn.rollback()
                 logger.warning(f"[CS] 클레임 자동 접수 실패 ({c.get('product_order_id')}): {e} — '신규'로 유지")
 
-        # 수거완료(또는 그 이후) 클레임이면 연결된 '접수완료' 티켓을 '물류수령'으로 자동 전환
-        if auto_register_actor and c.get("claim_status") in COLLECTED_CLAIM_STATUSES:
+        # 연결된 티켓 보강(수거송장/택배사/배송비처리) + 수거완료면 '물류수령' 자동 전환
+        if auto_register_actor:
             try:
                 trow = conn.execute(
                     "SELECT ticket_id, status FROM cs_naver_claims WHERE product_order_id = ?",
                     (c["product_order_id"],)
                 ).fetchone()
-                if trow and trow["status"] == "접수됨" and trow["ticket_id"]:
-                    _auto_advance_to_received(conn, trow["ticket_id"], auto_register_actor)
+                tid = trow["ticket_id"] if (trow and trow["status"] == "접수됨") else ""
+                if tid:
+                    _sync_ticket_from_claim(conn, tid, c)
+                    if c.get("claim_status") in COLLECTED_CLAIM_STATUSES:
+                        _auto_advance_to_received(conn, tid, auto_register_actor)
             except Exception as e:
                 conn.rollback()
-                logger.warning(f"[CS] 수거완료 자동 물류수령 실패 ({c.get('product_order_id')}): {e}")
+                logger.warning(f"[CS] 티켓 보강/물류수령 자동화 실패 ({c.get('product_order_id')}): {e}")
     return new_count, updated
 
 
