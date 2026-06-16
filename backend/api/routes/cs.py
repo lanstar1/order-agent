@@ -1442,10 +1442,51 @@ NAVER_CLAIM_STATUS_LABELS = {
 }
 
 
-def _upsert_naver_claims(conn, claims: list) -> tuple:
+def _register_claim_row(conn, claim: dict, actor: dict) -> str:
+    """클레임(API dict 또는 DB row dict) → 접수완료 티켓 생성 + 클레임 '접수됨' 갱신. ticket_id 반환.
+
+    수동 접수 엔드포인트와 ingest 자동 접수가 공유하는 코어.
+    """
+    reason_label = NAVER_REASON_LABELS.get(claim.get("reason_code"), claim.get("reason_code") or "")
+    symptom = " / ".join(p for p in [reason_label, claim.get("detailed_reason")] if p)
+    product_full = claim.get("product_name") or "-"
+    if claim.get("product_option"):
+        product_full += f" / {claim['product_option']}"
+    claim_type = claim.get("claim_type") or ""
+
+    data = TicketCreate(
+        customer_name=claim.get("customer_name") or "스마트스토어 고객",
+        contact_info=claim.get("contact_info") or "-",
+        product_name=product_full,
+        defect_symptom=symptom or f"{claim_type} 요청",
+        sales_channel="스마트스토어",
+        order_number=claim.get("order_id") or claim.get("product_order_id"),
+        cs_type=claim_type if claim_type in CS_TYPES else "반품",
+        reason_category=NAVER_REASON_CATEGORY.get(claim.get("reason_code"), "기타"),
+        quantity=int(claim.get("quantity") or 1),
+        return_courier=claim.get("collect_courier") or "",
+        return_tracking_no=claim.get("collect_tracking_no") or "",
+    )
+    ticket_id = _insert_ticket(
+        conn, data, actor,
+        f"스마트스토어 {claim_type} 자동 접수 (주문번호 {data.order_number}): {data.defect_symptom[:80]}"
+    )
+    conn.execute(
+        "UPDATE cs_naver_claims SET status = '접수됨', ticket_id = ?, updated_at = ? WHERE product_order_id = ?",
+        (ticket_id, now_kst(), claim.get("product_order_id"))
+    )
+    conn.commit()
+    return ticket_id
+
+
+def _upsert_naver_claims(conn, claims: list, auto_register_actor: dict = None) -> tuple:
     """클레임 리스트를 cs_naver_claims에 upsert. (new, updated) 반환.
 
     기존 행은 클레임 상태/수거정보만 갱신하고 접수됨/무시 상태는 유지한다.
+
+    auto_register_actor가 주어지면 '신규' 상태 클레임(신규 INSERT + 아직 접수/무시 안 된
+    기존 백로그)을 즉시 접수완료 티켓으로 자동 등록한다. 개별 등록 실패는 무시하고 '신규'로
+    남겨, 수동 '접수하기' 버튼으로 처리할 수 있게 한다. ('무시'/'접수됨'은 건드리지 않음)
     """
     now = now_kst()
     new_count, updated = 0, 0
@@ -1456,6 +1497,7 @@ def _upsert_naver_claims(conn, claims: list) -> tuple:
             "SELECT id, status FROM cs_naver_claims WHERE product_order_id = ?",
             (c["product_order_id"],)
         ).fetchone()
+        should_register = False
         if row:
             conn.execute(
                 """UPDATE cs_naver_claims SET claim_type = ?, claim_status = ?, reason_code = ?,
@@ -1466,6 +1508,9 @@ def _upsert_naver_claims(conn, claims: list) -> tuple:
                  c.get("collect_tracking_no", ""), now, c["product_order_id"])
             )
             updated += 1
+            # 아직 접수도 무시도 안 된 기존 '신규' 백로그도 자동 접수 대상
+            if auto_register_actor and row["status"] == "신규":
+                should_register = True
         else:
             conn.execute(
                 """INSERT INTO cs_naver_claims
@@ -1480,7 +1525,17 @@ def _upsert_naver_claims(conn, claims: list) -> tuple:
                  c.get("claim_request_date", ""), c.get("collect_courier", ""),
                  c.get("collect_tracking_no", ""), now, now)
             )
+            conn.commit()  # 클레임은 먼저 영속화 — 자동 접수 실패해도 목록엔 남도록
             new_count += 1
+            if auto_register_actor:
+                should_register = True
+
+        if should_register:
+            try:
+                _register_claim_row(conn, c, auto_register_actor)
+            except Exception as e:
+                conn.rollback()
+                logger.warning(f"[CS] 클레임 자동 접수 실패 ({c.get('product_order_id')}): {e} — '신규'로 유지")
     return new_count, updated
 
 
@@ -1538,7 +1593,9 @@ async def ingest_naver_claims(data: ClaimIngest, request: Request):
     ensure_settings_table()
     conn = get_connection()
     try:
-        new_count, updated = _upsert_naver_claims(conn, data.claims)
+        # 신규/미접수 '신규' 클레임을 접수완료 티켓으로 자동 등록 (수동 '접수하기'도 그대로 유지)
+        system_actor = {"emp_cd": "SYSTEM", "name": "자동접수"}
+        new_count, updated = _upsert_naver_claims(conn, data.claims, auto_register_actor=system_actor)
         _upsert_setting(conn, "naver_claims_last_ingest", now_kst())
         conn.commit()
         logger.info(f"[CS] 클레임 릴레이 수신: {len(data.claims)}건 (신규 {new_count}, 갱신 {updated})")
@@ -1636,34 +1693,7 @@ async def register_naver_claim(product_order_id: str, user: dict = Depends(get_c
         if claim["status"] == "접수됨" and claim.get("ticket_id"):
             raise HTTPException(400, f"이미 접수된 클레임입니다. ({claim['ticket_id']})")
 
-        reason_label = NAVER_REASON_LABELS.get(claim["reason_code"], claim["reason_code"] or "")
-        symptom = " / ".join(p for p in [reason_label, claim["detailed_reason"]] if p)
-        product_full = claim["product_name"] or "-"
-        if claim["product_option"]:
-            product_full += f" / {claim['product_option']}"
-
-        data = TicketCreate(
-            customer_name=claim["customer_name"] or "스마트스토어 고객",
-            contact_info=claim["contact_info"] or "-",
-            product_name=product_full,
-            defect_symptom=symptom or f"{claim['claim_type']} 요청",
-            sales_channel="스마트스토어",
-            order_number=claim["order_id"] or claim["product_order_id"],
-            cs_type=claim["claim_type"] if claim["claim_type"] in CS_TYPES else "반품",
-            reason_category=NAVER_REASON_CATEGORY.get(claim["reason_code"], "기타"),
-            quantity=int(claim["quantity"] or 1),
-            return_courier=claim["collect_courier"] or "",
-            return_tracking_no=claim["collect_tracking_no"] or "",
-        )
-        ticket_id = _insert_ticket(
-            conn, data, user,
-            f"스마트스토어 {claim['claim_type']} 자동 접수 (주문번호 {data.order_number}): {data.defect_symptom[:80]}"
-        )
-        conn.execute(
-            "UPDATE cs_naver_claims SET status = '접수됨', ticket_id = ?, updated_at = ? WHERE product_order_id = ?",
-            (ticket_id, now_kst(), product_order_id)
-        )
-        conn.commit()
+        ticket_id = _register_claim_row(conn, claim, user)
         return {"success": True, "ticket_id": ticket_id, "message": f"접수 완료 ({ticket_id})"}
     except HTTPException:
         raise
