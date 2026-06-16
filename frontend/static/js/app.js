@@ -5119,7 +5119,7 @@ async function csResolve(ticketId, action) {
 }
 
 async function csResolveWithPrompt(ticketId) {
-  const actions = (_csOptions?.final_actions) || ["교환발송","환불처리","정상반송","단순변심 반송","과출고/회수완료","누락/재출고완료"];
+  const actions = (_csOptions?.final_actions) || ["교환발송","환불처리","정상반송","단순변심 반송","과출고/회수완료","누락/재출고완료","빠른종결"];
   const action = prompt(`최종 처리 선택:\n${actions.map((a,i)=>`${i+1}. ${a}`).join("\n")}\n\n번호 입력:`);
   if (!action) return;
   const idx = parseInt(action) - 1;
@@ -5133,7 +5133,7 @@ async function csResolveWithPrompt(ticketId) {
 }
 
 async function csQuickResolve(ticketId) {
-  const actions = (_csOptions?.final_actions) || ["교환발송","환불처리","정상반송","단순변심 반송","과출고/회수완료","누락/재출고완료"];
+  const actions = (_csOptions?.final_actions) || ["교환발송","환불처리","정상반송","단순변심 반송","과출고/회수완료","누락/재출고완료","빠른종결"];
   const action = prompt(`최종 처리 선택:\n${actions.map((a,i)=>`${i+1}. ${a}`).join("\n")}\n\n번호 입력:`);
   if (!action) return;
   const idx = parseInt(action) - 1;
