@@ -114,6 +114,11 @@ function navigateTo(pageId) {
     window.open("/sales-daily", "_blank");
     return;
   }
+  // AI 고객상담: 외부 사이트 새창
+  if (pageId === "aicc_landing") {
+    window.open("https://www.lanstar.co.kr/aicc2/index.html", "_blank", "noopener");
+    return;
+  }
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   const page = document.getElementById("page-" + pageId);
