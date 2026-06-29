@@ -1,0 +1,197 @@
+/* Super Agent 스타일 */
+
+/* 메인 레이아웃 */
+.sa2-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+/* 프롬프트 입력 */
+.sa2-prompt-area {
+  position: relative;
+}
+
+.sa2-prompt-input {
+  width: 100%;
+  min-height: 100px;
+  padding: 14px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+
+.sa2-prompt-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.sa2-prompt-input::placeholder {
+  color: #9ca3af;
+}
+
+/* 드롭존 */
+.sa2-dropzone {
+  border: 2px dashed #d1d5db;
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  background: #f9fafb;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sa2-dropzone:hover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.sa2-dropzone.dragover {
+  border-color: #2563eb;
+  background: #dbeafe;
+}
+
+/* 결과물 유형 선택 */
+.sa2-type-select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+}
+
+/* 진행 바 */
+.sa2-progress-bar {
+  width: 100%;
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.sa2-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  border-radius: 5px;
+  transition: width 0.4s ease;
+  width: 0%;
+}
+
+/* 태스크 카드 */
+.sa2-task-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f3f4f6;
+  border-radius: 20px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.sa2-task-card .task-icon {
+  font-size: 14px;
+}
+
+/* 결과 영역 */
+.sa2-result-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sa2-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sa2-result-body {
+  padding: 20px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* 다운로드 버튼 */
+.sa2-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.sa2-download-btn:hover {
+  background: #1d4ed8;
+}
+
+/* 히스토리 */
+.sa2-history-item:hover {
+  background: #f9fafb;
+}
+
+/* 예시 프롬프트 칩 */
+.sa2-example-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sa2-example-chip {
+  padding: 6px 14px;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sa2-example-chip:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+/* 템플릿 카드 */
+.sa2-template-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sa2-template-card:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+}
+
+/* 비용 정보 */
+.sa2-cost-info {
+  display: flex;
+  gap: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  padding: 8px 0;
+}

@@ -1,0 +1,3338 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LANstar Agent</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' font-weight='bold' fill='white' font-family='Arial'>L</text></svg>" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260406b">
+  <link rel="stylesheet" href="/static/css/super_agent.css?v=20260322b">
+  <style>
+    /* CS/RMA 파이프라인 탭 */
+    .cs-pipe-tab{padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:#6b7280;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+    .cs-pipe-tab:hover{color:#374151;background:#f9fafb}
+    .cs-pipe-tab.active{color:#2563eb;border-bottom-color:#2563eb;font-weight:600}
+    .cs-pipe-tab .cnt{display:inline-block;min-width:18px;height:18px;line-height:18px;text-align:center;background:#e5e7eb;color:#374151;border-radius:9px;font-size:11px;margin-left:4px;font-weight:600}
+    .cs-pipe-tab.active .cnt{background:#dbeafe;color:#2563eb}
+    /* CS 티켓 카드 */
+    .cs-ticket-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:all .15s}
+    .cs-ticket-card:hover{border-color:#93c5fd;box-shadow:0 2px 8px rgba(37,99,235,0.08)}
+    .cs-status-badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600}
+    .cs-status-접수완료{background:#fef3c7;color:#92400e}
+    .cs-status-물류수령{background:#dbeafe;color:#1e40af}
+    .cs-status-기술인계{background:#e0e7ff;color:#3730a3}
+    .cs-status-테스트완료{background:#d1fae5;color:#065f46}
+    .cs-status-처리종결{background:#f3f4f6;color:#374151}
+    /* CS 모달 내부 */
+    .cs-modal-header{padding:20px 24px;border-bottom:1px solid #e5e7eb}
+    .cs-modal-body{padding:20px 24px}
+    .cs-field-label{font-size:12px;color:#6b7280;margin-bottom:4px;font-weight:500}
+    .cs-field-value{font-size:14px;color:#111827;margin-bottom:12px}
+    .cs-symptom-box{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;font-size:14px;color:#991b1b;line-height:1.6;white-space:pre-wrap}
+    .cs-timeline{position:relative;padding-left:24px}
+    .cs-timeline::before{content:'';position:absolute;left:8px;top:4px;bottom:4px;width:2px;background:#e5e7eb}
+    .cs-timeline-item{position:relative;margin-bottom:12px}
+    .cs-timeline-dot{position:absolute;left:-20px;top:4px;width:12px;height:12px;border-radius:50%;border:2px solid #2563eb;background:#fff}
+    .cs-timeline-dot.done{background:#2563eb}
+    .cs-timeline-time{font-size:11px;color:#9ca3af}
+    .cs-test-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}
+    .cs-test-정상{background:#d1fae5;color:#065f46}
+    .cs-test-의심{background:#fef3c7;color:#92400e}
+    .cs-test-불량{background:#fee2e2;color:#991b1b}
+    .cs-stat-card{flex:1;min-width:100px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;text-align:center;transition:all 0.15s;cursor:pointer}
+    .cs-stat-card:hover{border-color:#93c5fd;box-shadow:0 2px 8px rgba(37,99,235,0.1)}
+    .cs-stat-card .num{font-size:24px;font-weight:700;color:#111827}
+    .cs-stat-card .label{font-size:11px;color:#6b7280;margin-top:2px}
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- ── 사이드바 ── -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="8" fill="#6366f1"/><path d="M8 14l4 4 8-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="sidebar-logo-text">
+        <h1>LANstar Agent</h1>
+        <span>AI Business Platform</span>
+      </div>
+    </div>
+    <div class="sidebar-nav" id="sidebar-nav">
+
+      <!-- 업무 입력 -->
+      <div class="nav-group open" data-group="work">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+          <span>업무 입력</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="new_order"><span>판매입력</span></div>
+          <div class="nav-item" data-page="sale_order"><span>견적서입력</span></div>
+          <div class="nav-item" data-page="purchase"><span>구매입력</span></div>
+          <div class="nav-item" data-page="reconcile"><span>매입정산</span></div>
+        </div>
+      </div>
+
+      <!-- 조회 -->
+      <div class="nav-group" data-group="search">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <span>조회</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="history"><span>처리 이력</span></div>
+          <div class="nav-item" data-page="inventory"><span>재고 조회</span></div>
+          <div class="nav-item" data-page="doc_search"><span>자료검색</span></div>
+          <div class="nav-item" data-page="price_sheet"><span>단가표</span></div>
+          <div class="nav-item" data-page="orderlist"><span>오더리스트</span></div>
+        </div>
+      </div>
+
+      <!-- 물류 -->
+      <div class="nav-group" data-group="logistics">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1v-1h3.05a2.5 2.5 0 014.9 0H19a1 1 0 001-1v-4a1 1 0 00-.293-.707l-3-3A1 1 0 0016 5h-3V4a1 1 0 00-1-1H3z"/></svg>
+          <span>물류</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="smartstore_bridge"><span>스마트스토어</span></div>
+          <div class="nav-item" data-page="barcode_bridge"><span>쿠팡</span></div>
+          <div class="nav-item" data-page="shipping"><span>택배조회</span></div>
+          <div class="nav-item" data-page="inventory_monitor"><span>재고모니터</span></div>
+          <div class="nav-item" data-page="cs_rma"><span>CS / RMA</span></div>
+        </div>
+      </div>
+
+      <!-- AI 서비스 -->
+      <div class="nav-group" data-group="ai">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6.672 1.911a1 1 0 10-1.932.518l.259.966a1 1 0 001.932-.518l-.26-.966zM2.429 4.74a1 1 0 10-.517 1.932l.966.259a1 1 0 00.517-1.932l-.966-.26zm8.814-.569a1 1 0 00-1.415-1.414l-.707.707a1 1 0 101.415 1.415l.707-.708zm-7.071 7.072l.707-.708a1 1 0 00-1.414-1.414l-.708.707a1 1 0 001.415 1.415zm3.2-5.171a1 1 0 00-1.3 1.3l4 10a1 1 0 001.823.075l1.38-2.759 2.758-1.379a1 1 0 00-.075-1.823l-10-4z" clip-rule="evenodd"/></svg>
+          <span>AI 서비스</span>
+          <span id="aicc-nav-badge" class="nav-badge" style="display:none">0</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="aicc"><span>AI 상담</span></div>
+          <div class="nav-item" data-page="ai_dashboard"><span>AI 대시보드</span></div>
+          <div class="nav-item" data-page="sales_daily"><span>일별 판매현황</span></div>
+          <!-- Super Agent: 개발 중 블라인드 -->
+          <!-- <div class="nav-item" data-page="super_agent"><span>Super Agent</span></div> -->
+          <div class="nav-item" data-page="mail_agent"><span>AI 메일</span></div>
+        </div>
+      </div>
+
+      <!-- 관리 -->
+      <div class="nav-group" data-group="admin">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+          <span>관리</span>
+          <svg class="nav-group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="training"><span>발주서 학습</span></div>
+          <div class="nav-item" data-page="settings"><span>설정</span></div>
+        </div>
+      </div>
+
+    </div>
+    <!-- 로그인한 사용자 정보 -->
+    <div class="sidebar-user" id="sidebar-user" style="display:none">
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-avatar" id="sidebar-user-avatar">U</div>
+        <div class="sidebar-user-detail">
+          <span id="sidebar-username" class="sidebar-user-name"></span>
+          <span class="sidebar-user-role" id="sidebar-user-role"></span>
+        </div>
+      </div>
+      <button onclick="logout()" class="sidebar-logout-btn">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── 메인 콘텐츠 ── -->
+  <div class="main-content">
+
+    <!-- 상단 바 -->
+    <div class="topbar">
+      <div class="topbar-title" id="topbar-title">판매입력</div>
+      <div class="topbar-right" id="topbar-right"></div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지 1: 판매입력
+         ────────────────────────────── -->
+    <div class="page active" id="page-new_order">
+
+      <div class="card">
+        <div class="card-title">발주서 입력</div>
+
+        <!-- 거래처 검색/선택 -->
+        <div class="form-group">
+          <label class="form-label">거래처 <span class="required">*</span></label>
+          <div style="position:relative;max-width:420px">
+            <input type="text" class="form-control" id="cust-search"
+              placeholder="거래처명 또는 코드 검색..." autocomplete="off"
+              oninput="onCustSearch(this.value)" onfocus="showCustDropdown()"
+              style="padding-right:32px">
+            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+            <div id="cust-dropdown" style="
+              display:none;position:absolute;top:100%;left:0;right:0;
+              background:#fff;border:1px solid var(--gray-200);border-radius:8px;
+              max-height:220px;overflow-y:auto;z-index:500;
+              box-shadow:0 4px 16px rgba(0,0,0,0.1);margin-top:2px">
+            </div>
+          </div>
+          <!-- 선택된 거래처 표시 -->
+          <div id="cust-selected-info" style="display:none;margin-top:6px;font-size:13px;color:var(--accent);font-weight:500"></div>
+          <!-- 히든 필드 -->
+          <input type="hidden" id="cust-select" value="">
+          <select id="cust-data" style="display:none"></select>
+        </div>
+
+        <!-- 탭: 텍스트 / 이미지 -->
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="text">📝 텍스트 붙여넣기</button>
+          <button class="tab-btn" data-tab="image">🖼 이미지 업로드</button>
+        </div>
+
+        <!-- 텍스트 탭 -->
+        <div id="tab-text">
+          <div class="form-group">
+            <label class="form-label">발주서 원문 <span class="required">*</span></label>
+            <textarea class="form-control" id="raw-text" rows="8"
+              placeholder="거래처로부터 받은 발주서 내용을 그대로 붙여넣으세요.
+
+예시:
+A제품 100ea
+B상품(회색) 50박스
+C규격품 200개
+..."></textarea>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px">
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('raw-text').value=''">초기화</button>
+            <button class="btn btn-primary" onclick="submitOrder()">
+              AI 분석 시작 →
+            </button>
+          </div>
+        </div>
+
+        <!-- 이미지 탭 -->
+        <div id="tab-image" style="display:none">
+          <div class="upload-area" id="image-dropzone">
+            <div class="upload-icon">📎</div>
+            <p><strong>이미지를 드래그하거나 클릭하여 업로드</strong></p>
+            <p style="font-size:12px;margin-top:6px;color:var(--gray-400)">
+              JPG, PNG, PDF 지원 · 최대 10MB
+            </p>
+          </div>
+          <input type="file" id="image-input" accept="image/*,.pdf" style="display:none"
+            onchange="handleImageFile(this.files[0])">
+          <p style="color:var(--gray-400);font-size:12.5px;margin-top:12px">
+            ※ Claude Vision AI가 이미지에서 발주 항목을 자동으로 인식합니다.
+          </p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지 2: AI 결과 검토 (동적)
+         ────────────────────────────── -->
+    <div class="page" id="page-result">
+      <div id="result-container"></div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지 3: 처리 이력
+         ────────────────────────────── -->
+    <div class="page" id="page-history">
+      <div class="card">
+        <div class="card-title">처리 이력</div>
+        <div class="order-list" id="history-list">
+          <p style="color:var(--gray-400);text-align:center;padding:32px">로딩 중...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 견적서입력
+         ────────────────────────────── -->
+    <div class="page" id="page-sale_order">
+      <div class="card">
+        <div class="card-title">견적서입력</div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+          거래처 견적 요청을 AI로 분석하여 ECOUNT ERP <strong>견적서입력(SaveQuotation)</strong>으로 전송합니다.
+        </p>
+
+        <!-- 거래처 검색/선택 -->
+        <div class="form-group">
+          <label class="form-label">거래처 <span class="required">*</span></label>
+          <div style="position:relative;max-width:420px">
+            <input type="text" class="form-control" id="so-cust-search"
+              placeholder="거래처명 또는 코드 검색..." autocomplete="off"
+              oninput="onSOCustSearch(this.value)" onfocus="showSOCustDropdown()"
+              style="padding-right:32px">
+            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+            <div id="so-cust-dropdown" style="
+              display:none;position:absolute;top:100%;left:0;right:0;
+              background:#fff;border:1px solid var(--gray-200);border-radius:8px;
+              max-height:220px;overflow-y:auto;z-index:500;
+              box-shadow:0 4px 16px rgba(0,0,0,0.1);margin-top:2px">
+            </div>
+          </div>
+          <div id="so-cust-selected-info" style="display:none;margin-top:6px;font-size:13px;color:var(--accent);font-weight:500"></div>
+          <input type="hidden" id="so-cust-select" value="">
+        </div>
+
+        <!-- 탭: 텍스트 / 이미지 -->
+        <div class="tabs">
+          <button class="tab-btn active" data-so-tab="text" onclick="switchSOTab('text')">📝 텍스트 붙여넣기</button>
+          <button class="tab-btn" data-so-tab="image" onclick="switchSOTab('image')">🖼 이미지 업로드</button>
+        </div>
+
+        <!-- 텍스트 탭 -->
+        <div id="so-tab-text">
+          <div class="form-group">
+            <label class="form-label">견적 요청 원문 <span class="required">*</span></label>
+            <textarea class="form-control" id="so-raw-text" rows="8"
+              placeholder="거래처로부터 받은 견적 요청 내용을 그대로 붙여넣으세요.
+
+예시:
+A제품 100ea
+B상품(회색) 50박스
+C규격품 200개
+..."></textarea>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px">
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('so-raw-text').value=''">초기화</button>
+            <button class="btn btn-primary" onclick="submitSaleOrder()">
+              AI 분석 시작 →
+            </button>
+          </div>
+        </div>
+
+        <!-- 이미지 탭 -->
+        <div id="so-tab-image" style="display:none">
+          <div class="upload-area" id="so-image-dropzone">
+            <div class="upload-icon">📎</div>
+            <p><strong>이미지를 드래그하거나 클릭하여 업로드</strong></p>
+            <p style="font-size:12px;margin-top:6px;color:var(--gray-400)">
+              JPG, PNG, PDF 지원 · 최대 10MB
+            </p>
+          </div>
+          <input type="file" id="so-image-input" accept="image/*,.pdf" style="display:none"
+            onchange="handleSOImageFile(this.files[0])">
+          <p style="color:var(--gray-400);font-size:12.5px;margin-top:12px">
+            ※ Claude Vision AI가 이미지에서 견적 항목을 자동으로 인식합니다.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 견적서 결과 페이지 -->
+    <div class="page" id="page-so_result">
+      <div id="so-result-container"></div>
+    </div>
+
+    <!-- 견적서 이력 페이지 -->
+    <div class="page" id="page-so_history">
+      <div class="card">
+        <div class="card-title">견적서 처리 이력</div>
+        <div class="order-list" id="so-history-list">
+          <p style="color:var(--gray-400);text-align:center;padding:32px">로딩 중...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 구매입력
+         ────────────────────────────── -->
+    <div class="page" id="page-purchase">
+      <div class="card">
+        <div class="card-title">구매입력</div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+          거래처로부터 받은 구매서/발주서를 AI로 분석하여 ECOUNT ERP <strong>구매현황(SavePurchases)</strong>으로 자동 입력합니다.
+        </p>
+
+        <!-- 거래처 검색/선택 -->
+        <div class="form-group">
+          <label class="form-label">거래처 <span class="required">*</span></label>
+          <div style="position:relative;max-width:420px">
+            <input type="text" class="form-control" id="po-cust-search"
+              placeholder="거래처명 또는 코드 검색..." autocomplete="off"
+              oninput="onPOCustSearch(this.value)" onfocus="showPOCustDropdown()"
+              style="padding-right:32px">
+            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+            <div id="po-cust-dropdown" style="
+              display:none;position:absolute;top:100%;left:0;right:0;
+              background:#fff;border:1px solid var(--gray-200);border-radius:8px;
+              max-height:220px;overflow-y:auto;z-index:500;
+              box-shadow:0 4px 16px rgba(0,0,0,0.1);margin-top:2px">
+            </div>
+          </div>
+          <div id="po-cust-selected-info" style="display:none;margin-top:6px;font-size:13px;color:var(--accent);font-weight:500"></div>
+          <input type="hidden" id="po-cust-select" value="">
+        </div>
+
+        <!-- 탭: 텍스트 / 이미지 -->
+        <div class="tabs">
+          <button class="tab-btn active" data-po-tab="text" onclick="switchPOTab('text')">📝 텍스트 붙여넣기</button>
+          <button class="tab-btn" data-po-tab="image" onclick="switchPOTab('image')">🖼 이미지 업로드</button>
+        </div>
+
+        <!-- 텍스트 탭 -->
+        <div id="po-tab-text">
+          <div class="form-group">
+            <label class="form-label">구매서 원문 <span class="required">*</span></label>
+            <textarea class="form-control" id="po-raw-text" rows="8"
+              placeholder="거래처로부터 받은 구매서/발주서 내용을 그대로 붙여넣으세요.
+
+예시:
+A제품 100ea
+B상품(회색) 50박스
+C규격품 200개
+..."></textarea>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px">
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('po-raw-text').value=''">초기화</button>
+            <button class="btn btn-primary" onclick="submitPurchase()">
+              AI 분석 시작 →
+            </button>
+          </div>
+        </div>
+
+        <!-- 이미지/파일 탭 -->
+        <div id="po-tab-image" style="display:none">
+          <div class="upload-area" id="po-image-dropzone"
+               onclick="document.getElementById('po-image-input').click()"
+               style="cursor:pointer">
+            <div class="upload-icon">📎</div>
+            <p><strong>파일을 드래그하거나 클릭하여 업로드</strong></p>
+            <p style="font-size:12px;margin-top:6px;color:var(--gray-400)">
+              이미지(JPG/PNG) · PDF · 엑셀(XLSX/XLS) · CSV 지원 · 최대 10MB
+            </p>
+          </div>
+          <input type="file" id="po-image-input"
+            accept="image/*,.pdf,.xlsx,.xls,.csv"
+            style="display:none"
+            onchange="handlePOImageFile(this.files[0])">
+          <p style="color:var(--gray-400);font-size:12.5px;margin-top:12px">
+            ※ Claude AI가 이미지·PDF·엑셀 파일에서 구매 항목을 자동으로 인식합니다.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 구매입력 결과 페이지 -->
+    <div class="page" id="page-po_result">
+      <div id="po-result-container"></div>
+    </div>
+
+    <!-- 구매입력 이력 페이지 -->
+    <div class="page" id="page-po_history">
+      <div class="card">
+        <div class="card-title">구매입력 처리 이력</div>
+        <div class="order-list" id="po-history-list">
+          <p style="color:var(--gray-400);text-align:center;padding:32px">로딩 중...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 매입정산
+         ────────────────────────────── -->
+    <div class="page" id="page-reconcile">
+      <div class="card rc-card">
+        <div class="rc-header">
+          <div class="rc-title">
+            <span class="rc-title-icon">📋</span>
+            <div>
+              <h2>매입정산</h2>
+              <p class="rc-subtitle">거래처 원장과 ERP 구매현황을 일괄 비교하여 누락·불일치를 자동 감지합니다</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 스텝 인디케이터 -->
+        <div id="reconcile-steps" class="rc-steps">
+          <div class="rc-step active" data-step="1">
+            <span class="rc-step-num">1</span>
+            <span class="rc-step-label">파일 업로드</span>
+          </div>
+          <div class="rc-step-line"></div>
+          <div class="rc-step" data-step="2">
+            <span class="rc-step-num">2</span>
+            <span class="rc-step-label">비교 결과</span>
+          </div>
+          <div class="rc-step-line"></div>
+          <div class="rc-step" data-step="3">
+            <span class="rc-step-num">3</span>
+            <span class="rc-step-label">전표 입력</span>
+          </div>
+          <div class="rc-step-line"></div>
+          <div class="rc-step" data-step="4">
+            <span class="rc-step-num">4</span>
+            <span class="rc-step-label">완료</span>
+          </div>
+        </div>
+
+        <!-- STEP 1: 일괄 파일 업로드 -->
+        <div id="reconcile-step1">
+          <!-- 거래처 원장 업로드 영역 -->
+          <div class="rc-upload-section">
+            <div class="rc-upload-header">
+              <span class="rc-upload-icon">📁</span>
+              <div>
+                <h4>거래처 원장</h4>
+                <p>거래처에서 받은 원장 엑셀 파일을 선택하세요 (여러 파일 동시 선택 가능)</p>
+              </div>
+            </div>
+            <div class="rc-dropzone" id="rc-vendor-dropzone">
+              <input type="file" id="reconcile-vendor-files" accept=".xlsx,.xls" multiple hidden>
+              <div class="rc-dropzone-content">
+                <span class="rc-dropzone-icon">📎</span>
+                <span class="rc-dropzone-text">파일을 선택하거나 드래그하세요</span>
+                <span class="rc-dropzone-hint">.xlsx, .xls 지원 · 다중 파일 가능</span>
+              </div>
+            </div>
+            <div id="reconcile-vendor-file-list" class="rc-file-list"></div>
+          </div>
+
+          <!-- ERP 데이터 업로드 영역 -->
+          <div class="rc-upload-section">
+            <div class="rc-upload-header">
+              <span class="rc-upload-icon">💾</span>
+              <div>
+                <h4>ERP 데이터</h4>
+                <p>ECOUNT에서 다운로드한 구매현황·판매현황 파일을 업로드하세요</p>
+              </div>
+            </div>
+            <div class="rc-erp-grid">
+              <div class="rc-erp-item">
+                <label class="rc-erp-label">
+                  <span class="rc-erp-badge purchase">구매</span>
+                  구매현황 - 전체
+                </label>
+                <input type="file" id="reconcile-erp-purchase-file" accept=".xlsx,.xls,.csv" class="rc-file-input">
+                <div id="reconcile-purchase-cached" class="rc-cache-badge" style="display:none">
+                  <span class="rc-cache-icon">✓</span>
+                  <span id="reconcile-purchase-cached-info" class="rc-cache-text"></span>
+                  <button onclick="reconcileClearPurchaseCache()" class="rc-cache-delete" title="캐시 삭제">&times;</button>
+                </div>
+              </div>
+              <div class="rc-erp-item">
+                <label class="rc-erp-label">
+                  <span class="rc-erp-badge sales">판매</span>
+                  판매현황
+                </label>
+                <div id="reconcile-sales-file-wrap">
+                  <input type="file" id="reconcile-erp-sales-file" accept=".csv,.xlsx,.xls" class="rc-file-input">
+                </div>
+                <div id="reconcile-sales-cached" class="rc-cache-badge" style="display:none">
+                  <span class="rc-cache-icon">✓</span>
+                  <span id="reconcile-sales-cached-info" class="rc-cache-text"></span>
+                  <button onclick="reconcileClearSalesCache()" class="rc-cache-delete" title="캐시 삭제">&times;</button>
+                </div>
+              </div>
+            </div>
+            <div class="rc-cache-hint">
+              <span>ℹ️</span> 한 번 업로드한 구매·판매현황은 삭제하기 전까지 캐시되어 거래처 원장만 추가하면 됩니다
+            </div>
+          </div>
+
+          <!-- 거래처 확인 영역 (파일 업로드 후 표시) -->
+          <div id="reconcile-vendor-confirm" class="rc-upload-section" style="display:none">
+            <div class="rc-upload-header">
+              <span class="rc-upload-icon">✏️</span>
+              <div>
+                <h4>거래처 확인</h4>
+                <p>파일에서 추출한 거래처명을 확인하세요. 잘못된 경우 직접 수정할 수 있습니다.</p>
+              </div>
+            </div>
+            <div id="reconcile-vendor-name-list" class="rc-vendor-name-grid"></div>
+          </div>
+
+          <!-- 진행 상태 + 로그 -->
+          <div id="reconcile-batch-progress" class="rc-progress" style="display:none">
+            <div class="rc-progress-header">
+              <span class="rc-progress-spinner"></span>
+              <span id="reconcile-batch-progress-text">처리 중...</span>
+            </div>
+            <div class="rc-progress-track">
+              <div id="reconcile-batch-progress-bar" class="rc-progress-fill"></div>
+            </div>
+            <div id="reconcile-log-panel" class="rc-log-panel">
+              <div id="reconcile-log-content" class="rc-log-content"></div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary rc-start-btn" onclick="reconcileBatchStart()" id="btn-reconcile-batch">
+            <span>▶</span> 일괄 정산 시작
+          </button>
+        </div>
+
+        <!-- STEP 2: 일괄 비교 결과 -->
+        <div id="reconcile-step2" style="display:none">
+          <div id="reconcile-batch-summary"></div>
+          <div id="reconcile-vendor-accordion"></div>
+
+          <div class="rc-actions">
+            <button class="btn btn-outline" onclick="reconcileNewMatch()" title="거래처 파일만 초기화하고 새로 시작 (구매/판매 캐시 유지)">🔄 새 매칭</button>
+            <button class="btn btn-outline" onclick="reconcileGoBack(1)">← 이전</button>
+            <button class="btn btn-outline rc-btn-excel" onclick="reconcileBatchDownloadExcel()">
+              <span>📥</span> 엑셀 다운로드
+            </button>
+            <button class="btn btn-primary" onclick="reconcileBatchPrepareInput()">
+              매입전표 입력 준비 →
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP 3: 매입전표 입력 확인 -->
+        <div id="reconcile-step3" style="display:none">
+          <div class="rc-section-header">
+            <h4>매입전표 입력 항목 확인</h4>
+            <p>아래 항목을 확인·수정한 후 ERP에 입력합니다</p>
+          </div>
+          <div id="reconcile-purchase-list"></div>
+          <div class="rc-actions">
+            <button class="btn btn-outline" onclick="reconcileNewMatch()">🔄 새 매칭</button>
+            <button class="btn btn-outline" onclick="reconcileGoBack(2)">← 이전</button>
+            <button class="btn btn-success" onclick="reconcileSubmitERP()" id="btn-reconcile-submit">
+              ERP 구매입력 전송
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP 4: 결과 -->
+        <div id="reconcile-step4" style="display:none">
+          <div id="reconcile-result"></div>
+          <button class="btn btn-primary rc-start-btn" onclick="reconcileNewMatch()" style="margin-top:16px">
+            🔄 새 매칭 시작
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지 4: 재고 조회
+         ────────────────────────────── -->
+    <div class="page" id="page-inventory">
+      <div class="card">
+        <div class="card-title">재고 조회</div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+          품목명, 모델명, 또는 품목코드로 검색하면 ERP 창고별 재고현황을 조회합니다.
+        </p>
+
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px">
+          <div style="flex:1;min-width:240px;max-width:400px;position:relative">
+            <label class="form-label">검색어</label>
+            <input type="text" class="form-control" id="inv-search-input"
+              placeholder="품목명, 모델명, 품목코드 입력..."
+              oninput="onInvAutocomplete(this.value)"
+              onkeydown="onInvSearchKeydown(event)"
+              onfocus="onInvAutocomplete(this.value)"
+              autocomplete="off"
+              style="padding-right:32px">
+            <span style="position:absolute;right:10px;top:calc(50% + 10px);transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+            <!-- 자동완성 드롭다운 -->
+            <div id="inv-autocomplete-dropdown" style="
+              display:none;position:absolute;top:100%;left:0;right:0;
+              background:#fff;border:1px solid var(--gray-200);border-radius:8px;
+              max-height:280px;overflow-y:auto;z-index:500;
+              box-shadow:0 4px 16px rgba(0,0,0,0.12);margin-top:2px;
+            "></div>
+          </div>
+          <div style="min-width:120px">
+            <label class="form-label">창고코드 <span style="color:var(--gray-400);font-weight:400">(선택)</span></label>
+            <input type="text" class="form-control" id="inv-wh-input" placeholder="전체 창고" style="width:120px">
+          </div>
+          <button class="btn btn-primary" onclick="searchInventory()">
+            🔍 재고 조회
+          </button>
+        </div>
+
+        <div id="inv-results">
+          <p style="color:var(--gray-400);text-align:center;padding:40px 0">
+            검색어를 입력하고 조회 버튼을 클릭하세요.
+          </p>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ──────────────────────────────
+         페이지: 자료검색 (Google Drive)
+         ────────────────────────────── -->
+    <div class="page" id="page-doc_search">
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>자료검색</span>
+          <button class="btn btn-outline btn-sm" onclick="docSearchSync()" id="doc-sync-btn">🔄 동기화</button>
+        </div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+          Google Drive에 저장된 데이터시트, KC인증서, ROHS, UL, Fluke, Test 리포트 등을 검색합니다.
+        </p>
+
+        <!-- 카테고리 필터 + 검색 -->
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+          <div>
+            <label class="form-label">카테고리</label>
+            <select class="form-control" id="doc-category-select" onchange="loadDocuments()" style="width:180px">
+              <option value="">전체</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:220px;max-width:400px;position:relative">
+            <label class="form-label">검색어</label>
+            <input type="text" class="form-control" id="doc-search-input"
+              placeholder="파일명으로 검색..."
+              oninput="onDocSearchInput()"
+              onkeydown="if(event.key==='Enter')loadDocuments()"
+              style="padding-right:32px">
+            <span style="position:absolute;right:10px;top:calc(50% + 10px);transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="loadDocuments()">검색</button>
+        </div>
+
+        <!-- 결과 -->
+        <div id="doc-search-status" style="font-size:12px;color:var(--gray-500);margin-bottom:8px"></div>
+        <div id="doc-search-results" style="max-height:600px;overflow-y:auto">
+          <p style="color:var(--gray-400);text-align:center;padding:40px 0">
+            카테고리를 선택하거나 검색어를 입력하세요.
+          </p>
+        </div>
+        <!-- 페이지네이션 -->
+        <div id="doc-search-pagination" style="margin-top:12px;text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 단가표 조회 (Google Sheets)
+         ────────────────────────────── -->
+    <div class="page" id="page-price_sheet">
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>단가표 조회</span>
+          <button class="btn btn-outline btn-sm" onclick="priceSheetSyncAll()" id="ps-sync-btn">🔄 전체 동기화</button>
+        </div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+          거래처별 단가표를 조회하고 검색할 수 있습니다.
+        </p>
+
+        <!-- 거래처 선택 + 시트탭 + 검색 -->
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
+          <div>
+            <label class="form-label">거래처 <span class="required">*</span></label>
+            <select class="form-control" id="ps-vendor-select" onchange="onVendorChange()" style="width:260px">
+              <option value="">-- 거래처 선택 --</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:200px;max-width:360px;position:relative">
+            <label class="form-label">검색어 <span style="color:var(--gray-400);font-weight:400">(Ctrl+F)</span></label>
+            <input type="text" class="form-control" id="ps-search-input"
+              placeholder="모델명, 품명 검색..."
+              oninput="onPsSearchInput()"
+              onkeydown="if(event.key==='Enter')loadPriceSheet()"
+              style="padding-right:32px">
+            <span style="position:absolute;right:10px;top:calc(50% + 10px);transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="loadPriceSheet()">검색</button>
+        </div>
+        <!-- 시트 탭 바 -->
+        <div id="ps-tab-bar" style="display:none;margin-bottom:12px;overflow-x:auto;white-space:nowrap;border-bottom:2px solid var(--gray-200);padding-bottom:0"></div>
+
+        <!-- 결과 -->
+        <div id="ps-status" style="font-size:12px;color:var(--gray-500);margin-bottom:8px"></div>
+        <div id="ps-results" style="overflow-x:auto;max-height:600px;overflow-y:auto">
+          <p style="color:var(--gray-400);text-align:center;padding:40px 0">
+            거래처를 선택하면 단가표가 표시됩니다.
+          </p>
+        </div>
+        <!-- 페이지네이션 -->
+        <div id="ps-pagination" style="margin-top:12px;text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 오더리스트 (해외 발주 현황)
+         ────────────────────────────── -->
+    <div class="page" id="page-orderlist">
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>오더리스트</span>
+          <button class="btn btn-outline btn-sm" onclick="syncOrderList()" id="ol-sync-btn">🔄 동기화</button>
+        </div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">
+          해외 공장 발주(오더) 진행 현황을 조회합니다.
+        </p>
+
+        <!-- 탭 + 검색 -->
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
+          <div>
+            <label class="form-label">시트 탭</label>
+            <select class="form-control" id="ol-tab-select" onchange="loadOrderList()" style="width:180px">
+              <option value="">전체</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:200px;max-width:400px;position:relative">
+            <label class="form-label">검색어</label>
+            <input type="text" class="form-control" id="ol-search-input"
+              placeholder="모델명, 카테고리, 주문번호 검색..."
+              oninput="onOlSearchInput(this.value)"
+              onkeydown="onOlSearchKeydown(event)"
+              autocomplete="off"
+              style="padding-right:32px">
+            <span style="position:absolute;right:10px;top:calc(50% + 10px);transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+            <!-- 자동완성 드롭다운 -->
+            <div id="ol-autocomplete-dropdown"
+              style="display:none;position:absolute;left:0;right:0;top:100%;z-index:100;
+                     background:#fff;border:1px solid var(--gray-200);border-radius:8px;
+                     box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:320px;overflow-y:auto;
+                     margin-top:2px">
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="loadOrderList()">검색</button>
+        </div>
+
+        <!-- 요약 통계 -->
+        <div id="ol-summary" style="font-size:12px;color:var(--gray-500);margin-bottom:8px"></div>
+
+        <!-- 결과 -->
+        <div id="ol-results" style="overflow-x:auto;max-height:620px;overflow-y:auto">
+          <p style="color:var(--gray-400);text-align:center;padding:40px 0">
+            동기화 버튼을 눌러 오더리스트를 불러오세요.
+          </p>
+        </div>
+        <!-- 페이지네이션 -->
+        <div id="ol-pagination" style="margin-top:12px;text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 재고모니터
+         ────────────────────────────── -->
+    <div class="page" id="page-inventory_monitor">
+      <h2>📦 재고 변동 모니터링</h2>
+      <p style="color:#666; margin-bottom:20px;">
+        ℹ️ 매일 평일 오전 11시에 전일 대비 재고 감소 품목을 자동 감지하여 텔레그램으로 알려드립니다.
+      </p>
+
+      <!-- 상단 액션 카드 -->
+      <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px;">
+        <div class="card" style="flex:1; min-width:280px;">
+          <h3>🔄 수동 실행</h3>
+          <p style="color:#888; font-size:14px;">지금 즉시 재고 비교를 실행합니다.</p>
+          <button id="btn-monitor-run" onclick="runMonitorNow()" style="width:100%; padding:12px; background:#4CAF50; color:white; border:none; border-radius:8px; font-size:16px; cursor:pointer; margin-top:8px;">▶ 지금 실행</button>
+          <div id="monitor-run-result" style="margin-top:12px; display:none;"></div>
+        </div>
+        <div class="card" style="flex:1; min-width:280px;">
+          <h3>📱 텔레그램 연결</h3>
+          <button onclick="testTelegram()" style="width:100%; padding:10px; background:#0088cc; color:white; border:none; border-radius:8px; cursor:pointer;">테스트 메시지 보내기</button>
+          <div id="telegram-test-result" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <!-- 알림 이력 -->
+      <div class="card" style="margin-bottom:24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3>📋 알림 이력</h3>
+          <select id="history-days" onchange="loadAlertHistory()" style="padding:6px 12px; border-radius:6px; border:1px solid #ddd;">
+            <option value="7">최근 7일</option>
+            <option value="14">최근 14일</option>
+            <option value="30" selected>최근 30일</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:14px;">
+            <thead>
+              <tr style="background:#f5f5f5; text-align:left;">
+                <th style="padding:10px; border-bottom:2px solid #ddd;">날짜</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd;">품목코드</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd;">품목명</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd;">모델명</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">단가</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">전일</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">금일</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">감소량</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd; text-align:right;">감소금액</th>
+                <th style="padding:10px; border-bottom:2px solid #ddd;">트리거</th>
+              </tr>
+            </thead>
+            <tbody id="alert-history-body">
+              <tr><td colspan="10" style="padding:20px; text-align:center; color:#888;">페이지를 로딩하면 이력이 표시됩니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 설정 패널 -->
+      <div style="display:flex; gap:16px; flex-wrap:wrap;">
+        <div class="card" style="flex:1; min-width:320px;">
+          <h3>⚙️ 알림 설정</h3>
+          <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+            <div>
+              <label style="font-weight:bold; font-size:14px;">금액 임계값 (원)</label>
+              <input id="setting-threshold-amount" type="number" value="500000" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; margin-top:4px;">
+              <span style="color:#888; font-size:12px;">단가 × 감소수량이 이 금액 이상이면 알림</span>
+            </div>
+            <div>
+              <label style="font-weight:bold; font-size:14px;">수량 임계값 (개)</label>
+              <input id="setting-threshold-qty" type="number" value="100" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; margin-top:4px;">
+              <span style="color:#888; font-size:12px;">감소수량이 이 수량 이상이면 알림 (저가 예외품목은 금액 기준만 적용)</span>
+            </div>
+            <div>
+              <label style="font-weight:bold; font-size:14px;">텔레그램 봇 토큰</label>
+              <input id="setting-telegram-token" type="password" placeholder="BotFather에서 발급받은 토큰" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; margin-top:4px;">
+            </div>
+            <div>
+              <label style="font-weight:bold; font-size:14px;">텔레그램 Chat ID</label>
+              <input id="setting-telegram-chatid" type="text" placeholder="@userinfobot에게 /start 보내면 확인" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; margin-top:4px;">
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input id="setting-enabled" type="checkbox" checked>
+              <label for="setting-enabled" style="font-weight:bold; font-size:14px;">알림 활성화</label>
+            </div>
+            <button onclick="saveAlertSettings()" style="padding:10px; background:#2196F3; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px;">💾 설정 저장</button>
+            <div id="settings-save-result"></div>
+          </div>
+        </div>
+
+        <div class="card" style="flex:1; min-width:320px;">
+          <h3>🏷️ 저가 예외 키워드</h3>
+          <p style="color:#888; font-size:13px; margin-bottom:12px;">
+            이 키워드가 품목명에 포함된 제품은 <b>수량 기준 알림에서 제외</b>됩니다.<br>
+            단, 금액 기준(50만원↑)에 해당하면 여전히 알림이 옵니다.
+          </p>
+          <div id="keywords-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
+          <div style="display:flex; gap:8px;">
+            <input id="new-keyword-input" type="text" placeholder="새 키워드 입력" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:6px;" onkeypress="if(event.key==='Enter') addKeyword()">
+            <button onclick="addKeyword()" style="padding:8px 16px; background:#FF9800; color:white; border:none; border-radius:6px; cursor:pointer;">+ 추가</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 택배조회
+         ────────────────────────────── -->
+    <div class="page" id="page-shipping">
+      <!-- 상단: 탭 버튼 -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <button class="ship-tab-btn active" data-ship-tab="search" onclick="switchShipTab('search')">🔍 받는사람 검색</button>
+        <button class="ship-tab-btn" data-ship-tab="daily" onclick="switchShipTab('daily')">📅 일별 조회</button>
+        <button class="ship-tab-btn" data-ship-tab="track" onclick="switchShipTab('track')">📦 운송장 추적</button>
+        <button class="ship-tab-btn" data-ship-tab="sync" onclick="switchShipTab('sync')">🔄 자동 동기화</button>
+        <button class="ship-tab-btn" data-ship-tab="register" onclick="switchShipTab('register')">➕ 발송 등록</button>
+        <div style="flex:1"></div>
+        <span id="ship-stats-badge" style="font-size:12px;color:#6b7280"></span>
+      </div>
+
+      <!-- 탭: 받는사람 검색 -->
+      <div class="ship-tab-panel active" id="ship-panel-search">
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+            <div style="flex:1;min-width:180px">
+              <label style="font-size:12px;font-weight:600;color:#374151">받는사람</label>
+              <input type="text" id="ship-search-name" placeholder="이름 입력" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" onkeydown="if(event.key==='Enter')searchShipments()">
+            </div>
+            <div style="min-width:140px">
+              <label style="font-size:12px;font-weight:600;color:#374151">접수일자</label>
+              <input type="date" id="ship-search-date" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+            </div>
+            <div style="min-width:100px">
+              <label style="font-size:12px;font-weight:600;color:#374151">창고</label>
+              <select id="ship-search-wh" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+                <option value="">전체</option>
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <button onclick="searchShipments()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">검색</button>
+          </div>
+        </div>
+        <div id="ship-search-result"></div>
+      </div>
+
+      <!-- 탭: 일별 조회 -->
+      <div class="ship-tab-panel" id="ship-panel-daily">
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div style="min-width:160px">
+              <label style="font-size:12px;font-weight:600;color:#374151">조회 날짜</label>
+              <input type="date" id="ship-daily-date" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+            </div>
+            <div style="min-width:100px">
+              <label style="font-size:12px;font-weight:600;color:#374151">창고</label>
+              <select id="ship-daily-wh" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+                <option value="">전체</option>
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <button onclick="loadDailyShipments()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">조회</button>
+          </div>
+        </div>
+        <div id="ship-daily-summary" style="margin-bottom:12px"></div>
+        <div id="ship-daily-result"></div>
+      </div>
+
+      <!-- 탭: 운송장 추적 -->
+      <div class="ship-tab-panel" id="ship-panel-track">
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <label style="font-size:12px;font-weight:600;color:#374151">운송장번호</label>
+              <input type="text" id="ship-track-no" placeholder="운송장번호 입력 (쉼표로 여러건)" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px" onkeydown="if(event.key==='Enter')trackShipment()">
+            </div>
+            <button onclick="trackShipment()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">추적</button>
+          </div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:5px;font-size:12px;color:#9ca3af">
+            <span style="color:#f59e0b">ℹ️</span> 집하 전에는 추적이 되지 않습니다.
+          </div>
+        </div>
+        <div id="ship-track-result"></div>
+      </div>
+
+      <!-- 탭: 자동 동기화 -->
+      <div class="ship-tab-panel" id="ship-panel-sync">
+        <!-- SmartLogen 자동 가져오기 -->
+        <div class="card" style="margin-bottom:16px;border:2px solid #2563eb;">
+          <h3 style="margin:0 0 8px 0;font-size:15px;color:#1f2937">🚀 SmartLogen 자동 가져오기</h3>
+          <p style="font-size:13px;color:#6b7280;margin:0 0 12px 0">
+            SmartLogen 포털에 로그인하여 <b>발송 실적</b>을 자동으로 가져와 DB에 저장합니다.<br>
+            받는사람, 운송장번호, 접수일자, 배송상태가 자동으로 입력됩니다.
+          </p>
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:12px">
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">창고</label>
+              <select id="ship-autofetch-wh" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+                <option value="">전체 (용산+김포)</option>
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">기간</label>
+              <select id="ship-autofetch-days" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+                <option value="3">최근 3일</option>
+                <option value="7" selected>최근 7일</option>
+                <option value="14">최근 14일</option>
+                <option value="30">최근 30일</option>
+              </select>
+            </div>
+            <button onclick="autoFetchShipments()" id="ship-autofetch-btn" style="padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">🚀 자동 가져오기</button>
+          </div>
+          <div id="ship-autofetch-result" style="margin-top:8px"></div>
+
+          <!-- 자동 동기화 스케줄러 상태 -->
+          <div style="margin-top:12px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div>
+                <span style="font-size:13px;font-weight:600;color:#374151">⏰ 자동 동기화</span>
+                <span style="font-size:12px;color:#6b7280;margin-left:6px">1시간마다 자동 실행 (최근 3일)</span>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <span id="scheduler-status-badge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#166534;font-weight:600">활성</span>
+                <button onclick="loadSchedulerStatus()" style="padding:4px 10px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer" title="상태 새로고침">🔄</button>
+              </div>
+            </div>
+            <div id="scheduler-info" style="margin-top:6px;font-size:12px;color:#6b7280"></div>
+          </div>
+        </div>
+
+        <!-- 수동 운송장 동기화 -->
+        <div class="card" style="margin-bottom:16px">
+          <h3 style="margin:0 0 8px 0;font-size:15px;color:#1f2937">🔄 운송장번호 대량 동기화</h3>
+          <p style="font-size:13px;color:#6b7280;margin:0 0 12px 0">
+            운송장번호를 입력하면 로젠 API로 추적하여 <b>받는사람, 접수일자, 배송상태</b>를 자동으로 가져와 DB에 저장합니다.
+          </p>
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;font-weight:600;color:#374151">운송장번호 입력</label>
+            <textarea id="ship-sync-input" rows="5" placeholder="운송장번호를 한 줄에 하나씩 입력하세요.&#10;또는 쉼표로 구분: 12345678901, 12345678902" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:monospace;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button onclick="syncShipments()" id="ship-sync-btn" style="padding:10px 24px;background:#6b7280;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">🔄 동기화 시작</button>
+            <span id="ship-sync-count" style="font-size:13px;color:#6b7280"></span>
+          </div>
+          <div id="ship-sync-result" style="margin-top:12px"></div>
+        </div>
+
+        <!-- 엑셀 동기화 -->
+        <div class="card">
+          <h3 style="margin:0 0 8px 0;font-size:15px;color:#1f2937">📤 운송장번호 엑셀로 동기화</h3>
+          <p style="font-size:13px;color:#6b7280;margin:0 0 12px 0">
+            운송장번호가 포함된 엑셀 파일을 업로드하면 자동으로 추적 → DB 저장됩니다.
+          </p>
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div style="flex:1">
+              <input type="file" id="ship-sync-file" accept=".xlsx,.xls,.csv,.txt" style="font-size:13px">
+            </div>
+            <button onclick="syncFromExcel()" style="padding:8px 20px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">엑셀 동기화</button>
+          </div>
+          <div id="ship-sync-file-result" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+      <!-- 탭: 발송 등록 -->
+      <div class="ship-tab-panel" id="ship-panel-register">
+        <div class="card" style="margin-bottom:16px">
+          <h3 style="margin:0 0 12px 0;font-size:15px;color:#1f2937">📤 엑셀 파일 업로드</h3>
+          <p style="font-size:13px;color:#6b7280;margin:0 0 12px 0">
+            필수 컬럼: <b>운송장번호</b>, <b>받는분</b>, <b>접수일자</b><br>
+            선택 컬럼: 받는분전화, 받는분휴대폰, 받는분주소, 물품명, 수량, 비고
+          </p>
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div style="min-width:100px">
+              <label style="font-size:12px;font-weight:600;color:#374151">창고</label>
+              <select id="ship-upload-wh" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <div style="flex:1">
+              <input type="file" id="ship-upload-file" accept=".xlsx,.xls" style="font-size:13px">
+            </div>
+            <button onclick="uploadShipExcel()" style="padding:8px 20px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">업로드</button>
+          </div>
+          <div id="ship-upload-result" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 12px 0;font-size:15px;color:#1f2937">✏️ 수동 등록</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">창고</label>
+              <select id="ship-reg-wh" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                <option value="용산">용산</option>
+                <option value="김포">김포</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">운송장번호 *</label>
+              <input type="text" id="ship-reg-slip" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="운송장번호">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">받는사람 *</label>
+              <input type="text" id="ship-reg-rcv" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="받는사람">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">받는분 연락처</label>
+              <input type="text" id="ship-reg-rcvtel" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="연락처">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">받는분 주소</label>
+              <input type="text" id="ship-reg-rcvaddr" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="주소">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">물품명</label>
+              <input type="text" id="ship-reg-goods" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="물품명">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">접수일자</label>
+              <input type="date" id="ship-reg-date" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151">비고</label>
+              <input type="text" id="ship-reg-memo" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="비고">
+            </div>
+          </div>
+          <div style="margin-top:12px;text-align:right">
+            <button onclick="registerShipment()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600">등록</button>
+          </div>
+          <div id="ship-reg-result" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+
+
+
+    <!-- ──────────────────────────────
+         페이지: CS/RMA
+         ────────────────────────────── -->
+    <div class="page" id="page-cs_rma">
+      <!-- 헤더: 통계 카드 -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">🔧 CS / RMA 관리</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="csShowCreateForm()" style="font-size:13px">+ 새 접수</button>
+          <div style="position:relative">
+            <input type="text" id="cs-search-input" placeholder="고객명 / 연락처 / 접수번호"
+                   style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:200px"
+                   onkeydown="if(event.key==='Enter')csSearch()">
+            <button onclick="csSearch()" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:14px">🔍</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 통계 배지 -->
+      <div id="cs-stats-bar" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"></div>
+
+      <!-- 파이프라인 탭 -->
+      <div style="display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid #e5e7eb;overflow-x:auto">
+        <button class="cs-pipe-tab active" data-status="" onclick="csSwitchTab(this,'')">전체</button>
+        <button class="cs-pipe-tab" data-status="접수완료" onclick="csSwitchTab(this,'접수완료')">📋 접수완료</button>
+        <button class="cs-pipe-tab" data-status="물류수령" onclick="csSwitchTab(this,'물류수령')">📦 물류수령</button>
+        <button class="cs-pipe-tab" data-status="기술인계" onclick="csSwitchTab(this,'기술인계')">🔬 기술인계</button>
+        <button class="cs-pipe-tab" data-status="테스트완료" onclick="csSwitchTab(this,'테스트완료')">✅ 테스트완료</button>
+        <button class="cs-pipe-tab" data-status="처리종결" onclick="csSwitchTab(this,'처리종결')">🏁 처리종결</button>
+      </div>
+
+      <!-- 티켓 리스트 -->
+      <div id="cs-ticket-list"></div>
+
+      <!-- 페이지네이션 -->
+      <div id="cs-pagination" style="display:flex;justify-content:center;gap:8px;margin-top:12px"></div>
+    </div>
+
+    <!-- CS 모달: 새 접수 / 상세 보기 -->
+    <div id="cs-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto;padding:20px" onclick="if(event.target===this)csCloseModal()">
+      <div id="cs-modal-content" style="max-width:720px;margin:40px auto;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.15);overflow:hidden" onclick="event.stopPropagation()">
+      </div>
+    </div>
+
+
+    <!-- ──────────────────────────────
+         페이지: AI 상담 (AICC)
+         ────────────────────────────── -->
+    <div class="page" id="page-aicc">
+      <div style="display:flex;height:calc(100vh - 120px)">
+        <!-- 좌: 세션 목록 -->
+        <div style="width:280px;border-right:1px solid #dee2e6;overflow-y:auto;padding:12px;flex-shrink:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <strong style="font-size:15px">상담 목록</strong>
+            <button onclick="loadAiccSessions()" style="background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:13px" title="새로고침">↻</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:10px">
+            <button id="aicc-bell-btn" onclick="toggleUnansweredPanel()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 6px;cursor:pointer;font-size:13px;position:relative;color:#dc2626" title="미답변 알림">
+              <span style="font-size:20px">🔔</span><span>미답변</span><span id="aicc-bell-badge" style="display:none;background:#e63946;color:#fff;border-radius:10px;min-width:20px;height:20px;font-size:11px;line-height:20px;text-align:center;padding:0 5px;font-weight:700">0</span>
+            </button>
+            <button onclick="openKnowledgeAddModal()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px 6px;cursor:pointer;font-size:13px;color:#4f46e5" title="지식 DB 추가">
+              <span style="font-size:20px">📚</span><span>지식DB</span>
+            </button>
+          </div>
+          <div id="aicc-menu-tabs" style="display:flex;gap:4px;margin-bottom:8px">
+            <button class="aicc-tab active" data-menu="" onclick="setAiccMenuFilter(this,'')" style="flex:1;padding:6px;border:1.5px solid #1a1a2e;border-radius:6px;background:#1a1a2e;color:#fff;cursor:pointer;font-size:11px;font-weight:600">전체</button>
+            <button class="aicc-tab" data-menu="제품문의" onclick="setAiccMenuFilter(this,'제품문의')" style="flex:1;padding:6px;border:1.5px solid #d1d5db;border-radius:6px;background:#fff;color:#333;cursor:pointer;font-size:11px;font-weight:600">제품문의</button>
+            <button class="aicc-tab" data-menu="기술문의" onclick="setAiccMenuFilter(this,'기술문의')" style="flex:1;padding:6px;border:1.5px solid #d1d5db;border-radius:6px;background:#fff;color:#333;cursor:pointer;font-size:11px;font-weight:600">기술문의</button>
+          </div>
+          <div style="margin-bottom:8px">
+            <select id="aicc-channel-filter" onchange="setAiccChannelFilter(this.value)" style="width:100%;padding:6px 8px;border:1.5px solid #d1d5db;border-radius:6px;font-size:11px;font-weight:600;background:#fff;cursor:pointer;color:#333">
+              <option value="">📡 전체 채널</option>
+              <option value="shop">🛒 쇼핑몰</option>
+              <option value="external">🌐 외부 유입</option>
+            </select>
+          </div>
+          <div id="aicc-session-list" style="font-size:13px"></div>
+
+          <!-- 미답변 패널 (토글) -->
+          <div id="aicc-unanswered-panel" style="display:none;border-top:2px solid #e63946;margin-top:8px;padding-top:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <strong style="font-size:12px;color:#e63946">🔔 미답변 알림</strong>
+              <button onclick="toggleUnansweredPanel()" style="background:none;border:none;cursor:pointer;font-size:11px;color:#999">닫기</button>
+            </div>
+            <div id="aicc-unanswered-list" style="font-size:12px;max-height:300px;overflow-y:auto"></div>
+          </div>
+        </div>
+        <!-- 우: 채팅 상세 -->
+        <div style="flex:1;display:flex;flex-direction:column;padding:16px;min-width:0">
+          <div id="aicc-empty" style="margin:auto;color:#999;text-align:center;font-size:14px">
+            ← 세션을 선택하세요
+          </div>
+          <div id="aicc-detail" style="display:none;flex:1;flex-direction:column">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div>
+                <strong id="aicc-d-name"></strong>
+                <span id="aicc-d-model" style="background:#4f46e5;color:#fff;padding:1px 8px;border-radius:4px;font-size:11px;margin-left:6px"></span>
+                <span id="aicc-d-menu" style="background:#6b7280;color:#fff;padding:1px 8px;border-radius:4px;font-size:11px;margin-left:4px"></span>
+                <span id="aicc-d-channel" style="padding:1px 8px;border-radius:4px;font-size:11px;margin-left:4px;display:none"></span>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button id="aicc-btn-intervene" onclick="aiccIntervene()" style="padding:4px 12px;background:#f59e0b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">개입하기</button>
+                <button onclick="aiccCloseSession()" style="padding:4px 12px;background:none;border:1px solid #ef4444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:12px">종료</button>
+              </div>
+            </div>
+            <div id="aicc-intervene-bar" style="display:none;background:#fff3cd;border:1px solid #ffc107;padding:6px 12px;border-radius:6px;font-size:12px;color:#856404;margin-bottom:8px">
+              🔴 개입 중 — 관리자가 직접 답변하고 있습니다
+            </div>
+            <div id="aicc-msgs" style="flex:1;overflow-y:auto;border:1px solid #dee2e6;border-radius:8px;padding:12px;background:#fafafa"></div>
+            <div id="aicc-admin-input" style="display:none;margin-top:10px">
+              <div style="display:flex;gap:8px">
+                <textarea id="aicc-admin-txt" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:none" rows="2" placeholder="관리자 답변 입력 (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
+                <button onclick="aiccSendAdmin()" style="padding:8px 16px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;align-self:flex-end">전송</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 미답변 상세 모달 -->
+    <div id="aicc-unans-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;justify-content:center;align-items:center">
+      <div style="background:#fff;border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:16px">미답변 상세</h3>
+          <button onclick="closeUnansModal()" style="background:none;border:none;font-size:20px;cursor:pointer">&times;</button>
+        </div>
+        <div id="unans-modal-body"></div>
+        <hr style="margin:16px 0;border:none;border-top:1px solid #eee">
+        <h4 style="margin:0 0 8px;font-size:14px">📝 제품 지식 DB에 추가</h4>
+        <div style="font-size:12px;color:#666;margin-bottom:8px">이 답변을 DB에 추가하면 이후 동일 질문에 정확한 답변이 가능합니다.</div>
+        <input id="unans-model" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:8px" placeholder="모델명 (예: LS-ANDOOR-S)">
+        <input id="unans-key" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:8px" placeholder="항목명 (예: 손잡이_들뜸_해결, FAQ 등)">
+        <textarea id="unans-value" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical;margin-bottom:12px" rows="4" placeholder="추가할 내용 (예: 사각봉을 35mm두께용으로 교체하세요)"></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="resolveUnanswered()" style="padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">해결처리만</button>
+          <button onclick="addKnowledgeFromUnanswered()" style="padding:8px 16px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">DB 추가 + 해결</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 지식 DB 추가 모달 -->
+    <div id="aicc-kb-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;justify-content:center;align-items:center">
+      <div style="background:#fff;border-radius:12px;padding:24px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:16px">📚 제품 지식 DB 추가</h3>
+          <button onclick="closeKbModal()" style="background:none;border:none;font-size:20px;cursor:pointer">&times;</button>
+        </div>
+
+        <!-- 모델 검색 -->
+        <div style="margin-bottom:12px;position:relative">
+          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">모델명 선택 (필수)</label>
+          <input id="kb-model-input" type="text" autocomplete="off"
+            oninput="kbModelSearch(this.value)"
+            style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box"
+            placeholder="모델명 입력 (예: LS-ANDOOR, LS-HDMI 등 2자 이상)">
+          <div id="kb-model-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-top:none;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+          <div id="kb-selected-model" style="display:none;margin-top:6px;padding:6px 10px;background:#e8f5e9;border-radius:6px;font-size:12px;color:#2e7d32">
+            ✅ 선택됨: <strong id="kb-selected-name"></strong>
+          </div>
+        </div>
+
+        <!-- 기존 데이터 보기 -->
+        <div id="kb-existing-area" style="display:none;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <label style="font-size:12px;color:#666">📋 현재 등록된 지식 DB</label>
+            <button onclick="toggleKbExisting()" id="kb-existing-toggle" style="background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;color:#666">펼치기</button>
+          </div>
+          <div id="kb-existing-data" style="display:none;background:#f8f9fa;border:1px solid #e9ecef;border-radius:6px;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace"></div>
+        </div>
+
+        <!-- QnA 입력 -->
+        <hr style="margin:12px 0;border:none;border-top:1px solid #eee">
+        <h4 style="margin:0 0 8px;font-size:14px">✏️ 새 항목 추가</h4>
+        <div style="font-size:12px;color:#666;margin-bottom:10px">고객 질문에 AI가 정확히 답변할 수 있도록 제품 지식을 추가합니다.</div>
+
+        <input id="kb-key" type="text"
+          style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:8px;box-sizing:border-box"
+          placeholder="항목명 (예: FAQ, 비밀번호등록, 손잡이_설치방법, 호환성 등)">
+
+        <textarea id="kb-value"
+          style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical;margin-bottom:8px;box-sizing:border-box"
+          rows="5" placeholder="내용을 입력하세요.&#10;여러 단계가 있으면 줄바꿈으로 구분하면 자동으로 목록화됩니다.&#10;&#10;예시:&#10;1단계: 숫자 1을 누릅니다&#10;2단계: #을 누릅니다&#10;3단계: 비밀번호를 입력합니다"></textarea>
+
+        <div style="font-size:11px;color:#999;margin-bottom:12px">💡 줄바꿈으로 구분하면 리스트(배열)로 저장됩니다. 한 줄이면 단일 텍스트로 저장됩니다.</div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="closeKbModal()" style="padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">취소</button>
+          <button onclick="addKnowledgeDirect()" style="padding:8px 16px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">DB에 추가</button>
+        </div>
+
+        <!-- 추가 이력 -->
+        <div id="kb-add-history" style="margin-top:16px;display:none">
+          <hr style="margin:12px 0;border:none;border-top:1px solid #eee">
+          <label style="font-size:12px;color:#666">✅ 이번 세션에서 추가한 항목</label>
+          <div id="kb-add-history-list" style="font-size:12px;margin-top:6px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: AI 대시보드
+         ────────────────────────────── -->
+    <div class="page" id="page-ai_dashboard">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <h2 style="margin:0">📊 AI 품질 대시보드</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="dash-period" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="7">최근 7일</option>
+            <option value="30" selected>최근 30일</option>
+            <option value="90">최근 90일</option>
+          </select>
+          <button onclick="loadDashboard()" style="padding:6px 14px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">새로고침</button>
+        </div>
+      </div>
+
+      <!-- 요약 카드 -->
+      <div id="dash-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px">
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:12px;color:#6b7280">총 LLM 호출</div>
+          <div id="dash-total-calls" style="font-size:28px;font-weight:700;color:var(--primary)">-</div>
+        </div>
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:12px;color:#6b7280">총 토큰 사용</div>
+          <div id="dash-total-tokens" style="font-size:28px;font-weight:700;color:#8b5cf6">-</div>
+        </div>
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:12px;color:#6b7280">예상 비용 (USD)</div>
+          <div id="dash-cost" style="font-size:28px;font-weight:700;color:#f59e0b">-</div>
+        </div>
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:12px;color:#6b7280">자동처리율 (STP)</div>
+          <div id="dash-stp" style="font-size:28px;font-weight:700;color:#10b981">-</div>
+        </div>
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:12px;color:#6b7280">자동학습 건수</div>
+          <div id="dash-auto-train" style="font-size:28px;font-weight:700;color:#3b82f6">-</div>
+        </div>
+      </div>
+
+      <!-- 거래처별 통계 -->
+      <div class="card" style="padding:20px;margin-bottom:20px">
+        <h3 style="margin:0 0 12px 0;font-size:15px">거래처별 AI 매칭 성과</h3>
+        <div id="dash-customer-table" style="overflow-x:auto">
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <thead>
+              <tr style="border-bottom:2px solid #e5e7eb">
+                <th style="text-align:left;padding:8px">거래처</th>
+                <th style="text-align:right;padding:8px">발주건수</th>
+                <th style="text-align:right;padding:8px">총 라인</th>
+                <th style="text-align:right;padding:8px">자동매칭</th>
+                <th style="text-align:right;padding:8px">STP율</th>
+              </tr>
+            </thead>
+            <tbody id="dash-cust-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">데이터를 불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 일별 추이 -->
+      <div class="card" style="padding:20px;margin-bottom:20px">
+        <h3 style="margin:0 0 12px 0;font-size:15px">일별 토큰 사용 추이</h3>
+        <div id="dash-daily-chart" style="overflow-x:auto">
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <thead>
+              <tr style="border-bottom:2px solid #e5e7eb">
+                <th style="text-align:left;padding:8px">날짜</th>
+                <th style="text-align:right;padding:8px">호출수</th>
+                <th style="text-align:right;padding:8px">입력토큰</th>
+                <th style="text-align:right;padding:8px">출력토큰</th>
+                <th style="text-align:right;padding:8px">예상비용</th>
+              </tr>
+            </thead>
+            <tbody id="dash-daily-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">로딩 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    async function loadDashboard() {
+      const days = parseInt(document.getElementById("dash-period").value) || 30;
+      try {
+        const data = await api.dashboardStats(days);
+
+        // 요약 카드
+        document.getElementById("dash-total-calls").textContent = (data.total_calls || 0).toLocaleString();
+        document.getElementById("dash-total-tokens").textContent = ((data.total_input_tokens || 0) + (data.total_output_tokens || 0)).toLocaleString();
+        document.getElementById("dash-cost").textContent = "$" + (data.estimated_cost_usd || 0).toFixed(2);
+
+        const stpData = data.stp_rate || {};
+        const stpPct = stpData.stp_pct != null ? stpData.stp_pct
+            : (stpData.total_lines ? ((stpData.auto_matched / stpData.total_lines) * 100).toFixed(1) : "0");
+        document.getElementById("dash-stp").textContent = stpPct + "%";
+        document.getElementById("dash-auto-train").textContent = (data.auto_training_total || 0).toLocaleString();
+
+        // 거래처 테이블
+        const custTbody = document.getElementById("dash-cust-tbody");
+        const custs = data.customer_stats || [];
+        if (custs.length === 0) {
+          custTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">아직 처리된 발주서가 없습니다</td></tr>';
+        } else {
+          custTbody.innerHTML = custs.map(c => {
+            const stp = c.stp_rate != null ? c.stp_rate
+                : (c.total_lines ? ((c.auto_matched / c.total_lines) * 100).toFixed(1) : "0");
+            return `<tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:8px">${c.cust_code || "-"}</td>
+              <td style="text-align:right;padding:8px">${c.orders || 0}</td>
+              <td style="text-align:right;padding:8px">${c.total_lines || 0}</td>
+              <td style="text-align:right;padding:8px">${c.auto_matched || 0}</td>
+              <td style="text-align:right;padding:8px"><span style="color:${parseFloat(stp)>=80?"#10b981":parseFloat(stp)>=50?"#f59e0b":"#ef4444"};font-weight:600">${stp}%</span></td>
+            </tr>`;
+          }).join("");
+        }
+
+        // 일별 추이
+        const dailyTbody = document.getElementById("dash-daily-tbody");
+        const daily = data.daily_trend || [];
+        if (daily.length === 0) {
+          dailyTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">아직 데이터가 없습니다</td></tr>';
+        } else {
+          dailyTbody.innerHTML = daily.slice(-14).reverse().map(d => `<tr style="border-bottom:1px solid #f3f4f6">
+            <td style="padding:8px">${d.date || ""}</td>
+            <td style="text-align:right;padding:8px">${d.calls || 0}</td>
+            <td style="text-align:right;padding:8px">${(d.input_tokens || 0).toLocaleString()}</td>
+            <td style="text-align:right;padding:8px">${(d.output_tokens || 0).toLocaleString()}</td>
+            <td style="text-align:right;padding:8px">$${(d.cost || 0).toFixed(3)}</td>
+          </tr>`).join("");
+        }
+      } catch(e) {
+        console.error("대시보드 로드 실패:", e);
+        // 에러 시 사용자에게 부드러운 메시지 표시 (빨간 에러 대신 안내 메시지)
+        document.getElementById("dash-total-calls").textContent = "-";
+        document.getElementById("dash-total-tokens").textContent = "-";
+        document.getElementById("dash-cost").textContent = "-";
+        document.getElementById("dash-stp").textContent = "-";
+        document.getElementById("dash-auto-train").textContent = "-";
+        const custTbody = document.getElementById("dash-cust-tbody");
+        if (custTbody) custTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">데이터를 불러올 수 없습니다</td></tr>';
+        const dailyTbody = document.getElementById("dash-daily-tbody");
+        if (dailyTbody) dailyTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#9ca3af">데이터를 불러올 수 없습니다</td></tr>';
+        if (e.message && e.message.includes("401")) {
+          // 인증 만료 시 조용히 처리 (로그인 화면으로 전환)
+        } else {
+          toast("대시보드 로드 실패. 잠시 후 다시 시도해주세요.", "warning");
+        }
+      }
+    }
+
+    // 페이지 전환 시 대시보드 자동 로드
+    const _origShowPage = typeof showPage === "function" ? showPage : null;
+    </script>
+
+    <!-- ──────────────────────────────
+         페이지: Super Agent
+         ────────────────────────────── -->
+    <div class="page" id="page-super_agent">
+      <div class="sa2-container">
+
+        <!-- 프롬프트 입력 카드 -->
+        <div class="card" style="margin-bottom:16px">
+          <div id="sa2-stats-bar" style="font-size:12px;color:#6b7280;margin-bottom:8px;padding:6px 12px;background:#f9fafb;border-radius:6px"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div class="card-title" style="margin:0">🤖 Super Agent</div>
+            <select id="sa2-deliverable-type" class="sa2-type-select">
+              <option value="report">📄 보고서 (docx)</option>
+              <option value="slides">📊 프레젠테이션 (pptx)</option>
+              <option value="sheet">📋 스프레드시트 (xlsx)</option>
+              <option value="brief">📝 간단 요약</option>
+            </select>
+          </div>
+
+          <textarea id="sa2-prompt" class="sa2-prompt-input"
+            placeholder="무엇을 분석하거나 생성할까요?&#10;&#10;예: '이번 달 매출 데이터를 분석해서 경영진 보고서를 작성해줘'&#10;예: '거래처별 매출 추이를 파악하고 영업 전략을 제안해줘'&#10;예: '첨부한 CSV 파일의 재고 데이터를 분석해줘'"></textarea>
+
+          <!-- 예시 프롬프트 -->
+          <div class="sa2-example-chips">
+            <span class="sa2-example-chip" onclick="document.getElementById('sa2-prompt').value='이번 달 매출 데이터를 분석해서 경영진 보고서를 작성해줘'">📊 매출 분석 보고서</span>
+            <span class="sa2-example-chip" onclick="document.getElementById('sa2-prompt').value='거래처별 매출 추이를 파악하고 영업 전략을 제안해줘'">📈 영업 전략 제안</span>
+            <span class="sa2-example-chip" onclick="document.getElementById('sa2-prompt').value='시장 동향과 경쟁사를 조사하여 브리핑 자료를 만들어줘'">🔍 시장 조사</span>
+            <span class="sa2-example-chip" onclick="document.getElementById('sa2-prompt').value='첨부한 데이터를 분석하고 인사이트를 도출해줘'">📎 데이터 분석</span>
+          </div>
+
+          <!-- 파일 업로드 -->
+          <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+            <div id="sa2-dropzone" class="sa2-dropzone" style="flex:1;padding:14px">
+              <span style="font-size:20px">📂</span>
+              <span style="font-size:13px;color:#6b7280;margin-left:8px">파일을 끌어놓거나 클릭하여 업로드 (CSV, Excel, PDF, 텍스트)</span>
+              <input type="file" id="sa2-file" style="display:none" accept=".csv,.xlsx,.xls,.pdf,.txt,.json,.tsv,.md">
+            </div>
+            <button class="btn btn-primary" onclick="submitSuperAgentJob()" style="white-space:nowrap;padding:12px 24px;font-size:14px">
+              🚀 실행
+            </button>
+          </div>
+          <div id="sa2-file-label" style="display:none;font-size:13px;color:#374151;margin-top:8px"></div>
+        </div>
+
+        <!-- 템플릿 그리드 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:12px">⚡ 빠른 실행 템플릿</div>
+          <div id="sa2-templates-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">
+            <div style="text-align:center;padding:16px;color:#9ca3af;font-size:12px;grid-column:1/-1">템플릿 로딩 중...</div>
+          </div>
+        </div>
+
+        <!-- 진행 상황 -->
+        <div id="sa2-progress-area" class="card" style="display:none;margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:12px">⏳ 진행 상황</div>
+          <div class="sa2-progress-bar">
+            <div id="sa2-progress-fill" class="sa2-progress-fill"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:8px">
+            <span id="sa2-status-text" style="font-size:13px;color:#6b7280">대기 중...</span>
+            <span id="sa2-progress-text" style="font-size:13px;color:#6b7280;font-weight:600">0%</span>
+          </div>
+        </div>
+
+        <!-- 결과 표시 -->
+        <div id="sa2-result-area" style="display:none;margin-bottom:16px">
+          <div class="sa2-result-card">
+            <div class="sa2-result-header">
+              <span style="font-weight:600;color:#111827">📋 결과</span>
+              <div style="display:flex;gap:8px;align-items:center">
+                <div id="sa2-cost-info" class="sa2-cost-info"></div>
+                <a id="sa2-download-btn" class="sa2-download-btn" href="#" download style="display:none">
+                  ⬇️ 다운로드
+                </a>
+              </div>
+            </div>
+            <div id="sa2-preview-content" class="sa2-result-body">
+              <p style="color:#9ca3af;text-align:center">결과를 로드하는 중...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 작업 이력 -->
+        <div class="card">
+          <div class="card-title">📜 최근 작업 이력</div>
+          <div id="sa2-history-list" style="max-height:300px;overflow-y:auto">
+            <div style="text-align:center;padding:20px;color:#9ca3af;font-size:13px">아직 작업 이력이 없습니다</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지 5: 설정
+         ────────────────────────────── -->
+    <div class="page" id="page-settings" style="position:relative">
+
+      <!-- 설정 탭 네비게이션 -->
+      <div class="settings-tabs" style="display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--gray-200);padding-bottom:0">
+        <button class="settings-tab-btn active" data-settings-tab="api"
+          onclick="switchSettingsTab('api')"
+          style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s">
+          AI 모델 설정
+        </button>
+        <button class="settings-tab-btn" data-settings-tab="customers"
+          onclick="switchSettingsTab('customers')"
+          style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s">
+          거래처 관리
+        </button>
+        <button class="settings-tab-btn" data-settings-tab="materials"
+          onclick="switchSettingsTab('materials')"
+          style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s">
+          자료관리
+        </button>
+        <button class="settings-tab-btn" data-settings-tab="account"
+          onclick="switchSettingsTab('account')"
+          style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s">
+          내 계정
+        </button>
+        <button class="settings-tab-btn" data-settings-tab="activity" id="settings-activity-tab-btn"
+          onclick="switchSettingsTab('activity')"
+          style="padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;display:none">
+          활동 로그
+        </button>
+      </div>
+
+      <!-- ─── 관리자 비밀번호 오버레이 ─── -->
+      <div id="settings-admin-overlay" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.97);z-index:10;display:flex;align-items:center;justify-content:center;border-radius:var(--radius)">
+        <div style="text-align:center;max-width:340px;padding:40px">
+          <div style="font-size:40px;margin-bottom:12px">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:8px">관리자 인증 필요</h3>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:20px">설정 페이지에 접근하려면<br>관리자 비밀번호를 입력하세요.</p>
+          <input type="password" class="form-control" id="admin-pw-input" placeholder="관리자 비밀번호"
+            style="text-align:center;margin-bottom:12px" onkeydown="if(event.key==='Enter')verifyAdminPassword()">
+          <button class="btn btn-primary" onclick="verifyAdminPassword()" style="width:100%">확인</button>
+          <div id="admin-pw-error" style="margin-top:10px;font-size:12px;color:var(--danger)"></div>
+        </div>
+      </div>
+
+      <!-- ─── 탭 1: AI 모델 설정 (기능별 통합) ─── -->
+      <div class="settings-panel" id="settings-tab-api">
+        <div class="card">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>기능별 LLM 모델 관리</span>
+            <button class="btn btn-primary btn-sm" onclick="saveLLMConfig()" id="llm-save-btn">전체 저장</button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:20px">
+            각 기능에서 사용하는 AI 모델을 확인하고 변경할 수 있습니다.
+          </p>
+
+          <div id="llm-config-list" style="display:flex;flex-direction:column;gap:12px">
+            <p style="color:var(--gray-400);text-align:center;padding:20px">LLM 설정 로딩 중...</p>
+          </div>
+
+          <div id="llm-config-status" style="margin-top:16px;font-size:13px"></div>
+        </div>
+
+        <!-- 외부 API 키 관리 -->
+        <div class="card">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>외부 API 키 관리</span>
+            <button class="btn btn-primary btn-sm" onclick="saveApiKeys()">API 키 저장</button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+            Super Agent 도구에서 사용하는 외부 API 키를 설정합니다. 환경변수(.env)에 설정된 키가 있으면 자동으로 사용됩니다.
+          </p>
+          <div id="api-keys-list" style="display:flex;flex-direction:column;gap:10px">
+            <p style="color:var(--gray-400);text-align:center;padding:16px">로딩 중...</p>
+          </div>
+          <div id="api-keys-status" style="margin-top:12px;font-size:13px"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">API 연결 상태</div>
+          <button class="btn btn-outline btn-sm" onclick="checkHealth()">연결 확인</button>
+          <div id="health-result" style="margin-top:12px;font-size:13px"></div>
+        </div>
+      </div>
+
+      <!-- ─── 탭 2: 거래처 관리 ─── -->
+      <div class="settings-panel" id="settings-tab-customers" style="display:none">
+        <!-- ERP 거래처 동기화 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>ERP 거래처 동기화</span>
+            <button class="btn btn-primary btn-sm" onclick="syncCustomersFromERP()" id="cust-erp-sync-btn">
+              🔄 ERP에서 가져오기
+            </button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:8px">
+            이카운트 ERP에 등록된 거래처를 자동으로 동기화합니다. 서버 시작 시 거래처가 없으면 자동 실행됩니다.
+          </p>
+          <div id="cust-erp-sync-status" style="font-size:13px;color:var(--gray-500)">
+            상태 확인 중...
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">거래처 관리</div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+            <strong>ERP CUST 코드</strong>를 정확히 입력해야 ERP 전송이 됩니다.<br>
+            이카운트 ERP &rarr; 기초등록 &rarr; 거래처등록에서 거래처코드를 확인하세요.
+          </p>
+
+          <!-- 신규 추가 -->
+          <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+            <input type="text" class="form-control" id="new-cust-code" placeholder="ERP 거래처코드 (CUST)" style="max-width:200px">
+            <input type="text" class="form-control" id="new-cust-name" placeholder="거래처명" style="max-width:220px">
+            <button class="btn btn-primary btn-sm" onclick="addCustomer()">+ 추가</button>
+          </div>
+
+          <!-- 검색 영역 -->
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+            <div style="position:relative;flex:1;max-width:360px">
+              <input type="text" class="form-control" id="settings-cust-search"
+                placeholder="거래처명 또는 코드 검색..." autocomplete="off"
+                oninput="onSettingsCustSearch(this.value)"
+                style="padding-right:32px">
+              <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#a0aec0;pointer-events:none">🔍</span>
+            </div>
+            <span id="settings-cust-count" style="font-size:12px;color:var(--gray-400)"></span>
+          </div>
+
+          <!-- 목록 (기본 숨김) -->
+          <div id="settings-customer-list" style="font-size:13px;color:var(--gray-600)">
+            <p style="color:var(--gray-400);text-align:center;padding:20px 0">
+              거래처명 또는 코드를 검색하세요
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── 탭 3: 자료관리 ─── -->
+      <div class="settings-panel" id="settings-tab-materials" style="display:none">
+
+        <!-- Google API 진단 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>Google API 연결 상태</span>
+            <button class="btn btn-outline btn-sm" onclick="checkGoogleApi()" id="google-api-check-btn">
+              진단 실행
+            </button>
+          </div>
+          <div id="google-api-check-result" style="font-size:13px;color:var(--gray-500)">
+            '진단 실행' 버튼을 클릭하여 Google Drive API / Sheets API 활성화 상태를 확인하세요.
+          </div>
+        </div>
+
+        <!-- 동기화 상태 -->
+        <div class="card">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>단가표 소스 관리</span>
+            <button class="btn btn-primary btn-sm" onclick="materialsyncAll()" id="mat-sync-all-btn">
+              🔄 전체 동기화
+            </button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+            Google Sheets 단가표를 동기화하여 로컬 DB에 저장합니다.
+            <strong>AI 에이전트 채팅</strong>에서 "○○ 가격 알려줘" 형태로 검색할 수 있습니다.
+          </p>
+
+          <div id="mat-sync-status" style="margin-bottom:12px;font-size:13px"></div>
+
+          <div id="mat-sources-list">
+            <p style="color:var(--gray-400);text-align:center;padding:20px">소스 목록 로딩 중...</p>
+          </div>
+        </div>
+
+        <!-- 단가표 검색 테스트 -->
+        <div class="card">
+          <div class="card-title">단가표 검색 테스트</div>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+            <div style="flex:1;min-width:200px;max-width:300px">
+              <label class="form-label">검색어</label>
+              <input type="text" class="form-control" id="mat-search-input"
+                placeholder="품목명, 모델명 입력..."
+                onkeydown="if(event.key==='Enter')materialSearch()">
+            </div>
+            <div style="min-width:150px">
+              <label class="form-label">제조사 <span style="color:var(--gray-400);font-weight:400">(선택)</span></label>
+              <input type="text" class="form-control" id="mat-vendor-input" placeholder="전체" style="width:150px">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="materialSearch()">🔍 검색</button>
+          </div>
+          <div id="mat-search-results">
+            <p style="color:var(--gray-400);text-align:center;padding:20px 0">
+              검색어를 입력하고 검색 버튼을 클릭하세요.
+            </p>
+          </div>
+        </div>
+
+        <!-- 오더리스트 동기화 -->
+        <div class="card" style="margin-top:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>오더리스트 동기화 (해외 발주)</span>
+            <button class="btn btn-primary btn-sm" onclick="settingsSyncOrderList()" id="settings-ol-sync-btn">
+              🔄 동기화
+            </button>
+          </div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">
+            해외 공장 발주 현황을 Google Sheets에서 동기화합니다. 서버 시작 시 자동 동기화됩니다.
+          </p>
+          <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
+            <strong>시트 ID:</strong> <code style="font-size:11px;background:#f7fafc;padding:2px 6px;border-radius:3px">1ej0cxyM3NHJKpF-KBXbZ16fH-lZcUrr3Z3eTwFVFSco</code>
+          </div>
+          <div id="settings-ol-status" style="font-size:13px;color:var(--gray-500)">
+            상태 확인 중...
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ─── 탭 4: 내 계정 ─── -->
+      <div class="settings-panel" id="settings-tab-account" style="display:none">
+        <div class="card">
+          <div class="card-title">내 계정</div>
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px" id="account-info">로그인 정보 없음</p>
+
+          <div style="border-top:1px solid var(--gray-100);padding-top:16px;margin-top:8px">
+            <div class="card-title" style="font-size:15px">비밀번호 변경</div>
+            <div style="max-width:360px">
+              <div class="form-group">
+                <label class="form-label">현재 비밀번호</label>
+                <input type="password" class="form-control" id="pw-old-inline" placeholder="현재 비밀번호">
+              </div>
+              <div class="form-group">
+                <label class="form-label">새 비밀번호</label>
+                <input type="password" class="form-control" id="pw-new-inline" placeholder="새 비밀번호">
+              </div>
+              <div class="form-group">
+                <label class="form-label">새 비밀번호 확인</label>
+                <input type="password" class="form-control" id="pw-confirm-inline" placeholder="새 비밀번호 재입력">
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="doChangePwInline()">비밀번호 변경</button>
+            </div>
+          </div>
+
+          <!-- 관리자 전용: 관리자 비밀번호 변경 -->
+          <div id="admin-pw-change-section" style="display:none;border-top:1px solid var(--gray-100);padding-top:16px;margin-top:16px">
+            <div class="card-title" style="font-size:15px">관리자 비밀번호 변경</div>
+            <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">설정 페이지 접근에 사용하는 관리자 비밀번호를 변경합니다.</p>
+            <div style="max-width:360px">
+              <div class="form-group">
+                <label class="form-label">현재 관리자 비밀번호</label>
+                <input type="password" class="form-control" id="admin-pw-current" placeholder="현재 관리자 비밀번호">
+              </div>
+              <div class="form-group">
+                <label class="form-label">새 관리자 비밀번호</label>
+                <input type="password" class="form-control" id="admin-pw-new" placeholder="새 비밀번호">
+              </div>
+              <div class="form-group">
+                <label class="form-label">새 관리자 비밀번호 확인</label>
+                <input type="password" class="form-control" id="admin-pw-confirm" placeholder="새 비밀번호 재입력">
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="changeAdminPassword()">관리자 비밀번호 변경</button>
+            </div>
+          </div>
+
+          <!-- 관리자 전용: 비밀번호 초기화 -->
+          <div id="admin-reset-section" style="display:none;border-top:1px solid var(--gray-100);padding-top:16px;margin-top:16px">
+            <div class="card-title" style="font-size:15px">직원 비밀번호 초기화 (관리자 전용)</div>
+            <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">비밀번호를 잊은 직원의 비밀번호를 담당자 코드 숫자로 초기화합니다.</p>
+            <div style="max-width:360px">
+              <div class="form-group">
+                <label class="form-label">초기화할 직원</label>
+                <select class="form-control" id="reset-target-emp">
+                  <option value="">-- 직원 선택 --</option>
+                </select>
+              </div>
+              <button class="btn btn-sm" style="background:#e53e3e;color:#fff" onclick="doResetPassword()">비밀번호 초기화</button>
+            </div>
+          </div>
+
+          <!-- 관리자 전용: 담당자 관리 -->
+          <div id="admin-emp-manage-section" style="display:none;border-top:1px solid var(--gray-100);padding-top:16px;margin-top:16px">
+            <div class="card-title" style="font-size:15px">담당자 관리 (관리자 전용)</div>
+            <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">담당자를 추가하거나 삭제합니다. 초기 비밀번호는 담당자 코드 숫자입니다.</p>
+
+            <!-- 담당자 추가 폼 -->
+            <div style="max-width:480px;margin-bottom:20px;padding:16px;background:var(--gray-50);border-radius:8px">
+              <div style="font-weight:600;font-size:14px;margin-bottom:12px;color:var(--gray-700)">새 담당자 추가</div>
+              <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+                <div class="form-group" style="margin-bottom:0;flex:0 0 100px">
+                  <label class="form-label">담당자 코드</label>
+                  <input type="text" class="form-control" id="add-emp-cd" placeholder="예: 99" maxlength="20">
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px">
+                  <label class="form-label">이름</label>
+                  <input type="text" class="form-control" id="add-emp-name" placeholder="예: 홍길동" maxlength="50">
+                </div>
+                <button class="btn btn-primary btn-sm" style="height:38px;white-space:nowrap" onclick="doAddEmployee()">추가</button>
+              </div>
+            </div>
+
+            <!-- 담당자 목록 테이블 -->
+            <div id="emp-manage-list" style="max-width:480px">
+              <div style="font-weight:600;font-size:14px;margin-bottom:12px;color:var(--gray-700)">현재 담당자 목록</div>
+              <div id="emp-manage-table">로딩 중...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── 탭 5: 활동 로그 (관리자 전용) ─── -->
+      <div class="settings-panel" id="settings-tab-activity" style="display:none">
+
+        <!-- 요약 통계 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>사용자 활동 로그</span>
+            <button class="btn btn-outline btn-sm" onclick="loadActivityLogs(1)" style="font-size:12px">🔄 새로고침</button>
+          </div>
+          <div id="activity-summary" style="font-size:13px;color:var(--gray-600);margin-bottom:16px">
+            로딩 중...
+          </div>
+        </div>
+
+        <!-- 필터 -->
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div>
+              <label class="form-label" style="font-size:12px">직원</label>
+              <select class="form-control" id="activity-filter-emp" style="min-width:130px;font-size:13px" onchange="loadActivityLogs(1)">
+                <option value="">전체</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size:12px">액션</label>
+              <select class="form-control" id="activity-filter-action" style="min-width:140px;font-size:13px" onchange="loadActivityLogs(1)">
+                <option value="">전체</option>
+                <option value="로그인">로그인</option>
+                <option value="발주서">발주서 관련</option>
+                <option value="견적서">견적서 관련</option>
+                <option value="재고">재고 조회</option>
+                <option value="ERP 전송">ERP 전송</option>
+                <option value="동기화">동기화</option>
+                <option value="모델 변경">모델 변경</option>
+                <option value="학습">학습 데이터</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size:12px">시작일</label>
+              <input type="date" class="form-control" id="activity-filter-from" style="font-size:13px" onchange="loadActivityLogs(1)">
+            </div>
+            <div>
+              <label class="form-label" style="font-size:12px">종료일</label>
+              <input type="date" class="form-control" id="activity-filter-to" style="font-size:13px" onchange="loadActivityLogs(1)">
+            </div>
+          </div>
+        </div>
+
+        <!-- 로그 테이블 -->
+        <div class="card">
+          <div id="activity-logs-container">
+            <p style="color:var(--gray-400);text-align:center;padding:20px">로딩 중...</p>
+          </div>
+          <!-- 페이지네이션 -->
+          <div id="activity-pagination" style="display:flex;justify-content:center;gap:8px;margin-top:16px"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 발주서 학습
+         ────────────────────────────── -->
+    <div class="page" id="page-training">
+
+      <!-- 통계 요약 -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="card-title" style="margin:0">발주서 처리 강화 (학습 데이터)</div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div id="training-stats" style="font-size:13px;color:var(--gray-500)"></div>
+            <button class="btn btn-primary" onclick="openBulkTrainingModal()" style="font-size:13px;padding:6px 14px">
+              📦 대량 학습
+            </button>
+          </div>
+        </div>
+        <p style="font-size:13px;color:var(--gray-600);margin-top:8px;margin-bottom:0">
+          원본 발주서와 정확한 판매전표(엑셀)를 매칭하여 학습 데이터로 저장합니다.<br>
+          학습 데이터가 많을수록 같은 거래처의 새 발주서를 더 정확하게 처리할 수 있습니다.
+        </p>
+      </div>
+
+      <!-- 새 학습 데이터 등록 -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">새 학습 데이터 등록</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <!-- 왼쪽: 거래처 + 발주서 원문 -->
+          <div>
+            <div class="form-group">
+              <label class="form-label">거래처 <span class="required">*</span></label>
+              <div style="position:relative;max-width:100%">
+                <input type="text" class="form-control" id="tr-cust-search"
+                  placeholder="거래처명 또는 코드 검색..." autocomplete="off"
+                  oninput="onTrainingCustSearch(this.value)" onfocus="showTrainingCustDropdown()">
+                <div id="tr-cust-dropdown" style="
+                  display:none;position:absolute;top:100%;left:0;right:0;
+                  background:#fff;border:1px solid var(--gray-200);border-radius:8px;
+                  max-height:200px;overflow-y:auto;z-index:500;
+                  box-shadow:0 4px 16px rgba(0,0,0,0.1);margin-top:2px">
+                </div>
+              </div>
+              <div id="tr-cust-selected" style="display:none;margin-top:4px;font-size:13px;color:var(--accent);font-weight:500"></div>
+              <input type="hidden" id="tr-cust-code">
+              <input type="hidden" id="tr-cust-name">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">원본 발주서 <span style="font-weight:400;color:var(--gray-400)">(선택 - 텍스트 또는 이미지)</span></label>
+              <!-- 입력 방식 탭 -->
+              <div style="display:flex;gap:4px;margin-bottom:8px">
+                <button class="btn btn-sm" id="tr-po-tab-text" onclick="switchPoInputTab('text')"
+                  style="font-size:11px;padding:4px 12px;background:var(--primary);color:#fff;border:none;border-radius:4px">텍스트</button>
+                <button class="btn btn-sm" id="tr-po-tab-image" onclick="switchPoInputTab('image')"
+                  style="font-size:11px;padding:4px 12px;background:var(--gray-200);color:var(--gray-600);border:none;border-radius:4px">이미지 (팩스/스캔)</button>
+              </div>
+              <!-- 텍스트 입력 -->
+              <div id="tr-po-text-area">
+                <textarea class="form-control" id="tr-raw-po" rows="5"
+                  placeholder="거래처가 보낸 원본 발주서 텍스트를 붙여넣으세요."></textarea>
+              </div>
+              <!-- 이미지 업로드 -->
+              <div id="tr-po-image-area" style="display:none">
+                <div id="tr-po-image-dropzone" style="
+                  border:2px dashed var(--gray-300);border-radius:8px;padding:20px;
+                  text-align:center;cursor:pointer;transition:all .2s;background:#fafbfc;min-height:120px"
+                  onclick="document.getElementById('tr-po-image-file').click()"
+                  ondragover="event.preventDefault();this.style.borderColor='var(--primary)';this.style.background='#ebf8ff'"
+                  ondragleave="this.style.borderColor='var(--gray-300)';this.style.background='#fafbfc'"
+                  ondrop="handlePoImageDrop(event)">
+                  <div style="font-size:24px;margin-bottom:4px">📷</div>
+                  <div style="font-size:13px;font-weight:500;color:var(--gray-600)">발주서 이미지를 드래그하거나 클릭</div>
+                  <div style="font-size:11px;color:var(--gray-400);margin-top:2px">.jpg, .png, .gif, .webp, .pdf (최대 10MB)</div>
+                </div>
+                <input type="file" id="tr-po-image-file" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf"
+                  style="display:none" onchange="handlePoImageSelect(this)">
+                <!-- 이미지 미리보기 -->
+                <div id="tr-po-image-preview" style="display:none;margin-top:8px;position:relative">
+                  <img id="tr-po-image-thumb" style="max-width:100%;max-height:200px;border-radius:6px;border:1px solid var(--gray-200)">
+                  <button onclick="clearPoImage()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:14px;line-height:24px;text-align:center">&times;</button>
+                  <div id="tr-po-image-info" style="font-size:11px;color:var(--gray-500);margin-top:4px"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">메모 <span style="font-weight:400;color:var(--gray-400)">(선택)</span></label>
+              <input type="text" class="form-control" id="tr-memo" placeholder="예: 2024년 1월 정기발주">
+            </div>
+          </div>
+
+          <!-- 오른쪽: 판매전표 엑셀 업로드 -->
+          <div>
+            <div class="form-group">
+              <label class="form-label">판매전표 엑셀 파일 <span class="required">*</span></label>
+              <div id="tr-excel-dropzone" style="
+                border:2px dashed var(--gray-300);border-radius:8px;padding:30px;
+                text-align:center;cursor:pointer;transition:all .2s;background:#fafbfc"
+                onclick="document.getElementById('tr-excel-file').click()"
+                ondragover="event.preventDefault();this.style.borderColor='var(--primary)';this.style.background='#ebf8ff'"
+                ondragleave="this.style.borderColor='var(--gray-300)';this.style.background='#fafbfc'"
+                ondrop="handleTrainingFileDrop(event)">
+                <div style="font-size:28px;margin-bottom:8px">📊</div>
+                <div style="font-size:14px;font-weight:500;color:var(--gray-600)">판매전표 엑셀 파일을 드래그하거나 클릭하세요</div>
+                <div style="font-size:12px;color:var(--gray-400);margin-top:4px">.xlsx, .xls, .xlsm 지원 (최대 10MB)</div>
+              </div>
+              <input type="file" id="tr-excel-file" accept=".xlsx,.xls,.xlsm"
+                style="display:none" onchange="handleTrainingFileSelect(this)">
+            </div>
+
+            <!-- 엑셀 미리보기 -->
+            <div id="tr-preview" style="display:none">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span style="font-size:13px;font-weight:600;color:var(--gray-700)" id="tr-preview-title"></span>
+                <button class="btn btn-sm" style="font-size:11px;padding:2px 8px" onclick="clearTrainingPreview()">초기화</button>
+              </div>
+              <div id="tr-preview-table" style="max-height:250px;overflow:auto;border:1px solid var(--gray-200);border-radius:6px;font-size:11px"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align:right">
+          <button class="btn btn-primary" id="tr-save-btn" onclick="saveTrainingData()" disabled>
+            학습 데이터 저장
+          </button>
+        </div>
+      </div>
+
+      <!-- 기존 학습 데이터 목록 -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-title" style="margin:0">등록된 학습 데이터</div>
+          <button class="btn btn-outline btn-sm" onclick="loadTrainingPairs()">새로고침</button>
+        </div>
+        <div id="training-list">
+          <p style="color:var(--gray-400);text-align:center;padding:20px">로딩 중...</p>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- 처리 중 오버레이 -->
+<div class="processing-overlay" id="processing-overlay">
+  <div class="processing-card">
+    <div class="spinner"></div>
+    <div class="processing-title">AI 분석 중</div>
+    <div class="processing-step" id="processing-step">처리 중...</div>
+  </div>
+</div>
+
+<!-- 토스트 알림 -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ── 로그인 모달 ── -->
+<div class="login-overlay" id="login-overlay">
+  <div class="login-card">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:32px;margin-bottom:8px">🤖</div>
+      <h2 style="margin:0;font-size:20px;color:#1a202c">AI 발주서 자동화 시스템</h2>
+      <p style="margin:6px 0 0;font-size:13px;color:#718096">담당자를 선택하고 비밀번호를 입력하세요</p>
+    </div>
+    <div class="form-group">
+      <label class="form-label">담당자</label>
+      <select class="form-control" id="login-emp-select">
+        <option value="">-- 담당자 선택 --</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">비밀번호</label>
+      <input type="password" class="form-control" id="login-password"
+        placeholder="비밀번호 입력" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="doLogin()">
+      로그인
+    </button>
+    <p style="font-size:11px;color:#a0aec0;text-align:center;margin-top:12px">
+      초기 비밀번호는 담당자 코드 숫자입니다 (예: 42번 → <strong>42</strong>)
+    </p>
+  </div>
+</div>
+
+<!-- 비밀번호 변경 모달 제거됨 — 설정>내 계정 탭으로 이동 -->
+
+<!-- 설정 페이지 함수 -->
+<script>
+// ── 설정 탭 전환
+function switchSettingsTab(tab) {
+  document.querySelectorAll(".settings-tab-btn").forEach(b => {
+    b.classList.remove("active");
+    b.style.color = "var(--gray-400)";
+    b.style.borderBottomColor = "transparent";
+  });
+  const activeBtn = document.querySelector(`[data-settings-tab="${tab}"]`);
+  if (activeBtn) {
+    activeBtn.classList.add("active");
+    activeBtn.style.color = "var(--primary)";
+    activeBtn.style.borderBottomColor = "var(--primary)";
+  }
+  document.querySelectorAll(".settings-panel").forEach(p => p.style.display = "none");
+  const panel = document.getElementById(`settings-tab-${tab}`);
+  if (panel) panel.style.display = "block";
+
+  // 탭별 초기화
+  if (tab === "api") { loadLLMConfig(); loadApiKeys(); }
+  if (tab === "materials") { loadMaterialSources(); loadSettingsOlStatus(); }
+  if (tab === "customers") {
+    const searchEl = document.getElementById("settings-cust-search");
+    if (searchEl) setTimeout(() => searchEl.focus(), 50);
+    loadCustERPSyncStatus();
+  }
+  if (tab === "account") updateAccountInfo();
+  if (tab === "activity") {
+    loadActivitySummary();
+    loadActivityEmployeeFilter();
+    loadActivityLogs(1);
+  }
+}
+
+// ── 관리자 비밀번호 검증
+async function verifyAdminPassword() {
+  const pw = document.getElementById("admin-pw-input").value;
+  const errEl = document.getElementById("admin-pw-error");
+  if (!pw) { errEl.textContent = "비밀번호를 입력하세요"; return; }
+  try {
+    await api.post("/api/settings/admin-verify", { password: pw });
+    sessionStorage.setItem("admin_verified", "1");
+    document.getElementById("settings-admin-overlay").style.display = "none";
+    loadLLMConfig();
+  } catch (e) {
+    errEl.textContent = "비밀번호가 올바르지 않습니다";
+    document.getElementById("admin-pw-input").value = "";
+    document.getElementById("admin-pw-input").focus();
+  }
+}
+
+function showAdminOverlay() {
+  if (sessionStorage.getItem("admin_verified") === "1") {
+    document.getElementById("settings-admin-overlay").style.display = "none";
+    return false;
+  }
+  const overlay = document.getElementById("settings-admin-overlay");
+  overlay.style.display = "flex";
+  document.getElementById("admin-pw-input").value = "";
+  document.getElementById("admin-pw-error").textContent = "";
+  setTimeout(() => document.getElementById("admin-pw-input").focus(), 100);
+  return true;
+}
+
+// ── 관리자 비밀번호 변경
+async function changeAdminPassword() {
+  const cur = document.getElementById("admin-pw-current").value;
+  const nw = document.getElementById("admin-pw-new").value;
+  const cf = document.getElementById("admin-pw-confirm").value;
+  if (!cur || !nw) { toast("모든 필드를 입력하세요", "warning"); return; }
+  if (nw !== cf) { toast("새 비밀번호가 일치하지 않습니다", "warning"); return; }
+  if (nw.length < 4) { toast("비밀번호는 4자 이상이어야 합니다", "warning"); return; }
+  try {
+    const res = await api.post("/api/settings/admin-password", { current_password: cur, new_password: nw });
+    toast(res.message, "success");
+    document.getElementById("admin-pw-current").value = "";
+    document.getElementById("admin-pw-new").value = "";
+    document.getElementById("admin-pw-confirm").value = "";
+    sessionStorage.removeItem("admin_verified");
+  } catch (e) {
+    toast("변경 실패: " + (e.message || "오류"), "error");
+  }
+}
+
+// ── 기능별 LLM 설정 관리
+let _llmFeatures = [];
+
+async function loadLLMConfig() {
+  const container = document.getElementById("llm-config-list");
+  try {
+    const res = await api.get("/api/settings/llm-config");
+    _llmFeatures = res.features || [];
+    renderLLMConfig(_llmFeatures);
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:20px">LLM 설정 로드 실패: ${e.message}</p>`;
+  }
+}
+
+function renderLLMConfig(features) {
+  const container = document.getElementById("llm-config-list");
+  const tierColors = { basic: "#10b981", standard: "#6366f1", premium: "#8b5cf6" };
+
+  container.innerHTML = features.map(f => {
+    const options = f.models.map(m => {
+      const sel = m.id === f.current ? "selected" : "";
+      const tier = m.tier ? ` [${m.tier}]` : "";
+      return `<option value="${m.id}" ${sel}>${m.name}${tier}</option>`;
+    }).join("");
+
+    return `
+      <div style="display:flex;align-items:center;gap:16px;padding:16px 18px;
+        background:#fff;border:1px solid var(--gray-200);border-radius:10px;
+        transition:border-color .15s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--gray-200)'">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px;color:var(--gray-800);margin-bottom:2px">${f.label}</div>
+          <div style="font-size:12px;color:var(--gray-500)">${f.description}</div>
+        </div>
+        <select class="form-control" data-llm-key="${f.key}"
+          style="width:240px;flex-shrink:0;font-size:13px;padding:8px 12px">
+          ${options}
+        </select>
+      </div>`;
+  }).join("");
+}
+
+async function saveLLMConfig() {
+  const selects = document.querySelectorAll("[data-llm-key]");
+  const settings = {};
+  selects.forEach(sel => { settings[sel.dataset.llmKey] = sel.value; });
+
+  const statusEl = document.getElementById("llm-config-status");
+  statusEl.innerHTML = '<span style="color:var(--gray-500)">저장 중...</span>';
+
+  try {
+    const res = await api.post("/api/settings/llm-config", { settings });
+    if (res.success) {
+      toast(res.message, "success");
+      statusEl.innerHTML = `<span style="color:var(--success)">${res.message}</span>`;
+      setTimeout(() => { statusEl.innerHTML = ""; }, 3000);
+    }
+  } catch (e) {
+    toast("저장 실패: " + e.message, "error");
+    statusEl.innerHTML = `<span style="color:var(--danger)">저장 실패: ${e.message}</span>`;
+  }
+}
+
+// 레거시 호환
+async function loadModels() { loadLLMConfig(); }
+
+// ── 외부 API 키 관리
+async function loadApiKeys() {
+  const container = document.getElementById("api-keys-list");
+  try {
+    const res = await api.get("/api/settings/api-keys");
+    const keys = res.api_keys || [];
+    renderApiKeys(keys);
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger);text-align:center">API 키 로드 실패: ${e.message}</p>`;
+  }
+}
+
+function renderApiKeys(keys) {
+  const container = document.getElementById("api-keys-list");
+  container.innerHTML = keys.map(k => {
+    const statusColor = k.is_set ? "var(--success)" : "var(--gray-400)";
+    const statusIcon = k.is_set ? "&#10003;" : "&#10007;";
+    const sourceLabel = k.source === "db" ? "DB 저장" : k.source === "env" ? "환경변수" : "미설정";
+    return `
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;
+        background:#fff;border:1px solid var(--gray-200);border-radius:10px">
+        <div style="flex-shrink:0;width:36px;height:36px;border-radius:8px;
+          background:${k.is_set ? '#f0fdf4' : '#f8fafc'};display:flex;align-items:center;justify-content:center;
+          color:${statusColor};font-size:18px;font-weight:700">${statusIcon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+            <span style="font-weight:600;font-size:14px;color:var(--gray-800)">${k.label}</span>
+            <span style="font-size:11px;padding:1px 8px;border-radius:10px;
+              background:${k.is_set ? '#dcfce7' : '#f1f5f9'};color:${k.is_set ? '#166534' : '#94a3b8'};
+              font-weight:600">${sourceLabel}</span>
+          </div>
+          <div style="font-size:12px;color:var(--gray-500)">${k.description}</div>
+          ${k.masked ? `<div style="font-size:11px;color:var(--gray-400);margin-top:2px;font-family:monospace">${k.masked}</div>` : ''}
+        </div>
+        <input type="password" class="form-control" data-api-key="${k.key}"
+          placeholder="${k.prefix}..." value=""
+          style="width:220px;flex-shrink:0;font-size:12px;font-family:monospace"
+          onfocus="this.type='text'" onblur="this.type='password'">
+      </div>`;
+  }).join("");
+}
+
+async function saveApiKeys() {
+  const inputs = document.querySelectorAll("[data-api-key]");
+  const keys = {};
+  let count = 0;
+  inputs.forEach(inp => {
+    if (inp.value.trim()) {
+      keys[inp.dataset.apiKey] = inp.value.trim();
+      count++;
+    }
+  });
+  if (count === 0) { toast("변경할 API 키를 입력하세요", "warning"); return; }
+
+  const statusEl = document.getElementById("api-keys-status");
+  statusEl.innerHTML = '<span style="color:var(--gray-500)">저장 중...</span>';
+  try {
+    const res = await api.post("/api/settings/api-keys", { keys });
+    toast(res.message, "success");
+    statusEl.innerHTML = `<span style="color:var(--success)">${res.message}</span>`;
+    setTimeout(() => { statusEl.innerHTML = ""; }, 3000);
+    inputs.forEach(inp => inp.value = "");
+    loadApiKeys();
+  } catch (e) {
+    toast("저장 실패: " + e.message, "error");
+    statusEl.innerHTML = `<span style="color:var(--danger)">저장 실패</span>`;
+  }
+}
+
+// ── 거래처 관리
+async function addCustomer() {
+  const code = document.getElementById("new-cust-code").value.trim();
+  const name = document.getElementById("new-cust-name").value.trim();
+  if (!code || !name) { toast("코드와 이름을 모두 입력하세요.", "error"); return; }
+  try {
+    await api.post(`/api/customers/?cust_code=${encodeURIComponent(code)}&cust_name=${encodeURIComponent(name)}`);
+    toast("거래처 추가 완료", "success");
+    document.getElementById("new-cust-code").value = "";
+    document.getElementById("new-cust-name").value = "";
+    loadCustomers();
+    loadSettingsCustomers();
+  } catch (e) { toast("추가 실패: " + e.message, "error"); }
+}
+
+let _settingsCustTimer = null;
+async function onSettingsCustSearch(query) {
+  clearTimeout(_settingsCustTimer);
+  const el = document.getElementById("settings-customer-list");
+  const countEl = document.getElementById("settings-cust-count");
+
+  if (!query.trim()) {
+    el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:20px 0">거래처명 또는 코드를 검색하세요</p>';
+    countEl.textContent = "";
+    return;
+  }
+
+  _settingsCustTimer = setTimeout(async () => {
+    try {
+      const data = await api.get(`/api/customers/?q=${encodeURIComponent(query.trim())}`);
+      const list = data.customers || [];
+
+      if (!list.length) {
+        el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:20px 0">검색 결과가 없습니다</p>';
+        countEl.textContent = "";
+        return;
+      }
+
+      countEl.textContent = `${list.length}건${list.length >= 100 ? " (최대 100건)" : ""}`;
+      el.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500)">
+              <th style="text-align:left;padding:6px 8px">거래처명</th>
+              <th style="text-align:left;padding:6px 8px;width:200px">ERP 거래처코드 (CUST)</th>
+              <th style="padding:6px 8px;width:60px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${list.map(c => `
+            <tr style="border-bottom:1px solid var(--gray-100)" id="cust-row-${c.cust_code}">
+              <td style="padding:6px 8px"><strong>${c.cust_name}</strong></td>
+              <td style="padding:6px 8px">
+                <input type="text" class="form-control" value="${c.cust_code}"
+                  id="edit-code-${c.cust_code}" style="width:100%;padding:3px 8px;font-size:13px">
+              </td>
+              <td style="padding:6px 8px">
+                <button class="btn btn-primary btn-sm" style="padding:3px 10px;font-size:12px"
+                  onclick="updateCustCode('${c.cust_code}','${c.cust_name}')">저장</button>
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>`;
+    } catch(e) {
+      el.innerHTML = '<p style="color:var(--danger);text-align:center;padding:20px 0">검색 오류가 발생했습니다</p>';
+    }
+  }, 250);
+}
+
+async function loadSettingsCustomers() {
+  const q = document.getElementById("settings-cust-search")?.value || "";
+  if (q.trim()) onSettingsCustSearch(q);
+}
+
+async function updateCustCode(oldCode, custName) {
+  const newCode = document.getElementById(`edit-code-${oldCode}`).value.trim();
+  if (!newCode) { toast("코드를 입력하세요.", "error"); return; }
+  try {
+    await api.put(`/api/customers/${encodeURIComponent(oldCode)}?new_code=${encodeURIComponent(newCode)}&cust_name=${encodeURIComponent(custName)}`);
+    toast(`거래처코드 변경 완료: ${newCode}`, "success");
+    loadCustomers();
+    loadSettingsCustomers();
+  } catch (e) { toast("변경 실패: " + e.message, "error"); }
+}
+
+async function checkHealth() {
+  try {
+    const res = await api.get("/health");
+    document.getElementById("health-result").innerHTML =
+      `<span style="color:var(--success)">✓ 연결 정상 (버전: ${res.version})</span>`;
+  } catch (e) {
+    document.getElementById("health-result").innerHTML =
+      `<span style="color:var(--danger)">✗ 연결 실패: ${e.message}</span>`;
+  }
+}
+
+// ── 내 계정 탭 인라인 비밀번호 변경
+async function doChangePwInline() {
+  const user = getCurrentUser();
+  if (!user) { toast("먼저 로그인하세요.", "error"); return; }
+  const oldPw = document.getElementById("pw-old-inline").value;
+  const newPw = document.getElementById("pw-new-inline").value;
+  const confirmPw = document.getElementById("pw-confirm-inline").value;
+  if (!oldPw || !newPw) { toast("모든 항목을 입력하세요.", "error"); return; }
+  if (newPw !== confirmPw) { toast("새 비밀번호가 일치하지 않습니다.", "error"); return; }
+  if (newPw.length < 2) { toast("비밀번호는 2자 이상이어야 합니다.", "error"); return; }
+  try {
+    const res = await fetch("/api/auth/change-password", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({emp_cd: user.emp_cd, old_password: oldPw, new_password: newPw})
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.detail || "변경 실패", "error"); return; }
+    toast("비밀번호가 변경되었습니다.", "success");
+    ["pw-old-inline","pw-new-inline","pw-confirm-inline"].forEach(id => document.getElementById(id).value = "");
+  } catch(e) { toast("오류: " + e.message, "error"); }
+}
+
+function updateAccountInfo() {
+  const user = getCurrentUser();
+  const el = document.getElementById("account-info");
+  if (el && user) el.textContent = `[${user.emp_cd}] ${user.name} 님이 로그인 중입니다.`;
+
+  // 관리자 전용 섹션 표시
+  const adminSection = document.getElementById("admin-reset-section");
+  const adminPwSection = document.getElementById("admin-pw-change-section");
+  const adminEmpSection = document.getElementById("admin-emp-manage-section");
+  const ADMIN_CODES = ["28", "01"];
+  if (user && ADMIN_CODES.includes(user.emp_cd)) {
+    if (adminSection) { adminSection.style.display = "block"; loadResetTargetEmployees(); }
+    if (adminPwSection) adminPwSection.style.display = "block";
+    if (adminEmpSection) { adminEmpSection.style.display = "block"; loadEmployeeManageList(); }
+  }
+}
+
+async function loadResetTargetEmployees() {
+  try {
+    const res = await fetch("/api/auth/employees");
+    const data = await res.json();
+    const select = document.getElementById("reset-target-emp");
+    select.innerHTML = '<option value="">-- 직원 선택 --</option>';
+    (data.employees || []).forEach(e => {
+      select.innerHTML += `<option value="${e.emp_cd}">[${e.emp_cd}] ${e.name}</option>`;
+    });
+  } catch(e) { console.warn("직원 목록 로드 실패:", e); }
+}
+
+async function doResetPassword() {
+  const user = getCurrentUser();
+  const targetEmp = document.getElementById("reset-target-emp").value;
+  if (!targetEmp) { toast("초기화할 직원을 선택하세요.", "error"); return; }
+  if (!confirm("선택한 직원의 비밀번호를 담당자 코드 숫자로 초기화합니다.\n계속하시겠습니까?")) return;
+  try {
+    const res = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({emp_cd: targetEmp, admin_emp_cd: user.emp_cd})
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.detail || "초기화 실패", "error"); return; }
+    toast(data.message, "success");
+  } catch(e) { toast("오류: " + e.message, "error"); }
+}
+
+// ── 담당자 관리 함수들 (관리자 전용)
+const MANAGE_ADMIN_CODES = ["28", "01"];
+
+async function loadEmployeeManageList() {
+  const tableEl = document.getElementById("emp-manage-table");
+  if (!tableEl) return;
+  try {
+    const res = await fetch("/api/auth/employees");
+    const data = await res.json();
+    const employees = data.employees || [];
+    if (!employees.length) {
+      tableEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px">등록된 담당자가 없습니다.</p>';
+      return;
+    }
+    tableEl.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500)">
+            <th style="text-align:left;padding:8px 10px">코드</th>
+            <th style="text-align:left;padding:8px 10px">이름</th>
+            <th style="text-align:center;padding:8px 10px;width:70px">삭제</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${employees.map(e => `
+            <tr style="border-bottom:1px solid var(--gray-100)">
+              <td style="padding:8px 10px;font-weight:600">[${e.emp_cd}]</td>
+              <td style="padding:8px 10px">${e.name}</td>
+              <td style="text-align:center;padding:8px 10px">
+                ${MANAGE_ADMIN_CODES.includes(e.emp_cd)
+                  ? '<span style="color:var(--gray-400);font-size:11px">관리자</span>'
+                  : `<button class="btn btn-sm" style="background:#e53e3e;color:#fff;font-size:11px;padding:3px 10px" onclick="doDeleteEmployee('${e.emp_cd}','${e.name}')">삭제</button>`
+                }
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    tableEl.innerHTML = '<p style="color:var(--danger)">목록 로드 실패</p>';
+  }
+}
+
+async function doAddEmployee() {
+  const user = getCurrentUser();
+  if (!user) { toast("로그인이 필요합니다.", "error"); return; }
+  const empCd = document.getElementById("add-emp-cd").value.trim();
+  const empName = document.getElementById("add-emp-name").value.trim();
+  if (!empCd) { toast("담당자 코드를 입력하세요.", "error"); return; }
+  if (!empName) { toast("이름을 입력하세요.", "error"); return; }
+  try {
+    const res = await fetch("/api/auth/employees/add", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({emp_cd: empCd, name: empName, admin_emp_cd: user.emp_cd})
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.detail || "추가 실패", "error"); return; }
+    toast(data.message, "success");
+    document.getElementById("add-emp-cd").value = "";
+    document.getElementById("add-emp-name").value = "";
+    loadEmployeeManageList();
+    loadResetTargetEmployees();
+    // 로그인 화면 드롭다운도 갱신
+    if (typeof initLogin === "function") initLogin();
+  } catch(e) { toast("오류: " + e.message, "error"); }
+}
+
+async function doDeleteEmployee(empCd, empName) {
+  const user = getCurrentUser();
+  if (!user) { toast("로그인이 필요합니다.", "error"); return; }
+  if (!confirm(`[${empCd}] ${empName} 담당자를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+  try {
+    const res = await fetch(`/api/auth/employees/${empCd}?admin_emp_cd=${user.emp_cd}`, {
+      method: "DELETE"
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.detail || "삭제 실패", "error"); return; }
+    toast(data.message, "success");
+    loadEmployeeManageList();
+    loadResetTargetEmployees();
+    if (typeof initLogin === "function") initLogin();
+  } catch(e) { toast("오류: " + e.message, "error"); }
+}
+
+// ── 자료관리 함수들
+async function loadMaterialSources() {
+  const el = document.getElementById("mat-sources-list");
+  try {
+    const data = await api.materialsSources();
+    const sources = data.sources || [];
+    if (!sources.length) {
+      el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:20px">등록된 소스가 없습니다.</p>';
+      return;
+    }
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500)">
+            <th style="text-align:left;padding:8px">이름</th>
+            <th style="text-align:left;padding:8px;width:100px">유형</th>
+            <th style="text-align:left;padding:8px;width:100px">제조사</th>
+            <th style="text-align:center;padding:8px;width:80px">데이터</th>
+            <th style="text-align:left;padding:8px;width:140px">마지막 동기화</th>
+            <th style="text-align:center;padding:8px;width:120px">작업</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sources.map(s => `
+          <tr style="border-bottom:1px solid var(--gray-100);${s.is_active ? '' : 'opacity:0.5'}">
+            <td style="padding:8px">
+              <a href="${s.url}" target="_blank" style="color:var(--primary);text-decoration:none">${s.name}</a>
+            </td>
+            <td style="padding:8px">
+              <span style="font-size:11px;padding:2px 8px;border-radius:10px;
+                background:${s.source_type === 'sheet' ? '#ebf8ff' : '#faf5ff'};
+                color:${s.source_type === 'sheet' ? '#2b6cb0' : '#6b46c1'}">
+                ${s.source_type === 'sheet' ? '📊 시트' : '📁 폴더'}
+              </span>
+            </td>
+            <td style="padding:8px">${s.vendor || '-'}</td>
+            <td style="text-align:center;padding:8px">${s.source_type === 'drive_folder' ? (s.doc_count || 0) + '파일' : (s.row_count || 0) + '행'}</td>
+            <td style="padding:8px;font-size:12px;color:var(--gray-500)">${s.last_synced || '미동기화'}</td>
+            <td style="text-align:center;padding:8px">
+              <button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px;margin-right:4px"
+                onclick="materialSyncOne(${s.id})">${s.source_type === 'drive_folder' ? '📁 동기화' : '동기화'}</button>
+              <button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px;color:${s.is_active ? 'var(--danger)' : 'var(--success)'}"
+                onclick="materialToggle(${s.id})">${s.is_active ? '비활성' : '활성화'}</button>
+            </td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    el.innerHTML = `<p style="color:var(--danger);text-align:center;padding:20px">로드 실패: ${e.message}</p>`;
+  }
+}
+
+async function checkGoogleApi() {
+  const btn = document.getElementById("google-api-check-btn");
+  const el = document.getElementById("google-api-check-result");
+  btn.disabled = true;
+  btn.textContent = "진단 중...";
+  el.innerHTML = '<span style="color:var(--gray-500)">Google API 상태 확인 중...</span>';
+  try {
+    const data = await api.get("/api/materials/google-api-check");
+    let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+
+    // API Key 상태
+    if (!data.google_api_key_set) {
+      html += '<div style="color:var(--danger);font-weight:600">GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.</div>';
+    } else {
+      html += `<div>API Key: <code style="font-size:11px;background:#f7fafc;padding:2px 6px;border-radius:3px">${data.api_key_prefix}</code></div>`;
+    }
+
+    // Drive API
+    if (data.drive_api) {
+      const d = data.drive_api;
+      if (d.status === "OK") {
+        let detail = "활성화됨";
+        if (d.sample_files != null) detail += ` (테스트 폴더에서 ${d.sample_files}개 파일 확인)`;
+        if (d.note) detail = d.note;
+        html += `<div style="color:var(--success);font-weight:500">Google Drive API: ${detail}</div>`;
+      } else if (d.status === "FOLDER_NOT_SHARED") {
+        html += '<div style="color:#d69e2e;font-weight:500">Google Drive API: API 활성화됨, 폴더 공유 안 됨</div>';
+        html += `<div style="font-size:12px;color:var(--gray-500);margin-left:8px">${d.error}</div>`;
+        if (d.tested_folder) html += `<div style="font-size:11px;color:var(--gray-400);margin-left:8px">테스트 폴더 ID: ${d.tested_folder}</div>`;
+      } else {
+        html += `<div style="color:var(--danger);font-weight:500">Google Drive API: 오류 (${d.http_status || ""}) - ${d.error || ""}</div>`;
+        const fix = d.fix || 'Google Cloud Console > API 및 서비스 > 라이브러리에서 "Google Drive API"를 활성화하세요.';
+        html += `<div style="font-size:12px;color:var(--gray-500);margin-left:8px">${fix}</div>`;
+      }
+    }
+
+    // Sheets API
+    if (data.sheets_api) {
+      const s = data.sheets_api;
+      if (s.status === "OK") {
+        let detail = "활성화됨";
+        if (s.sheet_title) detail += ` (테스트 시트: "${s.sheet_title}")`;
+        html += `<div style="color:var(--success);font-weight:500">Google Sheets API: ${detail}</div>`;
+      } else {
+        html += `<div style="color:var(--danger);font-weight:500">Google Sheets API: 오류 (${s.http_status || ""}) - ${s.error || ""}</div>`;
+        const fix = s.fix || 'Google Cloud Console > API 및 서비스 > 라이브러리에서 "Google Sheets API"를 활성화하세요.';
+        html += `<div style="font-size:12px;color:var(--gray-500);margin-left:8px">${fix}</div>`;
+      }
+    }
+
+    // 등록된 소스
+    if (data.registered_sources && data.registered_sources.length > 0) {
+      const driveCount = data.registered_sources.filter(s => s.source_type === 'drive_folder').length;
+      const sheetCount = data.registered_sources.filter(s => s.source_type === 'sheet').length;
+      html += `<div style="font-size:12px;color:var(--gray-500)">등록된 소스: 시트 ${sheetCount}개, Drive 폴더 ${driveCount}개</div>`;
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--danger)">진단 실패: ${e.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "진단 실행";
+  }
+}
+
+async function materialsyncAll() {
+  const btn = document.getElementById("mat-sync-all-btn");
+  const statusEl = document.getElementById("mat-sync-status");
+  btn.disabled = true;
+  btn.textContent = "동기화 중...";
+  statusEl.innerHTML = '<span style="color:var(--gray-500)">⏳ 전체 동기화 진행 중... (시간이 걸릴 수 있습니다)</span>';
+  try {
+    const res = await api.materialsSyncAll();
+    const sheets = res.sheets || {};
+    const drive = res.drive || {};
+    // 이전 형식 호환 (sheets/drive 분리 전)
+    const sheetMsg = sheets.total_sources != null
+      ? `시트 ${sheets.success_count||0}/${sheets.total_sources||0}개(${sheets.total_rows||0}행)`
+      : `${res.success_count||0}/${res.total_sources||0}개(${res.total_rows||0}행)`;
+    const driveMsg = drive.total_sources
+      ? `, Drive ${drive.success_count||0}/${drive.total_sources||0}개(${drive.total_files||0}파일)`
+      : "";
+    const msg = `✅ 동기화 완료: ${sheetMsg}${driveMsg}`;
+    statusEl.innerHTML = `<span style="color:var(--success)">${msg}</span>`;
+    toast(msg, "success");
+    loadMaterialSources();
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:var(--danger)">❌ 동기화 실패: ${e.message}</span>`;
+    toast("동기화 실패: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 전체 동기화";
+  }
+}
+
+async function materialSyncOne(sourceId) {
+  const statusEl = document.getElementById("mat-sync-status");
+  statusEl.innerHTML = '<span style="color:var(--gray-500)">⏳ 동기화 중...</span>';
+  try {
+    const res = await api.materialsSyncOne(sourceId);
+    if (res.success) {
+      const cnt = res.rows_synced != null ? `${res.rows_synced}행` : `${res.files_synced || 0}파일`;
+      statusEl.innerHTML = `<span style="color:var(--success)">✅ ${cnt} 동기화 완료</span>`;
+      toast(`${cnt} 동기화 완료`, "success");
+    } else {
+      statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${res.error}</span>`;
+      toast(res.error, "error");
+    }
+    loadMaterialSources();
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${e.message}</span>`;
+  }
+}
+
+async function materialToggle(sourceId) {
+  try {
+    await api.materialsToggleSource(sourceId);
+    loadMaterialSources();
+  } catch (e) { toast("변경 실패: " + e.message, "error"); }
+}
+
+async function materialSearch() {
+  const q = document.getElementById("mat-search-input").value.trim();
+  const vendor = document.getElementById("mat-vendor-input").value.trim();
+  const el = document.getElementById("mat-search-results");
+
+  if (!q) { toast("검색어를 입력하세요.", "error"); return; }
+
+  el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:20px">검색 중...</p>';
+  try {
+    const data = await api.materialsSearch(q, vendor, 30);
+    const results = data.results || [];
+
+    if (!results.length) {
+      el.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:20px">검색 결과가 없습니다. 동기화를 먼저 실행해주세요.</p>';
+      return;
+    }
+
+    el.innerHTML = `
+      <p style="font-size:12px;color:var(--gray-500);margin-bottom:8px">${data.count}건 검색됨</p>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:600px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500)">
+            <th style="text-align:left;padding:6px 8px">제조사</th>
+            <th style="text-align:left;padding:6px 8px">품명</th>
+            <th style="text-align:left;padding:6px 8px">모델명</th>
+            <th style="text-align:right;padding:6px 8px">단가</th>
+            <th style="text-align:left;padding:6px 8px">출처</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${results.map(r => `
+          <tr style="border-bottom:1px solid var(--gray-100)">
+            <td style="padding:6px 8px;font-weight:500">${r.vendor || '-'}</td>
+            <td style="padding:6px 8px">${r.product_name || '-'}</td>
+            <td style="padding:6px 8px;font-family:monospace;font-size:12px">${r.model_name || '-'}</td>
+            <td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--primary)">${r.price ? Number(r.price).toLocaleString() || r.price : '-'}</td>
+            <td style="padding:6px 8px;font-size:11px;color:var(--gray-500)">${r.source_name || '-'}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<p style="color:var(--danger);text-align:center;padding:20px">검색 오류: ${e.message}</p>`;
+  }
+}
+
+// ── 오더리스트 동기화 (설정 페이지) ──
+async function settingsSyncOrderList() {
+  const btn = document.getElementById("settings-ol-sync-btn");
+  btn.disabled = true;
+  btn.textContent = "동기화 중...";
+  try {
+    const data = await api.orderlistSync();
+    if (data.success) {
+      toast(`오더리스트 동기화 완료: ${data.total_items}건`, "success");
+      loadSettingsOlStatus();
+    } else {
+      toast(`동기화 실패: ${data.error || ""}`, "error");
+    }
+  } catch (e) {
+    toast(`동기화 오류: ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 동기화";
+  }
+}
+
+async function loadSettingsOlStatus() {
+  const el = document.getElementById("settings-ol-status");
+  try {
+    const summary = await api.orderlistSummary();
+    const tabs = summary.tabs || [];
+    const total = summary.total_items || 0;
+    const lastSync = summary.last_sync || "없음";
+    let html = `<div style="margin-bottom:8px"><strong>마지막 동기화:</strong> ${lastSync} | <strong>총 ${total}건</strong></div>`;
+    if (tabs.length) {
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      tabs.forEach(t => {
+        html += `<span style="background:#edf2f7;border-radius:6px;padding:3px 10px;font-size:12px">
+          <strong>${t.sheet_tab}</strong>: ${t.cnt}건 (수량 ${(t.total_qty || 0).toLocaleString()})
+        </span>`;
+      });
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = "상태 조회 실패";
+  }
+}
+
+// ── ERP 거래처 동기화 ──
+async function syncCustomersFromERP() {
+  const btn = document.getElementById("cust-erp-sync-btn");
+  btn.disabled = true;
+  btn.textContent = "동기화 중...";
+  try {
+    const data = await api.customerSyncERP();
+    if (data.success) {
+      toast(`거래처 동기화 완료: ${data.total}개 (신규 ${data.inserted}, 업데이트 ${data.updated})`, "success");
+      loadCustERPSyncStatus();
+    } else {
+      toast("동기화 실패", "error");
+    }
+  } catch (e) {
+    toast(`동기화 오류: ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 ERP에서 가져오기";
+  }
+}
+
+async function loadCustERPSyncStatus() {
+  const el = document.getElementById("cust-erp-sync-status");
+  try {
+    const data = await api.customerCount();
+    el.innerHTML = `<strong>등록 거래처:</strong> ${(data.count || 0).toLocaleString()}개`;
+  } catch (e) {
+    el.textContent = "상태 확인 실패";
+  }
+}
+
+// ── 활동 로그 (관리자 전용) ──
+
+/** UTC 타임스탬프 → 한국표준시(KST, UTC+9) 문자열 변환 */
+function toKST(utcStr) {
+  if (!utcStr) return "";
+  try {
+    // PostgreSQL 형식: "2026-03-23 00:09:43.301611+00" → Date 파싱 가능하도록 변환
+    let normalized = utcStr.trim();
+    // "+00" 만 있는 경우 "+00:00"으로 보정
+    if (/\+\d{2}$/.test(normalized)) normalized += ":00";
+    // 타임존 정보가 없으면 UTC로 간주
+    if (!/[+-]\d{2}:\d{2}$/.test(normalized) && !normalized.endsWith("Z")) {
+      normalized += "+00:00";
+    }
+    const d = new Date(normalized.replace(" ", "T"));
+    if (isNaN(d.getTime())) return utcStr; // 파싱 실패 시 원본 반환
+    return d.toLocaleString("ko-KR", {
+      timeZone: "Asia/Seoul",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false
+    });
+  } catch { return utcStr; }
+}
+
+const ADMIN_EMP_CDS = new Set(["28", "01"]);
+
+function showActivityTabIfAdmin() {
+  const user = getCurrentUser();
+  const btn = document.getElementById("settings-activity-tab-btn");
+  if (btn) {
+    btn.style.display = (user && ADMIN_EMP_CDS.has(user.emp_cd)) ? "" : "none";
+  }
+}
+
+let _activityPage = 1;
+
+async function loadActivityLogs(page = 1) {
+  _activityPage = page;
+  const container = document.getElementById("activity-logs-container");
+  const pagEl = document.getElementById("activity-pagination");
+
+  const empCd = document.getElementById("activity-filter-emp")?.value || "";
+  const action = document.getElementById("activity-filter-action")?.value || "";
+  const dateFrom = document.getElementById("activity-filter-from")?.value || "";
+  const dateTo = document.getElementById("activity-filter-to")?.value || "";
+
+  container.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:20px">로딩 중...</p>';
+
+  try {
+    const data = await api.activityLogs(page, 50, empCd, action, dateFrom, dateTo);
+    const items = data.items || [];
+
+    if (!items.length) {
+      container.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:30px">활동 기록이 없습니다.</p>';
+      pagEl.innerHTML = "";
+      return;
+    }
+
+    let html = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:#f7fafc;border-bottom:2px solid var(--gray-200)">
+          <th style="padding:8px 10px;text-align:left;white-space:nowrap">시간</th>
+          <th style="padding:8px 10px;text-align:left;white-space:nowrap">직원</th>
+          <th style="padding:8px 10px;text-align:left;white-space:nowrap">액션</th>
+          <th style="padding:8px 10px;text-align:left">상세</th>
+          <th style="padding:8px 10px;text-align:left;white-space:nowrap">IP</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+    items.forEach(item => {
+      const actionColor = item.action === "로그인" ? "#48bb78" :
+        item.action.includes("ERP") ? "#e53e3e" :
+        item.action.includes("분석") ? "#4299e1" :
+        item.action.includes("동기화") ? "#9f7aea" : "#718096";
+      html += `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:6px 10px;white-space:nowrap;color:var(--gray-500);font-size:12px">${toKST(item.created_at)}</td>
+        <td style="padding:6px 10px;white-space:nowrap"><strong>[${item.emp_cd}]</strong> ${item.emp_name || ""}</td>
+        <td style="padding:6px 10px;white-space:nowrap">
+          <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
+            background:${actionColor}18;color:${actionColor}">${item.action}</span>
+        </td>
+        <td style="padding:6px 10px;font-size:12px;color:var(--gray-500);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="${(item.detail || '').replace(/"/g, '&quot;')}">${item.detail || "-"}</td>
+        <td style="padding:6px 10px;font-size:11px;color:var(--gray-400);white-space:nowrap">${item.ip_address || "-"}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    html += `<div style="font-size:12px;color:var(--gray-400);margin-top:8px;text-align:right">
+      총 ${data.total}건 (${data.page}/${data.total_pages} 페이지)</div>`;
+    container.innerHTML = html;
+
+    // 페이지네이션
+    let pagHtml = "";
+    if (data.total_pages > 1) {
+      if (page > 1) pagHtml += `<button class="btn btn-outline btn-sm" onclick="loadActivityLogs(${page - 1})" style="font-size:12px">◀ 이전</button>`;
+      const start = Math.max(1, page - 2);
+      const end = Math.min(data.total_pages, page + 2);
+      for (let i = start; i <= end; i++) {
+        pagHtml += `<button class="btn ${i === page ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="loadActivityLogs(${i})" style="font-size:12px;min-width:36px">${i}</button>`;
+      }
+      if (page < data.total_pages) pagHtml += `<button class="btn btn-outline btn-sm" onclick="loadActivityLogs(${page + 1})" style="font-size:12px">다음 ▶</button>`;
+    }
+    pagEl.innerHTML = pagHtml;
+
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:20px">오류: ${e.message}</p>`;
+    pagEl.innerHTML = "";
+  }
+}
+
+async function loadActivitySummary() {
+  const el = document.getElementById("activity-summary");
+  try {
+    const data = await api.activitySummary();
+    let html = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+      <span><strong>총 기록:</strong> ${(data.total || 0).toLocaleString()}건</span>
+    </div>`;
+
+    if (data.by_user && data.by_user.length) {
+      html += '<div style="margin-bottom:8px"><strong>최근 7일 사용자별:</strong></div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+      data.by_user.forEach(u => {
+        html += `<span style="background:#edf2f7;border-radius:6px;padding:3px 10px;font-size:12px">
+          <strong>[${u.emp_cd}] ${u.emp_name}</strong>: ${u.cnt}회
+        </span>`;
+      });
+      html += '</div>';
+    }
+
+    if (data.by_action && data.by_action.length) {
+      html += '<div style="margin-bottom:8px"><strong>최근 7일 액션별:</strong></div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      data.by_action.forEach(a => {
+        html += `<span style="background:#ebf8ff;border-radius:6px;padding:3px 10px;font-size:12px">
+          ${a.action}: <strong>${a.cnt}회</strong>
+        </span>`;
+      });
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--danger)">요약 로드 실패: ${e.message}</span>`;
+  }
+}
+
+async function loadActivityEmployeeFilter() {
+  try {
+    const data = await api.activityEmployees();
+    const sel = document.getElementById("activity-filter-emp");
+    if (!sel) return;
+    // 기존 옵션 유지하면서 직원 추가
+    const existing = sel.options.length;
+    if (existing > 1) return; // 이미 로드됨
+    (data.employees || []).forEach(e => {
+      const opt = document.createElement("option");
+      opt.value = e.emp_cd;
+      opt.textContent = `[${e.emp_cd}] ${e.emp_name}`;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* 무시 */ }
+}
+
+// settings 페이지 진입 시
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelector('[data-page="settings"]').addEventListener("click", () => {
+    updateAccountInfo();
+    showActivityTabIfAdmin();
+    // 기본 탭 활성화
+    switchSettingsTab('api');
+  });
+});
+</script>
+
+<!-- ── 인증 스크립트 ── -->
+<script>
+// ── 현재 로그인 사용자 (JWT 토큰 기반)
+function getCurrentUser() {
+  try { return JSON.parse(localStorage.getItem("order_agent_user")); } catch { return null; }
+}
+function setCurrentUser(u) { localStorage.setItem("order_agent_user", JSON.stringify(u)); }
+function clearCurrentUser() {
+  localStorage.removeItem("order_agent_user");
+  if (typeof api !== "undefined") api.clearToken();
+}
+
+// 401 발생 시 로그인 화면으로 복귀
+window.onAuthRequired = function() {
+  clearCurrentUser();
+  document.getElementById("login-overlay").style.display = "flex";
+  document.getElementById("sidebar-user").style.display = "none";
+  document.getElementById("login-password").value = "";
+  toast("세션이 만료되었습니다. 다시 로그인해주세요.", "info");
+};
+
+// ── 로그인 화면 초기화
+async function initLogin() {
+  try {
+    const data = await api.getEmployees();
+    const sel = document.getElementById("login-emp-select");
+    sel.innerHTML = '<option value="">-- 담당자 선택 --</option>';
+    data.employees.forEach(e => {
+      const opt = document.createElement("option");
+      opt.value = e.emp_cd;
+      opt.textContent = `[${e.emp_cd}] ${e.name}`;
+      sel.appendChild(opt);
+    });
+  } catch(e) { console.error("직원 목록 로드 실패", e); }
+}
+
+// ── 로그인 실행 (JWT 토큰 저장)
+async function doLogin() {
+  const emp_cd = document.getElementById("login-emp-select").value;
+  const password = document.getElementById("login-password").value;
+  if (!emp_cd) { alert("담당자를 선택하세요."); return; }
+  if (!password) { alert("비밀번호를 입력하세요."); return; }
+  try {
+    const data = await api.login(emp_cd, password);
+    setCurrentUser({emp_cd: data.emp_cd, name: data.name});
+    document.getElementById("login-overlay").style.display = "none";
+    updateSidebarUser();
+    toast(`${data.name} 님 안녕하세요!`, "success");
+
+    // 토큰 자동 갱신 (만료 1시간 전)
+    scheduleTokenRefresh();
+  } catch(e) { alert(e.message || "로그인 실패"); }
+}
+
+// ── 로그아웃
+function logout() {
+  if (!confirm("로그아웃 하시겠습니까?")) return;
+  clearCurrentUser();
+  document.getElementById("login-overlay").style.display = "flex";
+  document.getElementById("sidebar-user").style.display = "none";
+  document.getElementById("login-password").value = "";
+  toast("로그아웃 되었습니다.", "info");
+}
+
+// ── 사이드바 사용자 표시 업데이트
+function updateSidebarUser() {
+  const user = getCurrentUser();
+  const el = document.getElementById("sidebar-user");
+  const nm = document.getElementById("sidebar-username");
+  const avatar = document.getElementById("sidebar-user-avatar");
+  const roleEl = document.getElementById("sidebar-user-role");
+  if (user) {
+    el.style.display = "flex";
+    nm.textContent = user.name;
+    if (avatar && user.name) avatar.textContent = user.name.charAt(0).toUpperCase();
+    if (roleEl) roleEl.textContent = ADMIN_EMP_CDS.has(user.emp_cd) ? "관리자" : "담당자";
+  } else {
+    el.style.display = "none";
+  }
+}
+
+// ── 토큰 자동 갱신 (23시간마다)
+let _refreshTimer = null;
+function scheduleTokenRefresh() {
+  if (_refreshTimer) clearTimeout(_refreshTimer);
+  _refreshTimer = setTimeout(async () => {
+    try {
+      if (api.isLoggedIn()) {
+        await api.refreshToken();
+        scheduleTokenRefresh();
+      }
+    } catch(e) { console.warn("토큰 갱신 실패:", e); }
+  }, 23 * 60 * 60 * 1000); // 23시간
+}
+
+// ── 비밀번호 변경 (설정 > 내 계정 탭의 인라인 폼 사용)
+// doChangePwInline() 함수는 설정 스크립트에 정의됨
+
+// ── 페이지 로드 시 로그인 확인 (JWT 토큰 검증)
+document.addEventListener("DOMContentLoaded", async () => {
+  await initLogin();
+  const user = getCurrentUser();
+  if (!user || !api.isLoggedIn()) {
+    clearCurrentUser();
+    document.getElementById("login-overlay").style.display = "flex";
+  } else {
+    // 서버에 토큰 유효성 확인
+    try {
+      await api.getMe();
+      document.getElementById("login-overlay").style.display = "none";
+      updateSidebarUser();
+      scheduleTokenRefresh();
+    } catch(e) {
+      // 토큰 만료/무효 → 재로그인
+      clearCurrentUser();
+      document.getElementById("login-overlay").style.display = "flex";
+    }
+  }
+});
+</script>
+
+<!-- ─── 대량 학습 모달 ─── -->
+<div id="bulk-training-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,.5);overflow-y:auto">
+<div style="max-width:960px;margin:30px auto;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+  <!-- 헤더 -->
+  <div style="padding:20px 24px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:18px;font-weight:700">📦 대량 학습</div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <div id="bulk-step-indicator" style="font-size:13px;color:#6b7280"></div>
+      <button onclick="closeBulkTrainingModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280">&times;</button>
+    </div>
+  </div>
+
+  <!-- Step 1: 업로드 -->
+  <div id="bulk-step-1" class="bulk-step" style="padding:24px">
+    <h3 style="margin:0 0 16px;font-size:15px;color:#374151">Step 1: 파일 업로드</h3>
+
+    <!-- 거래처 선택 -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:13px;font-weight:600;color:#374151">거래처 <span style="color:red">*</span></label>
+      <input id="bulk-cust-search" type="text" placeholder="거래처명 또는 코드 검색..."
+             oninput="onBulkCustSearch(this.value)"
+             style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+      <div id="bulk-cust-dropdown" style="display:none;position:relative;z-index:10">
+        <div style="position:absolute;width:100%;max-height:200px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+      </div>
+    </div>
+
+    <!-- 발주서 이미지 업로드 -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:13px;font-weight:600;color:#374151">원본 발주서 이미지 (여러 장) <span style="color:red">*</span></label>
+      <div id="bulk-po-dropzone"
+           ondrop="onBulkPoDrop(event)" ondragover="event.preventDefault();this.style.borderColor='#3b82f6'"
+           ondragleave="this.style.borderColor='#d1d5db'"
+           style="margin-top:4px;border:2px dashed #d1d5db;border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .2s"
+           onclick="document.getElementById('bulk-po-input').click()">
+        <div style="font-size:32px;margin-bottom:8px">🖼️</div>
+        <div style="font-size:13px;color:#6b7280">발주서 이미지를 드래그하거나 클릭하세요</div>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px">JPG, PNG (여러 파일 선택 가능)</div>
+        <input id="bulk-po-input" type="file" accept="image/*" multiple style="display:none"
+               onchange="onBulkPoFiles(this.files)">
+      </div>
+      <div id="bulk-po-file-list" style="margin-top:8px;font-size:13px;color:#374151"></div>
+    </div>
+
+    <!-- 판매전표 엑셀 -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:13px;font-weight:600;color:#374151">판매전표 엑셀 <span style="color:red">*</span></label>
+      <div id="bulk-excel-dropzone"
+           ondrop="onBulkExcelDrop(event)" ondragover="event.preventDefault();this.style.borderColor='#3b82f6'"
+           ondragleave="this.style.borderColor='#d1d5db'"
+           style="margin-top:4px;border:2px dashed #d1d5db;border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .2s"
+           onclick="document.getElementById('bulk-excel-input').click()">
+        <div style="font-size:32px;margin-bottom:8px">📊</div>
+        <div style="font-size:13px;color:#6b7280">판매전표 엑셀을 드래그하거나 클릭하세요</div>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px">.xlsx (날짜순 정리된 파일 1개)</div>
+        <input id="bulk-excel-input" type="file" accept=".xlsx,.xls,.xlsm" style="display:none"
+               onchange="onBulkExcelFile(this.files[0])">
+      </div>
+      <div id="bulk-excel-info" style="margin-top:8px;font-size:13px;color:#374151"></div>
+    </div>
+
+    <div style="text-align:right">
+      <button id="bulk-start-btn" class="btn btn-primary" onclick="startBulkExtraction()" disabled>
+        AI 추출 시작 →
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 2: AI 추출 진행 -->
+  <div id="bulk-step-2" class="bulk-step" style="padding:24px;display:none">
+    <h3 style="margin:0 0 16px;font-size:15px;color:#374151">Step 2: AI 추출 중...</h3>
+    <div id="bulk-progress-bar" style="background:#e5e7eb;border-radius:8px;height:24px;overflow:hidden;margin-bottom:12px">
+      <div id="bulk-progress-fill" style="background:#3b82f6;height:100%;width:0%;transition:width .3s;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600"></div>
+    </div>
+    <div id="bulk-progress-text" style="font-size:13px;color:#6b7280;margin-bottom:16px"></div>
+    <div id="bulk-extraction-log" style="max-height:300px;overflow-y:auto;font-size:12px;font-family:monospace;background:#f9fafb;border-radius:6px;padding:12px"></div>
+  </div>
+
+  <!-- Step 3: 매칭 확인 -->
+  <div id="bulk-step-3" class="bulk-step" style="padding:24px;display:none">
+    <h3 style="margin:0 0 16px;font-size:15px;color:#374151">Step 3: 매칭 확인</h3>
+    <div id="bulk-match-summary" style="font-size:13px;color:#6b7280;margin-bottom:16px"></div>
+    <div id="bulk-match-results" style="max-height:500px;overflow-y:auto"></div>
+    <div style="text-align:right;margin-top:16px">
+      <button class="btn" onclick="closeBulkTrainingModal()" style="margin-right:8px">취소</button>
+      <button id="bulk-save-btn" class="btn btn-primary" onclick="saveBulkMatches()">
+        ✅ 확인된 매칭 저장
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 4: 완료 -->
+  <div id="bulk-step-4" class="bulk-step" style="padding:24px;display:none;text-align:center">
+    <div style="font-size:48px;margin-bottom:16px">🎉</div>
+    <h3 style="margin:0 0 8px;font-size:18px;color:#374151">학습 완료!</h3>
+    <div id="bulk-result-summary" style="font-size:14px;color:#6b7280;margin-bottom:24px"></div>
+    <button class="btn btn-primary" onclick="closeBulkTrainingModal();loadTrainingPairs();loadTrainingStats()">닫기</button>
+  </div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
+<script src="/static/js/api.js?v=20260323a"></script>
+<script src="/static/js/app.js?v=20260406b"></script>
+<script src="/static/js/super_agent.js?v=20260323a"></script>
+</body>
+</html>

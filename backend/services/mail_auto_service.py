@@ -1,0 +1,1168 @@
+"""
+메일 자동화 서비스
+- IMAP 접속 → guzhiyi@bor-cable.com 선적 메일 검색
+- BOR Excel 첨부파일 → HS코드 자동 입력
+- ERP 구매전표 자동 생성
+- SMTP 회신 (HS코드 입력된 Excel 첨부)
+"""
+
+import imaplib
+import email
+import smtplib
+from email.header import decode_header
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import logging
+import io
+import os
+import re
+import json
+import httpx
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from services.hs_code_engine import HSCodeEngine
+from config import (
+    MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD,
+)
+
+logger = logging.getLogger(__name__)
+KST = timezone(timedelta(hours=9))
+hs_engine = HSCodeEngine()
+
+# ─── 메일 설정 ───────────────────────────────────────────
+
+TARGET_SENDER = os.getenv("MAIL_TARGET_SENDER", "guzhiyi@bor-cable.com")
+MAIL_SMTP_HOST = os.getenv("MAIL_SMTP_HOST", "wsmtp.ecount.com")
+MAIL_SMTP_PORT = int(os.getenv("MAIL_SMTP_PORT", "587"))
+ERP_SUPPLIER_CODE = os.getenv("ERP_SUPPLIER_CODE", "1111122222")
+MAIL_AUTO_PASSWORD = os.getenv("MAIL_AUTO_PASSWORD", "lanstar2026")
+
+# 제목 키워드 필터
+SUBJECT_KEYWORDS = ["ship", "final", "shipping", "list"]
+
+# 자동 실행 상태
+_auto_state = {
+    "enabled": False,
+    "interval_min": 10,
+    "last_check": None,
+    "last_result": None,
+    "running": False,
+    "auto_reply": False,
+    "reply_template": "",
+}
+
+
+# ─── 유틸리티 ────────────────────────────────────────────
+
+def _json_dumps_safe(obj) -> str:
+    """직렬화 실패 시에도 죽지 않고 문자열을 반환"""
+    try:
+        return json.dumps(obj, ensure_ascii=False, default=str)
+    except Exception:
+        return str(obj)
+
+
+def _decode_header_value(value):
+    if not value:
+        return ""
+    decoded = decode_header(value)
+    parts = []
+    for part, charset in decoded:
+        if isinstance(part, bytes):
+            parts.append(part.decode(charset or "utf-8", errors="replace"))
+        else:
+            parts.append(str(part))
+    return " ".join(parts)
+
+
+def _parse_email_date(date_str):
+    if not date_str:
+        return None
+    try:
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(date_str)
+        return dt.astimezone(KST)
+    except Exception:
+        return None
+
+
+def _subject_matches(subject: str) -> bool:
+    """제목에 키워드(ship/final/shipping/list) 포함 여부"""
+    subj_lower = subject.lower()
+    return any(kw in subj_lower for kw in SUBJECT_KEYWORDS)
+
+
+# ─── 환율 조회 (전신환매도율 근사) ─────────────────────────
+# 무료 API 기준율 + 은행 스프레드(약 1.75%) = 전신환매도율 근사
+# 스프레드는 프론트에서 조정 가능
+
+TT_SELL_SPREAD = float(os.getenv("TT_SELL_SPREAD", "1.75"))  # 기본 1.75%
+
+
+async def fetch_exchange_rate() -> dict:
+    """
+    USD/KRW 전신환매도율 근사 조회
+    = 매매기준율(무료API) × (1 + 스프레드%)
+    
+    Returns: {"rate": float, "base_rate": float, "spread": float, "source": str}
+    """
+    base_rate = None
+    source = ""
+
+    # 1차: exchangerate-api (무료, 매매기준율 근사)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get("https://open.er-api.com/v6/latest/USD")
+            if r.status_code == 200:
+                data = r.json()
+                rate = data.get("rates", {}).get("KRW")
+                if rate:
+                    base_rate = float(rate)
+                    source = "er-api"
+    except Exception as e:
+        logger.warning(f"[환율] er-api 실패: {e}")
+
+    # 2차: 폴백 API
+    if not base_rate:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get("https://api.exchangerate.host/latest?base=USD&symbols=KRW")
+                if r.status_code == 200:
+                    data = r.json()
+                    rate = data.get("rates", {}).get("KRW")
+                    if rate:
+                        base_rate = float(rate)
+                        source = "exchangerate.host"
+        except Exception as e:
+            logger.warning(f"[환율] 폴백 API 실패: {e}")
+
+    # 3차: 고정값
+    if not base_rate:
+        base_rate = 1450.0
+        source = "기본값"
+        logger.warning("[환율] 모든 API 실패, 기본값 사용")
+
+    # 전신환매도율 = 기준율 × (1 + 스프레드%)
+    spread = TT_SELL_SPREAD
+    tt_sell_rate = round(base_rate * (1 + spread / 100), 2)
+
+    logger.info(f"[환율] 기준율={base_rate}, 스프레드={spread}%, 매도율={tt_sell_rate} ({source})")
+
+    return {
+        "rate": tt_sell_rate,         # 전신환매도율 (실제 적용 환율)
+        "base_rate": base_rate,       # 매매기준율
+        "spread": spread,             # 스프레드 %
+        "source": source,
+    }
+
+
+# ─── IMAP 메일 수신 ──────────────────────────────────────
+
+def fetch_bor_emails(days_back: int = 30) -> list:
+    """
+    IMAP에서 guzhiyi@bor-cable.com 발신, BOR Excel 첨부 메일 검색
+    
+    Returns: [{
+        "message_id": str,
+        "uid": str,
+        "subject": str,
+        "date": str,
+        "date_kst": datetime,
+        "attachments": [{"filename": str, "data": bytes, "bor_number": str}],
+    }]
+    """
+    if not MAIL_USER or not MAIL_PASSWORD:
+        logger.error("[메일자동화] 메일 계정 미설정")
+        return []
+
+    results = []
+    mail = None
+    try:
+        mail = imaplib.IMAP4_SSL(MAIL_IMAP_SERVER, MAIL_IMAP_PORT)
+        mail.login(MAIL_USER, MAIL_PASSWORD)
+        mail.select("INBOX", readonly=True)
+
+        since = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+        
+        # UID 기반 검색
+        try:
+            status, data = mail.uid("search", None, f'(FROM "{TARGET_SENDER}" SINCE {since})')
+        except Exception:
+            status, data = mail.search(None, f'(FROM "{TARGET_SENDER}" SINCE {since})')
+        
+        if status != "OK" or not data[0]:
+            logger.info("[메일자동화] 새 메일 없음")
+            return []
+        
+        uids = data[0].split()
+        logger.info(f"[메일자동화] {TARGET_SENDER} 발신 메일 {len(uids)}건 발견")
+
+        for uid in uids:
+            try:
+                status, msg_data = mail.uid("fetch", uid, "(RFC822)")
+                if status != "OK":
+                    continue
+                
+                raw_body = None
+                for part in msg_data:
+                    if isinstance(part, tuple) and len(part) >= 2:
+                        raw_body = part[1]
+                        break
+                if not raw_body:
+                    continue
+
+                msg = email.message_from_bytes(raw_body)
+                subject = _decode_header_value(msg.get("Subject", ""))
+                date_str = msg.get("Date", "")
+                date_kst = _parse_email_date(date_str)
+                message_id = msg.get("Message-ID", "")
+
+                # ★ 제목 키워드 필터 (ship/final/shipping/list)
+                if not _subject_matches(subject):
+                    continue
+
+                # 첨부파일 추출 (BOR*.xlsx만)
+                attachments = []
+                for part in msg.walk():
+                    if part.get_content_disposition() != "attachment":
+                        continue
+                    filename = _decode_header_value(part.get_filename() or "")
+                    if not filename.lower().endswith(".xlsx"):
+                        continue
+                    if not filename.upper().startswith("BOR"):
+                        continue
+                    
+                    file_data = part.get_payload(decode=True)
+                    if not file_data:
+                        continue
+                    
+                    # BOR 번호 추출
+                    bor_match = re.search(r'(BOR-\d{7})', filename, re.IGNORECASE)
+                    bor_number = bor_match.group(1).upper() if bor_match else ""
+                    
+                    attachments.append({
+                        "filename": filename,
+                        "data": file_data,
+                        "bor_number": bor_number,
+                    })
+
+                if attachments:
+                    results.append({
+                        "message_id": message_id,
+                        "uid": uid.decode() if isinstance(uid, bytes) else str(uid),
+                        "subject": subject,
+                        "date": date_str,
+                        "date_kst": date_kst,
+                        "attachments": attachments,
+                    })
+
+            except Exception as e:
+                logger.error(f"[메일자동화] 메일 처리 오류 (UID {uid}): {e}")
+                continue
+
+    except Exception as e:
+        logger.error(f"[메일자동화] IMAP 접속 오류: {e}")
+    finally:
+        if mail:
+            try:
+                mail.close()
+                mail.logout()
+            except Exception:
+                pass
+
+    return results
+
+
+# ─── Excel HS코드 처리 ───────────────────────────────────
+
+def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
+    """
+    BOR Invoice Excel에 HS코드를 자동 입력
+    
+    Returns: {
+        "success": bool,
+        "output_data": bytes (수정된 Excel),
+        "items": [{"model": str, "category": str, "hs_code": str, "rule": str, ...}],
+        "erp_lines": [{"prod_cd": str, "qty": float, "price_usd": float}],
+        "oem_items": [{"description": str, "category": str}],
+        "stats": {"total": int, "hs_filled": int, "skipped": int, "unknown": int},
+    }
+    """
+    import openpyxl
+    from openpyxl.styles import Font
+    
+    hs_font = Font(bold=True, color="FF0000")  # 빨간색 + 볼드
+    
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_data))
+    except Exception as e:
+        return {"success": False, "error": f"Excel 열기 실패: {e}"}
+    
+    if "Invoice" not in wb.sheetnames:
+        return {"success": False, "error": "Invoice 시트가 없습니다"}
+    
+    ws = wb["Invoice"]
+    
+    items = []
+    erp_lines = []
+    oem_items = []
+    current_category = ""
+    stats = {"total": 0, "hs_filled": 0, "skipped": 0, "unknown": 0}
+    
+    def _safe_float(val):
+        """수식('=1.62*0.97') 등 변환 불가 셀 안전 처리"""
+        if val is None:
+            return 0.0
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            # 수식 문자열이면 eval 시도
+            if isinstance(val, str) and val.startswith("="):
+                try:
+                    return float(eval(val[1:].replace(",", "")))
+                except Exception:
+                    pass
+            return 0.0
+    
+    # I열(9번째) 헤더 확인/추가
+    header_row = 13
+    if ws.cell(row=header_row, column=9).value not in ("HS CODE", "HS code", "HS Code"):
+        ws.cell(row=header_row, column=9).value = "HS CODE"
+    
+    for row_idx in range(14, ws.max_row + 1):
+        a_val = ws.cell(row=row_idx, column=1).value
+        b_val = ws.cell(row=row_idx, column=2).value
+        c_val = ws.cell(row=row_idx, column=3).value  # Quantity
+        f_val = ws.cell(row=row_idx, column=6).value   # Unit Price
+        i_val = ws.cell(row=row_idx, column=9).value   # HS CODE (기존)
+        
+        # BOR 주문번호 행 → 건너뜀
+        if a_val and isinstance(a_val, str) and re.match(r'^BOR-\d', a_val):
+            continue
+        if a_val and isinstance(a_val, str) and re.match(r'^PAR-\d', a_val):
+            continue
+        
+        # 카테고리 행 (B열에 텍스트, A열에 모델명 없음)
+        if b_val and isinstance(b_val, str) and len(b_val.strip()) > 2:
+            if not a_val or (isinstance(a_val, str) and (
+                a_val.startswith("BOR-") or a_val.startswith("PAR-")
+            )):
+                current_category = b_val.strip()
+                continue
+            
+            # B열에 설명이 있고 A열에 모델명이 있는 경우 (LS-68R | Crimping Tool)
+            if a_val and isinstance(a_val, str):
+                model = hs_engine.extract_model_name(str(a_val))
+                if model:
+                    combined_desc = f"{a_val}, {b_val}"
+                    result = hs_engine.match(current_category, combined_desc)
+                    stats["total"] += 1
+                    
+                    # HS코드 입력
+                    if result.hs_code and not i_val:
+                        cell = ws.cell(row=row_idx, column=9); cell.value = result.hs_code; cell.font = hs_font
+                        stats["hs_filled"] += 1
+                    elif result.confidence == "skip":
+                        stats["skipped"] += 1
+                    elif result.confidence == "unknown":
+                        stats["unknown"] += 1
+                    else:
+                        stats["skipped"] += 1
+                    
+                    items.append({
+                        "row": row_idx, "model": model,
+                        "category": current_category,
+                        "hs_code": result.hs_code,
+                        "rule": result.rule_name,
+                        "confidence": result.confidence,
+                    })
+                    
+                    # ERP 라인 (관세면제 품목: ×1.17, 관세 품목: ×1.2)
+                    if hs_engine.is_erp_target(model):
+                        tax_rate = 1.22 if result.rule_name in ("rack_cabinet_body", "open_rack", "high_rack") else 1.18
+                        erp_lines.append({
+                            "prod_cd": model,
+                            "qty": _safe_float(c_val),
+                            "price_usd": _safe_float(f_val),
+                            "tax_rate": tax_rate,
+                            "description": combined_desc[:100],
+                        })
+                    else:
+                        oem_items.append({
+                            "description": combined_desc[:100],
+                            "category": current_category,
+                        })
+                    continue
+        
+        # 일반 품목행 (A열에 모델명)
+        if a_val and isinstance(a_val, str):
+            model = hs_engine.extract_model_name(str(a_val))
+            if model:
+                result = hs_engine.match(current_category, str(a_val))
+                stats["total"] += 1
+                
+                if result.hs_code and not i_val:
+                    cell = ws.cell(row=row_idx, column=9); cell.value = result.hs_code; cell.font = hs_font
+                    stats["hs_filled"] += 1
+                elif result.confidence == "skip":
+                    stats["skipped"] += 1
+                elif result.confidence == "unknown":
+                    stats["unknown"] += 1
+                else:
+                    stats["skipped"] += 1
+                
+                items.append({
+                    "row": row_idx, "model": model,
+                    "category": current_category,
+                    "hs_code": result.hs_code,
+                    "rule": result.rule_name,
+                    "confidence": result.confidence,
+                })
+                
+                if hs_engine.is_erp_target(model):
+                    tax_rate = 1.22 if result.rule_name in ("rack_cabinet_body", "open_rack", "high_rack") else 1.18
+                    erp_lines.append({
+                        "prod_cd": model,
+                        "qty": _safe_float(c_val),
+                        "price_usd": _safe_float(f_val),
+                        "tax_rate": tax_rate,
+                        "description": str(a_val)[:100],
+                    })
+                elif not model.startswith(("LS-", "LSP-", "LSN-", "ZOT-")):
+                    oem_items.append({
+                        "description": str(a_val)[:100],
+                        "category": current_category,
+                    })
+    
+    # 수정된 Excel 저장
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return {
+        "success": True,
+        "output_data": output.read(),
+        "filename": filename,
+        "items": items,
+        "erp_lines": erp_lines,
+        "oem_items": oem_items,
+        "stats": stats,
+    }
+
+
+# ─── ERP 구매전표 생성 ────────────────────────────────────
+
+async def create_purchase_slip(
+    erp_lines: list,
+    exchange_rate: float,
+    email_date: datetime = None,
+) -> dict:
+    """
+    ERP 구매전표 자동 생성
+    
+    단가 = USD × 1.2 × 환율
+    전표일자 = 메일수신일 + 8일
+    """
+    from services.erp_client import erp_client
+    
+    if not erp_lines:
+        return {"success": False, "error": "입력할 품목이 없습니다"}
+    
+    # 전표일자: 메일수신일 +8일
+    if email_date:
+        io_date = (email_date + timedelta(days=8)).strftime("%Y%m%d")
+    else:
+        io_date = (datetime.now(KST) + timedelta(days=8)).strftime("%Y%m%d")
+    
+    # 라인 변환 (모델명 → 품목코드)
+    # 한 conn으로 모든 라인 조회 (PG 풀 누수 방지)
+    lines = []
+    skipped = []
+    from db.database import get_connection as _gc
+    _conn = _gc()
+    try:
+        for item in erp_lines:
+            model = item["prod_cd"]
+            # DB에서 품목코드 조회 (정확→전방→역방 매칭)
+            try:
+                row = _conn.execute(
+                    "SELECT prod_cd FROM product_code_mapping WHERE model_name = ?", (model,)
+                ).fetchone()
+                if not row:
+                    row = _conn.execute(
+                        "SELECT prod_cd FROM product_code_mapping WHERE model_name LIKE ? ORDER BY LENGTH(model_name) LIMIT 1",
+                        (model + "%",)
+                    ).fetchone()
+                if not row:
+                    # 역방향: LS-5STPD-2MG → LS-5STPD-2M
+                    prefix = model[:-1] if len(model) > 3 else model
+                    cands = _conn.execute(
+                        "SELECT model_name, prod_cd FROM product_code_mapping WHERE model_name LIKE ?",
+                        (prefix + "%",)
+                    ).fetchall()
+                    best = ("", "")
+                    for mname, pcd in cands:
+                        clean = mname.split(",")[0].strip()
+                        if model.startswith(clean) and len(clean) > len(best[0]):
+                            best = (clean, pcd)
+                    if best[1]:
+                        row = (best[1],)
+                prod_cd = row[0] if row else ""
+            except Exception as e:
+                logger.warning(f"[구매전표] 매핑 조회 실패 model={model}: {e}")
+                prod_cd = ""
+
+            if not prod_cd:
+                skipped.append(model)
+                continue
+
+            price_usd = item.get("price_usd", 0)
+            tax_rate = item.get("tax_rate", 1.18)
+            price_krw = round(price_usd * tax_rate * exchange_rate)
+
+            lines.append({
+                "prod_cd": prod_cd,
+                "qty": item["qty"],
+                "unit": "EA",
+                "price": price_krw,
+            })
+    finally:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+
+    if skipped:
+        logger.warning(f"[구매전표] 미매핑 품목 {len(skipped)}건 제외: {skipped[:5]}")
+
+    if not lines:
+        return {"success": False, "error": "매핑된 품목 없음", "skipped": skipped}
+
+    logger.info(f"[구매전표] {len(lines)}개 품목, 환율={exchange_rate}, 일자={io_date}")
+    
+    try:
+        result = await erp_client.save_purchase(
+            cust_code=ERP_SUPPLIER_CODE,
+            lines=lines,
+            io_date=io_date,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"[구매전표] ERP 전송 실패: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ─── SMTP 회신 ────────────────────────────────────────────
+
+def send_reply_email(
+    to_address: str,
+    subject: str,
+    body: str,
+    attachment_data: bytes = None,
+    attachment_filename: str = None,
+    in_reply_to: str = None,
+) -> bool:
+    """HS코드 입력된 Excel을 첨부하여 회신"""
+    if not MAIL_USER or not MAIL_PASSWORD:
+        logger.error("[SMTP] 계정 미설정")
+        return False
+    
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = MAIL_USER
+        msg["To"] = to_address
+        msg["Subject"] = f"Re: {subject}" if not subject.startswith("Re:") else subject
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+            msg["References"] = in_reply_to
+        
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        
+        if attachment_data and attachment_filename:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(attachment_data)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={attachment_filename}")
+            msg.attach(part)
+        
+        with smtplib.SMTP(MAIL_SMTP_HOST, MAIL_SMTP_PORT) as server:
+            server.starttls()
+            server.login(MAIL_USER, MAIL_PASSWORD)
+            server.send_message(msg)
+        
+        logger.info(f"[SMTP] 회신 발송 완료 → {to_address}")
+        return True
+    
+    except Exception as e:
+        logger.error(f"[SMTP] 회신 발송 실패: {e}")
+        return False
+
+
+# ─── 전체 파이프라인 ──────────────────────────────────────
+
+async def run_mail_automation_pipeline(
+    days_back: int = 30,
+    exchange_rate: float = None,
+    auto_reply: bool = False,
+    auto_erp: bool = True,
+    db_conn=None,
+    reply_template: str = "",
+) -> dict:
+    """
+    전체 메일 자동화 파이프라인 실행
+    """
+    # 환율 조회
+    rate_info = {}
+    if not exchange_rate:
+        rate_info = await fetch_exchange_rate()
+        exchange_rate = rate_info["rate"]
+    else:
+        rate_info = {"rate": exchange_rate, "base_rate": exchange_rate, "spread": 0, "source": "manual"}
+    
+    # 처리된 메일 ID 조회 (중복 방지)
+    # status='completed' 또는 'pending'(승인 대기)이면 모두 스킵
+    # message_id가 비어있는 케이스 대비 → uid도 보조 키로 사용
+    # 추가로 BOR 번호 기반 dedupe (메일이 재발송되거나 Message-ID가 일관되지 않을 때)
+    processed_ids = set()
+    processed_bors = set()  # (bor_number, filename) 조합으로 중복 차단
+    if db_conn:
+        try:
+            cursor = db_conn.execute(
+                "SELECT message_id FROM mail_processing_log WHERE status IN ('completed','pending')"
+            )
+            processed_ids = {row[0] for row in cursor.fetchall() if row[0]}
+        except Exception as e:
+            logger.warning(f"[파이프라인] 처리이력 조회 실패: {e}")
+        try:
+            cur = db_conn.execute(
+                "SELECT bor_number, filename FROM mail_attachment_processed "
+                "WHERE bor_number != ''"
+            )
+            for row in cur.fetchall():
+                bor = row[0] if not isinstance(row, dict) else row.get("bor_number", "")
+                fn = row[1] if not isinstance(row, dict) else row.get("filename", "")
+                processed_bors.add((bor, fn))
+        except Exception as e:
+            logger.warning(f"[파이프라인] BOR 처리이력 조회 실패: {e}")
+
+    # 메일 수신
+    emails = fetch_bor_emails(days_back=days_back)
+
+    pipeline_results = []
+    skipped_already = 0
+
+    for mail_info in emails:
+        msg_id = mail_info["message_id"] or f"uid:{mail_info.get('uid','')}"
+
+        # 이미 처리된 메일 건너뜀 (1차: message_id 매칭)
+        if msg_id in processed_ids:
+            skipped_already += 1
+            logger.info(f"[파이프라인] 이미 처리됨(msg_id) → 스킵: {mail_info.get('subject','')[:40]}")
+            continue
+
+        # 2차: 첨부의 BOR 번호+파일명이 모두 처리된 적 있으면 스킵
+        # (Message-ID가 다르게 들어왔지만 같은 BOR을 재발송한 경우 대비)
+        atts_meta = mail_info.get("attachments") or []
+        if atts_meta and processed_bors:
+            all_bor_seen = all(
+                (a.get("bor_number") or "", a.get("filename") or "") in processed_bors
+                for a in atts_meta if a.get("bor_number")
+            ) and any(a.get("bor_number") for a in atts_meta)
+            if all_bor_seen:
+                skipped_already += 1
+                logger.info(
+                    f"[파이프라인] 이미 처리된 BOR → 스킵: "
+                    f"{mail_info.get('subject','')[:40]} ({[a.get('bor_number') for a in atts_meta]})"
+                )
+                continue
+
+        mail_result = {
+            "message_id": msg_id,
+            "subject": mail_info["subject"],
+            "date": str(mail_info.get("date_kst", "")),
+            "attachments_processed": [],   # 첨부별 결과
+            "reply_sent": False,
+            "status": "processing",
+        }
+
+        # ─── 첨부별로 분리 처리 (HS코드 입력 + ERP 전송 각각) ───
+        attachments_summary = []
+        any_processed_excel = None  # 회신 첨부용 (첫 번째 성공 Excel)
+
+        for att in mail_info["attachments"]:
+            att_summary = {
+                "filename": att["filename"],
+                "bor_number": att.get("bor_number", ""),
+                "success": False,
+                "stats": {},
+                "erp_lines_count": 0,
+                "erp_success": False,
+                "erp_error": "",
+                "erp_failure_kind": "",
+                "erp_unmapped": [],
+                "attachment_id": None,
+            }
+
+            # HS코드 처리
+            excel_result = process_excel_hs_code(att["data"], att["filename"])
+            if not excel_result["success"]:
+                att_summary["erp_error"] = excel_result.get("error", "엑셀 처리 실패")
+                att_summary["erp_failure_kind"] = "excel_error"
+                attachments_summary.append(att_summary)
+                continue
+
+            att_summary["success"] = True
+            att_summary["stats"] = excel_result["stats"]
+            att_summary["erp_lines_count"] = len(excel_result["erp_lines"])
+            if any_processed_excel is None:
+                any_processed_excel = excel_result
+
+            # ─── 첨부별 ERP 전송 ───
+            erp_obj = {}
+            if auto_erp and excel_result["erp_lines"]:
+                erp_obj = await create_purchase_slip(
+                    erp_lines=excel_result["erp_lines"],
+                    exchange_rate=exchange_rate,
+                    email_date=mail_info.get("date_kst"),
+                )
+            elif not excel_result["erp_lines"]:
+                erp_obj = {"success": False, "error": "ERP 대상 라인 없음"}
+            else:
+                erp_obj = {"success": False, "error": "auto_erp 비활성"}
+
+            erp_success = bool(erp_obj.get("success"))
+            erp_skipped = erp_obj.get("skipped") or erp_obj.get("skipped_models") or []
+            # ERP 실패 사유 추출
+            erp_error_msg = ""
+            erp_failure_kind = ""
+            if not erp_success:
+                err = erp_obj.get("error")
+                if isinstance(err, dict):
+                    erp_error_msg = (err.get("Message") or err.get("message")
+                                    or err.get("ErrorMessage") or _json_dumps_safe(err))
+                elif isinstance(err, str):
+                    erp_error_msg = err
+                elif erp_obj.get("data"):
+                    erp_error_msg = _json_dumps_safe(erp_obj.get("data"))[:300]
+                else:
+                    erp_error_msg = "원인 불명 (응답에 error/Message 키 없음)"
+
+                if not excel_result["erp_lines"]:
+                    erp_failure_kind = "no_erp_target"
+                elif err == "매핑된 품목 없음":
+                    erp_failure_kind = "all_unmapped"
+                elif "DUPL" in str(erp_error_msg).upper() or "중복" in str(erp_error_msg):
+                    erp_failure_kind = "duplicate_slip"
+                elif not auto_erp:
+                    erp_failure_kind = "auto_erp_disabled"
+                else:
+                    erp_failure_kind = "ecount_api_error"
+
+            att_summary["erp_success"] = erp_success
+            att_summary["erp_error"] = erp_error_msg
+            att_summary["erp_failure_kind"] = erp_failure_kind
+            att_summary["erp_unmapped"] = erp_skipped
+
+            # ─── 첨부 결과 + 처리된 Excel 파일 DB 저장 ───
+            if db_conn:
+                try:
+                    import base64 as _b64
+                    file_b64 = _b64.b64encode(excel_result["output_data"]).decode("ascii")
+                    cur = db_conn.execute("""
+                        INSERT INTO mail_attachment_processed
+                        (log_id, message_id, bor_number, filename,
+                         hs_filled, hs_unknown, erp_success, erp_lines_count,
+                         erp_error, erp_failure_kind, file_b64, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        0, msg_id, att.get("bor_number", ""), att["filename"],
+                        excel_result["stats"].get("hs_filled", 0),
+                        excel_result["stats"].get("unknown", 0),
+                        1 if erp_success else 0,
+                        len(excel_result["erp_lines"]),
+                        erp_error_msg[:500],
+                        erp_failure_kind,
+                        file_b64,
+                        datetime.now(KST).isoformat(),
+                    ))
+                    att_summary["attachment_id"] = getattr(cur, "lastrowid", None)
+                    db_conn.commit()
+                    # 같은 호출 내 BOR dedupe 갱신
+                    bor_key = (att.get("bor_number") or "", att.get("filename") or "")
+                    if bor_key[0]:
+                        processed_bors.add(bor_key)
+                except Exception as e:
+                    logger.error(f"[DB] 첨부 결과 저장 실패: {e}")
+
+            attachments_summary.append(att_summary)
+
+        mail_result["attachments_processed"] = attachments_summary
+
+        # 자동 회신 (첫 번째 처리된 Excel 첨부)
+        if auto_reply and any_processed_excel:
+            reply_body = reply_template if reply_template.strip() else (
+                "Dear Mr. Gu,\n\n"
+                "We have reviewed the packing list and added the HS codes accordingly.\n"
+                "Please find the attached file for your reference.\n\n"
+                "Best regards,\n"
+                "LINEUP SYSTEM CO., LTD."
+            )
+            reply_sent = send_reply_email(
+                to_address=TARGET_SENDER,
+                subject=mail_info["subject"],
+                body=reply_body,
+                attachment_data=any_processed_excel["output_data"],
+                attachment_filename=any_processed_excel["filename"],
+                in_reply_to=msg_id,
+            )
+            mail_result["reply_sent"] = reply_sent
+
+        # ─── 메일 단위 집계 ───
+        total_items = sum(a["stats"].get("total", 0) for a in attachments_summary if a.get("success"))
+        hs_filled = sum(a["stats"].get("hs_filled", 0) for a in attachments_summary if a.get("success"))
+        hs_skipped_cnt = sum(a["stats"].get("skipped", 0) for a in attachments_summary if a.get("success"))
+        hs_unknown_cnt = sum(a["stats"].get("unknown", 0) for a in attachments_summary if a.get("success"))
+        erp_total = len(attachments_summary)
+        erp_ok = sum(1 for a in attachments_summary if a.get("erp_success"))
+        erp_lines_sent = sum(
+            (a.get("erp_lines_count", 0) - len(a.get("erp_unmapped") or []))
+            for a in attachments_summary if a.get("erp_success")
+        )
+        all_erp_unmapped = []
+        for a in attachments_summary:
+            for m in (a.get("erp_unmapped") or []):
+                if m not in all_erp_unmapped:
+                    all_erp_unmapped.append(m)
+
+        mail_result["status"] = "completed"
+        mail_result["exchange_rate"] = exchange_rate
+        mail_result["detail_stats"] = {
+            "total_items": total_items,
+            "hs_filled": hs_filled,
+            "hs_skipped": hs_skipped_cnt,
+            "hs_unknown": hs_unknown_cnt,
+            "erp_total": erp_total,
+            "erp_success_count": erp_ok,
+            "erp_lines_sent": erp_lines_sent,
+            "erp_unmapped": all_erp_unmapped,
+            "attachments": attachments_summary,
+            "reply_sent": mail_result.get("reply_sent", False),
+            "filenames": [a["filename"] for a in mail_info["attachments"]],
+        }
+
+        # DB 로그 저장 (메일 단위)
+        if db_conn:
+            try:
+                import json as _json
+                result_json = _json.dumps(mail_result.get("detail_stats", {}), ensure_ascii=False)
+                db_conn.execute("""
+                    INSERT OR REPLACE INTO mail_processing_log
+                    (message_id, subject, sender, received_at, attachment_count,
+                     status, hs_code_count, reply_sent, processed_at, result_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    msg_id,
+                    mail_info["subject"],
+                    TARGET_SENDER,
+                    str(mail_info.get("date_kst", "")),
+                    len(mail_info["attachments"]),
+                    "completed",
+                    hs_filled,
+                    mail_result.get("reply_sent", False),
+                    datetime.now(KST).isoformat(),
+                    result_json,
+                ))
+                db_conn.commit()
+                processed_ids.add(msg_id)  # 같은 호출 내 중복 방지
+            except Exception as e:
+                logger.error(f"[DB] 로그 저장 실패: {e}")
+
+        pipeline_results.append(mail_result)
+    
+    return {
+        "exchange_rate": exchange_rate,
+        "base_rate": rate_info.get("base_rate", exchange_rate),
+        "spread": rate_info.get("spread", 0),
+        "rate_source": rate_info.get("source", ""),
+        "total_emails": len(emails),
+        "new_processed": len(pipeline_results),
+        "already_processed": skipped_already,
+        "results": pipeline_results,
+    }
+
+
+# ─── 자동 실행 스케줄러 ───────────────────────────────────
+
+def get_auto_state() -> dict:
+    return dict(_auto_state)
+
+
+async def _send_telegram_notification(result: dict):
+    """파이프라인 결과를 텔레그램으로 상세 알림"""
+    try:
+        from db.database import get_connection
+        from services.telegram_service import TelegramService
+        
+        conn = get_connection()
+        rows = conn.execute("SELECT key, value FROM inventory_alert_settings").fetchall()
+        settings = {row[0]: row[1] for row in rows}
+        
+        bot_token = settings.get("telegram_bot_token", "")
+        chat_id = settings.get("telegram_chat_id", "")
+        if not bot_token or not chat_id:
+            return
+        
+        telegram = TelegramService(bot_token, chat_id)
+        
+        # 오류 알림
+        if result.get("error"):
+            await telegram.send_message(
+                f"🚨 <b>BOR 메일 자동화 오류</b>\n\n"
+                f"❌ {result['error']}\n\n"
+                f"⏰ {datetime.now(KST).strftime('%m/%d %H:%M')}"
+            )
+            return
+        
+        new_count = result.get("new_processed", 0)
+        if new_count <= 0:
+            return
+        
+        rate = result.get("exchange_rate", 0)
+        base_rate = result.get("base_rate", 0)
+        spread = result.get("spread", 0)
+        
+        lines = []
+        lines.append("📧 <b>BOR 선적시트 자동 처리 완료</b>")
+        lines.append("")
+        
+        # 환율 정보
+        lines.append(f"💱 <b>환율</b>: {rate:,.2f}원 (기준 {base_rate:,.2f} + {spread}%)")
+        lines.append("")
+        
+        # 각 메일별 상세
+        for r in result.get("results", []):
+            subj = r.get("subject", "")[:50]
+            ds = r.get("detail_stats", {})
+            filenames = ds.get("filenames", [])
+            
+            lines.append(f"━━━━━━━━━━━━━━━━━━")
+            lines.append(f"📋 <b>{subj}</b>")
+            if filenames:
+                lines.append(f"📎 {', '.join(filenames)}")
+            lines.append("")
+            
+            # HS코드 통계
+            total = ds.get("total_items", 0)
+            filled = ds.get("hs_filled", 0)
+            skipped = ds.get("hs_skipped", 0)
+            unknown = ds.get("hs_unknown", 0)
+            lines.append(f"🏷 <b>HS코드</b>: 총 {total}개")
+            lines.append(f"   ✅ 입력: {filled} | ⏭ 스킵: {skipped} | ⚠️ 미매칭: {unknown}")
+            
+            # ERP 전표
+            erp_ok = ds.get("erp_success", False)
+            erp_sent = ds.get("erp_lines_sent", 0)
+            erp_unmapped = ds.get("erp_unmapped", [])
+            if erp_ok:
+                lines.append(f"📊 <b>ERP 구매전표</b>: ✅ {erp_sent}건 전송 완료")
+            elif erp_sent > 0:
+                lines.append(f"📊 <b>ERP 구매전표</b>: ❌ 전송 실패")
+            else:
+                lines.append(f"📊 <b>ERP 구매전표</b>: ⏭ 미실행")
+            
+            if erp_unmapped:
+                lines.append(f"   ⚠️ 품목코드 미매핑 {len(erp_unmapped)}건: {', '.join(erp_unmapped[:5])}")
+                if len(erp_unmapped) > 5:
+                    lines.append(f"   ... 외 {len(erp_unmapped)-5}건")
+            
+            # 회신
+            reply = ds.get("reply_sent", False)
+            lines.append(f"✉️ <b>회신</b>: {'✅ 발송 완료' if reply else '⏭ 미발송'}")
+            lines.append("")
+        
+        lines.append(f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}")
+        
+        await telegram.send_message("\n".join(lines))
+        
+    except Exception as e:
+        logger.warning(f"[텔레그램] 알림 발송 실패: {e}")
+
+
+async def _auto_check_and_process():
+    """스케줄러: 신규 메일 스캔 → 텔레그램 알림 (처리는 승인 후)"""
+    if _auto_state["running"]:
+        return
+
+    _auto_state["running"] = True
+    _auto_state["last_check"] = datetime.now(KST).isoformat()
+
+    try:
+        from db.database import get_connection
+        conn = get_connection()
+        
+        # 이미 처리/대기 중인 메일 제외
+        processed_ids = set()
+        try:
+            cursor = conn.execute(
+                "SELECT message_id FROM mail_processing_log WHERE status IN ('completed','pending')"
+            )
+            processed_ids = {row[0] for row in cursor.fetchall()}
+        except Exception:
+            pass
+        
+        emails = fetch_bor_emails(days_back=7)
+        
+        new_mails = []
+        for mail_info in emails:
+            msg_id = mail_info["message_id"]
+            if msg_id in processed_ids:
+                continue
+            
+            # pending 상태로 DB 저장
+            try:
+                conn.execute("""
+                    INSERT OR IGNORE INTO mail_processing_log
+                    (message_id, subject, sender, received_at, attachment_count, status, processed_at)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?)
+                """, (
+                    msg_id,
+                    mail_info["subject"],
+                    TARGET_SENDER,
+                    str(mail_info.get("date_kst", "")),
+                    len(mail_info["attachments"]),
+                    datetime.now(KST).isoformat(),
+                ))
+                conn.commit()
+            except Exception:
+                pass
+            
+            new_mails.append({
+                "message_id": msg_id,
+                "subject": mail_info["subject"],
+                "date": str(mail_info.get("date_kst", ""))[:16],
+                "attachments": [a["filename"] for a in mail_info["attachments"]],
+            })
+        
+        _auto_state["last_result"] = {
+            "new_found": len(new_mails),
+            "timestamp": datetime.now(KST).isoformat(),
+        }
+        
+        if new_mails:
+            logger.info(f"[자동스캔] 신규 선적 메일 {len(new_mails)}건 발견")
+            await _send_telegram_scan_alert(new_mails)
+        
+    except Exception as e:
+        logger.error(f"[자동스캔] 오류: {e}")
+        _auto_state["last_result"] = {"error": str(e), "timestamp": datetime.now(KST).isoformat()}
+    finally:
+        _auto_state["running"] = False
+
+
+async def _send_telegram_scan_alert(new_mails: list):
+    """신규 메일 발견 텔레그램 알림"""
+    try:
+        from db.database import get_connection
+        from services.telegram_service import TelegramService
+        
+        conn = get_connection()
+        rows = conn.execute("SELECT key, value FROM inventory_alert_settings").fetchall()
+        settings = {row[0]: row[1] for row in rows}
+        
+        bot_token = settings.get("telegram_bot_token", "")
+        chat_id = settings.get("telegram_chat_id", "")
+        if not bot_token or not chat_id:
+            return
+        
+        telegram = TelegramService(bot_token, chat_id)
+        
+        lines = []
+        lines.append("📬 <b>BOR 신규 선적 메일 감지!</b>")
+        lines.append("")
+        for m in new_mails:
+            lines.append(f"📋 <b>{m['subject'][:50]}</b>")
+            lines.append(f"   📎 {', '.join(m['attachments'])}")
+            lines.append(f"   📅 {m['date']}")
+            lines.append("")
+        lines.append(f"📨 총 {len(new_mails)}건 승인 대기 중")
+        lines.append("")
+        lines.append("👉 <b>승인</b> 입력 시 자동 처리됩니다")
+        lines.append(f"⏰ {datetime.now(KST).strftime('%Y-%m-%d %H:%M')}")
+        
+        # 인라인 버튼 포함 메시지
+        import httpx
+        url = f"{telegram.api_base}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": "\n".join(lines),
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "reply_markup": {
+                "inline_keyboard": [
+                    [
+                        {"text": "✅ 승인 → 자동 처리", "callback_data": "승인"},
+                        {"text": "⏭ 나중에", "callback_data": "상태"},
+                    ]
+                ]
+            }
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.post(url, json=payload)
+    except Exception as e:
+        logger.warning(f"[텔레그램] 스캔 알림 실패: {e}")
+
+
+def _auto_sync_wrapper():
+    """APScheduler에서 호출되는 동기 래퍼"""
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(_auto_check_and_process())
+        else:
+            loop.run_until_complete(_auto_check_and_process())
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_auto_check_and_process())
+
+
+_mail_auto_scheduler = None
+
+
+def start_mail_auto_scheduler(interval_min: int = 3):
+    """메일 자동화 스케줄러 시작"""
+    global _mail_auto_scheduler
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    if _mail_auto_scheduler:
+        _mail_auto_scheduler.shutdown(wait=False)
+
+    _mail_auto_scheduler = BackgroundScheduler()
+    _mail_auto_scheduler.add_job(
+        _auto_sync_wrapper,
+        IntervalTrigger(minutes=interval_min),
+        id="mail_auto_check",
+        replace_existing=True,
+    )
+    _mail_auto_scheduler.start()
+    _auto_state["enabled"] = True
+    _auto_state["interval_min"] = interval_min
+    logger.info(f"[메일자동화] 스케줄러 시작 (매 {interval_min}분)")
+
+
+def stop_mail_auto_scheduler():
+    """메일 자동화 스케줄러 중지"""
+    global _mail_auto_scheduler
+    if _mail_auto_scheduler:
+        _mail_auto_scheduler.shutdown(wait=False)
+        _mail_auto_scheduler = None
+    _auto_state["enabled"] = False
+    logger.info("[메일자동화] 스케줄러 중지")

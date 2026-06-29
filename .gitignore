@@ -1,0 +1,29 @@
+# ---- secrets / env ----
+.env
+.env.bak*
+
+# ---- runtime data ----
+data/
+
+# ---- big artifacts / backups / logs / build scripts ----
+_backups/
+*.tar.gz
+_*.log
+_*.sh
+*.bak
+*.bak_*
+
+# ---- local ops scripts (contain NAS creds / local paths) ----
+*.ps1
+CLAUDE_HANDOFF.md
+
+# ---- python ----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ---- OS / Synology ----
+.DS_Store
+@eaDir/

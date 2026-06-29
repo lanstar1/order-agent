@@ -1,0 +1,1362 @@
+"""
+선적 메일 파싱 서비스
+- IMAP으로 메일서버 접속
+- "Final shipping", "shipping list" 등 키워드 메일 검색
+- BOR로 시작하는 엑셀 첨부파일 다운로드 → 모델명 파싱
+- 오더리스트의 BOR 번호와 매칭 → 해당 품목들 선적 확인
+- 선적일(메일 수신일) + 입고예정일(+8일) 저장
+"""
+
+import imaplib
+import email
+from email.header import decode_header
+import logging
+import io
+import os
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logger = logging.getLogger(__name__)
+KST = timezone(timedelta(hours=9))
+
+def _safe_fetch_body(fetch_result) -> bytes:
+    """IMAP FETCH 응답에서 메일 본문 안전 추출"""
+    if not fetch_result:
+        return None
+    for part in fetch_result:
+        if isinstance(part, tuple) and len(part) >= 2 and isinstance(part[1], bytes):
+            return part[1]
+    return None
+
+
+
+def _decode_header_value(value):
+    """메일 헤더 디코딩"""
+    if not value:
+        return ""
+    decoded = decode_header(value)
+    parts = []
+    for part, charset in decoded:
+        if isinstance(part, bytes):
+            parts.append(part.decode(charset or "utf-8", errors="replace"))
+        else:
+            parts.append(str(part))
+    return " ".join(parts)
+
+
+def _parse_email_date(date_str):
+    """메일 날짜 파싱 → KST datetime"""
+    if not date_str:
+        return None
+    try:
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(date_str)
+        return dt.astimezone(KST)
+    except Exception:
+        return None
+
+
+def scan_shipping_emails(
+    imap_server: str,
+    imap_user: str,
+    imap_password: str,
+    imap_port: int = 993,
+    days_back: int = 90,
+    search_folder: str = "INBOX",
+) -> list:
+    """
+    IMAP 메일서버에서 선적 관련 메일을 검색하고 BOR 첨부파일을 파싱
+
+    Returns: [{
+        "bor_number": "BOR-2601001",
+        "subject": "Final shipping list...",
+        "email_date": "2026-03-15",
+        "shipping_date": "2026-03-15",
+        "arrival_date": "2026-03-23",
+        "filename": "BOR-2601001.xlsx",
+        "models": ["LS-1000H", "LS-1200HB", ...],
+    }, ...]
+    """
+    results = []
+
+    try:
+        # IMAP 접속
+        logger.info(f"[선적메일] IMAP 접속: {imap_server}:{imap_port}")
+        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        mail.login(imap_user, imap_password)
+        mail.select(search_folder, readonly=True)
+
+        # 날짜 범위 설정
+        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+
+        # Ecount: UID 기반 SEARCH (SINCE 조건으로 최근 메일만)
+        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+        try:
+            status, data = mail.uid("search", None, f"(SINCE {since_date})")
+        except Exception:
+            status, data = mail.uid("search", None, "ALL")
+        all_uids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[선적메일] INBOX UID {len(all_uids)}건 (SINCE {since_date})")
+
+        shipping_keywords = ["shipping", "final", "list"]
+        cutoff = datetime.now(KST) - timedelta(days=days_back)
+
+        for uid in reversed(all_uids):  # 최신 먼저
+            try:
+                # 1단계: 헤더만 fetch (빠름)
+                status, hdr_data = mail.uid("fetch", uid, "(RFC822.HEADER)")
+                if status != "OK" or not hdr_data or not hdr_data[0]:
+                    continue
+                hdr_raw = _safe_fetch_body(hdr_data)
+                if not hdr_raw:
+                    continue
+                hdr_msg = email.message_from_bytes(hdr_raw)
+
+                # 날짜 필터 — 3개월 초과하면 중단
+                email_dt = _parse_email_date(hdr_msg.get("Date", ""))
+                if not email_dt:
+                    continue
+                if email_dt < cutoff:
+                    logger.info(f"[선적메일] {email_dt.strftime('%Y-%m-%d')} → 3개월 초과, 검색 중단")
+                    break
+
+                # 제목에 shipping/final/list 키워드 확인
+                subject = _decode_header_value(hdr_msg.get("Subject", "")).lower()
+                if not any(kw in subject for kw in shipping_keywords):
+                    continue
+
+                # 2단계: 매칭된 메일만 전체 fetch (첨부파일 포함)
+                status, msg_data = mail.uid("fetch", uid, "(RFC822)")
+                if status != "OK" or not msg_data or not msg_data[0]:
+                    continue
+                raw = _safe_fetch_body(msg_data)
+                if not raw or not isinstance(raw, bytes):
+                    continue
+                msg = email.message_from_bytes(raw)
+
+                email_date = email_dt.strftime("%Y-%m-%d")
+                arrival_date = (email_dt + timedelta(days=8)).strftime("%Y-%m-%d")
+
+                # 첨부파일 검색 (BOR로 시작하는 엑셀)
+                for part in msg.walk():
+                    content_disposition = str(part.get("Content-Disposition", ""))
+                    if "attachment" not in content_disposition:
+                        continue
+
+                    filename = _decode_header_value(part.get_filename() or "")
+                    if not filename:
+                        continue
+
+                    # BOR로 시작하는 엑셀 파일만 (FTA 제외)
+                    if not filename.upper().startswith("BOR"):
+                        continue
+                    if "FTA" in filename.upper():
+                        continue
+                    if not any(filename.lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"]):
+                        continue
+
+                    # BOR 번호 추출 (파일명에서)
+                    bor_match = re.match(r'(BOR[-_]?\d+)', filename, re.IGNORECASE)
+                    bor_number = bor_match.group(1).upper() if bor_match else filename.split(".")[0].upper()
+                    # BOR-2601001 형식으로 통일
+                    bor_number = bor_number.replace("_", "-")
+
+                    # 엑셀 파싱 → 모델명 추출
+                    file_data = part.get_payload(decode=True)
+                    models = _parse_bor_excel(file_data, filename)
+
+                    if models:
+                        results.append({
+                            "bor_number": bor_number,
+                            "subject": subject[:200],
+                            "email_date": email_date,
+                            "shipping_date": email_date,
+                            "arrival_date": arrival_date,
+                            "filename": filename,
+                            "models": models,
+                            "model_count": len(models),
+                        })
+                        logger.info(f"[선적메일] {bor_number}: {len(models)}개 모델 (선적일: {email_date}) → 최신 1개 사용, 검색 중단")
+                        break  # 최신 BOR 선적파일 1개만 필요
+
+            except Exception as e:
+                logger.warning(f"[선적메일] 메일 파싱 실패 (uid={uid}): {e}")
+
+            # 최신 BOR 찾았으면 루프 종료
+            if results:
+                break
+
+        mail.logout()
+
+    except imaplib.IMAP4.error as e:
+        logger.error(f"[선적메일] IMAP 접속 실패: {e}")
+        raise Exception(f"메일 접속 실패: {e}")
+    except Exception as e:
+        logger.error(f"[선적메일] 메일 스캔 오류: {e}", exc_info=True)
+        raise
+
+    # BOR 번호 기준 중복 제거 (최신 메일 우선)
+    seen_bors = {}
+    for r in sorted(results, key=lambda x: x["email_date"], reverse=True):
+        bor = r["bor_number"]
+        if bor not in seen_bors:
+            seen_bors[bor] = r
+    results = list(seen_bors.values())
+
+    logger.info(f"[선적메일] 총 {len(results)}건 BOR 선적 정보 파싱 완료")
+    return results
+
+
+def _parse_bor_excel(file_data: bytes, filename: str) -> list:
+    """BOR 엑셀 첨부파일에서 모델명 추출"""
+    models = []
+    try:
+        if filename.lower().endswith(".xlsx"):
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
+            sh = wb.active
+            for r in range(1, sh.max_row + 1):
+                for c in range(1, min(sh.max_column + 1, 10)):
+                    val = str(sh.cell(r, c).value or "").strip()
+                    # LS- 또는 LSP- 등 랜스타 모델명 패턴
+                    if val and re.match(r'^(LS[- P]|LSN-|HT-)', val, re.IGNORECASE):
+                        # 모델명만 추출 (쉼표 이전)
+                        model = val.split(",")[0].strip()
+                        if len(model) >= 4 and model not in models:
+                            models.append(model)
+        elif filename.lower().endswith(".xls"):
+            import xlrd
+            wb = xlrd.open_workbook(file_contents=file_data)
+            sh = wb.sheet_by_index(0)
+            for r in range(sh.nrows):
+                for c in range(min(sh.ncols, 10)):
+                    val = str(sh.cell_value(r, c)).strip()
+                    if val and re.match(r'^(LS[- P]|LSN-|HT-)', val, re.IGNORECASE):
+                        model = val.split(",")[0].strip()
+                        if len(model) >= 4 and model not in models:
+                            models.append(model)
+    except Exception as e:
+        logger.warning(f"[선적메일] 엑셀 파싱 실패 ({filename}): {e}")
+
+    return models
+
+
+# ─── DB 저장/조회 ─────────────────────────────────────────
+
+def save_shipping_info(conn, shipping_data: list):
+    """선적 정보를 DB에 저장 (최신 BOR만 유지, 이전 기록 정리)"""
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+    # 최신 BOR 1개만 저장하므로, 이전 BOR 선적 레코드 전부 삭제
+    # (NAM/PI 레코드는 유지)
+    try:
+        conn.execute("DELETE FROM shipping_mail_info WHERE bor_number LIKE 'BOR%'")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    logger.info("[선적메일] 이전 BOR 선적 레코드 정리 완료")
+
+    saved = 0
+    for item in shipping_data:
+        bor = item["bor_number"]
+        models_json = ",".join(item["models"])
+        conn.execute("""
+            INSERT INTO shipping_mail_info
+                (bor_number, subject, email_date, shipping_date, arrival_date,
+                 filename, models, model_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(bor_number) DO UPDATE SET
+                subject=excluded.subject, email_date=excluded.email_date,
+                shipping_date=excluded.shipping_date, arrival_date=excluded.arrival_date,
+                filename=excluded.filename, models=excluded.models,
+                model_count=excluded.model_count, updated_at=excluded.updated_at
+        """, (bor, item["subject"], item["email_date"], item["shipping_date"],
+              item["arrival_date"], item["filename"], models_json,
+              item["model_count"], now))
+        saved += 1
+    conn.commit()
+    logger.info(f"[선적메일] {saved}건 저장 완료")
+    return saved
+
+
+def get_shipping_info_map(conn) -> dict:
+    """
+    선적 정보를 모델명 기준으로 매핑
+    BOR: 전체 모델이 같은 선적일
+    NAM: 모델별로 다른 선적일 가능 (개별 레코드 우선)
+    입고예정일이 오늘 이전인 제품은 재고 스냅샷으로 실제 입고 여부 2차 검증
+    Returns: {"LS-1000H": {"bor": "...", "shipping_date": "...", "arrival_date": "...", "status": "shipping|arrived|delayed"}}
+    """
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+    today_fmt = today.replace("-", "")  # YYYYMMDD
+
+    rows = conn.execute("""
+        SELECT bor_number, shipping_date, arrival_date, models
+        FROM shipping_mail_info
+        ORDER BY email_date DESC
+    """).fetchall()
+
+    model_map = {}
+    for r in rows:
+        bor = r[0]
+        ship_date = r[1] or ""
+        arr_date = r[2] or ""
+        models_str = r[3] or ""
+
+        # 입고예정일이 지났으면 → 재고 스냅샷으로 실제 입고 여부 확인
+        if arr_date and arr_date < today:
+            # 해당 모델들의 입고 검증은 개별 모델 처리 시 수행
+            pass
+
+        # 개별 모델 레코드 (NAM: "LAN-PI20260304_LS-BDCH" 형태)
+        if "_" in bor and models_str and "," not in models_str:
+            m = models_str.strip().upper()
+            if m and m not in model_map and ship_date:
+                entry = _build_shipping_entry(conn, m, bor.split("_")[0], ship_date, arr_date, today, today_fmt)
+                if entry:
+                    model_map[m] = entry
+            continue
+
+        # BOR/PI 단위 레코드 → 소속 모델에 일괄 적용
+        for m in models_str.split(","):
+            m = m.strip().upper()
+            if m and m not in model_map:
+                entry = _build_shipping_entry(conn, m, bor, ship_date, arr_date, today, today_fmt)
+                if entry:
+                    model_map[m] = entry
+    return model_map
+
+
+def _build_shipping_entry(conn, model: str, bor: str, ship_date: str, arr_date: str,
+                          today: str, today_fmt: str) -> dict:
+    """
+    선적 정보 표시 여부 판단 (단순 규칙)
+    - 선적일이 7일 이상 지남 → 이미 입고됨 → None (표시 안함)
+    - 선적일이 7일 이내 → 선적 중 표시
+    """
+    if not ship_date:
+        return None
+
+    try:
+        ship_dt = datetime.strptime(ship_date, "%Y-%m-%d")
+        days_since_ship = (datetime.now(KST).replace(tzinfo=None) - ship_dt).days
+        if days_since_ship > 7:
+            return None  # 선적 후 7일 이상 → 입고 완료로 간주
+    except Exception:
+        pass
+
+    return {"bor_number": bor, "shipping_date": ship_date, "arrival_date": arr_date, "status": "shipping"}
+
+
+def get_all_shipping_info(conn) -> list:
+    """전체 선적 정보 조회"""
+    rows = conn.execute("""
+        SELECT bor_number, subject, email_date, shipping_date, arrival_date,
+               filename, models, model_count, updated_at
+        FROM shipping_mail_info
+        ORDER BY email_date DESC
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ═══════════════════════════════════════════════════════════
+#  NAM 거래처 메일 파싱 (네이버 IMAP → 163.com 발신자)
+# ═══════════════════════════════════════════════════════════
+
+def scan_nam_shipping_emails(
+    imap_server: str,
+    imap_user: str,
+    imap_password: str,
+    sender_filter: str = "13428934642@163.com",
+    imap_port: int = 993,
+    days_back: int = 180,
+) -> list:
+    """
+    네이버 메일에서 NAM 거래처(163.com) 발신 메일 검색
+    첨부 엑셀의 첫 시트: B열=주문일, E열=모델명, K열=선적일
+    입고예정 = 선적일 + 8일
+
+    Returns: [{
+        "source": "NAM",
+        "pi_number": "LAN-PI20260304",
+        "email_date": "2026-03-04",
+        "filename": "nam-lanstar-pi20260304-01.xlsx",
+        "items": [{"model": "LS-BDCH", "order_date": "2026-03-04", "shipping_date": "2026-03-20", "arrival_date": "2026-03-28", "qty": 200}, ...]
+    }, ...]
+    """
+    results = []
+
+    try:
+        logger.info(f"[NAM메일] IMAP 접속: {imap_server}:{imap_port} ({imap_user})")
+        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        mail.login(imap_user, imap_password)
+
+        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+
+        # 모든 폴더에서 검색 (네이버는 하위 폴더에 분류됨)
+        # 최적화: 한글 폴더(거래처 분류)를 먼저 검색, 발견 시 나머지 스킵
+        status, folder_list = mail.list()
+        folders_to_search = []
+        for f in (folder_list or []):
+            try:
+                decoded = f.decode("utf-8", errors="replace")
+                fname = decoded.rsplit('"', 2)[-2] if '"' in decoded else "INBOX"
+                folders_to_search.append(fname)
+            except Exception:
+                pass
+        if not folders_to_search:
+            folders_to_search = ["INBOX"]
+
+        # 우선순위: 한글 인코딩 폴더(&로 시작) + 사람이름 폴더를 먼저 검색
+        priority = [f for f in folders_to_search if f.startswith("&") or f in ["Tiger", "Gu", "Tony", "soply"]]
+        others = [f for f in folders_to_search if f not in priority]
+        folders_to_search = priority + others
+
+        all_uids_by_folder = []
+        for folder in folders_to_search:
+            try:
+                st, _ = mail.select('"' + folder + '"', readonly=True)
+                if st != "OK":
+                    continue
+
+                since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+                try:
+                    status, data = mail.search(None, f'(SINCE {since_date} FROM "{sender_filter}")')
+                    uids = data[0].split() if status == "OK" and data[0] else []
+                except Exception:
+                    uids = []
+
+                # SEARCH 안 되면 → 최근 메일 FROM 헤더 직접 확인
+                if not uids:
+                    try:
+                        status, data = mail.search(None, f"(SINCE {since_date})")
+                        folder_uids = data[0].split() if status == "OK" and data[0] else []
+                    except Exception:
+                        continue
+
+                    for uid in reversed(folder_uids):
+                        try:
+                            st2, md2 = mail.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (FROM)])")
+                            from_hdr = md2[0][1].decode("utf-8", errors="replace").lower()
+                            if sender_filter.lower() in from_hdr:
+                                uids.append(uid)
+                        except Exception:
+                            pass
+
+                if uids:
+                    all_uids_by_folder.extend([(folder, uid) for uid in uids])
+                    logger.info(f"[NAM메일] 폴더 '{folder}': {len(uids)}건 → 나머지 폴더 스킵")
+                    break  # 163.com 메일이 있는 폴더 찾음 → 나머지 폴더 검색 불필요
+
+            except Exception as e:
+                logger.debug(f"[NAM메일] 폴더 '{folder}' 검색 실패: {e}")
+
+        logger.info(f"[NAM메일] {sender_filter} 총 {len(all_uids_by_folder)}건 발견")
+
+        for folder, uid in all_uids_by_folder:
+            try:
+                mail.select(f'"{folder}"', readonly=True)
+                status, msg_data = mail.fetch(uid, "(RFC822)")
+                if status != "OK":
+                    continue
+
+                raw = _safe_fetch_body(msg_data)
+                if not raw:
+                    continue
+                msg = email.message_from_bytes(raw)
+                subject = _decode_header_value(msg.get("Subject", ""))
+                email_dt = _parse_email_date(msg.get("Date", ""))
+                if not email_dt:
+                    continue
+                email_date = email_dt.strftime("%Y-%m-%d")
+
+                # 엑셀 첨부파일 검색
+                for part in msg.walk():
+                    content_disposition = str(part.get("Content-Disposition", ""))
+                    if "attachment" not in content_disposition:
+                        continue
+
+                    filename = _decode_header_value(part.get_filename() or "")
+                    if not filename:
+                        continue
+                    if not any(filename.lower().endswith(ext) for ext in [".xlsx", ".xls"]):
+                        continue
+
+                    file_data = part.get_payload(decode=True)
+                    items = _parse_nam_excel(file_data, filename)
+
+                    # PI 번호 추출
+                    pi_match = re.search(r'(LAN-PI\d+)', filename, re.IGNORECASE)
+                    pi_number = pi_match.group(1).upper() if pi_match else filename.split(".")[0]
+
+                    if items:
+                        results.append({
+                            "source": "NAM",
+                            "pi_number": pi_number,
+                            "subject": subject[:200],
+                            "email_date": email_date,
+                            "filename": filename,
+                            "items": items,
+                        })
+                        logger.info(f"[NAM메일] {pi_number}: {len(items)}개 품목 파싱")
+
+            except Exception as e:
+                logger.warning(f"[NAM메일] 메일 파싱 실패 (uid={uid}): {e}")
+
+        mail.logout()
+
+    except Exception as e:
+        logger.error(f"[NAM메일] 메일 스캔 오류: {e}", exc_info=True)
+        raise
+
+    return results
+
+
+def _parse_nam_excel(file_data: bytes, filename: str) -> list:
+    """
+    NAM 거래처 PI 엑셀 파싱
+    첫 시트: B열=주문일, E열=모델명, G열=수량, K열=선적일
+    Stickers, color box, Battery 등 부자재 제외
+    """
+    items = []
+    skip_keywords = {"stickers", "sticker", "color box", "logo", "battery", "box", "manual", "none", ""}
+
+    try:
+        if filename.lower().endswith(".xlsx"):
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
+            sh = wb[wb.sheetnames[0]]  # 첫 시트
+
+            for r in range(2, sh.max_row + 1):
+                model = str(sh.cell(r, 5).value or "").strip()  # E열
+                if not model or model.lower() in skip_keywords:
+                    continue
+                if model.startswith("型号") or model == "Model":
+                    continue
+
+                order_date_raw = sh.cell(r, 2).value  # B열
+                shipping_date_raw = sh.cell(r, 11).value  # K열
+                qty_raw = sh.cell(r, 7).value  # G열
+
+                order_date = _parse_date_value(order_date_raw)
+                shipping_date = _parse_date_value(shipping_date_raw)
+                qty = int(float(qty_raw)) if qty_raw and str(qty_raw).replace(".", "").isdigit() else 0
+
+                # 선적일이 없으면 상위 행에서 상속
+                if not shipping_date and items:
+                    shipping_date = items[-1].get("shipping_date", "")
+
+                # 주문일이 없으면 상위 행에서 상속
+                if not order_date and items:
+                    order_date = items[-1].get("order_date", "")
+
+                arrival_date = ""
+                if shipping_date:
+                    try:
+                        sd = datetime.strptime(shipping_date, "%Y-%m-%d")
+                        arrival_date = (sd + timedelta(days=8)).strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+
+                items.append({
+                    "model": model,
+                    "order_date": order_date or "",
+                    "shipping_date": shipping_date or "",
+                    "arrival_date": arrival_date,
+                    "qty": qty,
+                })
+
+    except Exception as e:
+        logger.warning(f"[NAM메일] 엑셀 파싱 실패 ({filename}): {e}")
+
+    return items
+
+
+def _parse_date_value(val) -> str:
+    """다양한 날짜 형식을 YYYY-MM-DD로 변환 (엑셀 시리얼 숫자 포함)"""
+    if not val:
+        return ""
+    if isinstance(val, datetime):
+        return val.strftime("%Y-%m-%d")
+
+    # 엑셀 날짜 시리얼 숫자 (40000~60000 범위 = 2009~2064년)
+    if isinstance(val, (int, float)):
+        num = int(val)
+        if 40000 <= num <= 60000:
+            try:
+                d = datetime(1899, 12, 30) + timedelta(days=num)
+                return d.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        return ""
+
+    s = str(val).strip()
+    # "출고완료" 등 텍스트 포함 시 날짜 부분만 추출
+    date_match = re.search(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2})', s)
+    if date_match:
+        d = date_match.group(1).replace("/", "-")
+        parts = d.split("-")
+        return f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+    return ""
+
+
+# ─── NAM 선적정보 DB 저장 ─────────────────────────────────
+
+def save_nam_shipping_info(conn, scan_results: list):
+    """NAM 거래처 선적 정보를 shipping_mail_info + orderlist_items 테이블에 저장"""
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+
+    # 최신 2건의 PI만 유지 (email_date 기준 내림차순 정렬)
+    scan_results = sorted(scan_results, key=lambda x: x.get("email_date", ""), reverse=True)[:2]
+
+    # 이전 NAM 선적 레코드 정리 후 새로 등록
+    try:
+        conn.execute("DELETE FROM shipping_mail_info WHERE bor_number LIKE 'LAN-PI%'")
+        conn.execute("DELETE FROM orderlist_items WHERE sheet_tab LIKE 'NAM-%'")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+    saved = 0
+
+    for result in scan_results:
+        pi = result["pi_number"]
+        items = result.get("items", [])
+
+        # 선적일이 오늘 이전인 품목은 이미 입고된 것으로 판단하여 제외
+        items = [it for it in items if not it.get("shipping_date") or it["shipping_date"] >= today]
+        if not items:
+            continue
+
+        models_list = [it["model"] for it in items if it.get("model")]
+        models_csv = ",".join(models_list)
+
+        # 1) shipping_mail_info에 PI 단위 저장
+        conn.execute("""
+            INSERT INTO shipping_mail_info
+                (bor_number, subject, email_date, shipping_date, arrival_date,
+                 filename, models, model_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(bor_number) DO UPDATE SET
+                subject=excluded.subject, email_date=excluded.email_date,
+                shipping_date=excluded.shipping_date, arrival_date=excluded.arrival_date,
+                filename=excluded.filename, models=excluded.models,
+                model_count=excluded.model_count, updated_at=excluded.updated_at
+        """, (
+            pi, result.get("subject", ""), result["email_date"],
+            items[0]["shipping_date"] if items else "",
+            items[0]["arrival_date"] if items else "",
+            result["filename"], models_csv, len(models_list), now
+        ))
+        saved += 1
+
+        # 2) shipping_mail_info에 개별 모델 레코드 저장 (모델별 선적일)
+        for it in items:
+            model = it["model"].strip().upper()
+            if not model:
+                continue
+            key = f"{pi}_{model}"
+            conn.execute("""
+                INSERT INTO shipping_mail_info
+                    (bor_number, subject, email_date, shipping_date, arrival_date,
+                     filename, models, model_count, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(bor_number) DO UPDATE SET
+                    shipping_date=excluded.shipping_date, arrival_date=excluded.arrival_date,
+                    updated_at=excluded.updated_at
+            """, (
+                key, f"NAM:{pi}", result["email_date"],
+                it.get("shipping_date", ""), it.get("arrival_date", ""),
+                result["filename"], model, 1, now
+            ))
+
+        # 3) orderlist_items에 오더 내역 자동 등록 (기존 오더리스트와 동일 구조)
+        year = result["email_date"][:4] if result["email_date"] else "2026"
+        tab_name = f"NAM-{year}"
+
+        # 해당 PI의 기존 데이터 삭제 후 재등록 (중복 방지)
+        conn.execute(
+            "DELETE FROM orderlist_items WHERE sheet_tab = ? AND order_no = ?",
+            (tab_name, pi)
+        )
+
+        current_category = ""
+        for idx, it in enumerate(items):
+            model = it["model"].strip()
+            if not model:
+                continue
+
+            conn.execute("""
+                INSERT INTO orderlist_items
+                    (sheet_tab, order_no, seller, order_date, category,
+                     model_name, description, qty, unit, unit_price,
+                     total_value, row_index, raw_row, synced_at, shipping_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                tab_name, pi, "NAM/PUSIMA",
+                it.get("order_date", ""), current_category,
+                model, "", it.get("qty", 0), "PCS",
+                "", "", idx + 1, "", now,
+                it.get("shipping_date", "")
+            ))
+
+        # 동기화 로그
+        conn.execute(
+            "INSERT INTO orderlist_sync_log(sheet_tab, item_count, synced_at) VALUES(?,?,?)",
+            (tab_name, len(items), now)
+        )
+
+    conn.commit()
+    logger.info(f"[NAM메일] {saved}건 PI 저장 + orderlist_items 등록 완료")
+    return saved
+
+
+# ═══════════════════════════════════════════════════════════
+#  구글시트 오더리스트 자동 기록 (서비스 계정)
+# ═══════════════════════════════════════════════════════════
+
+ORDERLIST_SHEET_ID = "1ej0cxyM3NHJKpF-KBXbZ16fH-lZcUrr3Z3eTwFVFSco"
+
+def _get_sheets_credentials():
+    """Google 서비스 계정으로 Sheets API 인증"""
+    import json
+    from google.oauth2.service_account import Credentials
+
+    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    if not sa_json:
+        return None
+
+    try:
+        sa_info = json.loads(sa_json)
+        creds = Credentials.from_service_account_info(
+            sa_info,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        return creds
+    except Exception as e:
+        logger.error(f"[구글시트] 서비스 계정 인증 실패: {e}")
+        return None
+
+
+def _sheets_api_request(method, url, body=None):
+    """Google Sheets API 호출 (서비스 계정 인증)"""
+    import httpx
+
+    creds = _get_sheets_credentials()
+    if not creds:
+        raise Exception("GOOGLE_SERVICE_ACCOUNT_JSON 환경변수 없음")
+
+    # 토큰 갱신
+    from google.auth.transport.requests import Request
+    creds.refresh(Request())
+
+    headers = {
+        "Authorization": f"Bearer {creds.token}",
+        "Content-Type": "application/json",
+    }
+
+    if method == "GET":
+        resp = httpx.get(url, headers=headers, timeout=30)
+    elif method == "POST":
+        resp = httpx.post(url, headers=headers, json=body, timeout=30)
+    elif method == "PUT":
+        resp = httpx.put(url, headers=headers, json=body, timeout=30)
+    else:
+        raise ValueError(f"Unsupported method: {method}")
+
+    resp.raise_for_status()
+    return resp.json()
+
+
+def write_nam_orders_to_sheet(scan_results: list) -> dict:
+    """
+    NAM 거래처 오더를 구글시트 오더리스트에 기록
+    기존 BOR 탭과 동일한 패턴으로 새 탭(NAM-2026) 또는 기존 탭에 추가
+    """
+    if not scan_results:
+        return {"status": "no_data"}
+
+    base_url = f"https://sheets.googleapis.com/v4/spreadsheets/{ORDERLIST_SHEET_ID}"
+    year = datetime.now(KST).strftime("%Y")
+    tab_name = f"NAM-{year}"
+
+    try:
+        # 1. 탭 존재 여부 확인
+        sheet_meta = _sheets_api_request("GET", f"{base_url}?fields=sheets.properties")
+        existing_tabs = [s["properties"]["title"] for s in sheet_meta.get("sheets", [])]
+
+        if tab_name not in existing_tabs:
+            # 새 탭 생성
+            _sheets_api_request("POST", f"{base_url}:batchUpdate", {
+                "requests": [{"addSheet": {"properties": {"title": tab_name}}}]
+            })
+            logger.info(f"[구글시트] '{tab_name}' 탭 생성")
+
+        # 2. 기존 데이터 클리어
+        _sheets_api_request("POST",
+            f"{base_url}/values/'{tab_name}'!A1:Z1000:clear", {})
+
+        # 3. 데이터 구성 (BOR 오더리스트와 유사한 패턴)
+        rows = []
+        for result in scan_results:
+            pi = result["pi_number"]
+            items = result.get("items", [])
+            email_date = result.get("email_date", "")
+
+            # 헤더 행
+            rows.append(["Seller:", "", "No.:", pi])
+            rows.append(["NAM/PUSIMA (深圳普思玛)", "", "Date:", email_date])
+            rows.append(["Item", "Description", "Quantity", "Unit",
+                        "Order Date", "Shipping Date", "Arrival Date"])
+
+            # 품목 행
+            for it in items:
+                model = it.get("model", "")
+                rows.append([
+                    model,
+                    "",
+                    it.get("qty", 0),
+                    "PCS",
+                    it.get("order_date", ""),
+                    it.get("shipping_date", ""),
+                    it.get("arrival_date", ""),
+                ])
+
+            rows.append([])  # 빈 행 구분
+
+        # 4. 시트에 쓰기
+        _sheets_api_request("PUT",
+            f"{base_url}/values/'{tab_name}'!A1?valueInputOption=USER_ENTERED",
+            {"values": rows}
+        )
+
+        logger.info(f"[구글시트] '{tab_name}'에 {len(scan_results)}건 PI 기록 완료")
+        return {"status": "ok", "tab": tab_name, "rows": len(rows)}
+
+    except Exception as e:
+        logger.error(f"[구글시트] 오더리스트 기록 실패: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════
+#  BOR 오더리스트 자동 최신화 (Ecount 메일 → 구글시트 덮어쓰기)
+# ═══════════════════════════════════════════════════════════
+
+def scan_bor_orderlist_emails(
+    imap_server: str, imap_user: str, imap_password: str,
+    imap_port: int = 993, days_back: int = 90,
+    sender_filter: str = "guzhiyi@bor-cable.com",
+) -> list:
+    """
+    kyu@lanstar.co.kr 메일에서 BOR 거래처(guzhiyi@bor-cable.com) 발신 메일 검색
+    'rest' 키워드가 포함된 엑셀 첨부파일 = 최신 오더리스트
+    가장 최근 메일의 첨부파일만 반환 (덮어쓰기용)
+    """
+    results = []
+
+    try:
+        logger.info(f"[BOR오더] IMAP 접속: {imap_server} ({imap_user})")
+        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        mail.login(imap_user, imap_password)
+        mail.select("INBOX", readonly=True)
+
+        # Ecount: UID 기반 SEARCH (SINCE 조건으로 최근 메일만)
+        since_date = (datetime.now(KST) - timedelta(days=days_back)).strftime("%d-%b-%Y")
+        try:
+            status, data = mail.uid("search", None, f"(SINCE {since_date})")
+        except Exception:
+            status, data = mail.uid("search", None, "ALL")
+        all_uids = data[0].split() if status == "OK" and data[0] else []
+        logger.info(f"[BOR오더] INBOX UID {len(all_uids)}건 (SINCE {since_date}), 발신자: {sender_filter}")
+
+        cutoff = datetime.now(KST) - timedelta(days=days_back)
+
+        for uid in reversed(all_uids):  # 최신 먼저
+            try:
+                # 1단계: 헤더만 먼저 확인 (빠름)
+                status, hdr_data = mail.uid("fetch", uid, "(RFC822.HEADER)")
+                if status != "OK" or not hdr_data or not hdr_data[0]:
+                    continue
+                hdr_raw = _safe_fetch_body(hdr_data)
+                if not hdr_raw:
+                    continue
+                hdr_msg = email.message_from_bytes(hdr_raw)
+
+                # 날짜 필터 — 3개월 넘으면 중단
+                email_dt = _parse_email_date(hdr_msg.get("Date", ""))
+                if not email_dt:
+                    continue
+                if email_dt < cutoff:
+                    logger.info(f"[BOR오더] {email_dt.strftime('%Y-%m-%d')} → 3개월 초과, 검색 중단")
+                    break
+
+                # 발신자 필터
+                msg_from = _decode_header_value(hdr_msg.get("From", "")).lower()
+                if sender_filter and sender_filter.lower() not in msg_from:
+                    continue
+
+                # 2단계: 매칭된 메일만 전체 fetch (첨부파일 포함)
+                status, msg_data = mail.uid("fetch", uid, "(RFC822)")
+                if status != "OK" or not msg_data or not msg_data[0]:
+                    continue
+                raw = _safe_fetch_body(msg_data)
+                if not raw or not isinstance(raw, bytes):
+                    continue
+                msg = email.message_from_bytes(raw)
+
+                subject = _decode_header_value(msg.get("Subject", ""))
+
+                for part in msg.walk():
+                    content_disposition = str(part.get("Content-Disposition", ""))
+                    if "attachment" not in content_disposition:
+                        continue
+
+                    filename = _decode_header_value(part.get_filename() or "")
+                    if not filename:
+                        continue
+
+                    # "rest" 키워드가 있는 엑셀만 (FTA 제외)
+                    fn_upper = filename.upper()
+                    if "REST" not in fn_upper:
+                        continue
+                    if "FTA" in fn_upper:
+                        continue
+                    if not any(filename.lower().endswith(ext) for ext in [".xlsx", ".xls"]):
+                        continue
+
+                    file_data = part.get_payload(decode=True)
+
+                    # BOR 번호 추출
+                    bor_match = re.search(r'(BOR[-_]?\d+)', filename, re.IGNORECASE)
+                    bor_number = bor_match.group(1).upper().replace("_", "-") if bor_match else ""
+
+                    results.append({
+                        "filename": filename,
+                        "bor_number": bor_number,
+                        "subject": subject[:200],
+                        "email_date": email_dt.strftime("%Y-%m-%d"),
+                        "file_data": file_data,
+                    })
+                    logger.info(f"[BOR오더] REST 파일 발견: {filename} ({email_dt.strftime('%Y-%m-%d')}) → 최신 1개만 사용, 검색 중단")
+                    break  # 최신 REST 1개만 필요
+
+            except Exception as e:
+                logger.warning(f"[BOR오더] 메일 파싱 실패: {e}")
+
+            # 최신 REST 찾았으면 루프 종료
+            if results:
+                break
+
+        mail.logout()
+
+    except Exception as e:
+        logger.error(f"[BOR오더] 메일 스캔 오류: {e}", exc_info=True)
+        raise
+
+    return results
+
+
+def _parse_bor_rest_excel(file_data: bytes, filename: str) -> dict:
+    """BOR REST 엑셀의 모든 시트를 {탭이름: 2D배열} 딕셔너리로 변환"""
+    sheets = {}
+    try:
+        if filename.lower().endswith(".xlsx"):
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
+            for sheet_name in wb.sheetnames:
+                sh = wb[sheet_name]
+                rows = []
+                for r in range(1, sh.max_row + 1):
+                    row = []
+                    for c in range(1, sh.max_column + 1):
+                        val = sh.cell(r, c).value
+                        if val is None:
+                            row.append("")
+                        elif isinstance(val, datetime):
+                            row.append(val.strftime("%Y-%m-%d"))
+                        elif isinstance(val, (int, float)):
+                            if val == int(val):
+                                row.append(int(val))
+                            else:
+                                row.append(round(val, 4))
+                        else:
+                            row.append(str(val))
+                    rows.append(row)
+                if rows:
+                    sheets[sheet_name] = rows
+                    logger.info(f"[BOR오더] 시트 '{sheet_name}': {len(rows)}행")
+        elif filename.lower().endswith(".xls"):
+            import xlrd
+            wb = xlrd.open_workbook(file_contents=file_data)
+            for idx in range(wb.nsheets):
+                sh = wb.sheet_by_index(idx)
+                sheet_name = sh.name
+                rows = []
+                for r in range(sh.nrows):
+                    row = []
+                    for c in range(sh.ncols):
+                        val = sh.cell_value(r, c)
+                        if isinstance(val, float) and val == int(val):
+                            val = int(val)
+                        row.append(val if val else "")
+                    rows.append(row)
+                if rows:
+                    sheets[sheet_name] = rows
+    except Exception as e:
+        logger.error(f"[BOR오더] 엑셀 파싱 실패 ({filename}): {e}")
+    return sheets
+
+
+def sync_bor_orderlist_to_sheet(scan_results: list) -> dict:
+    """
+    BOR REST 엑셀의 모든 시트를 구글시트 오더리스트의 각 탭에 덮어쓰기
+    엑셀 시트명 → 구글시트 탭명 1:1 매핑 (없으면 새로 생성)
+    """
+    if not scan_results:
+        return {"status": "no_data"}
+
+    base_url = f"https://sheets.googleapis.com/v4/spreadsheets/{ORDERLIST_SHEET_ID}"
+    synced_tabs = []
+
+    try:
+        # 기존 탭 목록
+        sheet_meta = _sheets_api_request("GET", f"{base_url}?fields=sheets.properties")
+        existing_tabs = [s["properties"]["title"] for s in sheet_meta.get("sheets", [])]
+
+        for item in scan_results:
+            filename = item["filename"]
+            file_data = item["file_data"]
+
+            # 엑셀의 모든 시트를 파싱 → {시트명: 2D배열}
+            sheets_dict = _parse_bor_rest_excel(file_data, filename)
+            if not sheets_dict:
+                continue
+
+            # 각 엑셀 시트를 구글시트의 해당 탭에 덮어쓰기
+            for sheet_name, rows in sheets_dict.items():
+                if not rows:
+                    continue
+
+                # 구글시트에서 매칭되는 탭 찾기
+                target_tab = None
+                for tab in existing_tabs:
+                    if tab.strip().lower() == sheet_name.strip().lower():
+                        target_tab = tab
+                        break
+
+                # 없으면 새 탭 생성
+                if not target_tab:
+                    target_tab = sheet_name
+                    try:
+                        _sheets_api_request("POST", f"{base_url}:batchUpdate", {
+                            "requests": [{"addSheet": {"properties": {"title": target_tab}}}]
+                        })
+                        existing_tabs.append(target_tab)
+                    except Exception:
+                        pass
+
+                # 기존 데이터 클리어 후 덮어쓰기
+                try:
+                    _sheets_api_request("POST",
+                        f"{base_url}/values/'{target_tab}'!A1:Z1000:clear", {})
+                except Exception:
+                    pass
+
+                _sheets_api_request("PUT",
+                    f"{base_url}/values/'{target_tab}'!A1?valueInputOption=USER_ENTERED",
+                    {"values": rows}
+                )
+
+                synced_tabs.append({"tab": target_tab, "rows": len(rows), "sheet_name": sheet_name})
+                logger.info(f"[BOR오더] 엑셀 '{sheet_name}' → 구글시트 '{target_tab}' 탭 ({len(rows)}행)")
+
+        return {"status": "ok", "tabs": synced_tabs}
+
+    except Exception as e:
+        logger.error(f"[BOR오더] 구글시트 동기화 실패: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+# ─── 스캔 이력 저장/조회 ────────────────────────────────
+
+def save_scan_log(conn, scan_type: str, result_summary: str, email_dates: str = ""):
+    """스캔/최신화 실행 이력 저장"""
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("""
+        INSERT INTO shipping_scan_log (scan_type, executed_at, result_summary, email_dates)
+        VALUES (?, ?, ?, ?)
+    """, (scan_type, now, result_summary, email_dates))
+    conn.commit()
+
+
+def get_last_scan_info(conn) -> dict:
+    """마지막 스캔/최신화 정보 조회"""
+    result = {}
+    for scan_type in ["shipping_scan", "orderlist_sync"]:
+        row = conn.execute("""
+            SELECT executed_at, result_summary, email_dates
+            FROM shipping_scan_log
+            WHERE scan_type = ?
+            ORDER BY executed_at DESC LIMIT 1
+        """, (scan_type,)).fetchone()
+        if row:
+            result[scan_type] = {
+                "executed_at": row[0],
+                "result_summary": row[1],
+                "email_dates": row[2],
+            }
+    return result
+
+
+# ═══════════════════════════════════════════════════════════
+#  스케줄러: 자동 통합 스캔
+# ═══════════════════════════════════════════════════════════
+
+_scan_scheduler = None
+
+def setup_scan_scheduler(hour: int = 8, minute: int = 0):
+    """매일 지정 시간에 통합 스캔 실행"""
+    global _scan_scheduler
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    if _scan_scheduler:
+        _scan_scheduler.shutdown(wait=False)
+
+    _scan_scheduler = BackgroundScheduler(timezone="Asia/Seoul")
+    _scan_scheduler.add_job(
+        _run_scheduled_scan,
+        "cron", hour=hour, minute=minute,
+        id="daily_scan", replace_existing=True,
+    )
+    _scan_scheduler.start()
+    logger.info(f"[스케줄러] 매일 {hour:02d}:{minute:02d} KST 자동 스캔 설정")
+
+
+def stop_scan_scheduler():
+    global _scan_scheduler
+    if _scan_scheduler:
+        _scan_scheduler.shutdown(wait=False)
+        _scan_scheduler = None
+        logger.info("[스케줄러] 자동 스캔 중지")
+
+
+def get_scheduler_status() -> dict:
+    global _scan_scheduler
+    if not _scan_scheduler or not _scan_scheduler.running:
+        return {"enabled": False, "hour": 8, "minute": 0}
+    jobs = _scan_scheduler.get_jobs()
+    if jobs:
+        trigger = jobs[0].trigger
+        # cron trigger에서 hour/minute 추출
+        h = trigger.fields[5]  # hour
+        m = trigger.fields[6]  # minute
+        return {"enabled": True, "hour": int(str(h)), "minute": int(str(m))}
+    return {"enabled": False, "hour": 8, "minute": 0}
+
+
+def _run_scheduled_scan():
+    """스케줄러에서 호출되는 통합 스캔"""
+    logger.info("[스케줄러] 자동 통합 스캔 시작")
+    try:
+        from config import (MAIL_IMAP_SERVER, MAIL_IMAP_PORT, MAIL_USER, MAIL_PASSWORD,
+                           MAIL2_IMAP_SERVER, MAIL2_IMAP_PORT, MAIL2_USER, MAIL2_PASSWORD, MAIL2_SENDER_FILTER)
+        from db.database import get_connection
+
+        # 1. BOR 오더리스트
+        if MAIL_USER and MAIL_PASSWORD:
+            try:
+                ol = scan_bor_orderlist_emails(MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
+                if ol:
+                    sync_bor_orderlist_to_sheet([ol[0]])
+            except Exception as e:
+                logger.error(f"[스케줄러] BOR 오더리스트 오류: {e}")
+
+            # 2. BOR 선적
+            try:
+                bor = scan_shipping_emails(MAIL_IMAP_SERVER, MAIL_USER, MAIL_PASSWORD, MAIL_IMAP_PORT, days_back=90)
+                conn = get_connection()
+                try:
+                    save_shipping_info(conn, bor)
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.error(f"[스케줄러] BOR 선적 오류: {e}")
+
+        # 3. NAM
+        if MAIL2_USER and MAIL2_PASSWORD:
+            try:
+                nam = scan_nam_shipping_emails(MAIL2_IMAP_SERVER, MAIL2_USER, MAIL2_PASSWORD,
+                                               MAIL2_SENDER_FILTER, MAIL2_IMAP_PORT, days_back=90)
+                conn = get_connection()
+                try:
+                    save_nam_shipping_info(conn, nam)
+                finally:
+                    conn.close()
+                write_nam_orders_to_sheet(nam)
+            except Exception as e:
+                logger.error(f"[스케줄러] NAM 오류: {e}")
+
+        # 4. DB 동기화
+        try:
+            from services.orderlist_service import sync_orderlist
+            sync_orderlist()
+        except Exception as e:
+            logger.error(f"[스케줄러] DB 동기화 오류: {e}")
+
+        # 5. 이력 저장
+        try:
+            conn = get_connection()
+            try:
+                save_scan_log(conn, "shipping_scan", "스케줄러 자동 스캔", "")
+                save_scan_log(conn, "orderlist_sync", "스케줄러 자동 동기화", "")
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+        logger.info("[스케줄러] 자동 통합 스캔 완료")
+    except Exception as e:
+        logger.error(f"[스케줄러] 통합 스캔 실패: {e}")
+
+
+# ─── BOR REST 엑셀 → orderlist_items 직접 저장 ──────────
+
+def save_bor_rest_to_db(scan_results: list):
+    """
+    BOR REST 엑셀을 직접 파싱하여 orderlist_items에 저장
+    구글시트 경유 없이 DB에 직접 저장하므로 데이터 오염 방지
+    REST 시트 내 복수 오더(No.: BOR-xxxx) 구조 지원
+    """
+    from db.database import get_connection
+    conn = get_connection()
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        # 기존 BOR(non-NAM) 오더리스트 전체 삭제
+        conn.execute("DELETE FROM orderlist_items WHERE sheet_tab NOT LIKE 'NAM-%%'")
+        conn.commit()
+
+        total_saved = 0
+
+        for item in scan_results:
+            file_data = item.get("file_data")
+            filename = item.get("filename", "")
+            email_date = item.get("email_date", "")
+
+            sheets = _parse_bor_rest_excel(file_data, filename)
+
+            for sheet_name, rows in sheets.items():
+                if sheet_name.upper() == "STOCK":
+                    continue
+
+                order_no = ""
+                order_date = email_date
+
+                for row_idx, row in enumerate(rows):
+                    if not row or len(row) < 1:
+                        continue
+
+                    col0 = str(row[0] if row[0] is not None else "").strip()
+
+                    # Seller 행 → No. 추출
+                    if col0.startswith("Seller"):
+                        for ci in range(2, min(len(row), 6)):
+                            cell = str(row[ci] if row[ci] is not None else "")
+                            if "No.:" in cell or "No.:" in cell:
+                                no_text = cell.replace("No.:", "").replace("No.:", "").strip()
+                                if not no_text and ci + 1 < len(row):
+                                    no_text = str(row[ci + 1] if row[ci + 1] is not None else "").strip()
+                                if no_text:
+                                    order_no = no_text
+                        continue
+
+                    # Date 행 (Seller 다음 행)
+                    if row_idx > 0:
+                        prev = rows[row_idx - 1] if row_idx < len(rows) else []
+                        if prev and str(prev[0] if prev[0] is not None else "").strip().startswith("Seller"):
+                            for ci in range(2, min(len(row), 6)):
+                                cell = str(row[ci] if row[ci] is not None else "")
+                                if "Date" in cell:
+                                    dt_text = str(row[ci + 1] if ci + 1 < len(row) and row[ci + 1] is not None else "").strip()
+                                    if not dt_text:
+                                        dt_text = cell.replace("Date:", "").replace("Date", "").strip()
+                                    if dt_text:
+                                        order_date = _normalize_order_date(dt_text)
+                            continue
+
+                    # 헤더/카테고리 행 스킵
+                    if col0.upper() in ("ITEM", "NO.", "#", ""):
+                        continue
+
+                    # 모델명 행: LS-/LSN-/LSP- 포함
+                    cu = col0.upper()
+                    if not ("LS-" in cu or "LSN-" in cu or "LSP-" in cu):
+                        continue
+
+                    # 모델명 추출 (첫 콤마 앞)
+                    model = col0.split(",", 1)[0].strip()
+                    if not model:
+                        continue
+
+                    # 수량 (col[2])
+                    qty = 0
+                    if len(row) > 2 and row[2] is not None:
+                        try:
+                            qty = int(float(str(row[2]).replace(",", "")))
+                        except (ValueError, TypeError):
+                            qty = 0
+
+                    unit = str(row[3]).strip() if len(row) > 3 and row[3] else "PCS"
+
+                    conn.execute("""
+                        INSERT INTO orderlist_items
+                            (sheet_tab, order_no, seller, order_date, category,
+                             model_name, description, qty, unit, unit_price,
+                             total_value, row_index, raw_row, synced_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        sheet_name, order_no, "BOR",
+                        order_date, "",
+                        model, "", qty, unit,
+                        "", "", row_idx + 1, "", now
+                    ))
+                    total_saved += 1
+
+        conn.commit()
+        logger.info(f"[BOR오더] REST → DB 직접 저장: {total_saved}건")
+        return total_saved
+    except Exception as e:
+        logger.error(f"[BOR오더] DB 직접 저장 실패: {e}", exc_info=True)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
+def _normalize_order_date(val: str) -> str:
+    """다양한 날짜 형식을 YYYY-MM-DD로"""
+    if not val:
+        return ""
+    val = val.strip()
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', val):
+        return val
+    for fmt in ["%B %d, %Y", "%b %d, %Y", "%Y/%m/%d", "%m/%d/%Y"]:
+        try:
+            return datetime.strptime(val, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return val

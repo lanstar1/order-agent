@@ -1,0 +1,214 @@
+"""
+설정 관리 - 환경변수 또는 config.json 으로 관리
+"""
+import os
+import hashlib
+import secrets
+from pathlib import Path
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).parent.parent
+
+# .env 파일 로딩 (프로젝트 루트)
+_env_path = BASE_DIR / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path)
+
+
+# ─────────────────────────────────────────
+#  Claude API
+# ─────────────────────────────────────────
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL       = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+CLAUDE_MODEL_LIGHT = os.getenv("CLAUDE_MODEL_LIGHT", "claude-haiku-4-5-20251001")  # 간단한 작업용
+
+# ─────────────────────────────────────────
+#  Google API (Drive 파일 목록 조회용)
+# ─────────────────────────────────────────
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+
+# ─────────────────────────────────────────
+#  Google Service Account (Drive 파일 업로드용)
+# ─────────────────────────────────────────
+# JSON 키 파일 내용을 환경변수로 전달 (Render에서는 Secret File 또는 환경변수)
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+# CS 파일 업로드용 Drive 폴더 ID
+GOOGLE_CS_FOLDER_ID = os.getenv("GOOGLE_CS_FOLDER_ID", "")
+
+# ─────────────────────────────────────────
+#  ECOUNT ERP
+# ─────────────────────────────────────────
+ERP_COM_CODE  = os.getenv("ERP_COM_CODE",  "")
+ERP_USER_ID   = os.getenv("ERP_USER_ID",   "")
+ERP_ZONE      = os.getenv("ERP_ZONE",      "CD")
+ERP_API_KEY   = os.getenv("ERP_API_KEY",   "")
+ERP_WH_CD     = os.getenv("ERP_WH_CD",     "10")   # 기본 창고코드
+ERP_EMP_CD    = os.getenv("ERP_EMP_CD",   "")    # 담당자 코드 (ERP에서 필수 설정된 경우)
+
+# ECOUNT 웹 로그인 (구매/판매현황 조회용 - OAPI에 없는 기능)
+ERP_WEB_USER_ID = os.getenv("ERP_WEB_USER_ID", "")   # 웹 로그인 ID
+ERP_WEB_USER_PW = os.getenv("ERP_WEB_USER_PW", "")   # 웹 로그인 PW
+
+# ─────────────────────────────────────────
+#  데이터베이스
+# ─────────────────────────────────────────
+DB_PATH        = BASE_DIR / "data" / "order_agent.db"
+CHROMA_PATH    = BASE_DIR / "data" / "chroma_db"
+PRODUCTS_CSV   = BASE_DIR / "data" / "products" / "products.csv"
+
+# ─────────────────────────────────────────
+#  서버
+# ─────────────────────────────────────────
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+
+# ─────────────────────────────────────────
+#  파일 업로드
+# ─────────────────────────────────────────
+UPLOAD_DIR      = BASE_DIR / "data" / "uploads"
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB (영상 파일 업로드 지원)
+
+# ─────────────────────────────────────────
+#  AI 파라미터
+# ─────────────────────────────────────────
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.90"))
+TOP_K_RESULTS        = 5      # RAG 검색 상위 후보 수
+
+# ─────────────────────────────────────────
+#  JWT 인증
+# ─────────────────────────────────────────
+# JWT_SECRET_KEY: 프로덕션에서는 반드시 환경변수로 설정할 것!
+# 미설정 시 ERP_COM_CODE 기반 결정론적 키 생성 (서버 재시작 시 토큰 유지)
+_jwt_fallback = hashlib.sha256(
+    f"order-agent-jwt-{os.getenv('ERP_COM_CODE', 'dev')}".encode()
+).hexdigest()
+JWT_SECRET_KEY  = os.getenv("JWT_SECRET_KEY", _jwt_fallback)
+JWT_ALGORITHM   = "HS256"
+JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
+
+# ─────────────────────────────────────────
+#  CORS 허용 도메인
+# ─────────────────────────────────────────
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()
+] or ["*"]  # 환경변수 미설정 시 개발 모드 허용
+
+# ─────────────────────────────────────────
+#  Rate Limiting
+# ─────────────────────────────────────────
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
+
+# ─────────────────────────────────────────
+#  네이버 커머스 API (스마트스토어)
+# ─────────────────────────────────────────
+NAVER_CLIENT_ID     = os.getenv("NAVER_CLIENT_ID", "")
+NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "")
+NAVER_COMMERCE_URL  = os.getenv("NAVER_COMMERCE_URL", "https://api.commerce.naver.com")
+
+# 스마트스토어 ERP 연동 고정값
+SMARTSTORE_CUST_CODE = os.getenv("SMARTSTORE_CUST_CODE", "")   # 스마트스토어 거래처코드
+SMARTSTORE_EMP_CODE  = os.getenv("SMARTSTORE_EMP_CODE", "")    # 담당자 코드
+SMARTSTORE_WH_CODE   = os.getenv("SMARTSTORE_WH_CODE", "30")   # 출하창고 코드
+
+# iLogen 택배 계정 (창고별) — 레거시 웹 스크래핑용
+LOGEN_GIMPO_ID       = os.getenv("LOGEN_GIMPO_ID", "")
+LOGEN_GIMPO_PW       = os.getenv("LOGEN_GIMPO_PW", "")
+LOGEN_GIMPO_PW_PREV  = os.getenv("LOGEN_GIMPO_PW_PREV", "")
+LOGEN_YONGSAN_ID     = os.getenv("LOGEN_YONGSAN_ID", "")
+LOGEN_YONGSAN_PW     = os.getenv("LOGEN_YONGSAN_PW", "")
+LOGEN_YONGSAN_PW_PREV = os.getenv("LOGEN_YONGSAN_PW_PREV", "")
+
+# iLogen 보내는분 정보 (창고별)
+SENDER_GIMPO_NAME    = os.getenv("SENDER_GIMPO_NAME", "랜스타")
+SENDER_GIMPO_TEL     = os.getenv("SENDER_GIMPO_TEL", "")
+SENDER_GIMPO_ADDR    = os.getenv("SENDER_GIMPO_ADDR", "")
+SENDER_YONGSAN_NAME  = os.getenv("SENDER_YONGSAN_NAME", "랜스타")
+SENDER_YONGSAN_TEL   = os.getenv("SENDER_YONGSAN_TEL", "")
+SENDER_YONGSAN_ADDR  = os.getenv("SENDER_YONGSAN_ADDR", "")
+
+# ─────────────────────────────────────────
+#  iLOGEN OpenAPI (REST API 방식)
+# ─────────────────────────────────────────
+ILOGEN_SECRET_KEY      = os.getenv("ILOGEN_SECRET_KEY", "")
+ILOGEN_KEY_EXPIRES_AT  = os.getenv("ILOGEN_KEY_EXPIRES_AT", "")  # 'YYYY-MM-DD' (UI 만료알림용)
+ILOGEN_BASE_URL        = os.getenv("ILOGEN_BASE_URL", "https://openapi.ilogen.com")
+ILOGEN_BOX_FARE        = int(os.getenv("ILOGEN_BOX_FARE", "2150"))
+ILOGEN_FARE_TY         = os.getenv("ILOGEN_FARE_TY", "030")  # 030=신용
+
+# 김포 본사 송하인 (기본값)
+ILOGEN_SND_NM      = os.getenv("ILOGEN_SND_NM",   "라인업시스템(주)")
+ILOGEN_SND_ADDR    = os.getenv("ILOGEN_SND_ADDR", "경기 김포시 마송2로104번길 132-21  (통진읍 마송리 462-7)")
+ILOGEN_SND_TEL     = os.getenv("ILOGEN_SND_TEL",  "0319983386")
+ILOGEN_SND_CELL    = os.getenv("ILOGEN_SND_CELL", "0319983386")
+
+# 레거시 호환 — 김포 거래처를 기본으로 가정
+ILOGEN_USER_ID     = os.getenv("ILOGEN_USER_ID", "34850417")
+ILOGEN_CUST_CD     = os.getenv("ILOGEN_CUST_CD", "34850417")
+
+# 창고별 iLOGEN 계정/송하인 (이름·연락처는 김포와 동일, 용산은 주소만 다름)
+ILOGEN_WAREHOUSES = {
+    "gimpo": {
+        "label":    "김포",
+        "user_id":  os.getenv("ILOGEN_USER_ID_GIMPO",  "34850417"),
+        "cust_cd":  os.getenv("ILOGEN_CUST_CD_GIMPO",  "34850417"),
+        "snd_nm":   os.getenv("ILOGEN_SND_NM_GIMPO",   ILOGEN_SND_NM),
+        "snd_addr": os.getenv("ILOGEN_SND_ADDR_GIMPO", ILOGEN_SND_ADDR),
+        "snd_tel":  os.getenv("ILOGEN_SND_TEL_GIMPO",  ILOGEN_SND_TEL),
+        "snd_cell": os.getenv("ILOGEN_SND_CELL_GIMPO", ILOGEN_SND_CELL),
+    },
+    "yongsan": {
+        "label":    "용산",
+        "user_id":  os.getenv("ILOGEN_USER_ID_YONGSAN",  "22750161"),
+        "cust_cd":  os.getenv("ILOGEN_CUST_CD_YONGSAN",  "22750161"),
+        "snd_nm":   os.getenv("ILOGEN_SND_NM_YONGSAN",   ILOGEN_SND_NM),
+        "snd_addr": os.getenv("ILOGEN_SND_ADDR_YONGSAN", "서울특별시 용산구 백범로77길 52 지하1층"),
+        "snd_tel":  os.getenv("ILOGEN_SND_TEL_YONGSAN",  ILOGEN_SND_TEL),
+        "snd_cell": os.getenv("ILOGEN_SND_CELL_YONGSAN", ILOGEN_SND_CELL),
+    },
+}
+
+# 스마트스토어 상품매핑 경로
+SMARTSTORE_PRODUCT_MAP_PATH    = BASE_DIR / "data" / "smartstore" / "smartstore_product_map.json"      # 시트1: 메인상품
+SMARTSTORE_MODEL_MAP_PATH      = BASE_DIR / "data" / "smartstore" / "smartstore_model_map.json"
+SMARTSTORE_OPTION_MAP_PATH     = BASE_DIR / "data" / "smartstore" / "smartstore_option_map.json"     # 시트2: 옵션상품 오버라이드
+SMARTSTORE_ADDON_MAP_PATH      = BASE_DIR / "data" / "smartstore" / "smartstore_addon_map.json"      # 시트3: 추가상품
+SMARTSTORE_OPTION_TEXT_MAP_PATH = BASE_DIR / "data" / "smartstore" / "smartstore_option_text_map.json"  # 옵션텍스트 직접매핑
+SMARTSTORE_ADDON_TEXT_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_addon_text_map.json"   # 추가상품텍스트 직접매핑
+SMARTSTORE_CODE_ALIAS_MAP_PATH  = BASE_DIR / "data" / "smartstore" / "smartstore_code_alias_map.json"   # 추출코드 별칭맵
+SMARTSTORE_KD_DELIVERY_MAP_PATH = BASE_DIR / "data" / "smartstore" / "kd_delivery_fee_map.json"        # 경동택배 배송비 매핑
+
+# ─────────────────────────────────────────
+#  바코드 ERP Bridge (쿠팡 PO → 이카운트)
+# ─────────────────────────────────────────
+# 기본 ERP 인증은 위 ERP_* 변수를 공유하며, 아래는 바코드 전용 고정값
+BARCODE_CUST_CODE = os.getenv("BARCODE_CUST_CODE", "202308091")  # 바코드서버 거래처코드
+BARCODE_WH_CD     = os.getenv("BARCODE_WH_CD", "30")             # 바코드서버 출하창고
+BARCODE_MASTER_PATH = os.getenv("BARCODE_MASTER_PATH", "")       # master_data.xlsx 경로 (빈값이면 data/barcode/master_data.xlsx)
+
+# ─────────────────────────────────────────
+#  지마켓/옥션 ESM Trading API
+# ─────────────────────────────────────────
+ESM_MASTER_ID       = os.getenv("ESM_MASTER_ID", "")       # ESM 마스터 ID (JWT kid)
+ESM_SECRET_KEY      = os.getenv("ESM_SECRET_KEY", "")       # ESM Secret Key (JWT 서명)
+ESM_SELLER_ID_G     = os.getenv("ESM_SELLER_ID_G", "")     # 지마켓 판매자 ID
+ESM_SELLER_ID_A     = os.getenv("ESM_SELLER_ID_A", "")     # 옥션 판매자 ID
+ESM_API_BASE        = os.getenv("ESM_API_BASE", "https://sa2.esmplus.com/api")
+
+# 지마켓 ERP 연동 고정값
+GMARKET_CUST_CODE   = os.getenv("GMARKET_CUST_CODE", "")   # 지마켓 거래처코드
+GMARKET_EMP_CODE    = os.getenv("GMARKET_EMP_CODE", "")     # 담당자 코드
+GMARKET_WH_CODE     = os.getenv("GMARKET_WH_CODE", "30")    # 출하창고 코드
+
+# ─────────────────────────────────────────
+#  쿠팡 OPEN API
+# ─────────────────────────────────────────
+COUPANG_ACCESS_KEY   = os.getenv("COUPANG_ACCESS_KEY", "")    # 쿠팡 OPEN API Access Key
+COUPANG_SECRET_KEY   = os.getenv("COUPANG_SECRET_KEY", "")    # 쿠팡 OPEN API Secret Key
+COUPANG_VENDOR_ID    = os.getenv("COUPANG_VENDOR_ID", "")     # 쿠팡 판매자 ID (예: A00012345)
+COUPANG_API_BASE     = os.getenv("COUPANG_API_BASE", "https://api-gateway.coupang.com")
+
+# 쿠팡 ERP 연동 고정값
+COUPANG_CUST_CODE    = os.getenv("COUPANG_CUST_CODE", "")    # 쿠팡 거래처코드
+COUPANG_EMP_CODE     = os.getenv("COUPANG_EMP_CODE", "")      # 담당자 코드
+COUPANG_WH_CODE      = os.getenv("COUPANG_WH_CODE", "30")     # 출하창고 코드

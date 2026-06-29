@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LINEUP ERP Bridge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:         #080E1C;
+  --surface:    #0F1828;
+  --surface2:   #162034;
+  --surface3:   #1C2840;
+  --border:     #1E2E44;
+  --border2:    #243650;
+  --accent:     #00D4CC;
+  --accent-dim: #007A76;
+  --accent-glow:rgba(0,212,204,0.15);
+  --text:       #D8EAF5;
+  --text2:      #6A8FAD;
+  --text3:      #3E5F80;
+  --success:    #00C27A;
+  --danger:     #FF4757;
+  --warning:    #FFB020;
+  --info:       #3B9EEB;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 13px;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.35;
+}
+
+/* ── 헤더 ── */
+header {
+  position: relative; z-index: 10;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border2);
+  padding: 0 32px;
+  display: flex; align-items: center; gap: 0;
+}
+.header-accent {
+  width: 4px; height: 44px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
+  border-radius: 2px; margin-right: 18px; flex-shrink: 0;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.header-text { padding: 16px 0; }
+.header-text h1 { font-size: 16px; font-weight: 800; letter-spacing: 0.04em; color: var(--text); }
+.header-text h1 span { color: var(--accent); }
+.header-text p { font-size: 11px; color: var(--text2); margin-top: 2px; letter-spacing: 0.02em; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.header-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; color: var(--accent-dim);
+  border: 1px solid var(--border2);
+  padding: 3px 9px; border-radius: 4px; letter-spacing: 0.06em;
+}
+.master-status {
+  font-size: 11px; color: var(--text2);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 12px;
+}
+.back-link {
+  color: var(--accent); text-decoration: none; font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border: 1px solid var(--border2); border-radius: 6px;
+  transition: all 0.15s;
+}
+.back-link:hover { background: var(--surface2); border-color: var(--accent); }
+
+/* ── 컨테이너 / 카드 ── */
+.container {
+  position: relative; z-index: 1;
+  max-width: 860px; margin: 24px auto; padding: 0 16px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 20px 22px;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+}
+.card-title {
+  font-size: 11px; font-weight: 700;
+  color: var(--text2); letter-spacing: 0.08em; text-transform: uppercase;
+  margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 9px;
+}
+.badge {
+  background: var(--accent); color: var(--bg);
+  border-radius: 4px; width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; flex-shrink: 0;
+}
+.info-bar {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 10px 14px;
+  font-size: 12px; color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+}
+
+/* ── 업로드 존 ── */
+.upload-zone {
+  border: 1.5px dashed var(--border2);
+  border-radius: 10px; padding: 28px;
+  text-align: center; cursor: pointer;
+  background: var(--surface2); transition: all 0.2s;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(0,212,204,0.06);
+  box-shadow: inset 0 0 24px rgba(0,212,204,0.05);
+}
+.upload-zone .icon { font-size: 32px; margin-bottom: 8px; opacity: 0.7; }
+.upload-zone strong { color: var(--accent); font-size: 13px; display: block; margin-bottom: 4px; }
+.upload-zone p { color: var(--text2); font-size: 11px; }
+.file-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface3); border: 1px solid var(--border2);
+  border-radius: 20px; padding: 4px 11px;
+  font-size: 11px; color: var(--accent); margin: 4px 4px 0 0;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── 그리드 / 필드 ── */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.field label { font-size: 11px; color: var(--text2); font-weight: 600; margin-bottom: 5px; display: block; letter-spacing: 0.04em; }
+.field input, .field select {
+  width: 100%; padding: 8px 10px;
+  border: 1px solid var(--border2); border-radius: 7px;
+  font-size: 12px; background: var(--surface2); color: var(--text);
+  font-family: inherit; transition: border-color 0.18s, box-shadow 0.18s;
+}
+.field input:focus, .field select:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,212,204,0.1);
+}
+.field input:disabled { background: var(--surface); color: var(--text3); border-color: var(--border); }
+input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cursor: pointer; }
+
+/* ── 버튼 ── */
+.ecount-btn {
+  width: 100%; padding: 13px;
+  border: none; border-radius: 8px;
+  background: linear-gradient(135deg, #005A6E, #00D4CC);
+  color: #fff; font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; font-family: inherit;
+  margin-top: 10px; letter-spacing: 0.03em;
+}
+.ecount-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0,212,204,0.35);
+}
+.ecount-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+.dl-btn {
+  width: 100%; padding: 10px;
+  border: 1px solid var(--border2); border-radius: 8px;
+  background: transparent; color: var(--text2);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.18s; font-family: inherit; margin-top: 8px;
+}
+.dl-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--accent); }
+
+/* ── 결과 박스 ── */
+.ecount-result {
+  margin-top: 12px; border-radius: 8px; padding: 13px 16px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-left: 3px solid var(--info); font-size: 12px; line-height: 1.9;
+}
+.ecount-result.success { border-left-color: var(--success); }
+.ecount-result.fail    { border-left-color: var(--danger); }
+
+/* ── 재고 현황 테이블 ── */
+.inv-table-wrap { overflow-x: auto; margin-top: 12px; border-radius: 8px; border: 1px solid var(--border2); }
+.inv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.inv-table th {
+  background: var(--surface3); color: var(--text2);
+  padding: 8px 10px; text-align: center; white-space: nowrap;
+  font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border2);
+}
+.inv-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; }
+.inv-table tbody tr:last-child td { border-bottom: none; }
+.inv-table tr:hover td { background: var(--surface2); }
+.inv-table tr.low-stock td { background: rgba(255,71,87,0.08); color: var(--danger); font-weight: 600; }
+.inv-table tr.low-stock:hover td { background: rgba(255,71,87,0.13); }
+.inv-qty-bad { color: var(--danger); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.inv-qty-ok  { color: var(--success); font-family: 'JetBrains Mono', monospace; }
+.inv-qty-warn { color: var(--warning); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.inv-table tr.wh10-has td { background: rgba(255,176,32,0.08); }
+.inv-table tr.wh10-has:hover td { background: rgba(255,176,32,0.13); }
+
+/* ── 납품부족사유 테이블 ── */
+.po-table-wrap { overflow-x: auto; margin-top: 12px; border-radius: 8px; border: 1px solid var(--border2); }
+.po-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.po-table th {
+  background: var(--surface3); color: var(--text2);
+  padding: 8px 10px; text-align: center; white-space: nowrap;
+  font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border2);
+}
+.po-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.po-table tbody tr:last-child td { border-bottom: none; }
+.po-table tr:hover td { background: var(--surface2); }
+.po-table .name-col { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-table select {
+  padding: 3px 6px; border: 1px solid var(--border2); border-radius: 5px;
+  font-size: 11px; font-family: inherit; cursor: pointer;
+  background: var(--surface2); color: var(--text); transition: border-color 0.15s;
+}
+.po-table select.reason-단종 { background: rgba(255,71,87,0.12);  border-color: var(--danger);  color: #FF8A95; }
+.po-table select.reason-인상 { background: rgba(255,176,32,0.12); border-color: var(--warning); color: #FFD070; }
+.po-table select.reason-품절 { background: rgba(59,158,235,0.12); border-color: var(--info);    color: #7BC4F5; }
+.po-table .no-match { color: var(--danger); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+.po-summary { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.po-summary .chip { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; }
+.chip-total   { background: rgba(106,143,173,0.12); border-color: var(--border2); color: var(--text2); }
+.chip-exclude { background: rgba(255,71,87,0.1);    border-color: rgba(255,71,87,0.3);  color: #FF8A95; }
+.chip-nomatch { background: rgba(255,176,32,0.1);   border-color: rgba(255,176,32,0.3); color: #FFD070; }
+.chip-send    { background: rgba(0,194,122,0.1);    border-color: rgba(0,194,122,0.3);  color: #4DDDAA; }
+.chip-label   { background: rgba(162,94,255,0.12);  border-color: rgba(162,94,255,0.35); color: #C39BFF; }
+
+/* ── 바코드 부착 뱃지 ── */
+.badge-label {
+  display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700;
+  background: rgba(162,94,255,0.18); border: 1px solid rgba(162,94,255,0.4); color: #C39BFF;
+  white-space: nowrap;
+}
+
+/* ── 바코드 부착 목록 섹션 ── */
+#labelSection {
+  margin-top: 14px; padding: 14px 16px;
+  background: rgba(162,94,255,0.07); border: 1px solid rgba(162,94,255,0.3);
+  border-radius: 10px;
+}
+#labelSection h4 { margin: 0 0 10px; font-size: 13px; color: #C39BFF; }
+#labelSection table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#labelSection th { color: var(--text3); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid rgba(162,94,255,0.2); text-align: left; }
+#labelSection td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text1); }
+
+/* ── 로그 박스 ── */
+.log-box {
+  background: #04080F; border: 1px solid var(--border2);
+  border-radius: 8px; padding: 12px 14px;
+  min-height: 90px; max-height: 200px; overflow-y: auto;
+  font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11px;
+}
+.log-box::-webkit-scrollbar { width: 4px; }
+.log-box::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.ll { padding: 2px 0; line-height: 1.6; }
+.ll::before { content: '› '; color: var(--text3); }
+.li { color: var(--text2); } .lo { color: var(--success); }
+.lw { color: var(--warning); } .le { color: var(--danger); }
+
+.hidden { display: none !important; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-accent"></div>
+  <div class="header-text">
+    <h1><span>LINEUP</span> ERP BRIDGE</h1>
+    <p>쿠팡 PO → 이카운트 판매 전표 자동 전송 · 라인업시스템(주)</p>
+  </div>
+  <div class="header-right">
+    <a href="/" class="back-link">← 메인으로</a>
+    <div class="master-status" id="masterStatus">연결 확인 중...</div>
+    <div class="header-badge">v2.0</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <div class="card-title"><span class="badge">1</span> PO 파일 선택</div>
+    <div class="info-bar" style="margin-bottom:14px;">
+      📋 &nbsp;<strong>PO_로 시작하는 파일</strong>을 올리면 바코드→품목코드 변환, 물류센터 ㄱ~ㅎ 정렬 후 이카운트에 자동 전송됩니다.
+    </div>
+    <div class="upload-zone" id="ecountZone" onclick="document.getElementById('ecountFileInput').click()">
+      <div class="icon">📂</div>
+      <strong>PO_ 파일을 클릭하거나 드래그하세요</strong>
+      <p>PO_FOR_CONFIRM(발주번호).xlsx 형식</p>
+    </div>
+    <input type="file" id="ecountFileInput" accept=".xlsx,.xls" style="display:none">
+    <div id="ecountFileTag" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card hidden" id="poPreviewCard">
+    <div class="card-title" style="cursor:pointer;display:flex;align-items:center;gap:8px;" onclick="togglePoPreview()">
+      <span class="badge">2</span> 납품부족사유 선택
+      <span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">(제품단종/제품인상은 이카운트 전송 제외)</span>
+      <span id="poToggleArrow" style="margin-left:auto;font-size:14px;transition:transform 0.2s;">▶</span>
+    </div>
+    <div class="po-summary" id="poSummary"></div>
+    <div id="poPreviewBody" style="display:none;">
+      <div class="po-table-wrap">
+        <table class="po-table">
+          <thead>
+            <tr>
+              <th>#</th><th>물류센터</th><th>발주번호</th><th>상품이름</th>
+              <th>발주수량</th><th>확정수량</th><th>매핑</th><th>바코드부착</th><th>납품부족사유</th>
+            </tr>
+          </thead>
+          <tbody id="poTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="badge">3</span> 설정</div>
+    <div class="grid2">
+      <div class="field">
+        <label>담당자 코드</label>
+        <input type="text" id="staffCode" placeholder="담당자 코드 입력">
+      </div>
+      <div class="field">
+        <label>거래처코드 (고정)</label>
+        <input type="text" value="202308091" disabled>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:10px;">
+      <div class="field">
+        <label>출하창고 (고정)</label>
+        <input type="text" value="30" disabled>
+      </div>
+      <div class="field">
+        <label>판매일자</label>
+        <input type="date" id="ioDate" style="cursor:pointer;">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="badge">4</span> 전송 / 다운로드</div>
+    <button class="ecount-btn" id="ecountSendBtn" onclick="sendToEcount()" disabled>📤&nbsp; 이카운트 판매 전표 등록</button>
+    <button class="dl-btn hidden" id="dlPoBtn" onclick="downloadPO()">⬇&nbsp; 납품부족사유 채운 PO 파일 다운로드</button>
+    <div class="ecount-result hidden" id="ecountResult"></div>
+    <div class="inv-table-wrap hidden" id="invTableWrap">
+      <table class="inv-table">
+        <thead>
+          <tr><th>전표번호</th><th>물류센터 - 발주번호</th><th>품목코드</th><th>수량</th><th>용산</th><th>통진</th></tr>
+        </thead>
+        <tbody id="invTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="badge">✦</span> 처리 로그</div>
+    <div class="log-box" id="ecountLog"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="badge">⚙</span> 마스터 데이터 관리</div>
+    <div class="info-bar" style="margin-bottom:14px;">
+      📎 &nbsp;바코드↔품목코드 매핑 파일(<strong>master_data.xlsx</strong>)을 업로드하면 즉시 반영됩니다. 기존 파일은 자동 백업됩니다.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <button class="dl-btn" style="width:auto;margin:0;padding:8px 18px;" onclick="document.getElementById('masterFileInput').click()">📤&nbsp; master_data.xlsx 업로드</button>
+      <input type="file" id="masterFileInput" accept=".xlsx,.xls" style="display:none">
+      <span id="masterUploadStatus" style="font-size:11px;color:var(--text2);"></span>
+    </div>
+    <div class="ecount-result hidden" id="masterUploadResult" style="margin-top:10px;"></div>
+  </div>
+
+</div>
+
+
+<script>
+const API_BASE = "/api/barcode";
+
+window.onload = async () => {
+  setupDrop("ecountZone", "ecountFileInput", files => handleEcountFile(files[0]));
+  document.getElementById("ecountFileInput").addEventListener("change", e => {
+    if (e.target.files[0]) handleEcountFile(e.target.files[0]);
+  });
+  document.getElementById("masterFileInput").addEventListener("change", e => {
+    if (e.target.files[0]) uploadMaster(e.target.files[0]);
+  });
+
+  const today = new Date();
+  document.getElementById("ioDate").value =
+    `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
+  try {
+    const res  = await fetch(`${API_BASE}/master-info`);
+    const data = await res.json();
+    document.getElementById("masterStatus").textContent =
+      `매핑 ${data.po_count.toLocaleString()}개 · 단종 ${data.discontinued_count ?? 0}개 · 매입가인상 ${data.price_up_count ?? 0}개`;
+  } catch {
+    document.getElementById("masterStatus").textContent = "⚠ 서버 연결 실패";
+    document.getElementById("masterStatus").style.color = "var(--danger)";
+  }
+};
+
+function setupDrop(zoneId, inputId, handler) {
+  const zone = document.getElementById(zoneId);
+  zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+  zone.addEventListener("drop", e => {
+    e.preventDefault(); zone.classList.remove("drag-over");
+    handler(Array.from(e.dataTransfer.files));
+  });
+}
+
+function togglePoPreview() {
+  const body = document.getElementById("poPreviewBody");
+  const arrow = document.getElementById("poToggleArrow");
+  if (body.style.display === "none") {
+    body.style.display = "";
+    arrow.textContent = "▼";
+  } else {
+    body.style.display = "none";
+    arrow.textContent = "▶";
+  }
+}
+
+let ecountFile = null;
+
+async function handleEcountFile(file) {
+  ecountFile = file;
+  document.getElementById("ecountFileTag").innerHTML = `<span class="file-tag">📄 ${file.name}</span>`;
+  elog(`파일 선택됨: ${file.name} — 항목 분석 중...`, "i");
+
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const res  = await fetch(`${API_BASE}/parse-po`, { method: "POST", body: fd });
+    const data = await res.json();
+    renderPreviewTable(data.items);
+    document.getElementById("poPreviewCard").classList.remove("hidden");
+    document.getElementById("ecountSendBtn").disabled = false;
+    document.getElementById("dlPoBtn").classList.add("hidden");  // 전송 전에는 숨김
+    elog(`✅ ${data.total}개 항목 로드 완료`, "o");
+  } catch(e) {
+    elog(`❌ 미리보기 실패: ${e.message}`, "e");
+    document.getElementById("ecountSendBtn").disabled = false;
+  }
+}
+
+function renderPreviewTable(items) {
+  const REASONS = [
+    { value: "", label: "(없음)" },
+    { value: "제조사 생산중단 혹은 공급사 취급중단 - 시장 단종", label: "제품 단종" },
+    { value: "가격 이슈 (Price) - 매입가 인상 협상 중",          label: "제품 인상" },
+    { value: "협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)", label: "제품 품절" },
+  ];
+  const tbody = document.getElementById("poTableBody");
+  tbody.innerHTML = "";
+  items.forEach(item => {
+    const tr = document.createElement("tr");
+    const opts = REASONS.map(r =>
+      `<option value="${r.value}" ${item.사유===r.value?"selected":""}>${r.label}</option>`
+    ).join("");
+    tr.innerHTML = `
+      <td style="text-align:center;color:var(--text3)">${item.idx+1}</td>
+      <td style="white-space:nowrap">${item.물류센터}</td>
+      <td style="white-space:nowrap;font-size:11px;font-family:'JetBrains Mono',monospace">${item.발주번호}</td>
+      <td class="name-col" title="${item.상품이름}">${item.상품이름}</td>
+      <td style="text-align:center">${item.발주수량}</td>
+      <td style="text-align:center">${item.확정수량}</td>
+      <td style="text-align:center" class="${item.매핑여부==='✅'?'':'no-match'}">${item.매핑여부}</td>
+      <td style="text-align:center">${item.바코드부착 ? '<span class="badge-label">🏷 부착</span>' : ''}</td>
+      <td><select data-idx="${item.idx}" onchange="onReasonChange(this)" class="${reasonClass(item.사유)}">${opts}</select></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  updateSummary();
+}
+
+function reasonClass(val) {
+  if (!val) return "";
+  if (val.includes("생산중단") || val.includes("시장 단종")) return "reason-단종";
+  if (val.includes("매입가 인상") || val.includes("가격 이슈")) return "reason-인상";
+  if (val.includes("재고부족") || val.includes("입고지연")) return "reason-품절";
+  return "";
+}
+
+function onReasonChange(sel) {
+  sel.className = reasonClass(sel.value);
+  updateSummary();
+}
+
+function updateSummary() {
+  const selects = document.querySelectorAll("#poTableBody select");
+  let total=0, exclude=0, nomatch=0, labelCnt=0;
+  selects.forEach(s => {
+    total++;
+    if (s.value.includes("시장 단종") || s.value.includes("생산중단") || s.value.includes("매입가 인상") || s.value.includes("가격 이슈")) exclude++;
+  });
+  document.querySelectorAll("#poTableBody .no-match").forEach(() => nomatch++);
+  document.querySelectorAll("#poTableBody .badge-label").forEach(() => labelCnt++);
+  const send = total - exclude;
+  document.getElementById("poSummary").innerHTML = `
+    <span class="chip chip-total">전체 ${total}건</span>
+    <span class="chip chip-send">이카운트 전송 ${send}건</span>
+    <span class="chip chip-exclude">제외(단종/매입가인상) ${exclude}건</span>
+    <span class="chip chip-nomatch">바코드 미매칭 ${nomatch}건</span>
+    ${labelCnt > 0 ? `<span class="chip chip-label">🏷 바코드 부착 ${labelCnt}건</span>` : ""}
+  `;
+}
+
+function renderLabelSection(labelItems) {
+  // 기존 섹션 제거 후 재생성
+  const existing = document.getElementById("labelSection");
+  if (existing) existing.remove();
+  if (!labelItems || labelItems.length === 0) return;
+
+  const section = document.createElement("div");
+  section.id = "labelSection";
+  section.innerHTML = `
+    <h4>🏷 바코드 부착 필요 품목 (${labelItems.length}건)</h4>
+    <table>
+      <thead><tr><th>#</th><th>발주처/번호</th><th>품목코드</th><th>수량</th></tr></thead>
+      <tbody>
+        ${labelItems.map((it, i) => `
+          <tr>
+            <td style="text-align:center;color:var(--text3)">${i+1}</td>
+            <td style="font-size:11px;font-family:'JetBrains Mono',monospace">${it.remarks || ""}</td>
+            <td>${it.prod_cd || ""}</td>
+            <td style="text-align:center">${it.qty || ""}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+
+  // 재고 테이블 위에 삽입 (이카운트 결과 바로 아래)
+  const invWrap = document.getElementById("invTableWrap");
+  invWrap.parentNode.insertBefore(section, invWrap);
+  elog(`🏷 바코드 부착 필요 ${labelItems.length}건`, "w");
+}
+
+function getShortageReasons() {
+  const reasons = {};
+  document.querySelectorAll("#poTableBody select").forEach(s => {
+    if (s.value) reasons[s.dataset.idx] = s.value;
+  });
+  return JSON.stringify(reasons);
+}
+
+async function sendToEcount() {
+  if (!ecountFile) return alert("파일을 선택하세요.");
+  const btn       = document.getElementById("ecountSendBtn");
+  const resultDiv = document.getElementById("ecountResult");
+
+  btn.disabled = true; btn.textContent = "⏳ 이카운트 전송 중...";
+  resultDiv.className = "ecount-result hidden";
+  elog(`📤 이카운트 전송 시작: ${ecountFile.name}`, "i");
+
+  const staffCode = document.getElementById("staffCode").value.trim();
+  const ioDateRaw = document.getElementById("ioDate").value;
+  const ioDate    = ioDateRaw ? ioDateRaw.replace(/-/g, "") : "";
+
+  const fd = new FormData();
+  fd.append("file",             ecountFile);
+  fd.append("staff_code",       staffCode);
+  fd.append("io_date",          ioDate);
+  fd.append("shortage_reasons", getShortageReasons());
+
+  try {
+    const res  = await fetch(`${API_BASE}/send-to-ecount`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "서버 오류");
+
+    const isOk      = String(data.status) === "200" && data.fail === 0;
+    const lowCnt    = (data.items_result || []).filter(r => r.stock_status === "low_stock").length;
+    const wh10Cnt   = (data.items_result || []).filter(r => r.stock_status === "wh10_used").length;
+    const partialCnt = data.partial || 0;
+
+    // 부분출고 수량 저장 (PO 다운로드 시 확정수량 반영용)
+    window._partialQtys = data.partial_quantities || {};
+
+    // 용산 출고건 orig_idx 저장 (PO 다운로드 시 노란색 표시용)
+    window._yongsanRows = (data.items_result || [])
+      .filter(r => r.stock_status === "wh10_used" || r.used_wh === "10")
+      .map(r => r.orig_idx)
+      .filter(idx => idx !== undefined && idx !== null);
+
+    resultDiv.className = `ecount-result ${isOk ? "success" : "fail"}`;
+    resultDiv.innerHTML = `
+      <strong>${isOk ? "✅ 전표 등록 완료!" : "⚠️ 일부 실패"}</strong><br>
+      전송: ${data.total}건 &nbsp;|&nbsp; 성공: ${data.success}건 &nbsp;|&nbsp; 실패: ${data.fail}건
+      ${data.slip_nos?.length ? `<br>전표번호: <strong>${data.slip_nos.join(", ")}</strong>` : ""}
+      ${data.excluded   > 0 ? `<br>🚫 제외(제품단종/제품인상): ${data.excluded}건` : ""}
+      ${data.unmatched  > 0 ? `<br>⚠ 바코드 미매칭 ${data.unmatched}건 (미전송)` : ""}
+      ${wh10Cnt         > 0 ? `<br>🔄 통진 재고 부족 → 용산 전표 자동 전환: <strong>${wh10Cnt}건</strong>` : ""}
+      ${partialCnt      > 0 ? `<br>🟡 소량 재고 부분출고: <strong>${partialCnt}건</strong> → 확정수량 자동 조정 + 납품부족사유 반영` : ""}
+      ${data.no_stock   > 0 ? `<br>🔴 재고 없음(전표 미생성): <strong>${data.no_stock}건</strong> → 납품부족사유 자동 반영` : ""}
+      ${!data.inv_checked ? `<br><span style="color:var(--text3);font-size:11px">※ 재고 조회 실패 (기본창고로 전표 등록됨)</span>` : ""}
+      ${data.errors?.length ? `<br><span style="color:var(--danger)">${data.errors.join("<br>")}</span>` : ""}
+    `;
+    resultDiv.classList.remove("hidden");
+    renderInvTable(data.items_result || []);
+
+    // low_stock + partial 모두 납품부족사유 자동 입력
+    const LOW_STOCK_REASON = "협력사 재고부족 - 수입상품 입고지연 (선적/통관지연)";
+    let autoSetCnt = 0;
+    (data.items_result || []).forEach(item => {
+      const ss = item.stock_status;
+      if ((ss === "low_stock" || ss === "partial") && item.orig_idx !== undefined) {
+        const sel = document.querySelector(`#poTableBody select[data-idx="${item.orig_idx}"]`);
+        if (sel && !sel.value) {
+          sel.value = LOW_STOCK_REASON;
+          sel.className = reasonClass(LOW_STOCK_REASON);
+          autoSetCnt++;
+        }
+      }
+    });
+    if (autoSetCnt > 0) {
+      updateSummary();
+      elog(`📋 재고부족/부분출고 ${autoSetCnt}건 → 납품부족사유 자동 설정`, "o");
+    }
+    if (wh10Cnt   > 0) elog(`🔄 통진 재고 부족 → 용산 전표 자동 전환 ${wh10Cnt}건`, "o");
+    if (partialCnt > 0) elog(`🟡 부분출고 ${partialCnt}건 → 확정수량 자동 조정됨`, "w");
+
+    // 바코드 부착 필요 목록 표시
+    renderLabelSection(data.label_items || []);
+
+    // 전송 완료 후 다운로드 버튼 활성화
+    document.getElementById("dlPoBtn").classList.remove("hidden");
+
+    elog(`${isOk ? "✅" : "⚠️"} 결과 - 성공:${data.success} 실패:${data.fail}`, isOk ? "o" : "w");
+    if (data.slip_nos?.length) elog(`전표번호: ${data.slip_nos.join(", ")}`, "o");
+    if (lowCnt    > 0) elog(`🔴 재고 없음 ${lowCnt}건 → 납품부족사유 자동 반영됨`, "w");
+    if (data.errors?.length) data.errors.forEach(e => elog(`❌ ${e}`, "e"));
+
+  } catch(err) {
+    resultDiv.className = "ecount-result fail";
+    resultDiv.innerHTML = `<strong>❌ 오류</strong><br>${err.message}`;
+    resultDiv.classList.remove("hidden");
+    elog(`❌ 오류: ${err.message}`, "e");
+  }
+
+  btn.disabled = false; btn.textContent = "📤 이카운트 판매 전표 등록";
+}
+
+function renderInvTable(items) {
+  const wrap  = document.getElementById("invTableWrap");
+  const tbody = document.getElementById("invTableBody");
+  tbody.innerHTML = "";
+  if (!items.length) { wrap.classList.add("hidden"); return; }
+
+  items.forEach((item, rowIdx) => {
+    const tr = document.createElement("tr");
+    const ss = item.stock_status || (item.low_stock ? "low_stock" : "ok");
+    if (ss === "low_stock")  tr.classList.add("low-stock");
+    if (ss === "wh10_used")  tr.classList.add("wh10-has");
+    tr.dataset.rowIdx = rowIdx;
+
+    // 조회 시 원본 재고
+    const bal10Html = item.bal_10 === null || item.bal_10 === undefined
+      ? `<span style="color:var(--text3)">-</span>`
+      : `<span class="${item.bal_10 > 0 ? 'inv-qty-warn' : 'inv-qty-bad'}">${item.bal_10}</span>`;
+    const bal30Html = item.bal_30 === null || item.bal_30 === undefined
+      ? `<span style="color:var(--text3)">-</span>`
+      : `<span class="${item.bal_30 > 0 ? 'inv-qty-ok' : 'inv-qty-bad'}">${item.bal_30}</span>`;
+    // 배정 후 잔여 재고 (rem_30/rem_10)
+    const rem30Html = item.rem_30 === null || item.rem_30 === undefined
+      ? ``
+      : `<br><span style="font-size:10px;color:${item.rem_30 >= 0 ? 'var(--text3)' : '#dc3545'}">잔여:${item.rem_30}</span>`;
+    const rem10Html = item.rem_10 === null || item.rem_10 === undefined
+      ? ``
+      : `<br><span style="font-size:10px;color:${item.rem_10 >= 0 ? 'var(--text3)' : '#dc3545'}">잔여:${item.rem_10}</span>`;
+
+    // 창고/상태 배지
+    let statusBadge = "";
+    if (ss === "low_stock") {
+      const t30 = item.bal_30 !== null && item.bal_30 !== undefined ? `통진:${item.bal_30}` : "";
+      const t10 = item.bal_10 !== null && item.bal_10 !== undefined ? `용산:${item.bal_10}` : "";
+      const stockInfo = [t30, t10].filter(Boolean).join(", ");
+      statusBadge = `<span style="font-size:10px;background:rgba(220,53,69,.15);color:#dc3545;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:700">재고없음${stockInfo ? ` (${stockInfo})` : ""}</span>`;
+    } else if (ss === "partial") {
+      const origQty = item.orig_qty || "";
+      statusBadge = `<span style="font-size:10px;background:rgba(255,193,7,.2);color:#d39e00;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:700">부분출고 ${item.qty}/${origQty}</span>`;
+    } else if (ss === "wh10_used") {
+      const t30 = item.bal_30 !== null && item.bal_30 !== undefined ? `통진:${item.bal_30}` : "";
+      statusBadge = `<span style="font-size:10px;background:rgba(255,176,32,.2);color:var(--warning);padding:1px 6px;border-radius:4px;margin-left:4px">통진부족${t30 ? `(${t30})` : ""}→용산전환</span>`;
+    }
+
+    // 전표번호 셀
+    const slipNo = item.slip_no || "";
+    const slipCell = slipNo
+      ? `<span style="font-size:11px;font-family:'JetBrains Mono',monospace">${slipNo}</span>`
+      : `<span style="color:var(--text3);font-size:11px">전표없음</span>`;
+
+    // 수량 셀: 부분출고면 "실제/원래" 표시
+    const qtyCell = ss === "partial"
+      ? `<span style="color:#d39e00;font-weight:700">${item.qty}</span><span style="color:var(--text3);font-size:10px">/${item.orig_qty}</span>`
+      : item.qty;
+
+    tr.innerHTML = `
+      <td style="font-size:11px">${slipCell}</td>
+      <td style="text-align:left;white-space:nowrap">${item.remarks}${statusBadge}</td>
+      <td style="font-weight:600;font-family:'JetBrains Mono',monospace">${item.prod_cd}</td>
+      <td>${qtyCell}</td>
+      <td>${bal10Html}${rem10Html}</td>
+      <td>${bal30Html}${rem30Html}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  wrap.classList.remove("hidden");
+}
+
+async function deleteSlip(slipNo, btn) {
+  if (!confirm(`전표번호 [${slipNo}] 를 이카운트에서 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return;
+  btn.disabled = true; btn.textContent = "삭제 중...";
+  try {
+    const fd = new FormData();
+    fd.append("slip_no", slipNo);
+    const res  = await fetch(`${API_BASE}/delete-slip`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "삭제 실패");
+    // 성공: 해당 행 시각적으로 취소선 표시
+    const tr = btn.closest("tr");
+    tr.style.opacity = "0.4";
+    tr.style.textDecoration = "line-through";
+    btn.textContent = "삭제됨";
+    btn.style.border = "1px solid #aaa"; btn.style.color = "#aaa";
+    elog(`🗑 전표 삭제 완료: ${slipNo}`, "o");
+  } catch(e) {
+    btn.disabled = false; btn.textContent = "🗑 삭제";
+    elog(`❌ 전표 삭제 실패 (${slipNo}): ${e.message}`, "e");
+    alert(`삭제 실패: ${e.message}`);
+  }
+}
+
+async function downloadPO() {
+  if (!ecountFile) return alert("파일을 선택하세요.");
+  const btn = document.getElementById("dlPoBtn");
+  btn.disabled = true; btn.textContent = "⏳ 다운로드 준비 중...";
+
+  const fd = new FormData();
+  fd.append("file",              ecountFile);
+  fd.append("shortage_reasons",  getShortageReasons());
+  fd.append("partial_quantities", JSON.stringify(window._partialQtys || {}));
+  fd.append("yongsan_rows",      JSON.stringify(window._yongsanRows || []));
+
+  try {
+    const res = await fetch(`${API_BASE}/download-po`, { method: "POST", body: fd });
+    if (!res.ok) throw new Error("다운로드 실패");
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement("a"), {
+      href: url, download: ecountFile.name.replace(".xlsx", "_납품부족사유.xlsx")
+    });
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    elog("✅ PO 파일 다운로드 완료", "o");
+  } catch(e) {
+    elog(`❌ 다운로드 오류: ${e.message}`, "e");
+  }
+  btn.disabled = false; btn.textContent = "⬇ 납품부족사유 채운 PO 파일 다운로드";
+}
+
+async function uploadMaster(file) {
+  const statusEl = document.getElementById("masterUploadStatus");
+  const resultEl = document.getElementById("masterUploadResult");
+  statusEl.textContent = `⏳ ${file.name} 업로드 중...`;
+  statusEl.style.color = "var(--warning)";
+  resultEl.className = "ecount-result hidden";
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  try {
+    const res = await fetch(`${API_BASE}/upload-master`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "업로드 실패");
+
+    statusEl.textContent = `✅ ${file.name} 업로드 완료`;
+    statusEl.style.color = "var(--success)";
+    resultEl.className = "ecount-result success";
+    resultEl.innerHTML = `
+      <strong>✅ 마스터 데이터 갱신 완료</strong><br>
+      PO 매핑: <strong>${data.po_count}</strong>개 &nbsp;|&nbsp;
+      주문서 매핑: <strong>${data.order_count}</strong>개 &nbsp;|&nbsp;
+      단종: <strong>${data.discontinued_count}</strong>개 &nbsp;|&nbsp;
+      매입가인상: <strong>${data.price_up_count}</strong>개
+    `;
+    resultEl.classList.remove("hidden");
+    elog(`✅ 마스터 업로드 완료: PO ${data.po_count}개, 주문서 ${data.order_count}개`, "o");
+
+    // 헤더 상태도 갱신
+    refreshMasterStatus();
+  } catch(e) {
+    statusEl.textContent = `❌ 업로드 실패`;
+    statusEl.style.color = "var(--danger)";
+    resultEl.className = "ecount-result fail";
+    resultEl.innerHTML = `<strong>❌ 오류</strong><br>${e.message}`;
+    resultEl.classList.remove("hidden");
+    elog(`❌ 마스터 업로드 실패: ${e.message}`, "e");
+  }
+  // input 초기화 (같은 파일 재업로드 가능)
+  document.getElementById("masterFileInput").value = "";
+}
+
+async function refreshMasterStatus() {
+  try {
+    const res  = await fetch(`${API_BASE}/master-info`);
+    const data = await res.json();
+    document.getElementById("masterStatus").textContent =
+      `매핑 ${data.po_count.toLocaleString()}개 · 단종 ${data.discontinued_count ?? 0}개 · 매입가인상 ${data.price_up_count ?? 0}개`;
+  } catch {}
+}
+
+function elog(msg, t = "i") {
+  const box = document.getElementById("ecountLog");
+  const d   = document.createElement("div");
+  d.className = `ll l${t}`; d.textContent = msg;
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+</script>
+</body>
+</html>
