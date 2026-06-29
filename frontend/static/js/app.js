@@ -119,6 +119,11 @@ function navigateTo(pageId) {
     window.open("https://www.lanstar.co.kr/aicc2/index.html", "_blank", "noopener");
     return;
   }
+  // 배송출고관리: 외부 랜딩 페이지 새창
+  if (pageId === "dispatch_outbound") {
+    window.open("https://asia-northeast3-dispatch-sign.cloudfunctions.net/dispatchApi/web", "_blank", "noopener");
+    return;
+  }
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   const page = document.getElementById("page-" + pageId);
@@ -10969,6 +10974,7 @@ const GLOBAL_FEATURES = [
   { title: "스마트스토어", group: "물류", keywords: ["스마트스토어", "네이버", "smartstore"], page: "smartstore_bridge" },
   { title: "쿠팡", group: "물류", keywords: ["쿠팡", "바코드", "coupang", "barcode"], page: "barcode_bridge" },
   { title: "택배조회", group: "물류", keywords: ["택배", "배송", "운송장", "shipping"], page: "shipping" },
+  { title: "배송출고관리", group: "물류", keywords: ["배송출고관리", "배송", "출고", "dispatch", "outbound"], page: "dispatch_outbound" },
   { title: "택배조회 · 받는사람 검색", group: "물류", keywords: ["받는사람", "수취", "수령", "이름"], page: "shipping", run: () => _tryCallTab("switchShipTab", "search") },
   { title: "택배조회 · 일별 조회", group: "물류", keywords: ["일별", "날짜", "daily"], page: "shipping", run: () => _tryCallTab("switchShipTab", "daily") },
   { title: "택배조회 · 운송장 추적", group: "물류", keywords: ["운송장", "추적", "track"], page: "shipping", run: () => _tryCallTab("switchShipTab", "track") },
