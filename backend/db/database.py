@@ -661,6 +661,14 @@ def init_db():
             except Exception as e:
                 logger.debug(f"[DB] cs_tickets.{_col} 추가 스킵: {e}")
 
+    # ── CS 마이그레이션: cs_naver_claims.channel (스마트스토어/쿠팡 등 멀티채널) ──
+    if not column_exists(conn, 'cs_naver_claims', 'channel'):
+        try:
+            cur_or_conn.execute("ALTER TABLE cs_naver_claims ADD COLUMN channel TEXT DEFAULT '스마트스토어'")
+            logger.info("[DB] cs_naver_claims.channel 컬럼 추가")
+        except Exception as e:
+            logger.debug(f"[DB] cs_naver_claims.channel 추가 스킵: {e}")
+
     # ── CS 마이그레이션: drive_file_id 컬럼 추가 ──
     if not column_exists(conn, 'cs_files', 'drive_file_id'):
         try:

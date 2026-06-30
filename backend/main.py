@@ -701,6 +701,31 @@ async def startup():
     except Exception as e:
         logger.warning(f"재고 모니터링 스케줄러 등록 실패: {e}")
 
+    # 쿠팡 반품/교환 클레임 자동 수집 (10분 주기, IP 제한 없어 Render 직접 호출)
+    try:
+        from services.scheduler_service import _scheduler_state as _cp_sched_state
+        _cp_scheduler = _cp_sched_state.get("scheduler")
+        if _cp_scheduler:
+            from apscheduler.triggers.interval import IntervalTrigger as _CpIntervalTrigger
+
+            def _coupang_claims_job():
+                try:
+                    from api.routes.cs import run_coupang_claims_sync
+                    run_coupang_claims_sync(days=14)
+                except Exception as e:
+                    logger.warning(f"[쿠팡클레임] 스케줄러 실행 오류: {e}")
+
+            _cp_scheduler.add_job(
+                _coupang_claims_job,
+                _CpIntervalTrigger(minutes=10),
+                id="coupang_claims_sync",
+                name="쿠팡 반품/교환 클레임 수집 (10분 주기)",
+                replace_existing=True,
+            )
+            logger.info("쿠팡 클레임 수집 스케줄러 등록 완료 (10분 주기)")
+    except Exception as e:
+        logger.warning(f"쿠팡 클레임 스케줄러 등록 실패: {e}")
+
     # MAP 지도가 감시 스케줄러
     try:
         from services.map_scheduler import setup_map_scheduler

@@ -1529,7 +1529,11 @@ NAVER_CLAIM_STATUS_LABELS = {
 }
 
 # 수거가 완료(또는 그 이후)된 것으로 보는 클레임 상태 — 접수완료 티켓을 물류수령으로 자동 전환
-COLLECTED_CLAIM_STATUSES = {"COLLECT_DONE", "EXCHANGE_REDELIVERING", "RETURN_DONE", "EXCHANGE_DONE"}
+# 네이버(앞) + 쿠팡(뒤) 상태코드 통합
+COLLECTED_CLAIM_STATUSES = {
+    "COLLECT_DONE", "EXCHANGE_REDELIVERING", "RETURN_DONE", "EXCHANGE_DONE",
+    "VENDOR_WAREHOUSE_CONFIRM", "RETURNS_COMPLETED", "EXCHANGE_DELIVERY_COMPLETED", "SUCCESS",
+}
 
 
 def _register_claim_row(conn, claim: dict, actor: dict) -> str:
@@ -1564,15 +1568,16 @@ def _register_claim_row(conn, claim: dict, actor: dict) -> str:
         product_full += f" / {claim['product_option']}"
     claim_type = claim.get("claim_type") or ""
 
+    channel = claim.get("channel") or "스마트스토어"
     data = TicketCreate(
-        customer_name=claim.get("customer_name") or "스마트스토어 고객",
+        customer_name=claim.get("customer_name") or f"{channel} 고객",
         contact_info=claim.get("contact_info") or "-",
         product_name=product_full,
         defect_symptom=symptom or f"{claim_type} 요청",
-        sales_channel="스마트스토어",
+        sales_channel=channel,
         order_number=claim.get("order_id") or claim.get("product_order_id"),
         cs_type=claim_type if claim_type in CS_TYPES else "반품",
-        reason_category=NAVER_REASON_CATEGORY.get(claim.get("reason_code"), "기타"),
+        reason_category=claim.get("reason_category") or NAVER_REASON_CATEGORY.get(claim.get("reason_code"), "기타"),
         quantity=int(claim.get("quantity") or 1),
         shipping_cost_status=claim.get("shipping_cost_status") or "",
         return_courier=claim.get("collect_courier") or "",
@@ -1580,7 +1585,7 @@ def _register_claim_row(conn, claim: dict, actor: dict) -> str:
     )
     ticket_id = _insert_ticket(
         conn, data, actor,
-        f"스마트스토어 {claim_type} 자동 접수 (주문번호 {data.order_number}): {data.defect_symptom[:80]}"
+        f"{channel} {claim_type} 자동 접수 (주문번호 {data.order_number}): {data.defect_symptom[:80]}"
     )
     conn.execute(
         "UPDATE cs_naver_claims SET status = '접수됨', ticket_id = ?, updated_at = ? WHERE product_order_id = ?",
@@ -1677,14 +1682,14 @@ def _upsert_naver_claims(conn, claims: list, auto_register_actor: dict = None) -
                 """INSERT INTO cs_naver_claims
                    (product_order_id, order_id, claim_type, claim_status, customer_name, contact_info,
                     product_name, product_option, quantity, reason_code, detailed_reason,
-                    claim_request_date, collect_courier, collect_tracking_no, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '신규', ?, ?)""",
+                    claim_request_date, collect_courier, collect_tracking_no, channel, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '신규', ?, ?)""",
                 (c["product_order_id"], c.get("order_id", ""), c.get("claim_type", ""),
                  c.get("claim_status", ""), c.get("customer_name", ""), c.get("contact_info", ""),
                  c.get("product_name", ""), c.get("product_option", ""),
                  int(c.get("quantity") or 1), c.get("reason_code", ""), c.get("detailed_reason", ""),
                  c.get("claim_request_date", ""), c.get("collect_courier", ""),
-                 c.get("collect_tracking_no", ""), now, now)
+                 c.get("collect_tracking_no", ""), c.get("channel") or "스마트스토어", now, now)
             )
             conn.commit()  # 클레임은 먼저 영속화 — 자동 접수 실패해도 목록엔 남도록
             new_count += 1
@@ -1735,6 +1740,39 @@ async def sync_naver_claims(days: int = Query(7, ge=1, le=60), user: dict = Depe
         raise HTTPException(500, f"클레임 저장 실패: {e}")
     finally:
         conn.close()
+
+
+def run_coupang_claims_sync(days: int = 14) -> dict:
+    """쿠팡 반품/교환 클레임 수집 → 저장 + 자동 접수/물류수령 (스케줄러·엔드포인트 공용).
+
+    쿠팡 윙 OPEN API는 IP 제한이 없어 Render에서 직접 호출(릴레이 불필요).
+    """
+    from services.coupang_client import fetch_claims as coupang_fetch
+    claims = coupang_fetch(days=days)
+    conn = get_connection()
+    try:
+        system_actor = {"emp_cd": "SYSTEM", "name": "자동접수"}
+        new_count, updated = _upsert_naver_claims(conn, claims, auto_register_actor=system_actor)
+        from api.routes.settings import ensure_settings_table, _upsert_setting
+        ensure_settings_table()
+        _upsert_setting(conn, "coupang_claims_last_sync", now_kst())
+        conn.commit()
+        logger.info(f"[CS] 쿠팡 클레임 동기화: {len(claims)}건 (신규 {new_count}, 갱신 {updated})")
+        return {"success": True, "fetched": len(claims), "new": new_count, "updated": updated}
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/coupang-claims/sync")
+async def sync_coupang_claims(days: int = Query(14, ge=1, le=31), user: dict = Depends(get_current_user)):
+    """쿠팡 반품/교환 클레임 수동 동기화 (자동 접수/물류수령 포함)."""
+    try:
+        return run_coupang_claims_sync(days=days)
+    except Exception as e:
+        raise HTTPException(502, f"쿠팡 클레임 동기화 실패: {e}")
 
 
 class ClaimIngest(BaseModel):

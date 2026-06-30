@@ -276,6 +276,12 @@ API_KEY_DEFINITIONS = [
      "description": "데이터랩 쇼핑인사이트 API 시크릿", "prefix": ""},
     {"key": "api_claims_relay", "label": "클레임 릴레이 키", "env_var": "CLAIMS_RELAY_KEY",
      "description": "NAS → 서버 스마트스토어 반품/교환 클레임 푸시 인증 키 (NAS와 동일 값)", "prefix": ""},
+    {"key": "api_coupang_access", "label": "쿠팡 Access Key", "env_var": "COUPANG_ACCESS_KEY",
+     "description": "쿠팡 윙 OPEN API 반품/교환 클레임 수집 (IP 제한 없음)", "prefix": ""},
+    {"key": "api_coupang_secret", "label": "쿠팡 Secret Key", "env_var": "COUPANG_SECRET_KEY",
+     "description": "쿠팡 윙 OPEN API 서명용 시크릿", "prefix": ""},
+    {"key": "api_coupang_vendor", "label": "쿠팡 Vendor ID", "env_var": "COUPANG_VENDOR_ID",
+     "description": "쿠팡 판매자 업체코드", "prefix": ""},
 ]
 
 
