@@ -19,6 +19,27 @@ from . import loader
 
 API_LINK, LOCAL_PATH, FOLDER_FALLBACK, MISSING = 'api_link', 'local_path', 'folder_fallback', 'missing'
 
+#: 호스트 앱이 OAuth 액세스 토큰을 주입하는 훅. 반환은 토큰 문자열 또는 None.
+#: cert_lookup 은 표준 라이브러리만 쓰므로 서비스 계정 JWT 서명을 직접 하지 않는다 —
+#: order-agent 처럼 이미 서비스 계정을 굴리는 앱이 자기 토큰을 넣어 준다.
+_token_provider: Optional[Any] = None
+
+
+def set_token_provider(fn: Optional[Any]) -> None:
+    """OAuth 토큰 공급자를 등록한다. fn() -> str|None, 실패 시 None 을 돌려주면 된다."""
+    global _token_provider
+    _token_provider = fn
+    get_resolver().reset_auth()
+
+
+def _bearer_token() -> str:
+    if _token_provider is None:
+        return ''
+    try:
+        return (_token_provider() or '').strip()
+    except Exception:                                   # noqa: BLE001 - 폴백이 정상 경로
+        return ''
+
 
 @dataclass
 class DriveRef:
@@ -28,6 +49,7 @@ class DriveRef:
     folder_id: str = ''
     folder_url: str = ''
     url: str = ''            # 파일 직링크(api_link 일 때만)
+    file_id: str = ''        # 드라이브 파일 ID(서버가 직접 내려줄 때 쓴다)
     path: str = ''           # 로컬 절대경로(local_path 일 때만)
     note: str = ''
 
@@ -88,6 +110,7 @@ class DriveResolver:
         self._use_api = use_api and os.environ.get('CERT_KB_DRIVE_DISABLE_API') != '1'
         self._service: Any = None
         self._api_tried = False
+        self._rest_fail = 0
 
     # -- (1) Drive API -------------------------------------------------
     def _api(self) -> Any:
@@ -115,10 +138,126 @@ class DriveResolver:
             self._service = None
         return self._service
 
+    # -- (1b) REST — 주입 토큰 / API 키 -------------------------------
+    def reset_auth(self) -> None:
+        """자격증명이 바뀌었을 때 캐시된 판단을 버린다."""
+        self._api_tried = False
+        self._service = None
+        self._rest_fail = 0
+
+    def _api_key(self) -> str:
+        if os.environ.get('CERT_KB_DRIVE_DISABLE_API') == '1':
+            return ''
+        return (os.environ.get('CERT_KB_DRIVE_API_KEY')
+                or os.environ.get('GOOGLE_API_KEY') or '').strip()
+
+    def _rest(self, url: str, params: Dict[str, str]) -> Optional[Dict[str, Any]]:
+        """Drive v3 REST 한 번. 주입 토큰이 있으면 그걸 쓰고, 없으면 API 키를 붙인다.
+
+        자격증명이 틀렸거나 폴더가 비공개면 문서 한 건마다 왕복이 생겨 응답이 느려진다.
+        연속 실패가 쌓이면 이 프로세스에서는 더 시도하지 않는다(회로 차단).
+        """
+        import json as _json
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+
+        if os.environ.get('CERT_KB_DRIVE_DISABLE_API') == '1' or self._rest_fail >= 3:
+            return None
+        token, key = _bearer_token(), self._api_key()
+        if not token and not key:
+            return None
+        q = dict(params)
+        if not token:
+            q['key'] = key
+        req = urllib.request.Request(f'{url}?{urllib.parse.urlencode(q)}')
+        if token:
+            req.add_header('Authorization', f'Bearer {token}')
+        try:
+            timeout = float(os.environ.get('CERT_KB_DRIVE_TIMEOUT') or 4)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                self._rest_fail = 0
+                return _json.loads(r.read().decode('utf-8'))
+        except Exception:                               # noqa: BLE001 - 폴백이 정상 경로
+            self._rest_fail += 1
+            return None
+
+    def _rest_find(self, parent_id: str, name: str,
+                   folder: bool = False) -> Optional[Dict[str, str]]:
+        if not parent_id or not name:
+            return None
+        esc = name.replace('\\', '\\\\').replace("'", "\\'")
+        q = f"'{parent_id}' in parents and name = '{esc}' and trashed = false"
+        if folder:
+            q += " and mimeType = 'application/vnd.google-apps.folder'"
+        r = self._rest('https://www.googleapis.com/drive/v3/files',
+                       {'q': q, 'fields': 'files(id,name,webViewLink,mimeType,size)',
+                        'pageSize': '5', 'supportsAllDrives': 'true',
+                        'includeItemsFromAllDrives': 'true'})
+        files = (r or {}).get('files') or []
+        return files[0] if files else None
+
+    def auth_status(self) -> Dict[str, Any]:
+        """진단용 — 어떤 자격증명이 살아 있고 대상 폴더가 실제로 읽히는가."""
+        folder_id = (self.kb_folders().get('문서') or {}).get('id', '')
+        probe = self._rest('https://www.googleapis.com/drive/v3/files',
+                           {'q': f"'{folder_id}' in parents and trashed = false",
+                            'fields': 'files(id)', 'pageSize': '1',
+                            'supportsAllDrives': 'true',
+                            'includeItemsFromAllDrives': 'true'}) if folder_id else None
+        return {
+            'token_provider': _token_provider is not None,
+            'token_ok': bool(_bearer_token()),
+            'api_key': bool(self._api_key()),
+            'library_creds': bool(self._api()),
+            'local_sync': bool(self.drive_root),
+            'folder_readable': probe is not None,
+            'folder_id': folder_id,
+            'rest_failures': self._rest_fail,
+        }
+
+    def kb_folders(self) -> Dict[str, Dict[str, str]]:
+        return loader.load_kb().drive_folders or {}
+
+    def open_stream(self, ref: DriveRef):
+        """파일을 읽을 수 있는 객체를 연다. (열린 스트림, 바이트 크기|None).
+
+        서버에는 드라이브 동기화 폴더가 없으므로 담당자가 폴더를 뒤지지 않게 하려면
+        서버가 대신 받아 내려줘야 한다. 자격증명이 없으면 None — 호출측이 폴더 링크로
+        안내하면 된다.
+        """
+        import urllib.parse
+        import urllib.request
+
+        if ref.status == LOCAL_PATH and ref.path and os.path.isfile(ref.path):
+            return open(ref.path, 'rb'), os.path.getsize(ref.path)
+
+        file_id = (ref.file_id or '').strip()
+        if not file_id:
+            return None, None
+        token, key = _bearer_token(), self._api_key()
+        if not token and not key:
+            return None, None
+        params = {'alt': 'media', 'supportsAllDrives': 'true'}
+        if not token:
+            params['key'] = key
+        url = (f'https://www.googleapis.com/drive/v3/files/'
+               f'{urllib.parse.quote(file_id)}?{urllib.parse.urlencode(params)}')
+        req = urllib.request.Request(url)
+        if token:
+            req.add_header('Authorization', f'Bearer {token}')
+        try:
+            timeout = float(os.environ.get('CERT_KB_DRIVE_TIMEOUT') or 4)
+            resp = urllib.request.urlopen(req, timeout=max(timeout, 30))
+            size = resp.headers.get('Content-Length')
+            return resp, int(size) if size and size.isdigit() else None
+        except Exception:                               # noqa: BLE001
+            return None, None
+
     def _api_find(self, parent_id: str, name: str, folder: bool = False) -> Optional[Dict[str, str]]:
         svc = self._api()
         if not svc or not parent_id or not name:
-            return None
+            return self._rest_find(parent_id, name, folder)
         # drive.lookup 은 v2 문법(parentId/title)이라 v3 로 재조립해야 한다.
         # 파일명에 ' 나 \\ 가 들어오면 쿼리가 깨져 400 이 난다(현재 데이터엔 없지만 잠복).
         esc = name.replace('\\', '\\\\').replace("'", "\\'")
@@ -164,7 +303,7 @@ class DriveResolver:
         hit = self._api_find(folder_id, filename)
         if hit:
             return DriveRef(status=API_LINK, filename=filename, folder_id=folder_id,
-                            folder_url=folder_url,
+                            folder_url=folder_url, file_id=hit.get('id', ''),
                             url=hit.get('webViewLink')
                             or f"https://drive.google.com/file/d/{hit['id']}/view")
 
@@ -204,7 +343,7 @@ class DriveResolver:
             hit = self._api_find(parent_id, filename)
         if hit:
             return DriveRef(status=API_LINK, filename=filename, folder_id=parent_id,
-                            folder_url=folder_url,
+                            folder_url=folder_url, file_id=hit.get('id', ''),
                             url=hit.get('webViewLink')
                             or f"https://drive.google.com/file/d/{hit['id']}/view")
 

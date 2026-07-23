@@ -243,6 +243,22 @@ const api = {
   assistantClarify: (sessionId, choice, mode = "internal") =>
                       api.assistantRequest("POST", "/api/assistant/clarify",
                         { session_id: sessionId, choice, mode }),
+  /* PDF 원본 — fetch 로 받아야 JWT 를 실을 수 있다. 실패 응답은 JSON detail 을 그대로 올린다. */
+  assistantDownload: async (docId, mode = "internal") => {
+    const url = `/api/assistant/file/${encodeURIComponent(docId)}/download?mode=${mode}`;
+    const token = api.getToken();
+    const res = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+    if (!res.ok) {
+      let detail = null;
+      try { detail = (await res.json()).detail; } catch (e) { /* 본문이 JSON 이 아닐 수 있다 */ }
+      const err = new Error((detail && detail.message) || `다운로드 실패 (${res.status})`);
+      err.status = res.status; err.detail = detail;
+      throw err;
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+    return { blob: await res.blob(), filename: m ? decodeURIComponent(m[1]) : "" };
+  },
   assistantReset:   (sessionId) => api.assistantRequest("POST", "/api/assistant/reset",
                         { session_id: sessionId }),
   // spec/history/file 래퍼는 두지 않는다. 상담봇 답변은 /chat 이 근거·주의문구·배지를

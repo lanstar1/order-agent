@@ -11356,6 +11356,32 @@ function _asstCopyBtn(label, text, title) {
   return b;
 }
 
+/* PDF 받기 — fetch 로 받아야 JWT 헤더를 실을 수 있다(a[href] 로는 인증이 안 붙는다). */
+function _asstDownloadBtn(docId, filename) {
+  const b = _asstEl("button", "asst-fact-btn", "PDF 받기");
+  b.type = "button";
+  b.addEventListener("click", async () => {
+    const label = b.textContent;
+    b.disabled = true; b.textContent = "받는 중…";
+    try {
+      const res = await api.assistantDownload(docId, _asstState.mode);
+      const url = URL.createObjectURL(res.blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = res.filename || filename || (docId + ".pdf");
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      b.textContent = "받음";
+      setTimeout(() => { b.textContent = label; b.disabled = false; }, 2000);
+    } catch (e) {
+      /* 503 = 자격증명 미설정. 오류가 아니라 '아직 안 됨' 이므로 폴더로 안내한다. */
+      b.textContent = (e && e.status === 503) ? "폴더에서 받기" : "실패";
+      b.disabled = false;
+      if (e && e.detail && e.detail.hint) alert(e.detail.hint);
+    }
+  });
+  return b;
+}
+
 function _asstLinkBtn(label, href) {
   const a = document.createElement("a");
   a.className = "asst-mini";
@@ -11483,6 +11509,12 @@ function _asstAddReply(r) {
       row.appendChild(meta);
 
       const acts = _asstEl("div", "asst-facts");
+      /* 다운로드가 가장 흔한 목적이라 맨 앞에 둔다. 서버가 드라이브에서 받아 흘려주므로
+         담당자가 폴더에서 파일명을 눈으로 찾을 일이 없다. 자격증명이 없으면 서버가 503 +
+         폴더 링크를 주고, 그때는 아래 '폴더 열기' 로 종전처럼 처리한다. */
+      if (f.doc_id && f.allowed !== false) {
+        acts.appendChild(_asstDownloadBtn(f.doc_id, f.filename || ""));
+      }
       if (f.path)       acts.appendChild(_asstCopyBtn("경로 복사", f.path, f.path));
       if (f.filename)   acts.appendChild(_asstCopyBtn("파일명 복사", f.filename, f.filename));
       if (f.url)        acts.appendChild(_asstLinkBtn("파일 열기", f.url));

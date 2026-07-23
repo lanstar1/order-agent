@@ -65,6 +65,7 @@ from chatbot import engine, history, llm, session, spec
 from chatbot import router as chat_router
 # 근거 배지·파일카드·응답 봉투는 원본 API 계층과 **같은 코드**를 쓴다(단일 진실 원천).
 from chatbot.api import ROUTE_LABEL, BADGE_SPEC, Mode, badges, collect_files, reply_envelope
+from services import assistant_drive
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
@@ -93,6 +94,11 @@ def _warm() -> None:
             return
         t0 = time.time()
         errors: List[str] = []
+        # 서비스 계정이 있으면 드라이브 직링크·다운로드가 열린다. 없으면 폴더 링크로 폴백.
+        try:
+            assistant_drive.setup()
+        except Exception as exc:                 # noqa: BLE001 - 자격증명 문제로 상담봇이 죽으면 안 된다
+            errors.append(f"드라이브 연결 실패: {type(exc).__name__}: {exc}")
         try:
             kb = cert_loader.load_kb()
             cert_cli.drive_resolver(kb)          # 동기화 루트 탐색도 프로세스당 1회
@@ -290,11 +296,27 @@ def assistant_health(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     for label in bundle["missing"]:
         problems.append(f"데이터 번들 누락: {label}")
 
+    try:
+        drive_state = assistant_drive.status()
+    except Exception as exc:                     # noqa: BLE001
+        drive_state = {"error": f"{type(exc).__name__}: {exc}"}
+    if not drive_state.get("service_account_configured"):
+        problems.append(
+            "드라이브 서비스 계정 미설정 — 파일을 서버에서 직접 내려줄 수 없어 폴더 링크로만 "
+            "안내합니다. GOOGLE_SERVICE_ACCOUNT_JSON 을 설정하고 인증자료 폴더를 그 계정에 "
+            "뷰어로 공유하십시오.")
+    elif not drive_state.get("folder_readable"):
+        problems.append(
+            "드라이브 서비스 계정은 설정됐으나 인증자료 폴더를 읽지 못합니다 — "
+            f"폴더({drive_state.get('folder_id')})를 {drive_state.get('client_email')} 에 "
+            "뷰어로 공유했는지 확인하십시오.")
+
     return {
         "ok": not problems,
         "cert_kb": kb_state,
         "master": master_state,
         "bundle": bundle,
+        "drive": drive_state,
         "llm": {
             "available": llm.available(),
             "api_key_env": chat_config.LLM_API_KEY_ENV,
@@ -406,3 +428,64 @@ def assistant_file(doc_id: str, mode: Mode = MODE_Q,
             "message": f"문서를 찾을 수 없습니다: {doc_id}",
             "hint": "doc_id 는 /api/assistant/chat 응답의 files[].doc_id 값입니다."})
     return {"ok": True, **ref}
+
+
+@router.get("/file/{doc_id}/download", summary="PDF 원본 내려받기")
+def assistant_file_download(doc_id: str, mode: Mode = MODE_Q,
+                            user: dict = Depends(get_current_user)):
+    """서버가 드라이브에서 받아 그대로 흘려보낸다.
+
+    담당자가 890개 파일이 든 폴더를 눈으로 뒤지지 않게 하려는 것이 목적이다.
+    직원에게 드라이브 권한을 따로 주지 않아도 되는 부수 효과도 있다(챗봇 로그인이 곧 권한).
+    자격증명이 없으면 503 + 폴더 링크 — 오류가 아니라 '아직 설정 안 됨' 안내다.
+    """
+    from fastapi.responses import StreamingResponse
+    from urllib.parse import quote
+
+    _warm()
+    ref = _guard(cert_cli.file_ref, doc_id, mode.value)
+    if ref is None:
+        raise HTTPException(status_code=404, detail={
+            "message": f"문서를 찾을 수 없습니다: {doc_id}"})
+    if not ref.get("allowed"):
+        raise HTTPException(status_code=403, detail={
+            "message": "이 자료는 현재 모드에서 파일 제공이 제한됩니다.",
+            "hint": ref.get("reason") or "고객 모드에서는 자료요청서 접수 후 제공합니다."})
+
+    from cert_lookup import drive as cert_drive
+
+    file_info = ref.get("file") or {}
+    dref = cert_drive.DriveRef(
+        status=file_info.get("status", ""), filename=file_info.get("filename", ""),
+        folder_id=file_info.get("folder_id", ""), folder_url=file_info.get("folder_url", ""),
+        url=file_info.get("url", ""), file_id=file_info.get("file_id", ""),
+        path=file_info.get("path", ""))
+    stream, size = cert_drive.get_resolver().open_stream(dref)
+    if stream is None:
+        raise HTTPException(status_code=503, detail={
+            "message": "서버에서 파일을 직접 내려받을 수 없습니다.",
+            "hint": "드라이브 서비스 계정이 설정되지 않았거나 해당 폴더에 접근 권한이 없습니다. "
+                    "아래 폴더 링크에서 파일명으로 찾아 주십시오.",
+            "folder_url": dref.folder_url, "filename": dref.filename})
+
+    name = dref.filename or f"{doc_id}.pdf"
+    headers = {"Content-Disposition":
+               f"attachment; filename*=UTF-8\'\'{quote(name)}"}
+    if size:
+        headers["Content-Length"] = str(size)
+
+    def _chunks():
+        try:
+            while True:
+                buf = stream.read(64 * 1024)
+                if not buf:
+                    break
+                yield buf
+        finally:
+            try:
+                stream.close()
+            except Exception:                    # noqa: BLE001
+                pass
+
+    media = "application/pdf" if name.lower().endswith(".pdf") else "application/octet-stream"
+    return StreamingResponse(_chunks(), media_type=media, headers=headers)
