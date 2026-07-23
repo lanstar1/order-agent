@@ -11670,7 +11670,8 @@ async function _asstLoadHealth() {
        가장 흔한 실패라, '설정됨' 만으로는 되는지 안 되는지 알 수 없다. */
     const d = h.drive || {};
     const driveTxt = !d.service_account_configured ? "드라이브 미연결(폴더 링크만)"
-                   : !d.folder_readable ? "드라이브 폴더 접근 불가"
+                   : !d.token_ok ? "드라이브 자격증명 무효(계정 삭제/키 폐기)"
+                   : !d.folder_readable ? "드라이브 폴더 공유 안 됨"
                    : "드라이브 OK(PDF 직접 받기)";
     const bits = [
       "인증KB " + ((h.cert_kb && h.cert_kb.documents) || 0) + "건",

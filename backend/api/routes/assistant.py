@@ -300,14 +300,23 @@ def assistant_health(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
         drive_state = assistant_drive.status()
     except Exception as exc:                     # noqa: BLE001
         drive_state = {"error": f"{type(exc).__name__}: {exc}"}
+    # 세 가지를 구분한다. JSON 에 이메일이 적혀 있는 것과 그 계정이 실제로 살아 있는 것은
+    # 다른 문제인데, 이걸 묶어 두면 '폴더를 공유하라'는 엉뚱한 안내가 나간다
+    # (실제로 JSON 의 계정이 구글에서 삭제돼 있던 사례가 있었다).
     if not drive_state.get("service_account_configured"):
         problems.append(
             "드라이브 서비스 계정 미설정 — 파일을 서버에서 직접 내려줄 수 없어 폴더 링크로만 "
             "안내합니다. GOOGLE_SERVICE_ACCOUNT_JSON 을 설정하고 인증자료 폴더를 그 계정에 "
             "뷰어로 공유하십시오.")
+    elif not drive_state.get("token_ok"):
+        problems.append(
+            f"드라이브 자격증명이 무효입니다 — JSON 에는 {drive_state.get('client_email')} 로 "
+            "적혀 있으나 구글이 토큰을 발급하지 않습니다. 그 서비스 계정이 삭제됐거나 키가 "
+            "폐기된 상태입니다. 새 서비스 계정과 키를 만들어 GOOGLE_SERVICE_ACCOUNT_JSON 을 "
+            "교체하십시오(폴더 공유는 그 다음 단계입니다).")
     elif not drive_state.get("folder_readable"):
         problems.append(
-            "드라이브 서비스 계정은 설정됐으나 인증자료 폴더를 읽지 못합니다 — "
+            "드라이브 자격증명은 살아 있으나 인증자료 폴더를 읽지 못합니다 — "
             f"폴더({drive_state.get('folder_id')})를 {drive_state.get('client_email')} 에 "
             "뷰어로 공유했는지 확인하십시오.")
 
