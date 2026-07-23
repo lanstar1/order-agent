@@ -70,6 +70,15 @@ except Exception as _srcp_err:
     sourcing_pipeline_router = None
     logging.getLogger(__name__).warning(f"신제품 소싱 파이프라인 로드 실패: {_srcp_err}")
 
+# 상담봇 (cert_lookup + chatbot). 데이터 번들이 없어도 나머지 기능은 그대로 뜨도록 격리한다.
+try:
+    from api.routes.assistant import router as assistant_router
+    _HAS_ASSISTANT = True
+except Exception as _asst_err:
+    _HAS_ASSISTANT = False
+    assistant_router = None
+    logging.getLogger(__name__).warning(f"상담봇 모듈 로드 실패 (기존 기능은 계속): {_asst_err}")
+
 # ─────────────────────────────────────────
 #  로깅 설정
 # ─────────────────────────────────────────
@@ -201,6 +210,9 @@ _ACTIVITY_ACTIONS = {
     ("GET", "/api/datalab/history"): "데이터랩 이력 조회",
     ("POST", "/api/datalab/export-excel"): "데이터랩 엑셀 내보내기",
     ("POST", "/api/datalab/brand-blacklist"): "데이터랩 브랜드 블랙리스트 추가",
+
+    ("POST", "/api/assistant/chat"): "상담봇 질의",
+    ("POST", "/api/assistant/clarify"): "상담봇 되묻기 선택",
 }
 
 @app.middleware("http")
@@ -316,6 +328,10 @@ if _HAS_SOURCING_PIPELINE and sourcing_pipeline_router is not None:
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
     app.include_router(super_agent_router)
+
+# 상담봇 라우터 (/api/assistant/*)
+if _HAS_ASSISTANT and assistant_router is not None:
+    app.include_router(assistant_router)
 
 # AICC WebSocket 엔드포인트
 @app.websocket("/ws/aicc/chat/{session_id}")

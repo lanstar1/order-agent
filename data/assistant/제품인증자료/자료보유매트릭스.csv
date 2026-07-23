@@ -1,0 +1,794 @@
+﻿"# O=완제품 단위 인증서 보유 / 자재=자재별 성적서 묶음 보유 / X=없음. 케이블은 자재별 성적서 묶음도 정상적인 근거이며, 아래 자재커버리지로 누락 자재를 확인"
+"# * 표시(O*, 자재*) = 라인 단위 인증서를 제품군에 대응시킨 추론 매핑에만 근거함. 고객 제출 전 해당 모델이 인증서 적용범위에 포함되는지 확인 권장"
+모델명,Data sheet,RoHS,CE,CoC,Fluke test,제품구분,RoHS 자재커버리지,RoHS 미확보 자재,기타 보유자료,4대자료 없음수
+DP12MM-10M,X,O,O,X,X,케이블,-,-,-,3
+LS-1000,O,X,X,X,X,케이블,-,-,-,4
+LS-1000H,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-1000HB,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-1000HQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-1000HS,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-1200 TO 2000,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-1200H,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-1200HB,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-1200HQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-1200HS,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-1200HS TO 2000HS,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-1600H,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-1600HB,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-1600HBO,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-1600HC,O,X,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",3
+LS-1600HO,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-1600HQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-1600HS,O,O*,O*,X,X,케이블,-,-,Other-cert,2
+LS-1600HSQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-1800H,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-1800HB,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-1800HBO,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-1800HBS,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-1800HBS-NOS,O,X,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",3
+LS-1800HC,O,X,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",3
+LS-1800HO,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-1800HQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-1800HS,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-1800HSQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-2000H,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-2000HB,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-2000HBO,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-2000HO,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-2000HQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-2000HS,O,O*,O*,X,X,커넥터/액세서리,-,-,"Other-cert, Test report",2
+LS-2000HSQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-240HC,O,X,O*,X,X,케이블,-,-,"Other-cert, Test report",3
+LS-300,O,X,X,X,X,케이블,-,-,-,4
+LS-300H,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-300HB,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-300HN,O,X,O*,X,X,케이블,-,-,"Other-cert, Test report",3
+LS-300HR,O,X,O*,X,X,케이블,-,-,"Other-cert, Test report",3
+LS-500,O,X,X,X,X,케이블,-,-,-,4
+LS-500H,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-500HB,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-500HS,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-5FTPSD-BK1M,X,자재,X,X,X,케이블,도금·도체·자켓·절연·차폐·커넥터,없음(완비),-,4
+LS-5FTPSD-BK3M,X,X,X,X,X,케이블,-,-,REACH,5
+LS-5FTPSD-BK5M,X,X,X,X,X,케이블,-,-,PFAS,5
+LS-5FTPSD-BKXM,O,O,X,자재,X,케이블,도금·도체·자켓·절연·차폐,없음(완비),-,2
+LS-5SFTP-300M,O,자재,X,X,X,케이블,도체·자켓·절연·차폐,없음(완비),Other-cert,3
+LS-5SFTP-B300,O,X,X,X,X,케이블,-,-,-,4
+LS-5STPC,O,X,X,X,X,케이블,-,-,-,4
+LS-5STPC-10M,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPC-2M,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPC-3M,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPC-5M,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD,O,X,X,X,X,케이블,-,-,-,4
+LS-5STPD-10MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-15MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-1MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-20MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-2MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-30MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-3MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-50MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-5MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-7MG,X,X,X,X,O,케이블,-,-,-,4
+LS-5STPD-XXMG,X,O,O,X,X,케이블,-,-,Test report,3
+LS-5UTP-100MBL,O,O,X,X,X,케이블,-,-,-,3
+LS-5UTP-100MG,O,O,X,X,X,케이블,-,-,-,3
+LS-5UTPAD-*M,X,O,O,X,X,케이블,-,-,Test report,3
+LS-5UTPD,O,X,X,X,X,케이블,-,-,-,4
+LS-5UTPD-0.5MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-10MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-15MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-1MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-20MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-2MB,X,O,O,X,X,케이블,-,-,REACH,3
+LS-5UTPD-2MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-30MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-3MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-50MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-5MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-7MG,X,O,O,X,O,케이블,-,-,-,2
+LS-5UTPD-XMG,O,X,X,X,X,케이블,-,-,-,4
+LS-5UTPD-XXM,X,O,X,X,X,케이블,-,-,Test report,4
+LS-6AFTP,X,X,O,X,X,케이블,-,-,-,4
+LS-6AFTP-0.5M,X,X,X,X,O,케이블,-,-,-,4
+"LS-6AFTP-0.5M,1M,2M,3M,5M,10M,15M,20M",X,X,X,X,O,케이블,-,-,-,4
+LS-6AFTP-10M,X,X,X,X,O,케이블,-,-,-,4
+LS-6AFTP-15M,X,X,X,X,O,케이블,-,-,-,4
+LS-6AFTP-1M,X,X,X,X,O,케이블,-,-,-,4
+LS-6AFTP-20M,X,X,X,X,O,케이블,-,-,-,4
+LS-6AFTP-2M,X,X,X,X,O,케이블,-,-,-,4
+LS-6AFTP-3M,X,X,X,X,O,케이블,-,-,-,4
+LS-6AFTP-5M,X,X,X,X,O,케이블,-,-,-,4
+LS-6AFTP-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-6AFTP-XXM,X,O,X,X,X,케이블,-,-,-,4
+LS-6AUTP,X,X,O,X,X,케이블,-,-,-,4
+"LS-6AUTP-0.5M,1M,2M,3M,5M,10M,15M,20M",X,X,X,X,O,케이블,-,-,-,4
+LS-6AUTP-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-6AUTP-XXM,X,O,X,X,X,케이블,-,-,-,4
+LS-6FTP-100MG,O,O,O,X,X,케이블,-,-,Test report,2
+LS-6IC-FJM,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-6IC-FKTMT,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-6IC-UED4,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-6IC-UJ,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-6IC-UJW,O,O,X,X,X,케이블,-,-,"REACH, UL",3
+LS-6IC-UK,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-6IC-UNJ24,O,X,O,X,X,커넥터/액세서리,-,-,UL,3
+LS-6PLB-24P19N,O,X,O,X,O,커넥터/액세서리,-,-,UL,2
+LS-6PLB-48P19,O,X,O,X,O,커넥터/액세서리,-,-,-,2
+LS-6SFTP-300M,O,O,O,X,X,케이블,도체·자켓·절연·차폐,없음(완비),"Other-cert, Test report",2
+LS-6STPD,O,X,X,X,X,케이블,-,-,-,4
+LS-6STPD-*M,X,O,O,X,X,케이블,-,-,Test report,3
+LS-6STPD-0.3M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-0.5M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-10M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-15M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-1M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-20M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-2M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-30M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-3M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-50M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-5M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-7M,X,X,X,X,O,케이블,-,-,-,4
+LS-6STPD-XM,O,X,X,X,X,케이블,-,-,REACH,4
+LS-6STPD-XXM,O,O,X,X,X,케이블,-,-,-,3
+LS-6UTP-300,X,X,X,X,O*,케이블,-,-,-,4
+LS-6UTP-300M,O,X,X,X,O,케이블,-,-,-,3
+LS-6UTP-300MB,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTP-300MBK,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTP-300MG,O,자재,X,X,O,케이블,도체·절연,자켓,Other-cert,2
+LS-6UTP-300MP,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTP-300MR,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTP-300MY,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPC,O,X,X,X,X,케이블,-,-,-,4
+LS-6UTPC-*M,X,O,O,X,X,케이블,-,-,Test report,3
+LS-6UTPC-10M,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPC-2M,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPC-3M,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPC-5M,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD,O,X,X,X,X,케이블,-,-,-,4
+LS-6UTPD-*M,X,O,O,X,X,케이블,-,-,Test report,3
+LS-6UTPD-0.5MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-10MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-15MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-1MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-20MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-2MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-30MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-3MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-50MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-5MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-7MG,X,X,X,X,O,케이블,-,-,-,4
+LS-6UTPD-XXM,X,O,X,X,X,케이블,-,-,-,4
+LS-750,O,X,X,X,X,케이블,-,-,-,4
+LS-750H,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-750HB,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-750HS,O,O*,O*,X,X,케이블,-,-,"Other-cert, Test report",2
+LS-7NSTPD,O,X,X,X,X,케이블,-,-,-,4
+LS-7NSTPD-10M,X,X,X,X,O,케이블,-,-,-,4
+LS-7NSTPD-15M,X,X,X,X,O,케이블,-,-,-,4
+LS-7NSTPD-20M,X,X,X,X,O,케이블,-,-,-,4
+LS-7NSTPD-2M,X,X,X,X,O,케이블,-,-,-,4
+LS-7NSTPD-30M,X,X,X,X,O,케이블,-,-,-,4
+LS-7NSTPD-3M,X,X,X,X,O,케이블,-,-,-,4
+LS-7NSTPD-50M,X,X,X,X,O,케이블,-,-,-,4
+LS-7NSTPD-5M,X,X,X,X,O,케이블,-,-,-,4
+LS-7NSTPD-XXM,X,O,X,X,X,케이블,-,-,-,4
+LS-7PLB-F24X,X,X,X,X,X,케이블,-,-,REACH,5
+LS-7SD-BK0.2M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-7SD-BK0.5M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-7SD-BK1M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-7SD-BK2M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-7SD-BK3M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-7SD-BK5M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-7SD-BKXM,O,O,X,자재,X,커넥터/액세서리,도금·도체·절연·차폐,커넥터,-,2
+LS-7SD-FF0.2M,O,X,X,X,X,케이블,-,-,-,4
+LS-7SSTP-100M,O,X,X,X,X,케이블,-,-,-,4
+LS-7SSTP-300M,O,X,O,X,X,케이블,-,-,Test report,3
+LS-7SSTPD,X,X,X,X,X,케이블,-,-,"Other-cert, REACH",5
+LS-7SSTPD-0.5MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-10MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-15MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-1MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-20MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-2MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-30MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-3MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-50MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-5MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-7MG,X,X,X,X,O,케이블,-,-,-,4
+LS-7SSTPD-XM,X,O,X,O,X,케이블,커넥터,도체·절연·자켓,"MSDS/SDS, PFAS, REACH",3
+LS-7SSTPD-XMG,X,O,O,X,X,케이블,-,-,"MSDS/SDS, Test report",3
+LS-7SSTPD-XXMG,X,O,X,X,X,케이블,-,-,-,4
+LS-7UTP-100M,O,X,X,X,X,케이블,-,-,-,4
+LS-7UTP-100MG,O,X,X,X,O,케이블,-,-,-,3
+LS-7UTP-300MG,X,O,X,X,O,케이블,-,-,-,3
+LS-800HQ,O,X,O*,X,X,커넥터/액세서리,-,-,Other-cert,3
+LS-8SFTP-10M,O,X,X,X,O,케이블,-,-,-,3
+LS-8SFTP-15M,O,X,X,X,O,케이블,-,-,-,3
+LS-8SFTP-1M,O,X,X,X,O,케이블,-,-,-,3
+LS-8SFTP-1M~20M,O,X,X,X,X,케이블,-,-,-,4
+LS-8SFTP-20M,O,X,X,X,O,케이블,-,-,-,3
+LS-8SFTP-2M,O,X,X,X,O,케이블,-,-,-,3
+LS-8SFTP-3M,O,X,X,X,O,케이블,-,-,-,3
+LS-8SFTP-5M,O,X,X,X,O,케이블,-,-,-,3
+LS-8SFTP-XXM,O,O,X,X,X,케이블,-,-,-,3
+LS-8SSTP-200MG,O,O,X,X,O,케이블,-,-,-,2
+LS-BFTP7,X,O,O,X,X,케이블,-,-,-,3
+LS-BFTP7-0.5M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-1.5M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-10M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-15M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-1M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-20M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-2M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-3M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-5M,O,X,X,X,O,케이블,-,-,-,3
+LS-BFTP7-7M,O,X,X,X,O,케이블,-,-,-,3
+LS-BOOT-CB7,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-BOOT-CG7,자재,자재,X,X,X,커넥터/액세서리,자켓,커넥터,-,3
+LS-BOOT-CR7,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-BOOT-CY7,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-BZ-KTBKZ,X,X,X,X,X,케이블,-,-,REACH,5
+LS-BZ-KTWHZ,X,X,X,X,X,커넥터/액세서리,-,-,Other-cert,5
+LS-C5K,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-C5OD300,O,자재,X,X,O,케이블,도체·자켓·절연,없음(완비),-,2
+LS-C5U305BK,O,자재,X,X,O,케이블,도체·자켓·절연,없음(완비),-,2
+LS-C5U305BL,O,X,X,X,X,케이블,-,-,-,4
+LS-C5U305G,O,자재,X,X,O,케이블,도체·자켓·절연,없음(완비),"Other-cert, Test report",2
+LS-C5U305R,O,X,X,X,X,케이블,-,-,-,4
+LS-C5U305Y,O,X,X,X,O,케이블,-,-,-,3
+LS-C6OD300,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.5E-FTP-300M,X,O,X,X,O,케이블,-,-,-,3
+LS-CAT.5E-FTP-54M,X,X,X,X,O,케이블,-,-,-,4
+LS-CAT.5E-HFTP-300MSTG,X,X,X,X,O,케이블,-,-,-,4
+LS-CAT.5E-HUTP-300M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.5E-HUTP-300MG,X,X,X,X,O,케이블,-,-,-,4
+LS-CAT.5E-HUTP-65M,X,X,X,X,O,케이블,-,-,-,4
+LS-CAT.5E-HUTP-80M,X,X,X,X,O,케이블,-,-,-,4
+LS-CAT.5E-SFTP-300M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-SFTP-300M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPC-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPC-2M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPC-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPC-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-0.5M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-1M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-20M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-2M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-30M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-50M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT.6-UTPD-7M,O,X,X,X,X,케이블,-,-,-,4
+LS-CAT5E-STP,X,자재,X,X,X,케이블,도금·커넥터,도체·절연·자켓·차폐,-,4
+LS-CAT5E-UTP,X,자재,X,X,X,커넥터/액세서리,도금·차폐·커넥터,없음(완비),-,4
+LS-CAT6-STP,O,자재,X,O,X,커넥터/액세서리,차폐·커넥터,없음(완비),MSDS/SDS,2
+LS-CAT6-UTP,X,자재,X,X,X,커넥터/액세서리,차폐·커넥터,없음(완비),-,4
+LS-CAT7-750,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-CAT7-750G,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-CCTP-XM,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-CON-S15F,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-CON-S15M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-COPY10,X,X,X,X,X,케이블,-,-,"Drawing, Manual",5
+LS-COPY30,X,X,X,X,X,케이블,-,-,"Drawing, Manual",5
+LS-CUP-ID8C,O,자재,X,X,X,커넥터/액세서리,도금·절연·커넥터,없음(완비),-,3
+LS-CUP-YD8C,X,자재,X,X,X,커넥터/액세서리,도금·절연·커넥터,없음(완비),-,4
+LS-DC-RJ45-BKC,X,자재,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,4
+LS-DC-RJ45BK,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-DC-RJ45PP-WHC,X,자재,X,X,X,커넥터/액세서리,커넥터,없음(완비),-,4
+LS-DC-USBPE-WHC,X,자재*,X,X,X,커넥터/액세서리,절연,커넥터,-,4
+LS-DP12HD,O,O,X,X,X,케이블,-,-,-,3
+LS-DP14MM-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-DP14N,X,O,O,X,X,케이블,-,-,-,3
+"LS-DP14N-1M,1.5M,2M,3M",O,X,X,X,X,케이블,-,-,-,4
+LS-DP14N-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-DP14N-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-DP192,O,X,X,X,X,케이블,-,-,-,4
+LS-DP192-1.5M,X,O,X,X,X,케이블,-,-,-,4
+LS-DP192-1M,X,O,X,X,X,케이블,-,-,-,4
+LS-DP192-2M,X,O,X,X,X,케이블,-,-,-,4
+LS-DP192-3M,X,O,X,X,X,케이블,-,-,-,4
+LS-DP192-5M,X,O,X,X,X,케이블,-,-,-,4
+LS-DP192-60H-XM,O,X,O,X,X,케이블,-,-,Test report,3
+LS-DP192-XM,O,O,O,X,X,케이블,-,-,-,2
+LS-DPAOC-XM,X,X,O,X,X,케이블,-,-,-,4
+LS-DPAOC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-DPFF-S0.2M,O,X,X,X,X,케이블,-,-,-,4
+LS-DPMF-SXM,O,O,X,X,X,케이블,-,-,-,3
+LS-DVI19M-1.8M,X,X,O,X,X,케이블,-,-,-,4
+"LS-DVI19M-1.8M,3M,5M",O,X,X,X,X,케이블,-,-,-,4
+LS-DVI19M-10M,O,X,O,X,X,케이블,-,-,-,3
+LS-DVI19M-3M,X,X,O,X,X,케이블,-,-,-,4
+LS-DVI19M-5M,X,X,O,X,X,케이블,-,-,-,4
+LS-DVI19M-HDMI-1-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-DVI19M-HDMI-10M,O,X,O,X,X,케이블,-,-,-,3
+LS-DVI19M-HDMI-15M,O,X,O,X,X,케이블,-,-,-,3
+LS-DVI19M-HDMI-1M~5M,X,X,O,X,X,케이블,-,-,-,4
+LS-DVI19M-HDMI-20M,O,X,O,X,X,케이블,-,-,-,3
+LS-DVI19M-XM,X,X,X,X,X,케이블,-,-,Drawing,5
+LS-DVI25M,X,X,O,X,X,케이블,-,-,-,4
+LS-DVI25M-1.8M,X,X,O,X,X,케이블,-,-,-,4
+"LS-DVI25M-1.8M,3M,5M",O,X,X,X,X,케이블,-,-,-,4
+LS-DVI25M-10M,O,X,O,X,X,케이블,-,-,-,3
+LS-DVI25M-3M,X,X,O,X,X,케이블,-,-,-,4
+LS-DVI25M-5M,X,X,O,X,X,케이블,-,-,-,4
+LS-DVI25M-XM,X,O,O,X,X,케이블,-,-,Drawing,3
+LS-EIC-FJM,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-EIC-UED4,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-EIC-UJ,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-EIC-UJW,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-EIC-UK,O,X,X,X,X,커넥터/액세서리,-,-,UL,4
+LS-EPLB-24P19N,O,X,O,X,O,커넥터/액세서리,-,-,UL,2
+LS-EPLB-48P19,O,X,X,X,O,커넥터/액세서리,-,-,-,3
+LS-ETMD-UJWT,O,X,X,X,X,케이블,-,-,UL,4
+LS-EXT300,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-EXT305,O,X,X,X,X,케이블,-,-,Other-cert,4
+LS-EXT310,O,X,O,X,X,케이블,-,-,-,3
+LS-EXT315,O,X,X,X,X,케이블,-,-,Other-cert,4
+LS-EXT320,O,X,X,X,X,케이블,-,-,Other-cert,4
+LS-EXT3XX,X,X,O,X,X,케이블,-,-,-,4
+LS-EZ-750,O,O,X,X,X,커넥터/액세서리,-,-,-,3
+LS-F6-UTPD,X,X,O*,X,X,케이블,-,-,-,4
+LS-F6-UTPD-0.5M,O,X,X,X,X,케이블,-,-,-,4
+LS-F6-UTPD-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-F6-UTPD-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-F6-UTPD-1M,O,X,X,X,X,케이블,-,-,-,4
+LS-F6-UTPD-20M,O,X,X,X,X,케이블,-,-,-,4
+LS-F6-UTPD-2M,O,X,X,X,X,케이블,-,-,-,4
+LS-F6-UTPD-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-F6-UTPD-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-F6-UTPD-XM,O,X,X,X,X,케이블,-,-,MSDS/SDS,4
+LS-F6-UTPD-XXM,X,O,X,X,X,케이블,-,-,-,4
+LS-F6UTPD,X,X,O*,X,X,케이블,-,-,-,4
+LS-F6UTPD-0.5MW,O,X,X,X,X,케이블,-,-,-,4
+LS-F6UTPD-10MW,O,X,X,X,X,케이블,-,-,-,4
+LS-F6UTPD-15MW,O,X,X,X,X,케이블,-,-,-,4
+LS-F6UTPD-1MW,O,X,X,X,X,케이블,-,-,-,4
+LS-F6UTPD-20MW,O,X,X,X,X,케이블,-,-,-,4
+LS-F6UTPD-2MW,O,X,X,X,X,케이블,-,-,-,4
+LS-F6UTPD-3MW,O,X,X,X,X,케이블,-,-,-,4
+LS-F6UTPD-5MW,O,X,X,X,X,케이블,-,-,-,4
+LS-F6UTPD-XM,X,X,X,X,X,케이블,-,-,MSDS/SDS,5
+LS-F6UTPD-XXMW,X,O,X,X,X,케이블,-,-,-,4
+LS-F7-SFTP,X,X,O*,X,X,케이블,-,-,-,4
+LS-F7-SFTP-XM,X,O,X,X,X,케이블,-,-,-,4
+LS-F7-SFTP-XXM,X,O,X,X,X,케이블,-,-,-,4
+LS-F7-UTPD,X,X,O*,X,X,케이블,-,-,-,4
+LS-F7-UTPD-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-F7-UTPD-XXM,X,O,X,X,X,케이블,-,-,-,4
+LS-F7FTP,X,X,O*,X,X,케이블,-,-,-,4
+LS-F7FTP-10M,X,X,X,X,O,케이블,-,-,-,4
+LS-F7FTP-15M,X,X,X,X,O,케이블,-,-,-,4
+LS-F7FTP-1M,X,X,X,X,O,케이블,-,-,-,4
+LS-F7FTP-20M,X,X,X,X,O,케이블,-,-,-,4
+LS-F7FTP-2M,X,X,X,X,O,케이블,-,-,-,4
+LS-F7FTP-3M,X,X,X,X,O,케이블,-,-,-,4
+LS-F7FTP-5M,X,X,X,X,O,케이블,-,-,-,4
+LS-F7FTP-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-F850N,O,X,X,X,O,커넥터/액세서리,-,-,-,3
+LS-F8FTP,X,X,O*,X,X,케이블,-,-,-,4
+LS-F8FTP-0.5M,X,X,X,X,O,케이블,-,-,-,4
+LS-F8FTP-1.5M,X,X,X,X,O,케이블,-,-,-,4
+LS-F8FTP-10M,X,X,X,X,O,케이블,-,-,-,4
+LS-F8FTP-1M,X,X,X,X,O,케이블,-,-,-,4
+LS-F8FTP-2M,X,X,X,X,O,케이블,-,-,-,4
+LS-F8FTP-3M,X,X,X,X,O,케이블,-,-,-,4
+LS-F8FTP-5M,X,X,X,X,O,케이블,-,-,-,4
+LS-F8FTP-7M,X,X,X,X,O,케이블,-,-,-,4
+LS-F8FTP-XM,X,자재,X,X,X,케이블,도체,절연·자켓·차폐,-,4
+LS-F8FTP-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-FMD / LS-FMP,X,O,O,X,X,케이블,-,-,-,3
+LS-FMD-LCLC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-FMD-LCSC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-FMD-SCSC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-FMP-LC-1.5M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-FMP-SC-1.5M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-FSB,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-FSD-LCLC-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCLC-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCLC-20M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCLC-30M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCLC-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCLC-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCLC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCSC-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCSC-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCSC-20M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCSC-30M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCSC-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCSC-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-LCSC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-SCSC-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-SCSC-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-SCSC-20M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-SCSC-30M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-SCSC-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-SCSC-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-FSD-SCSC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-FSI,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-FSP-LC-1.5M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-FSP-SC-1.5M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-FT6U,X,X,O*,X,X,케이블,-,-,-,4
+LS-FT6U05M,X,X,X,X,O,케이블,-,-,-,4
+LS-FT6U10M,X,X,X,X,O,케이블,-,-,-,4
+LS-FT6U15M,X,X,X,X,O,케이블,-,-,-,4
+LS-FT6U1M,X,X,X,X,O,케이블,-,-,-,4
+LS-FT6U20M,X,X,X,X,O,케이블,-,-,-,4
+LS-FT6U2M,X,X,X,X,O,케이블,-,-,-,4
+LS-FT6U3M,X,X,X,X,O,케이블,-,-,-,4
+LS-FT6U5M,X,X,X,X,O,케이블,-,-,-,4
+LS-FT6UXXM,O,X,O*,X,X,케이블,-,-,-,3
+LS-FTP-100MSTG,O,X,X,X,X,케이블,-,-,-,4
+LS-FTP-300MSTG,O,O,O,X,O,케이블,-,-,Test report,1
+LS-FTP-305MSTG,O,X,X,X,X,케이블,-,-,-,4
+LS-GEN-DB25FF,O*,X,X,X,X,기타,-,-,-,4
+LS-GEN-DB25MM,O*,X,X,X,X,기타,-,-,-,4
+LS-GEN-DB9FF,O,X,X,X,X,기타,-,-,-,4
+LS-GEN-DB9MF,O*,X,X,X,X,기타,-,-,-,4
+LS-GEN-DB9MM,O*,X,X,X,X,기타,-,-,-,4
+LS-GEN-HDB15FF,O*,X,X,X,X,케이블,-,-,-,4
+LS-GIC-FEDPT,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-GIC-FJM,O,O,X,X,X,커넥터/액세서리,-,-,"REACH, UL",3
+LS-GIC-FKTMT,O,O,X,X,O,케이블,-,-,REACH,2
+LS-GIC-UED,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-GIC-UEDWH,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-GIC-UJW,O,O,X,X,X,케이블,-,-,-,3
+LS-GKTVM-F1MT,X,X,X,X,X,커넥터/액세서리,-,-,UL,5
+LS-GKTVM-U1WH,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-GKTVNL-F1MT,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-GKTVNL-U1WH,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+"LS-GKTVNL-U1WH,F1MT",X,X,X,X,X,커넥터/액세서리,-,-,UL,5
+LS-GLAN30R,X,O,O,X,X,케이블,-,-,Other-cert,3
+LS-GPLB-F24X,X,X,X,X,O,커넥터/액세서리,-,-,-,4
+LS-H20AOC10,O,X,X,X,X,케이블,-,-,-,4
+LS-H20AOC100,O,X,X,X,X,케이블,-,-,-,4
+LS-H20AOC20,O,X,X,X,X,케이블,-,-,-,4
+LS-H20AOC30,O,X,X,X,X,케이블,-,-,-,4
+LS-H20AOC50,O,X,X,X,X,케이블,-,-,-,4
+LS-H20AOC80,O,X,X,X,X,케이블,-,-,-,4
+LS-H20AOCXX,X,X,X,X,X,케이블,-,-,Test report,5
+LS-H21AOC,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-HAP21AOC,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-HAP21AOC-XM,X,X,X,X,X,케이블,-,-,Test report,5
+LS-HD21,X,X,X,X,X,케이블,-,-,HDMI-DP-cert,5
+"LS-HD21-1M,1.5M,2M,3M",O,X,X,X,X,케이블,-,-,-,4
+LS-HD21-5M,O,X,X,X,X,케이블,-,-,HDMI-DP-cert,4
+LS-HD21-XM,X,X,X,X,X,케이블,-,-,HDMI-DP-cert,5
+LS-HD21R-50M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-HD21R-80M,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-HD2DP-1M~5M,O,X,X,X,X,케이블,-,-,-,4
+LS-HD2DPF-0.3M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDAOC-100M,X,자재,X,자재,X,케이블,광섬유·도체·솔더·자켓·차폐,절연,-,3
+LS-HDAOC-30M,X,자재,X,자재,X,케이블,광섬유·도체·솔더·자켓·차폐,절연,-,3
+LS-HDAOC-50M,X,자재,X,자재,X,케이블,광섬유·도체·솔더·자켓·차폐,절연,-,3
+LS-HDAOC-XXM,O,X,X,X,X,케이블,-,-,Test report,4
+LS-HDMI-2MM-10-15MC,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-2MM-10MC,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-2MM-15MC,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-2MM-20-30MC,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-2MM-20MC,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-2MM-25MC,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-2MM-30MC,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-AC20-XXM,X,X,O,X,X,케이블,-,-,"Other-cert, Test report",4
+LS-HDMI-AD20-1M,X,X,X,X,X,케이블,-,-,Test report,5
+LS-HDMI-AD20-XXM,X,X,O,X,X,케이블,-,-,"Other-cert, Test report",4
+LS-HDMI-EXT-10~15M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-EXT-20~30M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-HMF-0.15M~5M,X,X,O,X,X,케이블,-,-,-,4
+LS-HDMI-HMF-XM,O,O,X,X,X,케이블,-,-,-,3
+LS-HDMI-HMF-XXM,X,X,O,X,X,케이블,-,-,"Other-cert, Test report",4
+LS-HDMI-HMM-XXM,X,X,O,X,X,케이블,-,-,"Other-cert, Test report",4
+LS-HDMI-HYB-R100M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-HYB-R10M,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-HDMI-HYB-R15M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-HYB-R20M,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-HDMI-HYB-R30M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-HYB-R40M,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-HDMI-HYB-R50M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-HYB-R60M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-HYB-R80M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMI-HYB-RXXM,O,X,X,X,X,케이블,-,-,Test report,4
+LS-HDMI-NEMM-XXM,X,X,O,X,X,케이블,-,-,"Other-cert, Test report",4
+LS-HDMI21,X,X,X,X,X,케이블,-,-,HDMI-DP-cert,5
+LS-HDMI21-XM,O,O,X,X,X,케이블,-,-,"HDMI-DP-cert, Test report, UL",3
+LS-HDMT-0.3-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMT-0.3M~5M,X,X,O,X,X,케이블,-,-,-,4
+LS-HDMT-10M,X,X,O,X,X,케이블,-,-,-,4
+LS-HDMT-10M 15M,O,X,X,X,X,케이블,-,-,-,4
+LS-HDMT-15M,X,X,O,X,X,케이블,-,-,-,4
+LS-HDMT-20M,O,X,O,X,X,케이블,-,-,-,3
+LS-HDMT-XM,X,O,X,X,X,케이블,-,-,REACH,4
+LS-HDMT-XXM,X,X,O,X,X,케이블,-,-,"Other-cert, Test report",4
+LS-HF SERIES,X,O,O,X,X,케이블,-,-,Test report,3
+LS-HF7005,O,X,X,X,O,케이블,-,-,-,3
+LS-HF701,O,X,X,X,O,케이블,-,-,-,3
+LS-HF702,O,X,X,X,O,케이블,-,-,-,3
+LS-HF703,O,X,X,X,O,케이블,-,-,-,3
+LS-HF705,O,O,O,X,O,케이블,-,-,Test report,1
+LS-HF707,O,X,X,X,O,케이블,-,-,-,3
+LS-HF710,O,X,X,X,O,케이블,-,-,-,3
+LS-HF715,O,X,X,X,O,케이블,-,-,-,3
+LS-HF720,O,X,X,X,O,케이블,-,-,-,3
+LS-HF730,O,X,X,X,O,케이블,-,-,-,3
+LS-HF750,O,X,X,X,O,케이블,-,-,-,3
+LS-HF7XX,O,O,O,X,O,케이블,-,-,Test report,1
+LS-HRGB-15MM,O,O,O,X,X,케이블,-,-,-,2
+LS-HRGB-15MM-XM,X,자재,X,X,X,케이블,기타부품·도금·도체·자켓·절연·차폐·커넥터,없음(완비),UL,4
+LS-HS2FAN,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-HS4FAN,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+"LS-KT-6U4N, 5EU4N",X,X,X,X,X,커넥터/액세서리,-,-,UL,5
+LS-LAN-ROLLER,O,X,X,X,X,케이블,-,-,-,4
+LS-LAN1021-KEY-BK,O,X,X,X,X,케이블,-,-,Drawing,4
+LS-LAN1021-P100-BK,O,X,X,X,X,케이블,-,-,Drawing,4
+LS-LAN20R,X,O,X,X,X,케이블,-,-,-,4
+LS-LKPG SERIES,X,O,X,X,X,커넥터/액세서리,-,-,-,4
+LS-M850N,O,X,X,X,O,커넥터/액세서리,-,-,-,3
+LS-MDP12HD,O,O,X,X,X,케이블,-,-,-,3
+LS-OM3-LCLC,X,O*,X,X,X,케이블,-,-,-,4
+LS-OM3-LCLC-15M,X,X,X,X,X,케이블,-,-,Test report,5
+LS-OM3-LCLC-20M,X,O*,X,X,X,케이블,-,-,-,4
+LS-OM3-LCLC-XM,X,O,X,X,X,케이블,-,-,-,4
+LS-OM3-LCLC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-OM3-LCSC,X,O*,X,X,X,케이블,-,-,-,4
+LS-OM3-LCSC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-OM4-LCLC,X,O*,X,X,X,케이블,-,-,-,4
+LS-OM4-LCLC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-OM4-LCSC,X,O*,X,X,X,케이블,-,-,-,4
+LS-OM4-LCSC-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-OUTLET-WP24N,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-P197-2410G,O,X,O,X,O,커넥터/액세서리,-,-,-,2
+LS-PASS-7STP,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-PASS-7UTP,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-PB14,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-PB16,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-PB18,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-PLKP-24SM,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-PRT-25C-1.8M,O,X,X,X,X,케이블,-,-,-,4
+LS-PRT-25C-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-PRT-25C-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-PRT-25C-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-PRT-25C-XX,O,X,X,X,X,케이블,-,-,-,4
+LS-PS2-6MF-1.8M,O,자재*,X,X,X,케이블,도체·자켓·절연·커넥터,차폐,-,3
+LS-PS2-6MF-10M,O,자재*,X,X,X,케이블,도체·자켓·절연·커넥터,차폐,-,3
+LS-PS2-6MF-5M,O,자재*,X,X,X,케이블,도체·자켓·절연·커넥터,차폐,-,3
+LS-PS2-6MF-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-PS2-6MM-1.8M,O,자재,X,X,X,케이블,금속구조·도체·자켓·절연·커넥터,차폐,-,3
+LS-PS2-6MM-10M,X,자재*,X,X,X,케이블,도체·자켓·절연·커넥터,차폐,-,4
+LS-PS2-6MM-5M,X,자재*,X,X,X,케이블,도체·자켓·절연·커넥터,차폐,-,4
+LS-PS2-6MM-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MF,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MF-1.8M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MF-1.8M~20M,X,X,O,X,X,케이블,-,-,-,4
+LS-RGB-15MF-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MF-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MF-20M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MF-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MF-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MF-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MM,O,자재*,X,X,X,케이블,도체,절연·자켓·차폐,-,3
+LS-RGB-15MM-1.8M,O,X,X,X,X,케이블,-,-,Other-cert,4
+LS-RGB-15MM-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MM-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MM-1M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MM-1M~30M,X,X,O,X,X,케이블,-,-,-,4
+LS-RGB-15MM-20M,O,X,X,X,X,케이블,-,-,Other-cert,4
+LS-RGB-15MM-30M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MM-3M,O,X,X,X,X,케이블,-,-,Other-cert,4
+LS-RGB-15MM-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MM-5MCC,O,X,X,X,X,케이블,-,-,-,4
+LS-RGB-15MM-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-RJ45-SHORT,X,O,X,X,X,커넥터/액세서리,-,-,-,4
+LS-RJ45FTP-9P,O,자재,X,X,X,커넥터/액세서리,도체,커넥터,-,3
+LS-RJ45UTP-8P,O,자재,X,X,X,커넥터/액세서리,도체,커넥터,-,3
+LS-RS200C,X,O,X,X,X,케이블,-,-,-,4
+LS-RS204C,X,X,X,X,X,케이블,-,-,Test report,5
+LS-RS485,O,X,X,X,X,케이블,-,-,Drawing,4
+LS-SER-25MF,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-SER-25MF-1.8M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-25MF-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-25MF-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-25MF-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-25MF-XXM,O,자재,X,X,X,케이블,기타부품·절연·차폐,도체·자켓,-,3
+LS-SER-25MM,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-SER-25MM-1.8M,O,X,X,X,X,케이블,-,-,REACH,4
+LS-SER-25MM-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-25MM-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-25MM-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-25MM-XXM,O,자재,X,X,X,케이블,기타부품·절연·차폐,도체·자켓,-,3
+LS-SER-9F25M,X,자재*,X,X,X,케이블,커넥터,도체·절연·자켓·차폐,-,4
+LS-SER-9F25M-1.8M,O,자재,X,X,X,케이블,도금·도체·자켓·차폐·커넥터,절연,-,3
+LS-SER-9FF,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-SER-9FF-1.8M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9FF-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9FF-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9FF-1M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9FF-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9FF-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9FF-XXM,O,자재,X,X,X,케이블,차폐,도체·절연·자켓,-,3
+LS-SER-9MF,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-SER-9MF-1.8M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MF-10M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MF-15M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MF-1M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MF-2.5M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MF-3M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MF-5M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MF-XXM,O,자재,X,X,X,케이블,기타부품·절연·차폐,도체·자켓,-,3
+LS-SER-9MFC,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-SER-9MFC-1.8M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MFC-XXM,O,자재,X,X,X,케이블,차폐,도체·절연·자켓,-,3
+LS-SER-9MM,O,자재,X,X,X,케이블,도금·도체·자켓·커넥터,절연·차폐,-,3
+LS-SER-9MM-1.8M,O,X,X,X,X,케이블,-,-,-,4
+LS-SER-9MM-XXM,O,자재,X,X,X,케이블,기타부품·절연·차폐,도체·자켓,-,3
+LS-SHD20-0.5M~5M,X,X,O,X,X,케이블,-,-,-,4
+LS-SHD20-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-SHE-1000D,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-1000H,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-1000HB,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-1000HG,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-1220H,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-1220HB,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-1220HG,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-3050H,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-3050HB,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-3050HG,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-600D,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-750H,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-750HB,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-750HG,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-7520HS,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-800D,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SHE-MINI,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SL6,X,X,O,X,X,케이블,-,-,-,4
+LS-SL6-XM,O,X,X,X,O,케이블,-,-,-,3
+LS-SL6-XXB,X,O,X,X,X,케이블,-,-,-,4
+LS-SL6-XXW,X,O,X,X,X,케이블,-,-,-,4
+LS-SL6-XXX,O,X,X,X,X,케이블,-,-,-,4
+LS-SRGB-15MM-XM,X,자재,X,X,X,케이블,기타부품·도금·도체·자켓·절연·차폐·커넥터,없음(완비),-,4
+LS-SSHE-1220H,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SSHE-1220HB,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SSHE-1620HSQ,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SSHE-7520HS,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SSHE-8020HQ,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-SSTP-CAT.6A-300M,O,O,O,X,O,케이블,-,-,"Test report, UL",1
+LS-SSTP-CAT.7,O,X,X,X,X,케이블,-,-,-,4
+LS-SSTP-CAT.7-100M,O,X,X,X,O,케이블,-,-,Test report,3
+LS-SSTP-CAT.7-300M,X,O,X,X,X,케이블,-,-,Test report,4
+LS-SSTP-CAT6A-300M,X,X,O,X,X,케이블,-,-,-,4
+LS-ST-MF-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-ST-MF-XXXMN,O,X,X,X,X,케이블,-,-,-,4
+LS-ST-MM-XXXMN,O,X,X,X,X,케이블,-,-,-,4
+LS-U30AMBM-S1M,O,X,X,X,X,케이블,-,-,-,4
+LS-U30AOC10,O,O,O,X,X,케이블,-,-,-,2
+LS-U30AOC20,O,X,X,X,X,케이블,-,-,-,4
+LS-U30AOC30,O,X,X,X,X,케이블,-,-,-,4
+LS-U30AOC50,O,X,X,X,X,케이블,-,-,-,4
+LS-U3AOC05,O,X,X,X,X,케이블,-,-,-,4
+LS-U3AOC10,O,X,X,X,X,케이블,-,-,-,4
+LS-U3AOC15,O,X,X,X,X,케이블,-,-,-,4
+LS-U3AOC20,O,X,X,X,X,케이블,-,-,-,4
+LS-U3AOC30,O,X,X,X,X,케이블,-,-,-,4
+LS-U3AOCXX,O,X,X,X,X,케이블,-,-,-,4
+LS-UCLAN-M,O,X,X,X,X,케이블,-,-,-,4
+LS-USB-AM5P,X,자재*,X,X,X,케이블,도금·도체·차폐·커넥터,절연·자켓,-,4
+LS-USB-AM5P-1.5M,X,자재,X,X,X,케이블,자켓,도체·절연·차폐,-,4
+LS-USB-AM5P-2M,X,자재,X,X,X,케이블,자켓,도체·절연·차폐,-,4
+LS-USB-AM5P-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB-AMAB-1.8M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAB-3M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAB-5M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAF,O,O,X,X,X,케이블,도금·도체·차폐·커넥터,절연·자켓,-,3
+LS-USB-AMAF-1.8M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAF-1M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAF-3M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAF-5M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAF-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB-AMAF-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB-AMAM,O,자재*,X,X,X,케이블,도금·도체·차폐·커넥터,절연·자켓,-,3
+LS-USB-AMAM-1.8M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAM-3M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAM-5M,X,X,X,X,X,케이블,-,-,Other-cert,5
+LS-USB-AMAM-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB-AMAM-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB-AMBM,X,자재*,X,X,X,케이블,도금·도체·차폐·커넥터,절연·자켓,-,4
+LS-USB-AMBM-1.8M,X,O,X,X,X,케이블,-,-,-,4
+LS-USB-AMBM-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB-AMBM-XXM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB2.0-AMAF-S5M,X,X,X,X,X,케이블,-,-,PFAS,5
+LS-USB2.0-AMAF-SXM,X,O,X,X,X,케이블,도금·도체·자켓·절연·차폐·커넥터,없음(완비),Test report,4
+LS-USB3.0-AMAF,O,O,X,X,X,케이블,-,-,-,3
+LS-USB3.0-AMAF-XM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB3.0-AMAM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB3.0-AMBM,O,X,X,X,X,케이블,-,-,-,4
+LS-USB3.0-AMMIC,O,X,X,X,X,케이블,-,-,-,4
+LS-USB3.0-AMMIC-XM,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-USBLOCK-1M,O,X,X,X,X,케이블,-,-,-,4
+LS-USBLOCK-P,X,X,X,X,X,케이블,-,-,Drawing,5
+LS-USBLOCK-R-KEY,X,X,X,X,X,케이블,-,-,Drawing,5
+LS-UTP5H-300MBK,X,X,X,X,O,케이블,-,-,-,4
+LS-UTP5H-300MG,O,O,X,X,O,케이블,-,-,MSDS/SDS,2
+LS-VM19,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-WP151P,O,X,X,X,X,케이블,-,-,-,4
+LS-WP151S,O,X,X,X,X,케이블,-,-,-,4
+LS-WP152P,O,X,X,X,X,케이블,-,-,-,4
+LS-WP152S,O,X,X,X,X,케이블,-,-,-,4
+LS-WP161P,O,X,X,X,X,케이블,-,-,-,4
+LS-WP161S,O,X,X,X,X,케이블,-,-,-,4
+LS-WP162P,O,X,X,X,X,케이블,-,-,-,4
+LS-WP162S,O,X,X,X,X,케이블,-,-,-,4
+LS-WP171S,O,X,X,X,X,케이블,-,-,-,4
+LS-WP172S,O,X,X,X,X,케이블,-,-,-,4
+LS-WP23-1PN,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-WP23-2PN,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-WP23-3PN,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-WP23-4PN,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-WP23-6PN,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LS-WP8DS-C5E,X,X,X,X,X,케이블,-,-,UL,5
+LS-WP8DS-C6,O,X,X,X,X,커넥터/액세서리,-,-,"Drawing, UL",4
+LS-WPCOP-C6,O,X,X,X,X,커넥터/액세서리,-,-,Test report,4
+LS-WPCOP-C6A,O,O,X,X,X,커넥터/액세서리,-,-,"MSDS/SDS, Test report",3
+LS-WPK8DS-C5E,X,X,X,X,X,커넥터/액세서리,-,-,Test report,5
+LS-WPUSB-3.0,X,X,X,X,X,케이블,-,-,Drawing,5
+LS-WROLLER,O,X,X,X,X,케이블,-,-,-,4
+LSN-BOOT-COVER-B,자재,자재*,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,3
+LSN-BOOT-COVER-BLACK,자재,자재*,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,3
+LSN-BOOT-COVER-G,자재,자재*,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,3
+LSN-BOOT-COVER-GR,자재,자재*,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,3
+LSN-BOOT-COVER-O,자재,자재*,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,3
+LSN-BOOT-COVER-R,자재,자재*,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,3
+LSN-BOOT-COVER-W,자재,자재*,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,3
+LSN-BOOT-COVER-WN,O,자재,X,X,X,커넥터/액세서리,자켓,커넥터,"MSDS/SDS, REACH",3
+LSN-BOOT-COVER-Y,자재,자재*,X,X,X,커넥터/액세서리,자켓,커넥터,MSDS/SDS,3
+LSN-BOOT-OPEN-B,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSN-BOOT-OPEN-BLACK,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSN-BOOT-OPEN-G,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSN-BOOT-OPEN-GR,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSN-BOOT-OPEN-O,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSN-BOOT-OPEN-R,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSN-BOOT-OPEN-W,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSN-BOOT-OPEN-Y,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSN-CAT6-STP,O,자재,X,X,X,커넥터/액세서리,차폐,커넥터,-,3
+LSN-CAT6A-STP,자재,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-6IC-FJM,X,O,X,X,자재,커넥터/액세서리,-,-,-,3
+LSP-6IC-FKTMT,O,O,X,X,X,커넥터/액세서리,-,-,-,3
+LSP-6IC-UKBK,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-6IC-UKWT,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-6KTVM-F1MT,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-7UTP-0.5M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-10M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-15M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-1M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-20M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-2M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-30M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-3M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-50M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-5M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-7M,X,X,X,X,O,케이블,-,-,-,4
+LSP-7UTP-XXM,X,O,X,X,X,케이블,-,-,-,4
+LSP-BK-12R,O,X,X,X,X,케이블,-,-,-,4
+LSP-BK-14R,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-BK-24R,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-BK-44R,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-BK-64R,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-EC-USB2A,O,자재,X,X,X,커넥터/액세서리,도체,커넥터,-,3
+LSP-EC-USB3A,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-EIC-FJM,X,O,X,X,자재,커넥터/액세서리,-,-,-,3
+LSP-EIC-FKTMT,O,O,X,X,X,커넥터/액세서리,-,-,-,3
+LSP-EIC-UKBK,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-EIC-UKWT,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-EKTVM-F1MT,O,O,X,X,X,커넥터/액세서리,-,-,-,3
+LSP-GIC-FED4,X,O,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-GIC-FKTMT,O,O,X,X,X,커넥터/액세서리,-,-,-,3
+LSP-GIC-UJW,X,O,X,X,O,커넥터/액세서리,커넥터,없음(완비),-,3
+LSP-GKTVM-F1MT,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-WP8DS-C6,O,X,X,X,X,커넥터/액세서리,-,-,Other-cert,4
+LSP-WP8DS-C6A,O,O,O,X,X,커넥터/액세서리,-,-,Other-cert,2
+LSP-WPK8DS-BK,O,X,X,X,X,커넥터/액세서리,-,-,-,4
+LSP-WPK8DS-C6,O,X,X,X,X,커넥터/액세서리,-,-,Other-cert,4
+LSP-WPK8DS-C6A,O,X,X,X,X,커넥터/액세서리,-,-,Other-cert,4
+OM4-LCLC-XM,X,O*,X,X,X,케이블,-,-,-,4
+USB2.0-AMAF-S1M,X,O,X,X,X,케이블,-,-,-,4

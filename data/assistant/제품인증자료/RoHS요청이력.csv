@@ -1,0 +1,36 @@
+﻿# kyu가 두 공급사에 RoHS/REACH/성적서를 요청하면서 모델명을 명시한 메일 전체
+"# 이 목록에 없는 모델은 요청 이력 자체가 없어 자료가 없는 것이며, 매핑 누락이 아님"
+수신일자,메일 제목,요청 모델,현재 RoHS 보유
+"Fri, 04 Dec 2020",ROHS about LS-DC-USBPE-WHC,LS-DC-USBPE-WHC,LS-DC-USBPE-WHC=O
+"Fri, 10 Jul 2026",Request for LS-HF705 Datasheet and RoHS,LS-HF705,LS-HF705=O
+"Fri, 14 Jun 2024","LS-SSTP-CAT.6A-300M for ROHS , MSDS",LS-SSTP-CAT.6A-300M,LS-SSTP-CAT.6A-300M=O
+"Fri, 18 Dec 2020",ROHS for LS-HDMI-AD20-1M,LS-HDMI-AD20-1M,LS-HDMI-AD20-1M=X
+"Fri, 19 Jun 2026","Request for Updated RoHS, REACH, and SGS Test Reports for LSN-BOOT-COVER-WN","LSN-BOO, LSN-BOOT-COVER-WN","LSN-BOO=X, LSN-BOOT-COVER-WN=O"
+"Fri, 28 Aug 2020",ROHS about LS-DC-USBPE-WHC,LS-DC-USBPE-WHC,LS-DC-USBPE-WHC=O
+"Fri, 30 Jan 2026",ROHS Compliance for LS-BFTP7 Series,LS-BFTP7,LS-BFTP7=O
+"Mon, 05 Oct 2020",RE: Reach certificate for LS-SER-25MM-1.8M,LS-SER-25MM-1.8M,LS-SER-25MM-1.8M=O
+"Mon, 12 Apr 2021",LS-RS200C / ROHS,LS-RS200C,LS-RS200C=O
+"Mon, 28 Sep 2020",Reach certificate for LS-SER-25MM-1.8M,LS-SER-25MM-1.8M,LS-SER-25MM-1.8M=O
+"Thu, 04 Jun 2026",Request for ROHS and MSDS sheet about LS-6SFTP-300m,"LS-6SFTP-300M, LS-6SFTP","LS-6SFTP-300M=O, LS-6SFTP=O"
+"Thu, 11 Sep 2025",ROHS for LS-DP14N,LS-DP14N,LS-DP14N=O
+"Thu, 11 Sep 2025",RE: Re: ROHS for LS-DP14N,LS-DP14N,LS-DP14N=O
+"Thu, 15 Apr 2021",RE: Re: LS-RS200C / ROHS,LS-RS200C,LS-RS200C=O
+"Thu, 20 Apr 2023",ROHS sheet for LS-RJ45UTP-8P,LS-RJ45UTP-8P,LS-RJ45UTP-8P=O
+"Thu, 27 Mar 2025",ROHS for LS-LKPG series,"LS-LKPS, LS-LKPG","LS-LKPS=X, LS-LKPG=O"
+"Thu, 29 May 2025","Certification Inquiry for LS-OM3-LCLC-20M (UL, LSZH, RoHS)",LS-OM3-LCLC-20M,LS-OM3-LCLC-20M=O
+"Tue, 07 Apr 2026",Re: Request for Compliance Certificates – LS-7SSTPD-xM Patch Cord,LS-7SSTPD-XM,LS-7SSTPD-XM=O
+"Tue, 09 Jun 2026","Re: ROHS about Cat,7 cover-boot",LS-BOOT-CG7,LS-BOOT-CG7=O
+"Tue, 13 Apr 2021",LS-RS200C / ROHS,LS-RS200C,LS-RS200C=O
+"Tue, 13 Apr 2021",RE: Re: LS-RS200C / ROHS,LS-RS200C,LS-RS200C=O
+"Tue, 14 Jul 2026",RE: Re: Request for LS-HF705 Datasheet and RoHS,LS-HF705,LS-HF705=O
+"Tue, 17 Oct 2023",ROHS for HDMI cable,LS-HDMT-XM,LS-HDMT-XM=O
+"Tue, 21 Oct 2025","Re: Certification Inquiry for LS-OM3-LCLC-20M (UL, LSZH, RoHS)",LS-OM3-LCLC-20M,LS-OM3-LCLC-20M=O
+"Tue, 22 Dec 2020",RE: Re: ROHS for LS-HDMI-AD20-1M,LS-HDMI-AD20-1M,LS-HDMI-AD20-1M=X
+"Tue, 22 Dec 2020",RE: Re: RE: ROHS for LS-HDMI-AD20-1M,LS-HDMI-AD20-1M,LS-HDMI-AD20-1M=X
+"Tue, 22 Jul 2025","Request for Datasheet, RoHS, MSDS, and SVHC Documents for LS-CAT6-STP",LS-CAT6-STP,LS-CAT6-STP=O
+"Tue, 30 Aug 2022",Re: ROHS2.0 and CE certificate for WP8DS-C6A,LSP-WP8DS-C6A,LSP-WP8DS-C6A=O
+"Tue, 30 Aug 2022",Re: ROHS2.0 and CE certificate for WP8DS-C6A,LSP-WP8DS-C6A,LSP-WP8DS-C6A=O
+"Wed, 01 Apr 2020",ROHS sheet / LS-5FTPSD-BK0.2M,LS-5FTPSD-BK0.2M,LS-5FTPSD-BK0.2M=O
+"Wed, 08 Jul 2026",Request for RoHS and MSDS Documents for LSP-EIC-FJM,LSP-EIC-FJM,LSP-EIC-FJM=O
+"Wed, 08 Jul 2026",Request for Updated RoHS and MSDS Documents,"LS-6, LS-U, LS-5",
+"Wed, 22 Oct 2025","RE: Certification Inquiry for LS-OM3-LCLC-20M (UL, LSZH, RoHS)",LS-OM3-LCLC-20M,LS-OM3-LCLC-20M=O

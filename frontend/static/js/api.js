@@ -202,6 +202,54 @@ const api = {
   materialsDeleteSource:(id) => api.delete(`/api/materials/sources/${id}`),
   materialsToggleSource:(id) => api.put(`/api/materials/sources/${id}/toggle`),
 
+  // ── 상담봇 (assistant) ──
+  // 주의: 자료검색(/api/materials/drive/*)과는 **다른 자료**다.
+  //       자료검색은 기존 Drive 폴더, 상담봇은 인증·기술자료 KB 번들을 본다. 섞지 말 것.
+  //
+  // 전용 요청 함수를 쓰는 이유: 상담봇 백엔드는 실패 사유를 detail 객체
+  // ({message, hint} / 422 검증 배열)로 돌려준다. 공용 request() 는 detail 을 그대로
+  // Error() 에 넣어 "[object Object]" 가 되므로, 화면에 사유가 안 보인다.
+  // 공용 request() 를 고치면 모든 페이지에 영향이 가므로 여기만 따로 둔다.
+  async assistantRequest(method, path, body = null) {
+    const opts = { method, headers: this._headers() };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(API_BASE + path, opts);
+
+    if (res.status === 401) {
+      this.clearToken();
+      if (typeof window.onAuthRequired === "function") window.onAuthRequired();
+      throw new Error("인증이 만료되었습니다. 다시 로그인해주세요.");
+    }
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const d = json && json.detail;
+      let msg;
+      if (typeof d === "string") msg = d;
+      else if (d && d.message) msg = d.message + (d.hint ? ` (${d.hint})` : "");
+      else if (Array.isArray(d) && d.length) {
+        msg = d.map(x => (x.loc ? x.loc.join(".") + ": " : "") + (x.msg || "")).join(" / ");
+      } else msg = "요청을 처리하지 못했습니다.";
+      const e = new Error(`HTTP ${res.status} — ${msg}`);
+      e.status = res.status;
+      e.detail = d;
+      throw e;
+    }
+    return json;
+  },
+  assistantHealth:  () => api.assistantRequest("GET", "/api/assistant/health"),
+  assistantChat:    (message, sessionId = "", mode = "internal") =>
+                      api.assistantRequest("POST", "/api/assistant/chat",
+                        { message, session_id: sessionId, mode }),
+  assistantClarify: (sessionId, choice, mode = "internal") =>
+                      api.assistantRequest("POST", "/api/assistant/clarify",
+                        { session_id: sessionId, choice, mode }),
+  assistantReset:   (sessionId) => api.assistantRequest("POST", "/api/assistant/reset",
+                        { session_id: sessionId }),
+  // spec/history/file 래퍼는 두지 않는다. 상담봇 답변은 /chat 이 근거·주의문구·배지를
+  // 한 번에 묶어 주는데, 이 엔드포인트들을 UI 가 따로 부르면 그 안전장치를 우회한 원문이
+  // 화면에 붙는다(제품분석 원문, 삭제된 인증 문구, 상담이력 전문). 필요해지면 그때
+  // 화면 요구사항과 함께 추가할 것.
+
   // ── 자료검색 (Drive 문서 브라우저) ──
   driveCategories:     () => api.get("/api/materials/drive/categories"),
   driveDocuments:      (category = "", q = "", limit = 200, offset = 0) => {

@@ -149,6 +149,7 @@ function navigateTo(pageId) {
     po_history:   "구매입력 이력",
     inventory:    "재고 조회",
     doc_search:   "자료검색",
+    assistant:    "상담봇",
     price_sheet:  "단가표 조회",
     training:     "발주서 학습",
     shipping:     "택배조회",
@@ -183,6 +184,8 @@ function navigateTo(pageId) {
   if (pageId === "reconcile") initReconcilePage();
   // 자료검색 페이지 진입 시 카테고리 로드
   if (pageId === "doc_search") initDocSearchPage().catch(e => console.error("initDocSearchPage 실패:", e));
+  // 상담봇 페이지 진입 시 초기화 (health 호출이 서버 인덱스 예열을 겸한다)
+  if (pageId === "assistant") initAssistantPage().catch(e => console.error("initAssistantPage 실패:", e));
   // 단가표 조회 페이지 진입 시 거래처 로드
   if (pageId === "price_sheet") initPriceSheetPage().catch(e => console.error("initPriceSheetPage 실패:", e));
   // 발주서 학습 페이지 진입 시 데이터 로드
@@ -10967,6 +10970,7 @@ const GLOBAL_FEATURES = [
   { title: "처리 이력", group: "조회", keywords: ["이력", "history", "처리"], page: "history" },
   { title: "재고 조회", group: "조회", keywords: ["재고", "inventory", "stock"], page: "inventory" },
   { title: "자료검색", group: "조회", keywords: ["자료", "검색", "drive", "데이터시트", "kc", "rohs", "ul", "fluke"], page: "doc_search" },
+  { title: "상담봇", group: "조회", keywords: ["인증", "상담", "챗봇", "봇", "rohs", "자료", "성적서", "인증서", "ce", "kc", "assistant", "chat"], page: "assistant" },
   { title: "단가표", group: "조회", keywords: ["단가", "가격", "price", "sheet"], page: "price_sheet" },
   { title: "오더리스트", group: "조회", keywords: ["오더", "발주", "해외", "order", "orderlist"], page: "orderlist" },
 
@@ -11261,3 +11265,426 @@ document.addEventListener("keydown", (e) => {
     input.placeholder = isMac ? "기능 검색 (⌘K)" : "기능 검색 (Ctrl+K)";
   }
 })();
+
+
+/* =============================================
+   상담봇 (assistant) 페이지
+   ---------------------------------------------
+   백엔드: /api/assistant/*  (backend/api/routes/assistant.py)
+   근거: cert_lookup 인증·기술자료 KB + chatbot 상담이력/제품분석
+
+   ★ 이 화면의 핵심 가치는 "무엇을 근거로 한 답인가"를 담당자가 한눈에 보는 것이다.
+     - 근거 배지(인증KB / 상담이력 / 제품분석(AI추정) / LLM생성 / 규칙기반)는 서버가
+       계산해서 badges[] 로 내려준다. 여기서 다시 판정하지 않는다.
+     - 주의문구(notices)는 본문과 분리된 박스로 **전부** 띄운다. 요약·생략 금지.
+     - 본문(answer)은 서버 문자열 그대로 출력한다. 재작성·잘라내기 금지.
+     - route 가 cert 면 인증KB 가 유일 근거다. legacy(상담이력·제품분석)와 한 문단에
+       섞어 보여주면 안 된다 — 서버가 이미 섹션으로 분리해 놨다.
+
+   ※ 기존 '자료검색' 탭과는 **다른 자료**다. 자료검색은 기존 Drive 폴더를 보고,
+     상담봇은 인증자료 KB 번들(data/assistant)을 본다. 서로 섞지 말 것.
+   ============================================= */
+const _asstState = {
+  session: "",
+  mode: "internal",
+  busy: false,
+  pending: null,
+  inited: false,
+};
+
+const ASST_SAMPLES = [
+  "LS-6UTPD-3MG RoHS 인증서 주세요",
+  "LS-300HO 자료 있나요",
+  "LS-6IC 자료 주세요",
+  "LS-6UTPD 재고 있어요? RoHS도 주세요",
+  "LS-UC314 아이폰15 미러링 되나요",
+];
+
+function _asstNewSession() {
+  const rnd = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+  return "web-" + Date.now().toString(36) + "-" + rnd;
+}
+
+// textContent 로만 채운다 — 서버 문자열을 innerHTML 로 넣지 않는다
+function _asstEl(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function _asstScrollDown() {
+  const log = document.getElementById("asst-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+function _asstCopy(txt, btn) {
+  const done = () => {
+    const old = btn.textContent;
+    btn.textContent = "복사됨";
+    btn.classList.add("done");
+    setTimeout(() => { btn.textContent = old; btn.classList.remove("done"); }, 1400);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(txt).then(done).catch(() => _asstCopyFallback(txt, done));
+  } else {
+    _asstCopyFallback(txt, done);
+  }
+}
+
+function _asstCopyFallback(txt, done) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (ok) { done(); return; }
+  } catch (_) { /* noop */ }
+  toast("복사에 실패했습니다. 텍스트를 직접 선택해 주세요.", "error");
+}
+
+function _asstCopyBtn(label, text, title) {
+  const b = _asstEl("button", "asst-mini", label);
+  b.type = "button";
+  if (title) b.title = title;
+  b.addEventListener("click", () => _asstCopy(text, b));
+  return b;
+}
+
+function _asstLinkBtn(label, href) {
+  const a = document.createElement("a");
+  a.className = "asst-mini";
+  a.textContent = label;
+  a.href = href;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.title = href;
+  return a;
+}
+
+function _asstAddUser(text) {
+  const w = _asstEl("div", "asst-msg user");
+  w.appendChild(_asstEl("div", "asst-bubble", text));
+  document.getElementById("asst-log").appendChild(w);
+  _asstScrollDown();
+}
+
+function _asstAddSystem(text, isErr) {
+  const n = _asstEl("div", "asst-sysline" + (isErr ? " err" : ""), text);
+  document.getElementById("asst-log").appendChild(n);
+  _asstScrollDown();
+  return n;
+}
+
+/* ── 응답 렌더 ── */
+function _asstAddReply(r) {
+  const wrap = _asstEl("div", "asst-msg bot");
+  const card = _asstEl("div", "asst-reply");
+
+  /* 머리: 라우트 + 근거 배지 */
+  const head = _asstEl("div", "asst-head");
+  const rt = _asstEl("span", "asst-route", r.route_label || r.route || "응답");
+  rt.setAttribute("data-route", r.route || "");
+  if (r.route_reason) rt.title = "라우팅 근거: " + r.route_reason;
+  head.appendChild(rt);
+
+  const bg = _asstEl("div", "asst-badges");
+  const list = (r.badges && r.badges.length)
+    ? r.badges
+    : [{ key: "rule", label: "규칙기반", hint: "", count: 0 }];
+  list.forEach(b => {
+    const s = _asstEl("span", "asst-badge", b.label || b.key);
+    s.setAttribute("data-k", b.key || "other");
+    if (b.count > 1) s.appendChild(_asstEl("span", "n", "×" + b.count));
+    let t = b.hint || "";
+    if (b.models && b.models.length) t += (t ? " / " : "") + "모델: " + b.models.join(", ");
+    if (b.sections && b.sections.length) t += (t ? " / " : "") + "섹션 " + b.sections.join(",");
+    if (t) s.title = t;
+    bg.appendChild(s);
+  });
+  head.appendChild(bg);
+  if (r.elapsed_ms != null) head.appendChild(_asstEl("span", "asst-ms", Math.round(r.elapsed_ms) + "ms"));
+  card.appendChild(head);
+
+  /* 주의문구 박스 — 본문과 분리, 전부 표시 */
+  if (r.notices && r.notices.length) {
+    const nb = _asstEl("div", "asst-notices");
+    nb.appendChild(_asstEl("h4", null, "⚠ 주의문구 " + r.notices.length + "건 — 고객 회신 전 확인"));
+    const ul = _asstEl("ul");
+    r.notices.forEach(t => ul.appendChild(_asstEl("li", null, t)));
+    nb.appendChild(ul);
+    nb.appendChild(_asstEl("p", "re",
+      "(정책상 아래 본문은 조회 엔진 원문 그대로 출력합니다 — 같은 문구가 본문 끝에도 남아 있을 수 있습니다.)"));
+    card.appendChild(nb);
+  }
+
+  /* 본문 — 서버가 준 문자열 그대로 */
+  const badgeKeys = (r.badges || []).map(b => b.key);
+  const aiOnly = badgeKeys.indexOf("spec") >= 0 && badgeKeys.indexOf("cert") < 0;
+  card.appendChild(_asstEl("div", "asst-body" + (aiOnly ? " ai-caution" : ""), r.answer || r.text || ""));
+
+  /* 되묻기 후보 버튼 */
+  if (r.needs_clarification && r.candidates && r.candidates.length) {
+    const s1 = _asstEl("div", "asst-sect");
+    s1.appendChild(_asstEl("h4", null, "어느 쪽인지 선택해 주십시오"));
+    const cw = _asstEl("div", "asst-cands");
+    r.candidates.forEach(c => {
+      const b = _asstEl("button", "asst-cand", c);
+      b.type = "button";
+      b.addEventListener("click", () => {
+        cw.querySelectorAll(".asst-cand").forEach(x => { x.disabled = true; });
+        _asstPickCandidate(c);
+      });
+      cw.appendChild(b);
+    });
+    s1.appendChild(cw);
+    card.appendChild(s1);
+    _asstState.pending = { candidates: r.candidates };
+  } else {
+    _asstState.pending = null;
+  }
+
+  /* 파일 카드 */
+  if (r.files && r.files.length) {
+    const s2 = _asstEl("div", "asst-sect");
+    s2.appendChild(_asstEl("h4", null, "파일 " + r.files.length + "건"));
+    r.files.forEach(f => {
+      const row = _asstEl("div", "asst-file");
+      const meta = _asstEl("div");
+      meta.appendChild(_asstEl("div", "asst-fname", f.filename || f.title_ko || f.doc_id || "(이름 없음)"));
+      if (f.path) meta.appendChild(_asstEl("div", "asst-fpath", f.path));
+      const tags = [];
+      if (f.doc_type) tags.push(f.doc_type);
+      if (f.status) tags.push(f.status);
+      if (f.note) tags.push(f.note);
+      if (tags.length) meta.appendChild(_asstEl("div", "asst-ftag", tags.join(" · ")));
+      const flagbox = _asstEl("div", "asst-ftag");
+      if (f.deliverable === false) {
+        flagbox.appendChild(_asstEl("span", "asst-flag", "단독 전달 불가"));
+      }
+      if (f.text_extractable === false) {
+        // 스캔 문서는 quotable 도 false 로 내려온다 — 같은 사실을 두 번 띄우지 않는다
+        flagbox.appendChild(_asstEl("span", "asst-flag", "스캔 — 원문 인용 불가"));
+      } else if (f.quotable === false) {
+        flagbox.appendChild(_asstEl("span", "asst-flag", "인용 불가"));
+      }
+      if (flagbox.childNodes.length) meta.appendChild(flagbox);
+      row.appendChild(meta);
+
+      const acts = _asstEl("div", "asst-facts");
+      if (f.path)       acts.appendChild(_asstCopyBtn("경로 복사", f.path, f.path));
+      if (f.filename)   acts.appendChild(_asstCopyBtn("파일명 복사", f.filename, f.filename));
+      if (f.url)        acts.appendChild(_asstLinkBtn("파일 열기", f.url));
+      if (f.folder_url) acts.appendChild(_asstLinkBtn("폴더 열기", f.folder_url));
+      if (f.url || f.folder_url) acts.appendChild(_asstCopyBtn("링크 복사", f.url || f.folder_url));
+      row.appendChild(acts);
+      s2.appendChild(row);
+    });
+    card.appendChild(s2);
+  }
+
+  /* 응답 전문 복사 + 근거 원본 */
+  const s3 = _asstEl("div", "asst-sect");
+  const acts2 = _asstEl("div", "asst-facts");
+  acts2.appendChild(_asstCopyBtn("응답 전문 복사", r.answer || r.text || ""));
+  if (r.models && r.models.length) acts2.appendChild(_asstCopyBtn("모델명 복사", r.models.join(", ")));
+  s3.appendChild(acts2);
+  card.appendChild(s3);
+
+  const det = _asstEl("details", "asst-raw");
+  det.appendChild(_asstEl("summary", null, "근거 원본 데이터(JSON) 보기"));
+  det.appendChild(_asstEl("pre", null, JSON.stringify({
+    route: r.route, route_reason: r.route_reason, sources: r.sources,
+    models: r.models, model_source: r.model_source, mode: r.mode, data: r.data,
+  }, null, 1)));
+  card.appendChild(det);
+
+  wrap.appendChild(card);
+  document.getElementById("asst-log").appendChild(wrap);
+  _asstScrollDown();
+}
+
+/* ── 통신 ── */
+function _asstSetBusy(b) {
+  _asstState.busy = b;
+  const btn = document.getElementById("asst-send");
+  if (!btn) return;
+  btn.disabled = b;
+  btn.textContent = b ? "조회 중…" : "보내기";
+}
+
+function _asstErrText(e) {
+  if (!e) return "요청을 처리하지 못했습니다.";
+  const d = e.message;
+  if (typeof d === "string") return d;
+  if (d && d.message) return d.message;
+  return String(e);
+}
+
+async function assistantSend(preset) {
+  if (_asstState.busy) return;
+  const input = document.getElementById("asst-input");
+  const text = (preset != null ? preset : (input ? input.value : "")).trim();
+  if (!text) return;
+  _asstAddUser(text);
+  if (input && preset == null) { input.value = ""; _asstAutoGrow(); }
+  _asstSetBusy(true);
+  const wait = _asstAddSystem("조회 중…");
+  try {
+    const r = await api.assistantChat(text, _asstState.session, _asstState.mode);
+    wait.remove();
+    _asstAddReply(r);
+  } catch (e) {
+    wait.remove();
+    _asstAddSystem(_asstErrText(e), true);
+  } finally {
+    _asstSetBusy(false);
+    if (input) input.focus();
+  }
+}
+
+async function _asstPickCandidate(choice) {
+  if (_asstState.busy) return;
+  _asstAddUser(choice);
+  _asstSetBusy(true);
+  const wait = _asstAddSystem("선택 반영 중…");
+  try {
+    const r = await api.assistantClarify(_asstState.session, choice, _asstState.mode);
+    wait.remove();
+    if (r && r.ok === false) {
+      _asstAddSystem(r.answer || "후보를 특정하지 못했습니다.", true);
+      return;
+    }
+    _asstAddReply(r);
+  } catch (e) {
+    wait.remove();
+    // 409 = 대기 중인 되묻기 없음 → 일반 문의로 재전송
+    if (e && e.status === 409) {
+      try {
+        const r2 = await api.assistantChat(choice, _asstState.session, _asstState.mode);
+        _asstAddReply(r2);
+      } catch (e2) {
+        _asstAddSystem(_asstErrText(e2), true);
+      }
+    } else {
+      _asstAddSystem(_asstErrText(e), true);
+    }
+  } finally {
+    _asstSetBusy(false);
+    const input = document.getElementById("asst-input");
+    if (input) input.focus();
+  }
+}
+
+/* ── 모드 / 리셋 / 상태 ── */
+function assistantSetMode(m) {
+  _asstState.mode = (m === "customer") ? "customer" : "internal";
+  const mi = document.getElementById("asst-m-internal");
+  const mc = document.getElementById("asst-m-customer");
+  const warn = document.getElementById("asst-modewarn");
+  if (mi) mi.classList.toggle("active", _asstState.mode === "internal");
+  if (mc) mc.classList.toggle("active", _asstState.mode === "customer");
+  if (!warn) return;
+  if (_asstState.mode === "customer") {
+    warn.className = "asst-modewarn";
+    warn.textContent = "고객(customer) 모드: 파일 경로와 O* 추론매핑이 숨겨집니다. "
+      + "사내 확인용으로는 사내(internal) 모드를 쓰십시오.";
+  } else {
+    warn.className = "asst-modewarn internal";
+    warn.textContent = "사내(internal) 모드: 파일 경로·O* 추론매핑이 그대로 표시됩니다. "
+      + "이 화면 내용을 고객에게 그대로 전달하지 마십시오.";
+  }
+}
+
+async function assistantReset() {
+  const old = _asstState.session;
+  _asstState.session = _asstNewSession();
+  _asstState.pending = null;
+  const log = document.getElementById("asst-log");
+  if (log) log.innerHTML = "";
+  _asstGreet();
+  const input = document.getElementById("asst-input");
+  if (input) input.focus();
+  try { await api.assistantReset(old); } catch (_) { /* 맥락 삭제 실패는 무시 */ }
+}
+
+async function _asstLoadHealth() {
+  const dot = document.getElementById("asst-hdot");
+  const txt = document.getElementById("asst-htext");
+  const box = document.getElementById("asst-health");
+  if (!dot || !txt) return;
+  try {
+    const h = await api.assistantHealth();
+    const bits = [
+      "인증KB " + ((h.cert_kb && h.cert_kb.documents) || 0) + "건",
+      "상담 " + ((h.master && h.master.qa_rows) || 0) + "건",
+      "LLM " + (h.llm && h.llm.available ? "ON" : "OFF(규칙기반)"),
+    ];
+    txt.textContent = bits.join(" · ");
+    dot.className = "asst-dot " + (h.ok ? "ok" : "bad");
+    let tip = bits.join("\n");
+    if (h.problems && h.problems.length) tip += "\n\n문제:\n- " + h.problems.join("\n- ");
+    if (box) box.title = tip;
+    if (h.problems && h.problems.length) {
+      _asstAddSystem("서버 경고: " + h.problems.join(" / "), true);
+    }
+  } catch (e) {
+    dot.className = "asst-dot bad";
+    txt.textContent = "서버 응답 없음";
+    if (box) box.title = _asstErrText(e);
+  }
+}
+
+/* ── 입력 ── */
+function _asstAutoGrow() {
+  const t = document.getElementById("asst-input");
+  if (!t) return;
+  // 값이 비면 CSS min-height 로 되돌린다(placeholder 기준으로 재면 첫 레이아웃에서 과도하게 늘어난다)
+  if (!t.value) { t.style.height = ""; return; }
+  t.style.height = "auto";
+  t.style.height = Math.min(160, t.scrollHeight) + "px";
+}
+
+function _asstGreet() {
+  _asstAddSystem("랜스타 사내 영업·CS 상담봇입니다. 모델명을 함께 적어 주시면 정확도가 올라갑니다. "
+    + "모든 답변에는 무엇을 근거로 했는지 배지가 붙습니다.");
+}
+
+async function initAssistantPage() {
+  if (!_asstState.inited) {
+    _asstState.inited = true;
+    _asstState.session = _asstNewSession();
+
+    const chips = document.getElementById("asst-chips");
+    if (chips) {
+      ASST_SAMPLES.forEach(s => {
+        const b = _asstEl("button", "asst-chip", s);
+        b.type = "button";
+        b.addEventListener("click", () => assistantSend(s));
+        chips.appendChild(b);
+      });
+    }
+
+    const input = document.getElementById("asst-input");
+    if (input) {
+      input.addEventListener("input", _asstAutoGrow);
+      input.addEventListener("keydown", e => {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          assistantSend();
+        }
+      });
+    }
+
+    assistantSetMode("internal");
+    _asstGreet();
+    await _asstLoadHealth();   // 이 호출이 서버 인덱스 예열(_warm)을 겸한다
+  }
+  const input2 = document.getElementById("asst-input");
+  if (input2) input2.focus();
+}

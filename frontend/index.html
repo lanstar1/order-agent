@@ -129,6 +129,7 @@
           <div class="nav-item" data-page="history"><span>처리 이력</span></div>
           <div class="nav-item" data-page="inventory"><span>재고 조회</span></div>
           <div class="nav-item" data-page="doc_search"><span>자료검색</span></div>
+          <div class="nav-item" data-page="assistant"><span>💬 상담봇</span></div>
           <div class="nav-item" data-page="price_sheet"><span>단가표</span></div>
           <div class="nav-item" data-page="orderlist"><span>오더리스트</span></div>
         </div>
@@ -772,6 +773,51 @@ C규격품 200개
         </div>
         <!-- 페이지네이션 -->
         <div id="doc-search-pagination" style="margin-top:12px;text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 상담봇 (cert_lookup + chatbot)
+         ※ 자료검색 탭과는 별개 자료다. 자료검색은 기존 Drive 폴더를,
+           상담봇은 인증·기술자료 KB(랜스타_인증자료 폴더)를 근거로 답한다.
+         ────────────────────────────── -->
+    <div class="page" id="page-assistant">
+      <div class="card asst-card">
+        <div class="card-title asst-title">
+          <span>💬 상담봇
+            <span class="asst-sub">인증·기술자료 KB · 상담이력 · 제품분석</span>
+          </span>
+          <div class="asst-tools">
+            <span class="asst-health" id="asst-health" title="서버 상태">
+              <span class="asst-dot" id="asst-hdot"></span><span id="asst-htext">상태 확인 중…</span>
+            </span>
+            <div class="asst-modes" role="group" aria-label="응답 모드">
+              <button type="button" class="asst-mode" id="asst-m-internal"
+                      onclick="assistantSetMode('internal')"
+                      title="사내 영업·CS용. 파일 경로와 O* 추론매핑이 그대로 보입니다.">사내</button>
+              <button type="button" class="asst-mode" id="asst-m-customer"
+                      onclick="assistantSetMode('customer')"
+                      title="고객에게 그대로 전달 가능한 형태. 파일 경로·추론매핑이 숨겨집니다.">고객</button>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="assistantReset()"
+                    title="대화 맥락(직전 모델·되묻기)을 비웁니다">새 대화</button>
+          </div>
+        </div>
+
+        <div class="asst-modewarn" id="asst-modewarn"></div>
+
+        <div class="asst-log" id="asst-log" aria-live="polite"></div>
+
+        <div class="asst-chips" id="asst-chips"></div>
+        <div class="asst-inputrow">
+          <textarea id="asst-input" class="form-control asst-input" rows="1"
+                    placeholder="예) LS-6UTPD-3MG RoHS 인증서 주세요"></textarea>
+          <button class="btn btn-primary" id="asst-send" onclick="assistantSend()">보내기</button>
+        </div>
+        <div class="asst-hint">
+          Enter 전송 · Shift+Enter 줄바꿈 — 인증·자료 문의는 <b>인증KB</b> 만을 근거로 답합니다.
+          <b>제품분석(AI추정)</b> 배지가 붙은 내용은 제품 이미지 기반 AI 추정이라 확정 사양이 아닙니다.
+        </div>
       </div>
     </div>
 
@@ -5401,12 +5447,128 @@ document.addEventListener("DOMContentLoaded", async () => {
 }
 </style>
 
+<style>
+/* ═══════════════════════════════════════════
+   상담봇 (assistant) 페이지 스타일
+   접두사 asst- 로 격리한다 — 기존 .badge/.card 클래스와 충돌하지 않는다.
+   ═══════════════════════════════════════════ */
+.asst-card { display:flex; flex-direction:column; height:calc(100vh - 130px); min-height:520px; }
+.asst-title { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; flex:0 0 auto; }
+.asst-sub { font-weight:500; font-size:11.5px; color:var(--gray-400); margin-left:6px; }
+.asst-tools { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+/* 상태 표시 */
+.asst-health { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:500; color:var(--gray-600); cursor:default; }
+.asst-dot { width:8px; height:8px; border-radius:50%; background:var(--gray-400); flex-shrink:0; }
+.asst-dot.ok  { background:var(--success); }
+.asst-dot.bad { background:var(--danger); }
+
+/* 모드 토글 */
+.asst-modes { display:inline-flex; border:1.5px solid var(--gray-200); border-radius:8px; overflow:hidden; }
+.asst-mode { padding:5px 14px; font-size:12.5px; font-weight:600; border:none; background:#fff; color:var(--gray-600); cursor:pointer; font-family:inherit; }
+.asst-mode + .asst-mode { border-left:1.5px solid var(--gray-200); }
+.asst-mode.active { background:var(--primary); color:#fff; }
+
+.asst-modewarn { flex:0 0 auto; margin:0 0 10px; padding:7px 12px; border-radius:8px; font-size:12px; line-height:1.5;
+  background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; }
+.asst-modewarn.internal { background:var(--accent-lt); border-color:#c7d2fe; color:#3730a3; }
+
+/* 대화 로그 */
+.asst-log { flex:1 1 auto; overflow-y:auto; padding:6px 4px 10px; display:flex; flex-direction:column; gap:12px; }
+.asst-msg { display:flex; }
+.asst-msg.user { justify-content:flex-end; }
+.asst-bubble { max-width:min(680px,80%); background:var(--primary); color:#fff; padding:9px 14px; border-radius:14px 14px 3px 14px;
+  font-size:13.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+.asst-sysline { align-self:center; font-size:12px; color:var(--gray-400); padding:3px 10px; }
+.asst-sysline.err { color:var(--danger); background:#fef2f2; border:1px solid #fecaca; border-radius:8px; max-width:90%; }
+
+/* 봇 응답 카드 */
+.asst-reply { max-width:min(860px,94%); background:#fff; border:1px solid var(--gray-200); border-radius:12px;
+  box-shadow:var(--shadow); overflow:hidden; }
+.asst-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 14px; background:var(--gray-50);
+  border-bottom:1px solid var(--gray-100); }
+.asst-route { font-size:11px; font-weight:700; padding:2px 9px; border-radius:20px; background:var(--gray-200); color:var(--gray-800); }
+.asst-route[data-route="cert"]   { background:#dbeafe; color:#1e40af; }
+.asst-route[data-route="legacy"] { background:#f3f4f6; color:#374151; }
+.asst-route[data-route="mixed"]  { background:#ede9fe; color:#5b21b6; }
+.asst-ms { margin-left:auto; font-size:10.5px; color:var(--gray-400); }
+
+/* ★ 근거 배지 — 이 화면의 핵심. 무엇을 근거로 한 답인지 한눈에 본다 */
+.asst-badges { display:flex; gap:5px; flex-wrap:wrap; }
+.asst-badge { display:inline-flex; align-items:center; gap:3px; font-size:11px; font-weight:700; padding:2px 9px;
+  border-radius:20px; border:1px solid transparent; cursor:help; }
+.asst-badge .n { font-weight:600; opacity:.7; font-size:10px; }
+.asst-badge[data-k="cert"]    { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+.asst-badge[data-k="history"] { background:#fef3c7; color:#92400e; border-color:#fcd34d; }
+.asst-badge[data-k="spec"]    { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+.asst-badge[data-k="llm"]     { background:#ede9fe; color:#5b21b6; border-color:#c4b5fd; }
+.asst-badge[data-k="rule"]    { background:var(--gray-100); color:var(--gray-600); border-color:var(--gray-200); }
+.asst-badge[data-k="other"]   { background:var(--gray-100); color:var(--gray-600); border-color:var(--gray-200); }
+
+/* 주의문구 — 본문과 분리된 박스. 절대 요약·생략하지 않는다 */
+.asst-notices { margin:12px 14px 0; padding:10px 13px; background:#fffbeb; border:1px solid #fcd34d;
+  border-left:4px solid var(--warning); border-radius:8px; }
+.asst-notices h4 { margin:0 0 6px; font-size:12px; font-weight:700; color:#92400e; }
+.asst-notices ul { margin:0; padding-left:17px; }
+.asst-notices li { font-size:12.5px; line-height:1.65; color:#78350f; margin-bottom:3px; }
+.asst-notices .re { margin:6px 0 0; font-size:11px; color:#a16207; }
+
+/* 본문 — 서버가 준 문자열 그대로 */
+.asst-body { padding:12px 14px; font-size:13.5px; line-height:1.75; color:var(--text);
+  white-space:pre-wrap; word-break:break-word; }
+.asst-body.ai-caution { background:#fff5f5; border-left:4px solid var(--danger); }
+
+.asst-sect { padding:0 14px 12px; }
+.asst-sect h4 { margin:0 0 7px; font-size:12px; font-weight:700; color:var(--gray-600); }
+
+/* 되묻기 후보 */
+.asst-cands { display:flex; gap:6px; flex-wrap:wrap; }
+.asst-cand { padding:6px 13px; font-size:12.5px; font-weight:600; border:1.5px solid var(--primary);
+  background:var(--accent-lt); color:var(--primary); border-radius:8px; cursor:pointer; font-family:inherit; }
+.asst-cand:hover { background:var(--primary); color:#fff; }
+.asst-cand:disabled { opacity:.45; cursor:not-allowed; }
+
+/* 파일 카드 */
+.asst-file { display:flex; gap:10px; justify-content:space-between; align-items:flex-start; flex-wrap:wrap;
+  border:1px solid var(--gray-200); border-radius:9px; padding:9px 12px; margin-bottom:7px; background:var(--gray-50); }
+.asst-fname { font-size:12.5px; font-weight:600; color:var(--gray-800); word-break:break-all; }
+.asst-fpath { font-size:11px; color:var(--gray-400); margin-top:2px; word-break:break-all; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.asst-ftag  { font-size:11px; color:var(--gray-600); margin-top:3px; }
+.asst-flag  { display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:20px;
+  background:#fee2e2; color:#991b1b; margin-right:4px; }
+.asst-facts { display:flex; gap:5px; flex-wrap:wrap; align-items:flex-start; }
+.asst-mini { font-size:11px; font-weight:600; padding:3px 9px; border-radius:6px; border:1px solid var(--gray-200);
+  background:#fff; color:var(--gray-600); cursor:pointer; font-family:inherit; text-decoration:none; display:inline-block; }
+.asst-mini:hover { border-color:var(--primary); color:var(--primary); }
+.asst-mini.done { border-color:var(--success); color:var(--success); }
+
+.asst-raw { margin:0 14px 12px; }
+.asst-raw summary { font-size:11.5px; color:var(--gray-400); cursor:pointer; }
+.asst-raw pre { margin-top:6px; max-height:280px; overflow:auto; background:var(--gray-50); border:1px solid var(--gray-100);
+  border-radius:8px; padding:9px; font-size:11px; line-height:1.5; }
+
+/* 입력부 */
+.asst-chips { flex:0 0 auto; display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 8px; }
+.asst-chip { font-size:11.5px; padding:4px 11px; border-radius:20px; border:1px solid var(--gray-200);
+  background:#fff; color:var(--gray-600); cursor:pointer; font-family:inherit; }
+.asst-chip:hover { border-color:var(--primary); color:var(--primary); background:var(--accent-lt); }
+.asst-inputrow { flex:0 0 auto; display:flex; gap:8px; align-items:flex-end; }
+.asst-inputrow .btn { flex:0 0 auto; white-space:nowrap; height:44px; }
+textarea.asst-input { flex:1 1 auto; min-height:44px; max-height:160px; resize:none; line-height:1.5; padding:11px 14px; }
+.asst-hint { flex:0 0 auto; margin-top:7px; font-size:11.5px; color:var(--gray-400); line-height:1.6; }
+
+@media (max-width:720px) {
+  .asst-card { height:calc(100vh - 110px); }
+  .asst-bubble, .asst-reply { max-width:100%; }
+}
+</style>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
-<script src="/static/js/api.js?v=20260520b"></script>
-<script src="/static/js/app.js?v=20260616b"></script>
+<script src="/static/js/api.js?v=20260723a"></script>
+<script src="/static/js/app.js?v=20260723a"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>

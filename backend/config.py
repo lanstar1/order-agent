@@ -171,3 +171,27 @@ MAIL2_IMAP_PORT = int(os.getenv("MAIL2_IMAP_PORT", "993"))
 MAIL2_USER = os.getenv("MAIL2_USER", "")
 MAIL2_PASSWORD = os.getenv("MAIL2_PASSWORD", "")
 MAIL2_SENDER_FILTER = os.getenv("MAIL2_SENDER_FILTER", "13428934642@163.com")
+
+# ─────────────────────────────────────────
+#  상담봇 (assistant 탭) — cert_lookup / chatbot 데이터 경로
+# ─────────────────────────────────────────
+# cert_lookup.loader 와 chatbot.config 는 경로 상수를 **import 시점에** 환경변수로 읽는다.
+# 그래서 여기서 os.environ 에 기본값을 심어 둔다 —
+#   ★ assistant 라우터는 `import config` 를 `import cert_lookup/chatbot` 보다 먼저 해야 한다.
+# setdefault 라서 Render/NAS 에서 환경변수로 덮어쓰는 길은 그대로 열려 있다.
+ASSISTANT_DATA_DIR = Path(os.getenv("ASSISTANT_DATA_DIR", str(BASE_DIR / "data" / "assistant")))
+
+# cert_lookup: CERT_KB_REPO 하나면 manifest 3종·CSV 3종·drive_folders·_lib 경로가 전부 파생된다
+os.environ.setdefault("CERT_KB_REPO", str(ASSISTANT_DATA_DIR))
+# chatbot: PII 마스킹된 제품 마스터
+os.environ.setdefault("LANSTAR_MASTER_PATH", str(ASSISTANT_DATA_DIR / "lanstar_product_master.json"))
+# 제품 이미지 4GB 는 번들에 넣지 않는다. 디렉터리가 없으면 이미지 링크만 빠지고 정상 동작한다.
+os.environ.setdefault("LANSTAR_IMAGE_DIR", str(ASSISTANT_DATA_DIR / "product_images"))
+# 드라이브: 서비스계정/토큰 → API 키 → 로컬 동기화 → 폴더 URL 순 폴백.
+# GOOGLE_API_KEY 는 이미 위에서 읽고 있고 cert_lookup.drive 가 직접 참조한다(링크 공유된 폴더만 조회 가능).
+os.environ.setdefault("CERT_KB_DRIVE_TIMEOUT", os.getenv("CERT_KB_DRIVE_TIMEOUT", "4"))
+
+# 상담봇 LLM: chatbot.config 의 기본값(claude-sonnet-5)을 그대로 쓴다.
+# 키가 없거나 호출이 실패하면 chatbot.llm 이 예외 없이 규칙 기반으로 폴백한다.
+# 모델을 바꾸려면 LANSTAR_CHAT_MODEL 환경변수만 주면 된다(코드 수정 불필요).
+ASSISTANT_CHAT_MODEL = os.getenv("LANSTAR_CHAT_MODEL", "claude-sonnet-5")

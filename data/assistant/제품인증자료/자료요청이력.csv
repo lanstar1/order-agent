@@ -1,0 +1,463 @@
+﻿# 공급사에 보낸 인증·기술자료 요청 메일 전수 판독 대장. 1행 = (모델 표기 × 자료유형) 1건
+"# 판독 대상: 공급사·인증기관 수신 발송메일 5,346통에서 추린 요청 후보 325통 (요청 메일 288통 / 요청 항목 549건)"
+# 현재보유: 보유=조회엔진이 문서를 찾음 / 미보유=마크 X 또는 모델이 지식베이스 미등재 / 판정불가=모델 미특정·제품군 모호
+# 확정여부: 확정 외(추정…)는 모델 해석 또는 인증서 적용범위가 추정이라는 뜻 — 고객 제출 전 적용범위 확인 필요
+# 마크: O=완제품 단위 인증서 / 자재=자재별 성적서 묶음 / *=라인 인증서 추론 매핑 / 전사=제조사 단위 인증 / X=없음
+# 자료유형 기타(Other-cert): FCC·ETL·IP67/68·원산지증명·공장등록증·LSZH 난연·CCC 등 매핑표 밖 요청. manifest Other-cert 축으로 판정
+"# 정렬: 미보유 → 판정불가 → 보유, 그 다음 모델명·자료유형"
+모델,제품군,매칭경로,확정여부,자료유형,현재보유,마크,요청횟수,최초요청,최근요청,수신처,대표 메일제목,근거문구
+DVI19M-HDMI-Xm,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,"If you don't have test report, Just please send the data sheet."
+DVI19M-HDMI-Xm,,none(KB 미등재),추정불가,RoHS,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,the test report (ROHS or data sheet). 2. DVI19M-HDMI-Xm
+DVI19M-HDMI-Xm,,none(KB 미등재),추정불가,Test report,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,Our customer request the test report ... 2. DVI19M-HDMI-Xm
+LS-2RST-xm,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-01-11,2021-01-11,EPNU Cable (Anna),data sheet.,we need new datasheet ... 8. LS-2RST-xm
+LS-2UBD,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-04-01,2021-04-01,BOR Cable (Mr Gu),drawer of hub rack,"We need data sheet include thickness about drawer of hub rack. (LS-2UID, LS-4UID , LS-2UBD , LS-4UBD)"
+LS-2UID,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-04-01,2021-04-01,BOR Cable (Mr Gu),drawer of hub rack,"We need data sheet include thickness about drawer of hub rack. (LS-2UID, LS-4UID , LS-2UBD , LS-4UBD)"
+LS-300HO,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Data Sheet about Assembly Rack,"We need the data sheet about Assembly Rack.(LS-300HO, 500HO)"
+LS-4UBD,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-04-01,2021-04-01,BOR Cable (Mr Gu),drawer of hub rack,"We need data sheet include thickness about drawer of hub rack. (LS-2UID, LS-4UID , LS-2UBD , LS-4UBD)"
+LS-4UID,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-04-01,2021-04-01,BOR Cable (Mr Gu),drawer of hub rack,"We need data sheet include thickness about drawer of hub rack. (LS-2UID, LS-4UID , LS-2UBD , LS-4UBD)"
+LS-500HO,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Data Sheet about Assembly Rack,"We need the data sheet about Assembly Rack.(LS-300HO, 500HO)"
+LS-500HS,LS-500HS,exact,확정,Drawing,미보유,X,1,2023-12-26,2023-12-26,BOR Cable (Mr Gu),RE: Re: RE: Rack cabinet drawing file.,"We need new rack cabinet ""LS-500HS"" too."
+LS-5FTPSD-BKxM,LS-5FTPSD-BKXM,exact,확정,CE,미보유,X,1,2022-09-23,2022-09-23,BOR Cable (Mr Gu),CE certificate about Screw cable,We need CE certificate about below cables. 1. LS-5FTPSD-BKxM
+LS-5SFTP-300M,LS-5SFTP-300M,exact,확정,Test report,미보유,X,2,2020-07-23,2026-04-15,BOR Cable (Mr Gu),"RE: Request for Cable Specifications, Test Reports, Certifications, and Jacket Material Options",confirm whether you can provide: ... - Test report
+LS-5SFTP-B300M,LS-5SFTP-B300,prefix,추정(모델매칭),CE,미보유,X,1,2023-05-19,2023-05-19,BOR Cable (Mr Gu),CE certificate for LS-5SFTP-B300M,We need CE sheet for LS-5SFTP-B300M.
+LS-5UTP-100MBL,LS-5UTP,suffix,확정,Test report,미보유,X,1,2024-03-27,2024-03-27,BOR Cable (Mr Gu),Data sheet and ROHS sheet for 100m Patch cord,"Could you please send data sheet, ROHSsheet and any tset report?"
+LS-5UTP-100MG,LS-5UTP,suffix,확정,Test report,미보유,X,1,2024-03-27,2024-03-27,BOR Cable (Mr Gu),Data sheet and ROHS sheet for 100m Patch cord,"Could you please send data sheet, ROHSsheet and any tset report?"
+LS-5UTPAD-*M,LS-5UTPAD,suffix,확정,MSDS/SDS,미보유,X,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-6FTP-100MG,LS-6FTP-100MG,exact,확정,CoC,미보유,X,1,2026-06-19,2026-06-19,BOR Cable (Mr Gu),Request for CoC Certificate of LS-6FTP-100MG,Could you please provide the CoC certificate for LS-6FTP-100MG?
+LS-6IC-FKTMT,LS-6IC-FKTMT,exact,확정,Drawing,미보유,X,1,2024-05-17,2024-05-17,EPN·EP Corp (Roy),Data sheet for LS-6IC-FKTMT,data sheet (Drawing file) for LS-6IC-FKTMT
+LS-6IC-UJW,LS-6IC-UJW,exact,확정,MSDS/SDS,미보유,X,1,2024-03-27,2024-03-27,EPN·EP Corp (Roy),RE: RE: Data sheet (Drawing sheet),Could you please send Data sheet or MSDS sheet for LS-6IC-UJW?
+LS-6IC-xxx,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2023-02-20,2023-02-20,EPN·EP Corp (Roy),Data sheet or Draw sheet for coupler,We need data sheet or draw sheet for coupler. 2. LS-6IC-xxx
+LS-6IC-xxx,,none(KB 미등재),추정불가,Drawing,미보유,X,1,2023-02-20,2023-02-20,EPN·EP Corp (Roy),Data sheet or Draw sheet for coupler,We need data sheet or draw sheet for coupler. 2. LS-6IC-xxx
+LS-6PLB-24P19LED,,none(KB 미등재),추정불가,기타(Other-cert),미보유,X,2,2022-07-26,2024-01-17,BOR Cable (Mr Gu),urgent request,We need Factory registration certificate sheet of LS-6PLB-24P19LED.
+LS-6PLB-24P19N,LS-6PLB-24P19N,exact,확정,Drawing,미보유,X,1,2023-05-30,2023-05-30,BOR Cable (Mr Gu),Data sheet and CAD sheet for patch pannel,CAD sheet (3D drawing file/DWG) ... 2. LS-6PLB-24P19N
+LS-6SFTP-300M,LS-6SFTP-300M,exact,확정,MSDS/SDS,미보유,X,1,2026-06-04,2026-06-04,BOR Cable (Mr Gu),Request for ROHS and MSDS sheet about LS-6SFTP-300m,We need the RoHS and MSDS documents for LS-6SFTP-300M
+LS-6STPC-xM,,none(KB 미등재),추정불가,Fluke test,미보유,X,1,2024-10-22,2024-10-22,BOR Cable (Mr Gu),cat.6 Cross patch cord fluke test,Could you please send fluke test report about LS-6STPC-xM (cross patch cord)?
+LS-6STPD-*M,LS-6STPD,suffix,확정,MSDS/SDS,미보유,X,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-6UTPC-*M,LS-6UTPC,suffix,확정,MSDS/SDS,미보유,X,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-6UTPD-*M,LS-6UTPD,suffix,확정,MSDS/SDS,미보유,X,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-7SD-BKxM,LS-7SD-BKXM,exact,확정,CE,미보유,X,3,2022-03-02,2025-09-30,BOR Cable (Mr Gu),Request for CE Certificate for LS-7SD-BKxM Series Cable,re-send ... We are in need of a CE certification for the LS-7SD-BKxM series cable.
+LS-7SSTP-300M,LS-7SSTP,suffix,확정,기타(Other-cert),미보유,X,1,2025-06-05,2025-06-05,BOR Cable (Mr Gu),Request for LSZH Flame-Retardant Certification for LS-SSTP-CAT.6A-300M and LS-7SSTP-300M Cables,formal LSZH flame-retardant certificates ... LS-7SSTP-300M
+LS-7SSTP-300MG,LS-7SSTP,suffix,추정(모델매칭),UL,미보유,X,1,2021-11-19,2021-11-19,BOR Cable (Mr Gu),"UL, DELTA, ETL","If have a certificate sheet, please send it. 2. LS-7SSTP-300MG"
+LS-7UTP-300MG,LS-7UTP,suffix,확정,CE,미보유,X,1,2022-05-17,2022-05-17,BOR Cable (Mr Gu),Fluke and certificate for LS-7UTP-300MG,"and any certificate (ETL , UL , CE)"
+LS-7UTP-300MG,LS-7UTP,suffix,확정,UL,미보유,X,1,2022-05-17,2022-05-17,BOR Cable (Mr Gu),Fluke and certificate for LS-7UTP-300MG,"and any certificate (ETL , UL , CE)"
+LS-7UTP-300MG,LS-7UTP,suffix,확정,기타(Other-cert),미보유,X,1,2022-05-17,2022-05-17,BOR Cable (Mr Gu),Fluke and certificate for LS-7UTP-300MG,"any certificate (ETL , UL , CE) — ETL"
+LS-8SSTP-200MG,LS-8SSTP-200MG,exact,확정,UL,미보유,X,2,2023-02-03,2023-07-25,BOR Cable (Mr Gu),Cat.8 Drum cable,cat.8 drum cable (LS-8SSTP-200MG) I. UL or ETL sheet.
+LS-8SSTP-200MG,LS-8SSTP-200MG,exact,확정,기타(Other-cert),미보유,X,1,2023-02-03,2023-02-03,BOR Cable (Mr Gu),LS-8SSTP-200MG certificate,"We need UL, LSZH material sheet for Cat.8 200M cable"
+LS-8SSTPD-xMB,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-12-28,2021-12-28,BOR Cable (Mr Gu),About Cat.8 patch cord,Our customer requested a data sheet with the allowable temperature for LS-8SSTPD-xMB
+LS-BZ-KTBKZ,LS-BZ-KTBKZ,exact,확정,CE,미보유,X,1,2022-12-16,2022-12-16,EPN·EP Corp (Roy),"ROHS, CE sheet",We need ROHS and CE sheet about below products. 1. LS-BZ-KTBKZ
+LS-BZ-KTBKZ,LS-BZ-KTBKZ,exact,확정,RoHS,미보유,X,1,2022-12-16,2022-12-16,EPN·EP Corp (Roy),"ROHS, CE sheet",We need ROHS and CE sheet about below products. 1. LS-BZ-KTBKZ
+LS-CAT5E-UTP,LS-CAT5E-UTP,exact,확정,CE,미보유,X,1,2024-05-14,2024-05-14,BOR Cable (Mr Gu),CE certificate for RJ45 connector,"If you have CE certificate for RJ45 connector, Please send it. LS-CAT5E-UTP / CAT6-UTP / CAT6-STP..."
+LS-CAT6-STP,LS-CAT6-STP,exact,확정,CE,미보유,X,1,2024-05-14,2024-05-14,BOR Cable (Mr Gu),CE certificate for RJ45 connector,LS-CAT5E-UTP / CAT6-UTP / CAT6-STP...
+LS-CAT6-STP,LS-CAT6-STP,exact,확정,REACH,미보유,X,1,2025-07-22,2025-07-22,BOR Cable (Mr Gu),"Request for Datasheet, RoHS, MSDS, and SVHC Documents for LS-CAT6-STP",SVHC (Substances of Very High Concern) Declaration
+LS-CAT6-UTP,LS-CAT6-UTP,exact,확정,CE,미보유,X,1,2024-05-14,2024-05-14,BOR Cable (Mr Gu),CE certificate for RJ45 connector,LS-CAT5E-UTP / CAT6-UTP / CAT6-STP...
+LS-CAT7-750,LS-CAT7-750,exact,확정,RoHS,미보유,X,1,2021-06-03,2021-06-03,BOR Cable (Mr Gu),RE: Re: Cat.7 patch cord,connector(LS-CAT7-750) must be ROHS2.0. Boots and connectors also have ROHS2.0 sheet?
+LS-CON44,,none(KB 미등재),추정불가,CoC,미보유,X,1,2026-05-13,2026-05-13,BOR Cable (Mr Gu),Inquiry About CoC Sheet for LS-CON44 RJ11 Connector,Do you have a Certificate of Conformity or Compliance Certificate (CoC) sheet for the LS-CON44 RJ11 connector?
+LS-COUPLER-YD8HM,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2023-06-27,2023-06-27,BOR Cable (Mr Gu),Data sheet and test report,Could you please send data sheet and any test report about below product? LS-COUPLER-YD8HM
+LS-COUPLER-YD8HM,,none(KB 미등재),추정불가,Test report,미보유,X,1,2023-06-27,2023-06-27,BOR Cable (Mr Gu),Data sheet and test report,data sheet and any test report about below product? LS-COUPLER-YD8HM
+LS-CUP-ID8C,LS-CUP-ID8C,exact,확정,MSDS/SDS,미보유,X,1,2021-10-06,2021-10-06,BOR Cable (Mr Gu),"ROHS, MSDS about coupler","We need RoHS or MSDS sheet for Coupler ( LS-CUP-ID8C , LS-CUP-YD8C)"
+LS-CUP-YD8C,LS-CUP-YD8C,exact,확정,Data sheet,미보유,X,1,2023-06-27,2023-06-27,BOR Cable (Mr Gu),RE: Re: Data sheet and test report,Could you please send data sheet for M/F type? (LS-CUP-YD8C)
+LS-CUP-YD8C,LS-CUP-YD8C,exact,확정,MSDS/SDS,미보유,X,1,2021-10-06,2021-10-06,BOR Cable (Mr Gu),"ROHS, MSDS about coupler","We need RoHS or MSDS sheet for Coupler ( LS-CUP-ID8C , LS-CUP-YD8C)"
+LS-DC-RJ45PP-WHC,LS-DC-RJ45PP-WHC,exact,확정,Data sheet,미보유,X,1,2021-09-30,2021-09-30,BOR Cable (Mr Gu),RE: Re: Dust cap,could you please send the data sheet and ROHS2.0 sheet? (LS-DC-RJ45PP-WHC / LS-DC-USBPE-WHC)
+LS-DC-USBPE-WHC,LS-DC-USBPE-WHC,exact,확정,Data sheet,미보유,X,1,2021-09-30,2021-09-30,BOR Cable (Mr Gu),RE: Re: Dust cap,could you please send the data sheet and ROHS2.0 sheet? (LS-DC-RJ45PP-WHC / LS-DC-USBPE-WHC)
+LS-DC-USBPE-WHC,LS-DC-USBPE-WHC,exact,확정,REACH,미보유,X,1,2020-12-04,2020-12-04,BOR Cable (Mr Gu),ROHS about LS-DC-USBPE-WHC,we need ROHS or REACH sheet about LS-DC-USBPE-WHC
+LS-DP192-xM,LS-DP192,suffix,확정,CoC,미보유,X,1,2024-04-16,2024-04-16,BOR Cable (Mr Gu),COC for Display cable,We need COC sheet for LS-DP192-xM series.
+LS-DVI25M-Xm,LS-DVI25M,suffix,확정,CoC,미보유,X,2,2021-08-30,2021-08-30,BOR Cable (Mr Gu) / EPNU Cable (Anna),COC sheet,We need COC sheet about DVI Dual Cable (LS-DVI25M-Xm)
+LS-EIC-UKW,LS-EIC-UK,prefix,추정(모델매칭),Drawing,미보유,X,1,2026-03-18,2026-03-18,Livewire Asia-Pacific (Ian),Request for Specification Sheet and Drawing Sheet for LS-EIC-UKW,provide the specification sheet and drawing sheet for the LS-EIC-UKW
+LS-EIC-xxx,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2023-02-20,2023-02-20,EPN·EP Corp (Roy),Data sheet or Draw sheet for coupler,We need data sheet or draw sheet for coupler. 1. LS-EIC-xxx
+LS-EIC-xxx,,none(KB 미등재),추정불가,Drawing,미보유,X,1,2023-02-20,2023-02-20,EPN·EP Corp (Roy),Data sheet or Draw sheet for coupler,We need data sheet or draw sheet for coupler. 1. LS-EIC-xxx
+LS-EPLB-24P19N,LS-EPLB-24P19N,exact,확정,Drawing,미보유,X,1,2023-05-30,2023-05-30,BOR Cable (Mr Gu),Data sheet and CAD sheet for patch pannel,CAD sheet (3D drawing file/DWG) ... 1. LS-EPLB-24P19N
+LS-ETMD-UJWT,LS-ETMD-UJWT,exact,확정,Drawing,미보유,X,1,2023-04-24,2023-04-24,EPN·EP Corp (Roy),Data sheet or Drawing file about LS-ETMD-UJWT,We need data sheet or drawing file about LS-ETMD-UJWT.
+LS-EXT3xx,LS-EXT3XX,exact,확정,RoHS,미보유,X,1,2025-02-13,2025-02-13,BOR Cable (Mr Gu),USB 3.0 repeater cable ROHS sheet,Could you please send ROHS sheet for LS-EXT3xx series?
+LS-EZ750,,none(KB 미등재),추정불가,RoHS,미보유,X,1,2022-05-12,2022-05-12,BOR Cable (Mr Gu),ROHS2.0 about LS-EZ-750 connector,"If you have ROHS2.0 sheet about LS-EZ750, Please send it"
+LS-FT6U0,LS-FT6U,prefix,추정(모델매칭),Data sheet,미보유,X,1,2024-12-03,2024-12-03,BOR Cable (Mr Gu),data sheet and fluke test for transparent cable,we need data sheet and fluke test report about LS-FT6U0 series
+LS-GIC-FKTMT,LS-GIC-FKTMT,exact,확정,CoC,미보유,X,1,2022-01-17,2022-01-17,EPN·EP Corp (Roy),C.O.C Sheet,Could you please check the C.O.C sheet about below product? (Certificate Of Compliance) 1. LS-GIC-FKTMT
+LS-GIC-FKTMT,LS-GIC-FKTMT,exact,확정,UL,미보유,X,1,2022-06-13,2022-06-13,EPN·EP Corp (Roy),LS-GIC-FKTMT,Could you please send the UL sheet or any test report for LS-GIC-FKTMT?
+LS-GIC-UJW,LS-GIC-UJW,exact,확정,UL,미보유,X,1,2023-05-18,2023-05-18,EPN·EP Corp (Roy),RE: RE: RE: RE: Data sheet,Could you please send UL sheet (include LS-GIC-UJW)
+LS-GIC-xxx,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2023-02-20,2023-02-20,EPN·EP Corp (Roy),Data sheet or Draw sheet for coupler,We need data sheet or draw sheet for coupler. 3. LS-GIC-xxx
+LS-GIC-xxx,,none(KB 미등재),추정불가,Drawing,미보유,X,1,2023-02-20,2023-02-20,EPN·EP Corp (Roy),Data sheet or Draw sheet for coupler,We need data sheet or draw sheet for coupler. 3. LS-GIC-xxx
+LS-GKTOOL-FMT,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-11,2020-05-11,BOR Cable (Mr Gu),Data Sheet for LS-GKTOOL-FMT,We need Datasheet about LS-GKTOOL-FMT
+LS-GKTVNL-F1MT,LS-GKTVNL-F1MT,exact,확정,UL,미보유,X,1,2021-12-30,2021-12-30,EPN·EP Corp (Roy),Certificate about Keystone,"We need ETL or UL certificate sheet about LS-GKTVNL-U1WH,F1MT."
+LS-GKTVNL-U1WH,LS-GKTVNL-U1WH,exact,확정,UL,미보유,X,1,2021-12-30,2021-12-30,EPN·EP Corp (Roy),Certificate about Keystone,"We need ETL or UL certificate sheet about LS-GKTVNL-U1WH,F1MT."
+LS-GPLB-F24X,LS-GPLB-F24X,exact,확정,Data sheet,미보유,X,1,2021-09-14,2021-09-14,EPN·EP Corp (Roy),Data sheet and test report about LS-GPLB-F24X,We need Data sheet and Test report((ETL or UL) about LS-GPLB-F24X
+LS-H20AOCxx,LS-H20AOCXX,exact,확정,Data sheet,미보유,X,1,2026-02-27,2026-02-27,BOR Cable (Mr Gu),Inquiry About IC Chipset for LS-H20AOCxx and LS-HAP21AOC-xxM,kindly provide the chipset name and specifications for each model
+LS-H8FTP,,none(KB 미등재),추정불가,Data sheet,미보유,X,3,2025-06-30,2025-07-04,BOR Cable (Mr Gu),Re: Data sheet for LS-H8FTP,"If you ready, Please send it. (Re: Data sheet for LS-H8FTP)"
+LS-HD202,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,"If you don't have test report, Just please send the data sheet."
+LS-HD202,,none(KB 미등재),추정불가,RoHS,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,the test report (ROHS or data sheet). 3. LS-HD202
+LS-HD202,,none(KB 미등재),추정불가,Test report,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,Our customer request the test report ... 3. LS-HD202
+LS-HD2DP-xm,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-01-19,2021-01-19,BOR Cable (Mr Gu),"data sheet about Slim HDMI , DP14 , HDMI to DP",we need data sheet about new cable. 3. LS-HD2DP-xm
+LS-HDMI-AD20-,LS-HDMI-AD20,exact,확정,Data sheet,미보유,X,1,2020-12-16,2020-12-16,BOR Cable (Mr Gu),data sheet about micro hdmi cable,we need data sheet about Micro HDMI cable (LS-HDMI-AD20-)
+LS-HDMI-AD20-xm,LS-HDMI-AD20,suffix,확정,RoHS,미보유,X,1,2020-12-18,2020-12-18,BOR Cable (Mr Gu),ROHS for LS-HDMI-AD20-1M,we need ROHS for LS-HDMI-AD20-xm
+LS-HDMI-HMM-2M,LS-HDMI-HMM,suffix,확정,RoHS,미보유,X,1,2020-10-06,2020-10-06,BOR Cable (Mr Gu),ROHS about HDMI cable,We need ROHS sheet abour LS-HDMI-HMM-2M
+LS-HDMI-HMM-Xm,LS-HDMI-HMM,suffix,확정,Data sheet,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,"If you don't have test report, Just please send the data sheet."
+LS-HDMI-HMM-Xm,LS-HDMI-HMM,suffix,확정,RoHS,미보유,X,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,the test report (ROHS or data sheet). 1. LS-HDMI-HMM-Xm
+LS-HDMI-SMF-xM,,none(KB 미등재),추정불가,MSDS/SDS,미보유,X,1,2022-04-28,2022-04-28,BOR Cable (Mr Gu),MSDS sheet,Could you please send the MSDS sheet? ... 2. LS-HDMI-SMF-xM
+LS-HDMI-SMF-xm,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-01-22,2021-01-22,BOR Cable (Mr Gu),data sheet and ROHS,we need data sheet and ROHS sheet 1. LS-HDMI-SMF-xm
+LS-HDMI-SMF-xm,,none(KB 미등재),추정불가,RoHS,미보유,X,1,2021-01-22,2021-01-22,BOR Cable (Mr Gu),data sheet and ROHS,we need data sheet and ROHS sheet 1. LS-HDMI-SMF-xm
+LS-HDMI21-xm,LS-HDMI21,suffix,확정,기타(Other-cert),미보유,X,1,2021-01-05,2021-01-05,BOR Cable (Mr Gu),HDMI 2.1 ver certification.,we need the certification for LS-HDMI21-xm ... 1. HDMI license
+LS-HDMT-xM,LS-HDMT,suffix,확정,UL,미보유,X,1,2023-02-13,2023-02-13,BOR Cable (Mr Gu),"CE, FCC, UL about HDMI CABLE","they need CE, FCC or UL sheet"
+LS-HF series,LS-HF SERIES,exact,확정,CoC,미보유,X,1,2025-06-16,2025-06-16,BOR Cable (Mr Gu),Request for CE Certificate for LS-HF Series Cables,may be in the form of a RoHS certificate or a COC (Certificate of Conformity)
+LS-HRGB-15MM-xM,LS-HRGB-15MM,suffix,확정,Test report,미보유,X,1,2022-03-17,2022-03-17,BOR Cable (Mr Gu),test report or UL certificate about High RGB cable,We need the test report or UL certificate about LS-HRGB-15MM-xM.
+LS-LAN20R,LS-LAN20R,exact,확정,CE,미보유,X,1,2025-08-07,2025-08-07,BOR Cable (Mr Gu),Request for CE Certification Sheet for LS-LAN20R,We would like to request the CE certification sheet for the LS-LAN20R product.
+LS-LKPS,,none(KB 미등재),추정불가,RoHS,미보유,X,1,2025-03-27,2025-03-27,EPN·EP Corp (Roy),ROHS for LS-LKPG series,Could you please send the ROHS sheet for LS-LKPS series?
+LS-MDP192-xM,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2026-03-05,2026-03-05,BOR Cable (Mr Gu),Request for Updated Datasheets with Pin Map,provide the datasheet for LS-MDP192-xM including the pin map
+LS-OM3-LCLC-20M,LS-OM3-LCLC,suffix,확정,UL,미보유,X,1,2025-10-21,2025-10-21,BOR Cable (Mr Gu),"Re: Certification Inquiry for LS-OM3-LCLC-20M (UL, LSZH, RoHS)",our customer is now requesting the UL certificate for this product ... please confirm whether the current factory still maintains a valid UL certification
+LS-OM3-LCLC-Xm,LS-OM3-LCLC,suffix,확정,CE,미보유,X,1,2022-06-17,2022-06-17,BOR Cable (Mr Gu),RoHS2.0 certificate for Fiber cable,Could you please send the RoHS2.0 or CE certificate? LS-OM3-LCLC-Xm
+LS-P197-2410G,LS-P197-2410G,exact,확정,UL,미보유,X,1,2022-12-28,2022-12-28,BOR Cable (Mr Gu),Data sheet and certificaton for cat.6a patch panel,certification sheet (UL or any sheet)
+LS-RJ45-SHORT,LS-RJ45-SHORT,exact,확정,CE,미보유,X,1,2022-12-16,2022-12-16,BOR Cable (Mr Gu),"ROHS, CE",We need ROHS and CE sheet for below products. 2. LS-RJ45-SHORT
+LS-RS204C,LS-RS204C,exact,확정,Data sheet,미보유,X,1,2022-06-23,2022-06-23,Aucuba (Mai),RE: RE: RE: Order,"If you have any certificate or test report and data sheet for LS-RS204C, Please send it"
+LS-RS204C,LS-RS204C,exact,확정,기타(Other-cert),미보유,X,1,2022-06-23,2022-06-23,Aucuba (Mai),RE: RE: RE: Order,"If you have any certificate or test report and data sheet for LS-RS204C, Please send it"
+LS-SER-25MM-1.8M,LS-SER-25MM,suffix,확정,MSDS/SDS,미보유,X,1,2021-09-15,2021-09-15,BOR Cable (Mr Gu),Reach or MSDS of serial cable,our customer request about Reach or MSDS sheet for serial cable (LS-SER-25MM-1.8M )
+LS-SRGB-15MM-xM,LS-SRGB-15MM,suffix,확정,Data sheet,미보유,X,1,2022-01-10,2022-01-10,BOR Cable (Mr Gu),Data Sheet - SRGB cable,We need Data Sheet about Slim RGB cables. LS-SRGB-15MM-xM
+LS-SSTP-CAT.6A-300M,LS-SSTP-CAT.6A-300M|LS-SSTP-CAT6A-300M,exact,확정,CoC,미보유,X,1,2021-12-08,2021-12-08,BOR Cable (Mr Gu),COC sheet about Cat.6a Drum cable.,We need COC (Certificate Of Compliance) Sheet about LS-SSTP-CAT.6A-300M cable.
+LS-SSTP-CAT.6A-300M,LS-SSTP-CAT.6A-300M|LS-SSTP-CAT6A-300M,exact,확정,MSDS/SDS,미보유,X,1,2024-06-14,2024-06-14,BOR Cable (Mr Gu),"LS-SSTP-CAT.6A-300M for ROHS , MSDS","We need LS-SSTP-CAT.6A-300M for ROHS , MSDS sheet."
+LS-SSTP-CAT6A-300M,LS-SSTP-CAT.6A-300M|LS-SSTP-CAT6A-300M,exact,확정,CoC,미보유,X,1,2021-03-31,2021-03-31,BOR Cable (Mr Gu),LS-SSTP-CAT6A-300M / COC,we need COC (Certificate of compliance) sheet about CAT.6A 300m cable (LS-SSTP-CAT6A-300M)
+LS-USB-AM5P-xM,LS-USB-AM5P,suffix,확정,MSDS/SDS,미보유,X,1,2026-07-01,2026-07-01,BOR Cable (Mr Gu),Request for CCC and MSDS Certification Status,check whether CCC certification and MSDS certification are available ... LS-USB-AM5P-xM
+LS-USB-AM5P-xM,LS-USB-AM5P,suffix,확정,기타(Other-cert),미보유,X,1,2026-07-01,2026-07-01,BOR Cable (Mr Gu),Request for CCC and MSDS Certification Status,check whether CCC certification and MSDS certification are available ... LS-USB-AM5P-xM
+LS-USB-AMBM-1.8M,LS-USB-AMBM,suffix,확정,MSDS/SDS,미보유,X,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-USB2.0-AMAF-SxM,LS-USB2.0-AMAF-SXM,exact,확정,CE,미보유,X,2,2022-09-23,2022-11-29,BOR Cable (Mr Gu),RE: Re: CE certificate about Screw cable,We need CE sheet below cables. 1. LS-USB2.0-AMAF-SxM
+LS-USB3.0-FFS0.2M,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2021-02-25,2021-02-25,BOR Cable (Mr Gu),LS-USB3.0-FFS0.2M / blue to black,please send the new cable(black color) data sheet
+LS-USB304B,,none(KB 미등재),추정불가,CE,미보유,X,2,2020-07-16,2020-07-17,BOR Cable (Mr Gu),RE: USB3.0 Hub,request add our model name(LS-USB304B) as a derived model to the CE and FCC certifications
+LS-USB304B,,none(KB 미등재),추정불가,기타(Other-cert),미보유,X,1,2020-07-17,2020-07-17,BOR Cable (Mr Gu),RE: USB3.0 Hub,add our model name(LS-USB304B) as a derived model to the CE and FCC certifications (FCC)
+LS-WP8DS-C5E,LS-WP8DS-C5E,exact,확정,RoHS,미보유,X,1,2023-11-21,2023-11-21,Shiunn Yang (Erica),Re: UL and Data sheet,we need ROHS sheet for LS-WP8DS-C5E /C6.
+LS-WP8DS-C6,LS-WP8DS-C6,exact,확정,RoHS,미보유,X,1,2023-11-21,2023-11-21,Shiunn Yang (Erica),Re: UL and Data sheet,we need ROHS sheet for LS-WP8DS-C5E /C6.
+LS-WP8DS-C6,LS-WP8DS-C6,exact,확정,Test report,미보유,X,1,2023-05-08,2023-05-08,Shiunn Yang (Erica),RE: RE: RE: UL and Data sheet,Could you please send Water proof test report for below products? LS-WP8DS-C6
+LS-WPCOP-C6,LS-WPCOP-C6,exact,확정,기타(Other-cert),미보유,X,1,2022-05-17,2022-05-17,BOR Cable (Mr Gu),RE: Re: Certificate,"Could you please send IP67 certificate for LS-WPCOP-C6, C6A?"
+LS-WPCOP-C6A,LS-WPCOP-C6A,exact,확정,기타(Other-cert),미보유,X,1,2022-05-17,2022-05-17,BOR Cable (Mr Gu),RE: Re: Certificate,"Could you please send IP67 certificate for LS-WPCOP-C6, C6A?"
+LS-WPK8DS-C5E,LS-WPK8DS-C5E,exact,확정,기타(Other-cert),미보유,X,1,2022-08-24,2022-08-24,Shiunn Yang (Erica),Ip68 CERTIFICATE,Could you please send the IP68 certificate? LS-WPK8DS-C5E
+LS-WPUSB-3.0,LS-WPUSB-3.0,exact,확정,CE,미보유,X,2,2022-02-22,2023-03-31,Shiunn Yang (Erica),RE: RE: UL and Data sheet,"If you have UL and CE certificate for LS-WPUSB-3.0,. Please send it."
+LS-WPUSB-3.0,LS-WPUSB-3.0,exact,확정,CoC,미보유,X,1,2022-02-22,2022-02-22,Shiunn Yang (Erica),Certificate,"Do you have any certificate for this product? (Water proof, CE, COC)"
+LS-WPUSB-3.0,LS-WPUSB-3.0,exact,확정,Test report,미보유,X,1,2023-05-08,2023-05-08,Shiunn Yang (Erica),RE: RE: RE: UL and Data sheet,Could you please send Water proof test report for below products? LS-WPUSB-3.0
+LS-WPUSB-3.0,LS-WPUSB-3.0,exact,확정,UL,미보유,X,1,2023-03-31,2023-03-31,Shiunn Yang (Erica),RE: RE: UL and Data sheet,"If you have UL and CE certificate for LS-WPUSB-3.0,. Please send it."
+LS-WPUSB-3.0,LS-WPUSB-3.0,exact,확정,기타(Other-cert),미보유,X,1,2022-02-22,2022-02-22,Shiunn Yang (Erica),Certificate,"(Water proof, CE, COC)"
+LSN-BOOT-COVER-WN,LSN-BOOT-COVER-WN,exact,확정,Test report,미보유,X,1,2026-06-19,2026-06-19,BOR Cable (Mr Gu),"Request for Updated RoHS, REACH, and SGS Test Reports for LSN-BOOT-COVER-WN",SGS Test Report
+LSP-6IC-FJM,LSP-6IC-FJM,exact,확정,CE,미보유,X,1,2022-12-16,2022-12-16,BOR Cable (Mr Gu),"ROHS, CE",We need ROHS and CE sheet for below products. 3. LSP-6IC-FJM
+LSP-6IC-FKTMT,LSP-6IC-FKTMT,exact,확정,CE,미보유,X,1,2022-12-16,2022-12-16,BOR Cable (Mr Gu),"ROHS, CE",We need ROHS and CE sheet for below products. 1. LSP-6IC-FKTMT
+LSP-6KTVM,LSP-6KTVM-F1MT,stem,추정(모델매칭),UL,미보유,X,1,2025-06-13,2025-06-13,BOR Cable (Mr Gu),Inquiry About UL-Certified Keystone Modules and patch pannel from China,UL-certified versions of the following products: ... LSP-6KTVM
+LSP-EC-BIND,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-BIND
+LSP-EC-BLANK-W,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-BLANK-W
+LSP-EC-BNC,,none(KB 미등재),추정불가,Data sheet,미보유,X,2,2020-05-14,2025-08-21,BOR Cable (Mr Gu),Inquiry about LSP-EC-BNC  Connector Impedance Specification,"If you also have a data sheet available, kindly share it with us for our reference."
+LSP-EC-F,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-F
+LSP-EC-HC15,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-HC15
+LSP-EC-HDMI,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-HDMI
+LSP-EC-HOLE-W,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-HOLE-W
+LSP-EC-LC,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-LC
+LSP-EC-RCA,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-RCA
+LSP-EC-SC,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-SC
+LSP-EC-ST,,none(KB 미등재),추정불가,Data sheet,미보유,X,1,2020-05-14,2020-05-14,BOR Cable (Mr Gu),Data Sheet about New coupler,We need data sheet about new coupler ... LSP-EC-ST
+LSP-EIC-FJM,LSP-EIC-FJM,exact,확정,MSDS/SDS,미보유,X,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for RoHS and MSDS Documents for LSP-EIC-FJM,send us the RoHS and MSDS documents for the LSP-EIC-FJM
+LSP-EKTVM,LSP-EKTVM-F1MT,stem,추정(모델매칭),UL,미보유,X,1,2025-06-13,2025-06-13,BOR Cable (Mr Gu),Inquiry About UL-Certified Keystone Modules and patch pannel from China,UL-certified versions of the following products: LSP-EKTVM ... please provide related documentation
+LSP-EKTVM-F1MT,LSP-EKTVM-F1MT,exact,확정,CE,미보유,X,1,2022-02-24,2022-02-24,BOR Cable (Mr Gu),CE certificate - LSP-EKTVM-F1MT,We need CE certificate sheet for LSP-EKTVM-F1MT (Cat.5e STP Keystone jack)
+LSP-GIC-UJW,LSP-GIC-UJW,exact,확정,UL,미보유,X,1,2023-05-12,2023-05-12,BOR Cable (Mr Gu),test report for LSP-GIC-UJW,we need UL sheet or any test report for LSP-GIC-UJW
+LSP-WP8DS-C6A,LSP-WP8DS-C6A,exact,확정,CoC,미보유,X,1,2022-02-22,2022-02-22,BOR Cable (Mr Gu),Certificate,"Do you have any certificate for this product? (Water proof, CE, COC)"
+OM3-LCLC-15M,,none(KB 미등재),추정불가,Test report,미보유,X,1,2025-01-17,2025-01-17,BOR Cable (Mr Gu),RE: Test report for Fiber cable,We need test report about OM3-LCLC-15M.
+OM4-LCLC-xM,OM4-LCLC,suffix,확정,CE,미보유,X,1,2024-12-26,2024-12-26,BOR Cable (Mr Gu),CE certificate. (COC Sheet),"Our customer request CE certificate for ""OM4-LCLC-xM'. If you have it, plesae send it."
+U30AOC10,,none(KB 미등재),추정불가,CE,미보유,X,1,2025-11-10,2025-11-10,BOR Cable (Mr Gu),Request for CE Certificates – DP12MM-10M / U30AOC10,We need the CE certificates for the following two cable models: ... U30AOC10
+(모델 미특정),,(모델 미특정),판정불가,Data sheet,판정불가,,6,2020-06-02,2025-07-31,BOR Cable (Mr Gu),"Request for Bandwidth, Return Loss, and Maximum Saturation Output Power Data for LS-6UTPD and OM3/OM4 LCLC Fiber Cable",OM3 / OM4 LCLC Fiber Optic Cable - Bandwidth (GHz) / Return Loss (%) / Maximum Saturation Output Power ... I look forward to receiving the updated datasheets
+(모델 미특정),,(모델 미특정),판정불가,Drawing,판정불가,,2,2023-08-10,2023-12-26,BOR Cable (Mr Gu),RE: Re: RE: Rack cabinet drawing file.,"If you ready, Please send it."
+(모델 미특정),,(모델 미특정),판정불가,Fluke test,판정불가,,1,2021-12-09,2021-12-09,BOR Cable (Mr Gu),RE: Re: Fluke about LS-CAT.5E-HUTP-300MG,Our customer want 80M fluke test report.
+(모델 미특정),,(모델 미특정),판정불가,RoHS,판정불가,,3,2020-06-02,2025-04-29,BOR Cable (Mr Gu),RE: Re: request about Data sheet,could you please send ROHS sheet for RGB cable
+(모델 미특정),,(모델 미특정),판정불가,Test report,판정불가,,3,2020-06-02,2023-06-21,BOR Cable (Mr Gu),RE: Re: Patch panel test report,"Ok, If you ready, Please send it to me."
+LS-6PLB,LS-6PLB-48P19|LS-6PLB-24P19N,stem_ambiguous(제품군 모호),판정불가,UL,판정불가,,1,2025-06-13,2025-06-13,BOR Cable (Mr Gu),Inquiry About UL-Certified Keystone Modules and patch pannel from China,UL-certified versions of the following products: ... LS-6PLB
+LS-EPLB,LS-EPLB-48P19|LS-EPLB-24P19N,stem_ambiguous(제품군 모호),판정불가,UL,판정불가,,1,2025-06-13,2025-06-13,BOR Cable (Mr Gu),Inquiry About UL-Certified Keystone Modules and patch pannel from China,UL-certified versions of the following products: ... LS-EPLB
+LS-FMD,LS-FMD-LCLC|LS-FMD-LCSC|LS-FMD-SCSC|LS-FMD / LS-FMP,stem_ambiguous(제품군 모호),판정불가,CE,판정불가,,1,2023-11-20,2023-11-20,BOR Cable (Mr Gu),Certificate for Fiber patch cord,any certificate for Fiber patch cord? (LS-FMD / LS-FMP...) ... we need CE or any TEST REPORT
+LS-FMD,LS-FMD-LCLC|LS-FMD-LCSC|LS-FMD-SCSC|LS-FMD / LS-FMP,stem_ambiguous(제품군 모호),판정불가,Test report,판정불가,,1,2023-11-20,2023-11-20,BOR Cable (Mr Gu),Certificate for Fiber patch cord,we need CE or any TEST REPORT
+LS-FMP,LS-FMP-LC-1.5M|LS-FMP-SC-1.5M,stem_ambiguous(제품군 모호),판정불가,CE,판정불가,,1,2023-11-20,2023-11-20,BOR Cable (Mr Gu),Certificate for Fiber patch cord,any certificate for Fiber patch cord? (LS-FMD / LS-FMP...) ... we need CE or any TEST REPORT
+LS-FMP,LS-FMP-LC-1.5M|LS-FMP-SC-1.5M,stem_ambiguous(제품군 모호),판정불가,Test report,판정불가,,1,2023-11-20,2023-11-20,BOR Cable (Mr Gu),Certificate for Fiber patch cord,we need CE or any TEST REPORT
+LSP-6IC,LSP-6IC-FJM|LSP-6IC-UKBK|LSP-6IC-UKWT|LSP-6IC-FKTMT,stem_ambiguous(제품군 모호),판정불가,UL,판정불가,,1,2025-06-13,2025-06-13,BOR Cable (Mr Gu),Inquiry About UL-Certified Keystone Modules and patch pannel from China,UL-certified versions of the following products: ... LSP-6IC
+LSP-EIC,LSP-EIC-FJM|LSP-EIC-UKBK|LSP-EIC-UKWT|LSP-EIC-FKTMT,stem_ambiguous(제품군 모호),판정불가,UL,판정불가,,1,2025-06-13,2025-06-13,BOR Cable (Mr Gu),Inquiry About UL-Certified Keystone Modules and patch pannel from China,UL-certified versions of the following products: ... LSP-EIC
+DP12MM-10M,DP12MM-10M,exact,확정,CE,보유,O,1,2025-11-10,2025-11-10,BOR Cable (Mr Gu),Request for CE Certificates – DP12MM-10M / U30AOC10,We need the CE certificates for the following two cable models: DP12MM-10M
+LS-1600HQ,LS-1600HQ,exact,확정,기타(Other-cert),보유,O,1,2025-02-14,2025-02-14,BOR Cable (Mr Gu),Inquiry About Mineral Usage in LS-1600HQ Hub Rack Cabinet,confirm whether any of the 40 critical minerals listed in the attached sheet are used in the production of the LS-1600HQ Hub Rack Cabinet
+LS-1800HBS,LS-1800HBS,exact,확정,Data sheet,보유,O,1,2024-09-02,2024-09-02,BOR Cable (Mr Gu),cabinet data sheet,could you please send data sheet for cabinet? LS-1800HBS i don't have data sheet only this product.
+LS-2000HSQ,LS-2000HSQ,exact,확정,Data sheet,보유,O,1,2022-11-11,2022-11-11,BOR Cable (Mr Gu),Data sheet about LS-2000HSQ,Please send new data sheet about LS-2000HSQ
+LS-5FTPSD-BK1M,LS-5FTPSD-BK|LS-5FTPSD-BKXM,suffix,확정,RoHS,보유,O,1,2021-08-24,2021-08-24,BOR Cable (Mr Gu),ROHS2.0 for LS-5FTPSD-BK1M,We need ROHS 2.0 sheet for LS-5FTPSD-BK1M
+LS-5FTPSD-BKxM,LS-5FTPSD-BKXM,exact,확정,Data sheet,보유,O,1,2022-08-11,2022-08-11,BOR Cable (Mr Gu),Data sheet - LS-5FTPSD-BKXm,We need data sheet and Rohs sheet about LS-5FTPSD-BKxM
+LS-5FTPSD-BKxM,LS-5FTPSD-BKXM,exact,확정,RoHS,보유,O,2,2022-08-11,2023-07-28,BOR Cable (Mr Gu),ROHS sheet,could you please send ROHS sheet for LS-5FTPSD-BKxM?
+LS-5SFTP-300M,LS-5SFTP-300M,exact,확정,Data sheet,보유,O,2,2020-07-23,2026-04-15,BOR Cable (Mr Gu),"RE: Request for Cable Specifications, Test Reports, Certifications, and Jacket Material Options",confirm whether you can provide: - Updated specification sheet / datasheet
+LS-5SFTP-300M,LS-5SFTP-300M,exact,확정,RoHS,보유,자재,1,2022-06-20,2022-06-20,BOR Cable (Mr Gu),300M Roll - RoHS,Could you please send RoHS sheet? 1. LS-5SFTP-300M
+LS-5SFTP-B300,LS-5SFTP-B300,exact,확정,Data sheet,보유,O,1,2021-03-22,2021-03-22,BOR Cable (Mr Gu),data sheet for CAT.5e SFTP -300M / blue (LS-5SFTP-B300),We need data sheet about LS-5SFTP-B300
+LS-5STPC,LS-5STPC,exact,확정,Data sheet,보유,O,1,2024-09-23,2024-09-23,BOR Cable (Mr Gu),data sheet about patch cord,1. data sheet ... LS-5STPC / LS-6UTPC
+LS-5STPD,LS-5STPD,exact,확정,Data sheet,보유,O,1,2024-09-23,2024-09-23,BOR Cable (Mr Gu),data sheet about patch cord,1. data sheet ... LS-5STPD / LS-6STPD ...
+LS-5STPD-xM,LS-5STPD,suffix,확정,Fluke test,보유,O,2,2025-08-29,2025-09-04,BOR Cable (Mr Gu),RE: Re: Request for Fluke Test Report for Cat.5e Cable (LS-5STPD-xM Series),Please send the Fluke test for 5STPD first.
+LS-5UTP-100MBL,LS-5UTP,suffix,확정,Data sheet,보유,O,1,2024-03-27,2024-03-27,BOR Cable (Mr Gu),Data sheet and ROHS sheet for 100m Patch cord,"LS-5UTP-100MG / LS-5UTP-100MBL ... Could you please send data sheet, ROHSsheet and any tset report?"
+LS-5UTP-100MBL,LS-5UTP,suffix,확정,RoHS,보유,O,1,2024-03-27,2024-03-27,BOR Cable (Mr Gu),Data sheet and ROHS sheet for 100m Patch cord,"Could you please send data sheet, ROHSsheet and any tset report?"
+LS-5UTP-100MG,LS-5UTP,suffix,확정,Data sheet,보유,O,1,2024-03-27,2024-03-27,BOR Cable (Mr Gu),Data sheet and ROHS sheet for 100m Patch cord,"LS-5UTP-100MG / LS-5UTP-100MBL ... Could you please send data sheet, ROHSsheet and any tset report?"
+LS-5UTP-100MG,LS-5UTP,suffix,확정,RoHS,보유,O,1,2024-03-27,2024-03-27,BOR Cable (Mr Gu),Data sheet and ROHS sheet for 100m Patch cord,"Could you please send data sheet, ROHSsheet and any tset report?"
+LS-5UTP-300MG,LS-5UTP,suffix,추정(모델매칭),Data sheet,보유,O,1,2020-06-04,2020-06-04,BOR Cable (Mr Gu),300m Lan Cable.,Our customer request the spec about 300m Lan Cable ... LS-5UTP-300MG
+LS-5UTPAD-*M,LS-5UTPAD,suffix,확정,RoHS,보유,O,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-5UTPD,LS-5UTPD,exact,확정,Data sheet,보유,O,1,2024-09-23,2024-09-23,BOR Cable (Mr Gu),data sheet about patch cord,1. data sheet LS-5UTPD / LS-6UTPD / LS-5STPD / LS-6STPD / LS-5STPC / LS-6UTPC
+LS-5UTPD-xMG,LS-5UTPD,suffix,확정,Data sheet,보유,O,1,2023-03-10,2023-03-10,BOR Cable (Mr Gu),Data Sheet about Cat.5e UTP patch cord,We need latest Data sheet about LS-5UTPD-xMG series
+LS-6FTP-100MG,LS-6FTP-100MG,exact,확정,Data sheet,보유,O,1,2026-05-29,2026-05-29,BOR Cable (Mr Gu),Data sheet for Cat.6 100m cable,Could you please send data sheet about LS-6FTP-100MG?
+LS-6IC-FKTMT,LS-6IC-FKTMT,exact,확정,Data sheet,보유,O,1,2024-05-17,2024-05-17,EPN·EP Corp (Roy),Data sheet for LS-6IC-FKTMT,Could you please send data sheet (Drawing file) for LS-6IC-FKTMT?
+LS-6IC-UJW,LS-6IC-UJW,exact,확정,Data sheet,보유,O,2,2024-03-27,2026-01-23,EPN·EP Corp (Roy) / Livewire Asia-Pacific (Ian),Request for English Manual or Specification Sheet for LS-6IC-UJW,provide an English manual or a product description/specification sheet for the LS-6IC-UJW
+LS-6IC-UNJ24,LS-6IC-UNJ24,exact,확정,CE,보유,O,1,2021-05-03,2021-05-03,EPN·EP Corp (Roy),CE certification about LS-6IC-UNJ24,Our customer request the CE sheet about LS-6IC-UNJ24
+LS-6IC-UNJ24,LS-6IC-UNJ24,exact,확정,UL,보유,전사,1,2021-05-03,2021-05-03,EPN·EP Corp (Roy),RE: RE: CE certification about LS-6IC-UNJ24,"If you have UL certification of LS-6IC-UNJ24, Please send it"
+LS-6PLB-24P19N,LS-6PLB-24P19N,exact,확정,CE,보유,O,1,2021-08-18,2021-08-18,BOR Cable (Mr Gu),CE certification about Cat.6 Patch panel,"cat.6 Patch Pannel. (LS-6PLB-24P19N , LS-6PLB-48P19) They need CE certification"
+LS-6PLB-24P19N,LS-6PLB-24P19N,exact,확정,Data sheet,보유,O,2,2021-10-27,2023-05-30,BOR Cable (Mr Gu),Data sheet and CAD sheet for patch pannel,We need Data sheet and CAD sheet (3D drawing file/DWG). ... 2. LS-6PLB-24P19N
+LS-6PLB-24P19N,LS-6PLB-24P19N,exact,확정,UL,보유,전사,1,2021-08-13,2021-08-13,BOR Cable (Mr Gu),UL certification,"We need the UL certification for Cat.5e, Cat.6 patch panel (LS-EPLB-24P19N, LS-6PLB-24P19N)"
+LS-6PLB-48P19,LS-6PLB-48P19,exact,확정,CE,보유,O,1,2021-08-18,2021-08-18,BOR Cable (Mr Gu),CE certification about Cat.6 Patch panel,"cat.6 Patch Pannel. (LS-6PLB-24P19N , LS-6PLB-48P19) They need CE certification"
+LS-6PLB-48P19,LS-6PLB-48P19,exact,확정,Data sheet,보유,O,1,2021-10-27,2021-10-27,BOR Cable (Mr Gu),Data Sheet for Patch Pannel,4. LS-6PLB-48P19
+LS-6PLB-48P19,LS-6PLB-48P19,exact,확정,Test report,보유,O,1,2023-06-20,2023-06-20,BOR Cable (Mr Gu),Patch panel test report,Our customer want receive test report about below products. ... LS-6PLB-48P19
+LS-6SFTP-300M,LS-6SFTP-300M,exact,확정,Data sheet,보유,O,2,2025-04-08,2026-04-15,BOR Cable (Mr Gu),"RE: Request for Cable Specifications, Test Reports, Certifications, and Jacket Material Options",confirm whether you can provide: - Updated specification sheet / datasheet
+LS-6SFTP-300M,LS-6SFTP-300M,exact,확정,RoHS,보유,O,2,2022-06-20,2026-06-04,BOR Cable (Mr Gu),Request for ROHS and MSDS sheet about LS-6SFTP-300m,We need the RoHS and MSDS documents for LS-6SFTP-300M
+LS-6SFTP-300M,LS-6SFTP-300M,exact,확정,Test report,보유,O,2,2021-04-20,2026-04-15,BOR Cable (Mr Gu),"RE: Request for Cable Specifications, Test Reports, Certifications, and Jacket Material Options",confirm whether you can provide: ... - Test report
+LS-6STPD,LS-6STPD,exact,확정,Data sheet,보유,O,2,2024-09-23,2025-04-25,BOR Cable (Mr Gu),request about Data sheet,Could you please send the Data sheet? ... LS-6STPD
+LS-6STPD-*M,LS-6STPD,suffix,확정,RoHS,보유,O,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-6STPD-20M,LS-6STPD,suffix,확정,Fluke test,보유,O,2,2023-05-11,2023-05-11,BOR Cable (Mr Gu),RE: Fluke test - Cat.6 STP patch cord,Could you please mark our model name? Cable ID : LS-6STPD-20M
+LS-6STPD-Xm,LS-6STPD,suffix,확정,Data sheet,보유,O,4,2022-03-22,2025-06-05,BOR Cable (Mr Gu),Re: Inquiry About LS-6STPD-xM Cable in 500m or 1000m+ Rolls,I can't find data sheet. Please send it again
+LS-6STPD-xM,LS-6STPD,suffix,확정,Fluke test,보유,O,1,2023-05-24,2023-05-24,BOR Cable (Mr Gu),Data sheet and Fluke report for Cat.6 FTP patch cord.,Could you please send Data sheet and Fluke report for Cat.6 FTP patch cord? (LS-6STPD-xM)
+LS-6STPD-xM,LS-6STPD,suffix,확정,REACH,보유,자재,1,2024-10-16,2024-10-16,BOR Cable (Mr Gu),REACH2 for cat.6 patch cord,we need REACH2 sheet about LS-6STPD-xM series (cat.6 patch cord)
+LS-6UTP-300M,LS-6UTP,suffix,확정,Data sheet,보유,O,1,2024-01-10,2024-01-10,BOR Cable (Mr Gu),Data sheet for 300m cable,data sheet about below cables? ... LS-6UTP-300M
+LS-6UTP-300MG,LS-6UTP,suffix,확정,Data sheet,보유,O,2,2020-06-04,2026-04-15,BOR Cable (Mr Gu),"RE: Request for Cable Specifications, Test Reports, Certifications, and Jacket Material Options",confirm whether you can provide: - Updated specification sheet / datasheet
+LS-6UTP-300MG,LS-6UTP,suffix,확정,Fluke test,보유,O,1,2024-09-05,2024-09-05,BOR Cable (Mr Gu),fluke test about LS-6UTP-300M,"do you have fluke test about cat.6 UTP 300m cable? (LS-6UTP-300MG) ... If you have it, please send it."
+LS-6UTP-300MG,LS-6UTP,suffix,확정,RoHS,보유,자재,1,2021-06-28,2021-06-28,BOR Cable (Mr Gu),Rohs2.0 for CAT.6 UTP cable.,We need Rohs 2.0 sheet about cat.6 UTP cable / 300m. (LS-6UTP-300MG)
+LS-6UTP-300MG,LS-6UTP,suffix,확정,Test report,보유,O,1,2026-04-15,2026-04-15,BOR Cable (Mr Gu),"RE: Request for Cable Specifications, Test Reports, Certifications, and Jacket Material Options",confirm whether you can provide: ... - Test report
+LS-6UTPC,LS-6UTPC,exact,확정,Data sheet,보유,O,1,2024-09-23,2024-09-23,BOR Cable (Mr Gu),data sheet about patch cord,1. data sheet ... LS-5STPC / LS-6UTPC
+LS-6UTPC-*M,LS-6UTPC,suffix,확정,RoHS,보유,O,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-6UTPC-xMG,LS-6UTPC,suffix,추정(모델매칭),Fluke test,보유,O,1,2024-10-24,2024-10-24,BOR Cable (Mr Gu),RE: Re: RE: cat.6 Cross patch cord fluke test,If you ready fluke test report about LS-6UTPC-xMG (cat.6 UTP cross patch cord) Please send it.
+LS-6UTPD,LS-6UTPD,exact,확정,Data sheet,보유,O,2,2024-09-23,2025-07-31,BOR Cable (Mr Gu),"Request for Bandwidth, Return Loss, and Maximum Saturation Output Power Data for LS-6UTPD and OM3/OM4 LCLC Fiber Cable",Please update the data sheet for the following products ... LS-6UTPD (CAT.6 UTP Cable) Bandwidth (GHz) / Return Loss (%) / Maximum Saturation Output Power
+LS-6UTPD-*M,LS-6UTPD,suffix,확정,RoHS,보유,O,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-6UTPD-15MG,LS-6UTPD,suffix,확정,Fluke test,보유,O,1,2022-11-08,2022-11-08,BOR Cable (Mr Gu),Fluke test,We need fluke test newest report about LS-6UTPD-15MG / 20MG
+LS-6UTPD-20MG,LS-6UTPD,suffix,확정,Fluke test,보유,O,1,2022-11-08,2022-11-08,BOR Cable (Mr Gu),Fluke test,We need fluke test newest report about LS-6UTPD-15MG / 20MG
+LS-7NSTPD,LS-7NSTPD,exact,확정,Data sheet,보유,O,1,2025-04-25,2025-04-25,BOR Cable (Mr Gu),request about Data sheet,Could you please send the Data sheet? ... LS-7NSTPD
+LS-7NSTPD-3M,LS-7NSTPD,suffix,확정,Fluke test,보유,O,1,2022-11-22,2022-11-22,BOR Cable (Mr Gu),Fluke test about cat.7,We need Fluke test report about LS-7NSTPD-3M
+LS-7SD-BK0.5M,LS-7SD-BKXM|LS-7SD-BK,suffix,확정,Data sheet,보유,O,1,2020-09-22,2020-09-22,BOR Cable (Mr Gu),ROHS and Data Sheet,We need the ROHS and Datasheet. 2. LS-7SD-BK0.5M
+LS-7SD-BK0.5M,LS-7SD-BKXM|LS-7SD-BK,suffix,확정,RoHS,보유,O,1,2020-09-22,2020-09-22,BOR Cable (Mr Gu),ROHS and Data Sheet,We need the ROHS and Datasheet. 2. LS-7SD-BK0.5M
+LS-7SD-BKxm,LS-7SD-BKXM,exact,확정,Data sheet,보유,O,1,2021-01-22,2021-01-22,BOR Cable (Mr Gu),data sheet and ROHS,we need data sheet and ROHS sheet 2. LS-7SD-BKxm
+LS-7SD-BKxm,LS-7SD-BKXM,exact,확정,RoHS,보유,O,1,2021-01-22,2021-01-22,BOR Cable (Mr Gu),data sheet and ROHS,we need data sheet and ROHS sheet 2. LS-7SD-BKxm
+LS-7SSTP-300MG,LS-7SSTP,suffix,추정(모델매칭),CE,보유,O,1,2021-07-26,2021-07-26,BOR Cable (Mr Gu),cat.7 S/FTP cable 300m about CE,We need CE certification about cat.7 S/FTP 300m cable. (LS-7SSTP-300MG)
+LS-7SSTPD-10M,LS-7SSTPD,suffix,확정,Fluke test,보유,O,1,2021-10-29,2021-10-29,BOR Cable (Mr Gu),fluke test report.,Could you please send the fluke test report? 1. LS-7SSTPD-10M
+LS-7SSTPD-10M,LS-7SSTPD,suffix,확정,기타(Other-cert),보유,O,1,2026-02-03,2026-02-03,BOR Cable (Mr Gu),Request for Material Weight and Cost Information – LS-7SSTPD Cables,material details for the following two cables: LS-7SSTPD-1M and LS-7SSTPD-10M ... fill in this information in the attached Excel file
+LS-7SSTPD-1M,LS-7SSTPD,suffix,확정,기타(Other-cert),보유,O,1,2026-02-03,2026-02-03,BOR Cable (Mr Gu),Request for Material Weight and Cost Information – LS-7SSTPD Cables,material details for the following two cables: LS-7SSTPD-1M and LS-7SSTPD-10M ... weight of aluminum ... copper ... total product weight
+LS-7SSTPD-xM,LS-7SSTPD,suffix,확정,PFAS,보유,자재,3,2024-04-24,2025-10-20,BOR Cable (Mr Gu),Request for Compliance Certificates – LS-7SSTPD-xM Patch Cord,Requested scope of regulations: ... PFAS
+LS-7SSTPD-xM,LS-7SSTPD,suffix,확정,REACH,보유,O,3,2025-02-18,2025-10-20,BOR Cable (Mr Gu),Request for Compliance Certificates – LS-7SSTPD-xM Patch Cord,Requested scope of regulations: ... REACH
+LS-7SSTPD-xM,LS-7SSTPD,suffix,확정,RoHS,보유,O,3,2025-02-18,2025-10-20,BOR Cable (Mr Gu),Request for Compliance Certificates – LS-7SSTPD-xM Patch Cord,Re-send. Did you check this mail too? ... RoHS 10 substances
+LS-7SSTPD-xM,LS-7SSTPD,suffix,확정,기타(Other-cert),보유,O,3,2025-02-18,2025-10-20,BOR Cable (Mr Gu),Request for Compliance Certificates – LS-7SSTPD-xM Patch Cord,Requested scope of regulations: ... POPs
+LS-7SSTPD-xMG,LS-7SSTPD,suffix,확정,MSDS/SDS,보유,자재,1,2023-03-06,2023-03-06,BOR Cable (Mr Gu),RE: Re: CMRT for cat.7 patch cords.,2. MSDS (Material Safety Data Sheet)
+LS-7SSTPD-xMG,LS-7SSTPD,suffix,확정,RoHS,보유,O,1,2023-03-06,2023-03-06,BOR Cable (Mr Gu),RE: Re: CMRT for cat.7 patch cords.,1. RoHS certificate : Test report of all possible 10 harmful substances
+LS-7SSTPD-xMG,LS-7SSTPD,suffix,확정,기타(Other-cert),보유,O,1,2023-03-06,2023-03-06,BOR Cable (Mr Gu),RE: Re: CMRT for cat.7 patch cords.,3. Hazardous Substance Analysis Table
+LS-7SSTPD-xxxMG,LS-7SSTPD,prefix,추정(모델매칭),기타(Other-cert),보유,O,1,2025-07-01,2025-07-01,BOR Cable (Mr Gu),RE: Request for Assistance with Customs Form for LS-7SSTPD-10M Cable,Please help us with the following information for each item in the LS-7SSTPD-xxxMG series: 1. Manufacturer Information 2. Country of Origin 3. Material Composition
+LS-7UTP-100MG,LS-7UTP,suffix,확정,Data sheet,보유,O,1,2025-04-21,2025-04-21,BOR Cable (Mr Gu),about 7UTP-100MG data sheet,Could you please send data sheet for LS-7UTP-100MG?
+LS-7UTP-300MG,LS-7UTP,suffix,확정,Fluke test,보유,O,1,2022-05-17,2022-05-17,BOR Cable (Mr Gu),Fluke and certificate for LS-7UTP-300MG,Could you please send the fluke test report
+LS-8SFTP-1M,LS-8SFTP,suffix,확정,Data sheet,보유,O,1,2021-11-02,2021-11-02,BOR Cable (Mr Gu),Cat.8 SFTP / Data sheet and fluke test,We need the data sheet and fluke test report. LS-8SFTP-1M
+LS-8SFTP-1M,LS-8SFTP,suffix,확정,Fluke test,보유,O,1,2021-11-02,2021-11-02,BOR Cable (Mr Gu),Cat.8 SFTP / Data sheet and fluke test,We need the data sheet and fluke test report. LS-8SFTP-1M
+LS-8SFTP-1m ~20m,LS-8SFTP,prefix,추정(모델매칭),Data sheet,보유,O,1,2021-06-17,2021-06-17,BOR Cable (Mr Gu),RE: Re: Data sheet and spec sheet for new cables.,we need datasheet about Cat.8 SFTP patch cord ... 3. Cat.8 SFTP patch cord cable. LS-8SFTP-1m ~20m please send it
+LS-8SSTP-200MG,LS-8SSTP-200MG,exact,확정,Data sheet,보유,O,1,2025-07-17,2025-07-17,BOR Cable (Mr Gu),Request about LS-8SSTP-200MG data sheet,Could you please send data sheet for LS-8SSTP-200MG?
+LS-8SSTP-200MG,LS-8SSTP-200MG,exact,확정,RoHS,보유,O,1,2023-07-25,2023-07-25,BOR Cable (Mr Gu),Cat.8 Drum cable,cat.8 drum cable (LS-8SSTP-200MG) ... 2. ROHS.
+LS-BOOT-CG7,LS-BOOT-CG7,exact,확정,RoHS,보유,자재,2,2021-06-03,2021-07-13,BOR Cable (Mr Gu),"ROHS about Cat,7 cover-boot",We need ROHS sheet about Cat.7 cover boot. (LS-BOOT-CG7)
+LS-BZ-KTWHZ,LS-BZ-KTWHZ,exact,확정,기타(Other-cert),보유,O,1,2022-03-08,2022-03-08,EPN·EP Corp (Roy),Certificate of Origin,Our customer want Certificate of Origin about LS-BZ-KTWHZ.
+LS-C5K,LS-C5K,exact,확정,Data sheet,보유,O,1,2024-06-05,2024-06-05,BOR Cable (Mr Gu),data sheet for LS-C5K,"new cat,5e RJ45 (50u) LS-C5K. Could you please send data sheet?"
+LS-C5OD300,LS-C5OD300,exact,확정,Data sheet,보유,O,2,2024-01-10,2024-06-20,BOR Cable (Mr Gu),About out door cable,We running outdoor cabsle LS-C5OD300 and LS-C6OD300 ... please send me a data sheet with the relevant information (HDPE).
+LS-C5OD300,LS-C5OD300,exact,확정,RoHS,보유,자재,1,2024-02-28,2024-02-28,BOR Cable (Mr Gu),New 305m Cable,"LS-C5U305G LS-C5U305BK LS-C5OD300 ... Can I request another sheet about ROHS, Test report?"
+LS-C5OD300,LS-C5OD300,exact,확정,Test report,보유,O,1,2024-02-28,2024-02-28,BOR Cable (Mr Gu),New 305m Cable,"Can I request another sheet about ROHS, Test report?"
+LS-C5U305BK,LS-C5U305BK,exact,확정,Data sheet,보유,O,1,2024-01-10,2024-01-10,BOR Cable (Mr Gu),Data sheet for 300m cable,data sheet about below cables? ... LS-C5U305BK
+LS-C5U305BK,LS-C5U305BK,exact,확정,RoHS,보유,자재,1,2024-02-28,2024-02-28,BOR Cable (Mr Gu),New 305m Cable,"LS-C5U305G LS-C5U305BK LS-C5OD300 ... Can I request another sheet about ROHS, Test report?"
+LS-C5U305BK,LS-C5U305BK,exact,확정,Test report,보유,O,1,2024-02-28,2024-02-28,BOR Cable (Mr Gu),New 305m Cable,"Can I request another sheet about ROHS, Test report?"
+LS-C5U305BL,LS-C5U305BL,exact,확정,Data sheet,보유,O,1,2024-01-10,2024-01-10,BOR Cable (Mr Gu),Data sheet for 300m cable,data sheet about below cables? ... LS-C5U305BL
+LS-C5U305G,LS-C5U305G,exact,확정,Data sheet,보유,O,3,2024-01-10,2026-04-15,BOR Cable (Mr Gu),"RE: Request for Cable Specifications, Test Reports, Certifications, and Jacket Material Options",confirm whether you can provide: - Updated specification sheet / datasheet
+LS-C5U305G,LS-C5U305G,exact,확정,RoHS,보유,자재,1,2024-02-28,2024-02-28,BOR Cable (Mr Gu),New 305m Cable,"LS-C5U305G LS-C5U305BK LS-C5OD300 ... Can I request another sheet about ROHS, Test report?"
+LS-C5U305G,LS-C5U305G,exact,확정,Test report,보유,자재,4,2024-02-28,2026-04-15,BOR Cable (Mr Gu),"RE: Request for Cable Specifications, Test Reports, Certifications, and Jacket Material Options",confirm whether you can provide: ... - Test report
+LS-C5U305R,LS-C5U305R,exact,확정,Data sheet,보유,O,1,2024-01-10,2024-01-10,BOR Cable (Mr Gu),Data sheet for 300m cable,data sheet about below cables? ... LS-C5U305R
+LS-C5U305Y,LS-C5U305Y,exact,확정,Data sheet,보유,O,1,2024-01-10,2024-01-10,BOR Cable (Mr Gu),Data sheet for 300m cable,data sheet about below cables? ... LS-C5U305Y
+LS-C6OD300,LS-C6OD300,exact,확정,Data sheet,보유,O,2,2024-01-10,2024-06-20,BOR Cable (Mr Gu),About out door cable,LS-C5OD300 and LS-C6OD300 ... please send me a data sheet with the relevant information (HDPE).
+LS-CAT.5E-HUTP-300MG,LS-CAT.5E-HUTP,suffix,확정,Fluke test,보유,O,1,2021-12-08,2021-12-08,BOR Cable (Mr Gu),Fluke about LS-CAT.5E-HUTP-300MG,Our customer want receive the Fluke test report about LS-CAT.5E-HUTP-300MG
+LS-CAT5E-STP,LS-CAT5E-STP,exact,확정,RoHS,보유,자재,1,2021-12-14,2021-12-14,BOR Cable (Mr Gu),ROHS or MSDS,We need the ROHS sheet about below product. 1. CAT.5 STP RJ45 connector (LS-CAT5E-STP)
+LS-CAT5E-UTP,LS-CAT5E-UTP,exact,확정,RoHS,보유,자재,1,2023-03-03,2023-03-03,BOR Cable (Mr Gu),Rohs about connector,We need ROHS sheet for below products. 1. LS-CAT5E-UTP
+LS-CAT6-STP,LS-CAT6-STP,exact,확정,Data sheet,보유,O,1,2025-07-22,2025-07-22,BOR Cable (Mr Gu),"Request for Datasheet, RoHS, MSDS, and SVHC Documents for LS-CAT6-STP",request the following documents for the product LS-CAT6-STP : Product Datasheet
+LS-CAT6-STP,LS-CAT6-STP,exact,확정,MSDS/SDS,보유,자재,1,2025-07-22,2025-07-22,BOR Cable (Mr Gu),"Request for Datasheet, RoHS, MSDS, and SVHC Documents for LS-CAT6-STP",MSDS (Material Safety Data Sheet)
+LS-CAT6-STP,LS-CAT6-STP,exact,확정,RoHS,보유,자재,1,2025-07-22,2025-07-22,BOR Cable (Mr Gu),"Request for Datasheet, RoHS, MSDS, and SVHC Documents for LS-CAT6-STP",RoHS Certificate
+LS-CAT7-750,LS-CAT7-750,exact,확정,Data sheet,보유,O,3,2021-01-11,2023-01-03,BOR Cable (Mr Gu),Cat.7 connector UL sheet.,"And, Please send data sheet too."
+LS-CAT7-750,LS-CAT7-750,exact,확정,UL,보유,자재,2,2021-08-20,2023-01-03,BOR Cable (Mr Gu),Cat.7 connector UL sheet.,Do you have a UL certificate for LS-CAT7-750?
+LS-CAT7-750G,LS-CAT7-750G,exact,확정,Data sheet,보유,O,2,2021-01-11,2021-10-08,BOR Cable (Mr Gu),RE: Re: data sheet for cat.7 pass connector (new version),Could you please send the datasheet about LS-CAT7-750 and LS-CAT7-750G?
+LS-CCTP-xM,LS-CCTP,suffix,확정,Data sheet,보유,O,1,2024-12-17,2024-12-17,BOR Cable (Mr Gu),data sheet for LS-CCTP-xM,Could you please send data sheet for LS-CCTP-xM series?
+LS-CON-S15M,LS-CON-S15M,exact,확정,Data sheet,보유,O,2,2025-03-31,2025-04-02,BOR Cable (Mr Gu),data sheet for LS-CON-S15M,re-send. Please check below mail. ... Could you please send data sheet about LS-CON-S15M?
+LS-CUP-ID8C,LS-CUP-ID8C,exact,확정,Data sheet,보유,O,1,2025-07-04,2025-07-04,BOR Cable (Mr Gu),Data sheet for LS-CUP-ID8C,Could you please send data sheet about LS-CUP-ID8C?
+LS-CUP-ID8C,LS-CUP-ID8C,exact,확정,RoHS,보유,자재,2,2020-07-14,2021-10-06,BOR Cable (Mr Gu),"ROHS, MSDS about coupler","We need RoHS or MSDS sheet for Coupler ( LS-CUP-ID8C , LS-CUP-YD8C)"
+LS-CUP-YD8C,LS-CUP-YD8C,exact,확정,RoHS,보유,자재,2,2020-07-14,2021-10-06,BOR Cable (Mr Gu),"ROHS, MSDS about coupler","We need RoHS or MSDS sheet for Coupler ( LS-CUP-ID8C , LS-CUP-YD8C)"
+LS-DC-RJ45-BKC,LS-DC-RJ45-BKC,exact,확정,MSDS/SDS,보유,자재,1,2021-06-15,2021-06-15,BOR Cable (Mr Gu),"RoHS , MSDS",We need the RoHS and MSDS sheet for RJ45 dust cover. (LS-DC-RJ45-BKC)
+LS-DC-RJ45-BKC,LS-DC-RJ45-BKC,exact,확정,RoHS,보유,자재,1,2021-06-15,2021-06-15,BOR Cable (Mr Gu),"RoHS , MSDS",We need the RoHS and MSDS sheet for RJ45 dust cover. (LS-DC-RJ45-BKC)
+LS-DC-RJ45PP-WHC,LS-DC-RJ45PP-WHC,exact,확정,RoHS,보유,자재,1,2021-09-30,2021-09-30,BOR Cable (Mr Gu),RE: Re: Dust cap,could you please send the data sheet and ROHS2.0 sheet? (LS-DC-RJ45PP-WHC / LS-DC-USBPE-WHC)
+LS-DC-USBPE-WHC,LS-DC-USBPE-WHC,exact,추정(인증서 적용범위),RoHS,보유,자재*,2,2020-12-04,2021-09-30,BOR Cable (Mr Gu),RE: Re: Dust cap,could you please send the data sheet and ROHS2.0 sheet? (LS-DC-RJ45PP-WHC / LS-DC-USBPE-WHC)
+LS-DP12HD,LS-DP12HD,exact,확정,Data sheet,보유,O,1,2021-12-15,2021-12-15,BOR Cable (Mr Gu),"Data sheet about LS-DP12HD, MDP12HD",We need the DataSheet about below products. 1. LS-DP12HD
+LS-DP12HD,LS-DP12HD,exact,확정,RoHS,보유,O,1,2022-05-18,2022-05-18,BOR Cable (Mr Gu),"RE: Re: Data sheet about LS-DP12HD, MDP12HD",Could you please send the ROHS2.0 sheet? LS-DP12HD
+LS-DP14N,LS-DP14N,exact,확정,RoHS,보유,O,1,2025-09-11,2025-09-11,BOR Cable (Mr Gu),ROHS for LS-DP14N,Could you please send the ROHS sheet for LS-DP14N?
+LS-DP14N-xm,LS-DP14N,suffix,확정,Data sheet,보유,O,1,2021-01-19,2021-01-19,BOR Cable (Mr Gu),"data sheet about Slim HDMI , DP14 , HDMI to DP",we need data sheet about new cable. 2. LS-DP14N-xm
+LS-DP192-60H-xM,LS-DP192-60H,suffix,확정,Data sheet,보유,O,1,2026-03-05,2026-03-05,BOR Cable (Mr Gu),Request for Updated Datasheets with Pin Map,send the latest datasheet including the pin map for this model as well
+LS-DP192-xM,LS-DP192,suffix,확정,CE,보유,O,1,2022-11-29,2022-11-29,BOR Cable (Mr Gu),RE: Re: CE certificate about Screw cable,We need CE sheet below cables. 2. LS-DP192-xM
+LS-DPAOC-xM,LS-DPAOC,suffix,확정,Data sheet,보유,O,1,2022-06-07,2022-06-07,BOR Cable (Mr Gu),Data sheet about NEW AOC cables,send the Data sheet about New AOC cables? ... 2. LS-DPAOC-xM
+LS-DVI19M-xm,LS-DVI19M,suffix,확정,Data sheet,보유,O,1,2021-01-11,2021-01-11,EPNU Cable (Anna),data sheet.,we need new datasheet ... 3. LS-DVI19M-xm
+LS-DVI25M-xm,LS-DVI25M,suffix,확정,Data sheet,보유,O,1,2021-01-11,2021-01-11,EPNU Cable (Anna),data sheet.,we need new datasheet ... 4. LS-DVI25M-xm
+LS-EIC-FJM,LS-EIC-FJM,exact,확정,Data sheet,보유,O,1,2023-02-23,2023-02-23,EPN·EP Corp (Roy),Data sheet,Could you please send data sheet about below products? 2. LS-EIC-FJM
+LS-EIC-UJW,LS-EIC-UJW,exact,확정,Data sheet,보유,O,1,2023-02-23,2023-02-23,EPN·EP Corp (Roy),Data sheet,Could you please send data sheet about below products? 1. LS-EIC-UJW
+LS-EIC-UKW,LS-EIC-UK,prefix,추정(모델매칭),Data sheet,보유,O,1,2026-03-18,2026-03-18,Livewire Asia-Pacific (Ian),Request for Specification Sheet and Drawing Sheet for LS-EIC-UKW,provide the specification sheet and drawing sheet for the LS-EIC-UKW
+LS-EPLB-24P19N,LS-EPLB-24P19N,exact,확정,CE,보유,O,1,2022-03-16,2022-03-16,BOR Cable (Mr Gu),Certificate for LS-EPLB-24P19N,Could you please send the UL or CE certificate for LS-EPLB-24P19N
+LS-EPLB-24P19N,LS-EPLB-24P19N,exact,확정,Data sheet,보유,O,2,2021-10-27,2023-05-30,BOR Cable (Mr Gu),Data sheet and CAD sheet for patch pannel,We need Data sheet and CAD sheet (3D drawing file/DWG). 1. LS-EPLB-24P19N
+LS-EPLB-24P19N,LS-EPLB-24P19N,exact,확정,UL,보유,전사,2,2021-08-13,2022-03-16,BOR Cable (Mr Gu),Certificate for LS-EPLB-24P19N,Could you please send the UL or CE certificate for LS-EPLB-24P19N
+LS-EPLB-48P19,LS-EPLB-48P19,exact,확정,Data sheet,보유,O,1,2021-10-27,2021-10-27,BOR Cable (Mr Gu),Data Sheet for Patch Pannel,2. LS-EPLB-48P19
+LS-EPLB-48P19,LS-EPLB-48P19,exact,확정,Test report,보유,O,1,2023-06-20,2023-06-20,BOR Cable (Mr Gu),Patch panel test report,Our customer want receive test report about below products. LS-EPLB-48P19
+LS-ETMD-UJWT,LS-ETMD-UJWT,exact,확정,Data sheet,보유,O,1,2023-04-24,2023-04-24,EPN·EP Corp (Roy),Data sheet or Drawing file about LS-ETMD-UJWT,We need data sheet or drawing file about LS-ETMD-UJWT.
+LS-EXT305 ~ LS-EXT320,LS-EXT305,prefix,추정(모델매칭),Data sheet,보유,O,1,2023-05-10,2023-05-10,BOR Cable (Mr Gu),RE: Re: USB 3.0 repeater cable,could you please send data sheet? LS-EXT305 ~ LS-EXT320
+LS-EXT310,LS-EXT310,exact,확정,CE,보유,O,1,2023-01-03,2023-01-03,BOR Cable (Mr Gu),CE certificate,Our customer request CE certificate for LS-EXT310 (USB extension cable)
+LS-EZ-750,LS-EZ-750,exact,확정,Data sheet,보유,O,1,2021-01-08,2021-01-08,BOR Cable (Mr Gu),data sheet for cat.7 pass connector (new version),please send the data sheet about cat.7 pass connector (new version) / LS-EZ-750
+LS-F6-UTPD-1M,LS-F6-UTPD,suffix,확정,Data sheet,보유,O,1,2020-09-22,2020-09-22,BOR Cable (Mr Gu),ROHS and Data Sheet,We need the ROHS and Datasheet. 1. LS-F6-UTPD-1M
+LS-F6-UTPD-1M,LS-F6-UTPD,suffix,확정,RoHS,보유,O,1,2020-09-22,2020-09-22,BOR Cable (Mr Gu),ROHS and Data Sheet,We need the ROHS and Datasheet. 1. LS-F6-UTPD-1M
+LS-F6-UTPD-Xm,LS-F6-UTPD,suffix,확정,Data sheet,보유,O,1,2021-01-27,2021-01-27,BOR Cable (Mr Gu),data sheet about cat.6 UTP flat cable.,We need data sheet about cat.6 UTP flat cable. (LS-F6-UTPD-Xm) please send it
+LS-F6-UTPD-xM,LS-F6-UTPD,suffix,확정,MSDS/SDS,보유,자재,2,2022-04-28,2022-04-28,BOR Cable (Mr Gu),RE: Re: MSDS sheet,We need MSDS sheet for LS-F6-UTPD-xM. Not HDMI cable
+LS-F6UTPD-xm,LS-F6UTPD,suffix,확정,MSDS/SDS,보유,자재,1,2024-07-17,2024-07-17,BOR Cable (Mr Gu),ROHS / MSDS sheet for Flat cable,"If not, Please send ROHS / MSDS sheet."
+LS-F6UTPD-xm,LS-F6UTPD,suffix,확정,RoHS,보유,O,1,2024-07-17,2024-07-17,BOR Cable (Mr Gu),ROHS / MSDS sheet for Flat cable,"Can we use this file for LS-F6UTPD-xm series? If not, Please send ROHS / MSDS sheet."
+LS-F7-SFTP-Xm,LS-F7-SFTP,suffix,확정,RoHS,보유,O,1,2021-03-12,2021-03-12,BOR Cable (Mr Gu),ROHS sheet about cat.7 SFTP flat cable.,could you please send the ROHS sheet about LS-F7-SFTP-Xm
+LS-F7-UTPD-xM,LS-F7-UTPD,suffix,확정,Data sheet,보유,O,1,2021-05-25,2021-05-25,BOR Cable (Mr Gu),data sheet,"We need data sheet about LS-F7-UTPD-xM (cat.7 UTP , Flate cable.)"
+LS-F7FTP-xM,LS-F7FTP,suffix,확정,Data sheet,보유,O,1,2022-04-20,2022-04-20,BOR Cable (Mr Gu),Data sheet,"Could you please send the data sheet? ""LS-F7FTP-xM"""
+LS-F7FTP-xM,LS-F7FTP,suffix,확정,Fluke test,보유,O,1,2022-05-06,2022-05-06,BOR Cable (Mr Gu),LS-F7FTP-xm - Fluke test,"We received LS-F7FTP-xM ... If you have Fluke test report, Please send it"
+LS-F850N,LS-F850N,exact,확정,Data sheet,보유,O,3,2020-07-16,2024-07-05,BOR Cable (Mr Gu),New order,Could you please send data sheet for LS-M850N and LS-F850N?
+LS-F850N,LS-F850N,exact,확정,Fluke test,보유,O,1,2021-06-15,2021-06-15,BOR Cable (Mr Gu),Cat.8 Keystone jack,We need the fluke or any test report about cat.8 keystone jack(LS-F850N)
+LS-F850N,LS-F850N,exact,확정,Test report,보유,O,1,2021-06-15,2021-06-15,BOR Cable (Mr Gu),Cat.8 Keystone jack,We need the fluke or any test report about cat.8 keystone jack(LS-F850N)
+LS-FSB,LS-FSB,exact,확정,Data sheet,보유,O,1,2021-10-05,2021-10-05,BOR Cable (Mr Gu),Data sheet for front shelf,front shelf for hub rack (LS-FSB and LS-FSI) Could you please send the data sheet?
+LS-FSI,LS-FSI,exact,확정,Data sheet,보유,O,1,2021-10-05,2021-10-05,BOR Cable (Mr Gu),Data sheet for front shelf,front shelf for hub rack (LS-FSB and LS-FSI) Could you please send the data sheet?
+LS-FT6U0,LS-FT6U,prefix,추정(모델매칭),Fluke test,보유,O,1,2024-12-03,2024-12-03,BOR Cable (Mr Gu),data sheet and fluke test for transparent cable,we need data sheet and fluke test report about LS-FT6U0 series
+LS-FTP-100MSTG,LS-FTP,suffix,확정,Data sheet,보유,O,1,2024-11-15,2024-11-15,BOR Cable (Mr Gu),data sheet for stranded cable,Could you please send new data sheet about below cables? ... LS-FTP-100MSTG
+LS-FTP-300MSTG,LS-FTP,suffix,확정,CE,보유,O,1,2022-03-14,2022-03-14,BOR Cable (Mr Gu),LS-FTP-300MSTG sheet,We need test report or any certificate. (CE)
+LS-FTP-300MSTG,LS-FTP,suffix,확정,Test report,보유,O,1,2022-03-14,2022-03-14,BOR Cable (Mr Gu),LS-FTP-300MSTG sheet,Our customer request about LS-FTP-300MSTG ... We need test report or any certificate. (CE)
+LS-FTP-305MSTG,LS-FTP,suffix,확정,Data sheet,보유,O,1,2024-11-15,2024-11-15,BOR Cable (Mr Gu),data sheet for stranded cable,Could you please send new data sheet about below cables? LS-FTP-305MSTG
+LS-GEN-DB9FF,LS-GEN-DB9FF,exact,확정,Data sheet,보유,O,1,2021-11-03,2021-11-03,BOR Cable (Mr Gu),data sheet about serial gender,We need data sheet about serial gender ( LS-GEN-DB9FF)
+LS-GIC-FJM,LS-GIC-FJM,exact,확정,Data sheet,보유,O,1,2023-02-23,2023-02-23,EPN·EP Corp (Roy),Data sheet,Could you please send data sheet about below products? 4. LS-GIC-FJM
+LS-GIC-FKTMT,LS-GIC-FKTMT,exact,확정,Data sheet,보유,O,1,2024-03-27,2024-03-27,EPN·EP Corp (Roy),Data sheet (Drawing sheet),Could you please send Data sheet for LS-GIC-FKTMT?
+LS-GIC-FKTMT,LS-GIC-FKTMT,exact,확정,RoHS,보유,O,2,2021-03-24,2021-12-29,EPN·EP Corp (Roy),ROHS about GIC-FKTMT,We need ROHS sheet about LS-GIC-FKTMT.
+LS-GIC-FKTMT,LS-GIC-FKTMT,exact,확정,Test report,보유,O,1,2022-06-13,2022-06-13,EPN·EP Corp (Roy),LS-GIC-FKTMT,Could you please send the UL sheet or any test report for LS-GIC-FKTMT?
+LS-GIC-UEDWH,LS-GIC-UEDWH,exact,확정,Data sheet,보유,O,1,2021-05-10,2021-05-10,EPN·EP Corp (Roy),RE: RE: RE: RE: RE: new order,"could you please send the data sheet new products? (LS-GIC-UEDWH , LS-GKTVM-U1WH , LS-GKTVNL-U1WH , LS-GKTVNL-F1MT)"
+LS-GIC-UJW,LS-GIC-UJW,exact,확정,Data sheet,보유,O,1,2023-02-23,2023-02-23,EPN·EP Corp (Roy),Data sheet,Could you please send data sheet about below products? 3. LS-GIC-UJW
+LS-GIC-UJW,LS-GIC-UJW,exact,확정,RoHS,보유,O,1,2023-05-18,2023-05-18,EPN·EP Corp (Roy),RE: RE: RE: RE: Data sheet,and ROHS sheet?
+LS-GKTVM-F1MT,LS-GKTVM-F1MT,exact,확정,UL,보유,전사,1,2022-12-14,2022-12-14,EPN·EP Corp (Roy),UL certificate,We need UL certificate for LS-GKTVM-F1MT
+LS-GKTVM-U1WH,LS-GKTVM-U1WH,exact,확정,Data sheet,보유,자재,1,2021-05-10,2021-05-10,EPN·EP Corp (Roy),RE: RE: RE: RE: RE: new order,"could you please send the data sheet new products? (LS-GIC-UEDWH , LS-GKTVM-U1WH , LS-GKTVNL-U1WH , LS-GKTVNL-F1MT)"
+LS-GKTVNL-F1MT,LS-GKTVNL-F1MT,exact,확정,Data sheet,보유,O,1,2021-05-10,2021-05-10,EPN·EP Corp (Roy),RE: RE: RE: RE: RE: new order,"could you please send the data sheet new products? (LS-GIC-UEDWH , LS-GKTVM-U1WH , LS-GKTVNL-U1WH , LS-GKTVNL-F1MT)"
+LS-GKTVNL-U1WH,LS-GKTVNL-U1WH,exact,확정,Data sheet,보유,O,1,2021-05-10,2021-05-10,EPN·EP Corp (Roy),RE: RE: RE: RE: RE: new order,"could you please send the data sheet new products? (LS-GIC-UEDWH , LS-GKTVM-U1WH , LS-GKTVNL-U1WH , LS-GKTVNL-F1MT)"
+LS-GLAN30R,LS-GLAN30R,exact,확정,CE,보유,O,1,2023-11-02,2023-11-02,BOR Cable (Mr Gu),"ROHS, CE for USB lan card.",we need ROHS and CE sheet for LS-GLAN30R.
+LS-GLAN30R,LS-GLAN30R,exact,확정,RoHS,보유,O,1,2023-11-02,2023-11-02,BOR Cable (Mr Gu),"ROHS, CE for USB lan card.",we need ROHS and CE sheet for LS-GLAN30R.
+LS-GPLB-F24X,LS-GPLB-F24X,exact,확정,Test report,보유,O,1,2021-09-14,2021-09-14,EPN·EP Corp (Roy),Data sheet and test report about LS-GPLB-F24X,We need Data sheet and Test report((ETL or UL) about LS-GPLB-F24X
+LS-H21AOC,LS-H21AOC,exact,확정,Data sheet,보유,O,1,2025-06-05,2025-06-05,BOR Cable (Mr Gu),data sheet for LS-H21AOC / LS-HAP21AOC .,Could you please send Data sheet about below cables? 1. LS-H21AOC
+LS-HAP21AOC,LS-HAP21AOC,exact,확정,Data sheet,보유,O,1,2025-06-05,2025-06-05,BOR Cable (Mr Gu),data sheet for LS-H21AOC / LS-HAP21AOC .,Could you please send Data sheet about below cables? ... 2. LS-HAP21AOC
+LS-HAP21AOC-xM,LS-HAP21AOC,suffix,확정,Test report,보유,O,1,2025-09-18,2025-09-18,BOR Cable (Mr Gu),Inquiry on LS-HAP21AOC-xM Series HDMI 2.1 AOC Conduit-Type Detachable Cable,Do you have any reliability data (HDMI Eye Diagram) available for 100m length signal quality?
+LS-HAP21AOC-xxM,LS-HAP21AOC,suffix,확정,Data sheet,보유,O,1,2026-02-27,2026-02-27,BOR Cable (Mr Gu),Inquiry About IC Chipset for LS-H20AOCxx and LS-HAP21AOC-xxM,kindly provide the chipset name and specifications for each model
+LS-HDAOC-xM,LS-HDAOC,suffix,확정,Data sheet,보유,O,1,2022-06-07,2022-06-07,BOR Cable (Mr Gu),Data sheet about NEW AOC cables,send the Data sheet about New AOC cables? 1. LS-HDAOC-xM
+LS-HDAOC-xM,LS-HDAOC,suffix,확정,RoHS,보유,자재,1,2023-05-03,2023-05-03,BOR Cable (Mr Gu),About HDMI AOC CABLE,"And, Please send ROHS sheet."
+LS-HDMI-HMF-xm,LS-HDMI-HMF,suffix,확정,Data sheet,보유,O,1,2021-01-22,2021-01-22,BOR Cable (Mr Gu),RE: data sheet and ROHS,"sorry, NOT SMF, We need LS-HDMI-HMF-xm (HDMI extender cable)"
+LS-HDMI-HMF-xm,LS-HDMI-HMF,suffix,확정,RoHS,보유,O,1,2021-01-22,2021-01-22,BOR Cable (Mr Gu),RE: data sheet and ROHS,RE: data sheet and ROHS / We need LS-HDMI-HMF-xm
+LS-HDMI-HMM-Xm,LS-HDMI-HMM,suffix,확정,Test report,보유,O,1,2020-06-02,2020-06-02,BOR Cable (Mr Gu),Test report.,Our customer request the test report (ROHS or data sheet). 1. LS-HDMI-HMM-Xm
+LS-HDMI-NEMM-Xm,LS-HDMI-NEMM,suffix,확정,Test report,보유,O,1,2021-04-27,2021-04-27,BOR Cable (Mr Gu),LS-HDMI-NEMM-Xm CABLE,Our customer request about Test report about LS-HDMI-NEMM-Xm
+LS-HDMI21-xm,LS-HDMI21,suffix,확정,RoHS,보유,O,1,2021-01-05,2021-01-05,BOR Cable (Mr Gu),HDMI 2.1 ver certification.,we need the certification for LS-HDMI21-xm ... 4. ROHS
+LS-HDMI21-xm,LS-HDMI21,suffix,확정,Test report,보유,O,1,2021-01-05,2021-01-05,BOR Cable (Mr Gu),HDMI 2.1 ver certification.,we need the certification for LS-HDMI21-xm ... 2. Advanced cable test report
+LS-HDMI21-xm,LS-HDMI21,suffix,확정,UL,보유,자재,1,2021-01-05,2021-01-05,BOR Cable (Mr Gu),HDMI 2.1 ver certification.,we need the certification for LS-HDMI21-xm ... 3. UL
+LS-HDMT-10M,LS-HDMT|LS-HDMT-10M,exact,확정,Data sheet,보유,O,1,2021-08-19,2021-08-19,BOR Cable (Mr Gu),data sheet about HDMI Metal cable,we need data sheet about HDMI metal cable. (LS-HDMT-10M)
+LS-HDMT-xM,LS-HDMT,suffix,확정,CE,보유,O,1,2023-02-13,2023-02-13,BOR Cable (Mr Gu),"CE, FCC, UL about HDMI CABLE","they need CE, FCC or UL sheet"
+LS-HDMT-xM,LS-HDMT,suffix,확정,RoHS,보유,O,1,2023-10-17,2023-10-17,BOR Cable (Mr Gu),ROHS for HDMI cable,we need ROHS II for LS-HDMT-xM.
+LS-HDMT-xM,LS-HDMT,suffix,확정,기타(Other-cert),보유,O,1,2023-02-13,2023-02-13,BOR Cable (Mr Gu),"CE, FCC, UL about HDMI CABLE","they need CE, FCC or UL sheet"
+LS-HF series,LS-HF SERIES,exact,확정,CE,보유,O,1,2025-06-16,2025-06-16,BOR Cable (Mr Gu),Request for CE Certificate for LS-HF Series Cables,could you please provide the CE certificate for the LS-HF series cables?
+LS-HF series,LS-HF SERIES,exact,확정,RoHS,보유,O,1,2025-06-16,2025-06-16,BOR Cable (Mr Gu),Request for CE Certificate for LS-HF Series Cables,"the CE certificate may be in the form of a RoHS certificate or a COC ... If you have either of these, please share the document"
+LS-HF705,LS-HF705,exact,확정,Data sheet,보유,O,1,2026-07-10,2026-07-10,BOR Cable (Mr Gu),Request for LS-HF705 Datasheet and RoHS,provide the datasheet and RoHS report for the LS-HF705
+LS-HF705,LS-HF705,exact,확정,RoHS,보유,O,1,2026-07-10,2026-07-10,BOR Cable (Mr Gu),Request for LS-HF705 Datasheet and RoHS,provide the datasheet and RoHS report for the LS-HF705
+LS-HF7xx,LS-HF7XX,exact,확정,Test report,보유,O,2,2026-03-13,2026-03-13,BOR Cable (Mr Gu),Re: Drag test for cat.7 patch cord,"Is there any written bending test report, test record, internal test sheet, or summary document available for the LS-HF7xx series?"
+LS-HRGB-15MM,LS-HRGB-15MM,exact,확정,Data sheet,보유,O,1,2025-04-25,2025-04-25,BOR Cable (Mr Gu),request about Data sheet,Could you please send the Data sheet? ... LS-HRGB-15MM
+LS-HRGB-15MM-Xm,LS-HRGB-15MM,suffix,확정,RoHS,보유,O,1,2022-11-14,2022-11-14,BOR Cable (Mr Gu),ROHS for High VGA cable.,We need ROHS sheet about LS-HRGB-15MM-Xm
+LS-HRGB-15MM-xM,LS-HRGB-15MM,suffix,확정,UL,보유,전사,2,2022-03-17,2024-07-23,BOR Cable (Mr Gu),UL sheet for HRGB cable,Could you please send UL sheet for LS-HRGB-15MM-xM series? UL No : E324703
+LS-HS2FAN,LS-HS2FAN,exact,확정,Data sheet,보유,O,1,2022-05-17,2022-05-17,BOR Cable (Mr Gu),Data Sheet,send the data sheet about below product? 1. LS-HS2FAN
+LS-HS4FAN,LS-HS4FAN,exact,확정,Data sheet,보유,O,1,2022-05-17,2022-05-17,BOR Cable (Mr Gu),Data Sheet,send the data sheet about below product? ... 2. LS-HS4FAN
+LS-M850N,LS-M850N,exact,확정,Data sheet,보유,O,3,2020-07-16,2024-07-05,BOR Cable (Mr Gu),New order,Could you please send data sheet for LS-M850N and LS-F850N?
+LS-MDP12HD,LS-MDP12HD,exact,확정,Data sheet,보유,O,1,2021-12-15,2021-12-15,BOR Cable (Mr Gu),"Data sheet about LS-DP12HD, MDP12HD",We need the DataSheet about below products. 2. LS-MDP12HD
+LS-MDP12HD,LS-MDP12HD,exact,확정,RoHS,보유,O,1,2022-05-18,2022-05-18,BOR Cable (Mr Gu),"RE: Re: Data sheet about LS-DP12HD, MDP12HD",Could you please send the ROHS2.0 sheet? ... LS-MDP12HD
+LS-OM3-LCLC-20M,LS-OM3-LCLC,suffix,추정(인증서 적용범위),RoHS,보유,O*,1,2025-05-29,2025-05-29,BOR Cable (Mr Gu),"Certification Inquiry for LS-OM3-LCLC-20M (UL, LSZH, RoHS)",Please also provide the RoHS compliance sheet for this product.
+LS-OM3-LCLC-Xm,LS-OM3-LCLC,suffix,추정(인증서 적용범위),RoHS,보유,O*,1,2022-06-17,2022-06-17,BOR Cable (Mr Gu),RoHS2.0 certificate for Fiber cable,Could you please send the RoHS2.0 or CE certificate? LS-OM3-LCLC-Xm
+LS-OUTLET-WP24N,LS-OUTLET-WP24N,exact,확정,Data sheet,보유,O,1,2023-03-13,2023-03-13,BOR Cable (Mr Gu),Data Sheet about Wall plate,2. LS-OUTLET-WP24N
+LS-P197-2410G,LS-P197-2410G,exact,확정,Data sheet,보유,O,1,2022-12-28,2022-12-28,BOR Cable (Mr Gu),Data sheet and certificaton for cat.6a patch panel,We need data sheet and certification sheet (UL or any sheet) for below products. 1. LS-P197-2410G
+LS-PASS-7UTP,LS-PASS-7UTP,exact,확정,Data sheet,보유,O,1,2021-07-13,2021-07-13,BOR Cable (Mr Gu),data sheet about LS-PASS-7UTP,We need the data sheet about LS-PASS-7UTP
+LS-PLKP-24SM,LS-PLKP-24SM,exact,확정,Data sheet,보유,O,2,2025-03-14,2025-03-14,BOR Cable (Mr Gu),Data sheet for LS-PLKP-24SM,Could you please send data sheet about LS-PLKP-24SM?
+LS-PS2-6MM-1.8M,LS-PS2-6MM,suffix,확정,Data sheet,보유,O,1,2023-02-27,2023-02-27,BOR Cable (Mr Gu),Data sheet for PS2 cable,Could you please send data sheet about LS-PS2-6MM-1.8M?
+LS-RGB-15MF-xm,LS-RGB-15MF,suffix,확정,Data sheet,보유,O,1,2021-01-11,2021-01-11,EPNU Cable (Anna),data sheet.,"we need new datasheet ... 2, LS-RGB-15MF-xm"
+LS-RGB-15MM-5MCC,LS-RGB-15MM,suffix,확정,Data sheet,보유,O,2,2023-02-21,2023-02-21,BOR Cable (Mr Gu),Re: RE: Old RGB cable,And please send data sheet xinya and Changzhou each
+LS-RGB-15MM-xm,LS-RGB-15MM,suffix,확정,Data sheet,보유,O,1,2021-01-11,2021-01-11,EPNU Cable (Anna),data sheet.,"we need new datasheet about ""LANstar' cable series. 1. LS-RGB-15MM-xm"
+LS-RGB-15MM-xxM,LS-RGB-15MM,suffix,확정,Data sheet,보유,O,1,2024-01-25,2024-01-25,BOR Cable (Mr Gu),Data sheet for RGB cable,Could you please send Data sheet for LS-RGB-15MM-xxM
+LS-RJ45-SHORT,LS-RJ45-SHORT,exact,확정,RoHS,보유,O,1,2022-12-16,2022-12-16,BOR Cable (Mr Gu),"ROHS, CE",We need ROHS and CE sheet for below products. 2. LS-RJ45-SHORT
+LS-RJ45FTP-9P,LS-RJ45FTP-9P,exact,확정,Data sheet,보유,O,1,2022-10-12,2022-10-12,BOR Cable (Mr Gu),Data Sheet,Could you please send data sheet for below products? LS-RJ45FTP-9P
+LS-RJ45UTP-8P,LS-RJ45UTP-8P,exact,확정,Data sheet,보유,O,1,2023-03-30,2023-03-30,BOR Cable (Mr Gu),Data sheet - LS-RJ45UTP-8P,Could you please send Data sheet about LS-RJ45UTP-8P?
+LS-RJ45UTP-8P,LS-RJ45UTP-8P,exact,확정,RoHS,보유,자재,1,2023-04-20,2023-04-20,BOR Cable (Mr Gu),ROHS sheet for LS-RJ45UTP-8P,We need ROHS sheet about LS-RJ45UTP-8P.
+LS-RS200C,LS-RS200C,exact,확정,RoHS,보유,O,1,2021-04-12,2021-04-12,BOR Cable (Mr Gu),LS-RS200C / ROHS,we need the ROHS sheet for LS-RS200C
+LS-RS204C,LS-RS204C,exact,확정,Test report,보유,O,1,2022-06-23,2022-06-23,Aucuba (Mai),RE: RE: RE: Order,"If you have any certificate or test report and data sheet for LS-RS204C, Please send it"
+LS-RS485,LS-RS485,exact,확정,Data sheet,보유,O,1,2022-06-20,2022-06-20,Wiretek,RE: 回复: 回复: 인기있는 제품 추전 4/20일=신제품에관하여 (첨부파일)4/25일=신제품 Retractable CABLE 에 관하여 5/10일=새로운 PROMOTIN 과가격조절한제품에관하여 5/26일=研究開発した製品Promotion 6/10日( 이메일로 기준부탁드림),LS-RS485 제품 데이터시트 요청합니다 (Data Sheet include Pin map)
+LS-SER-25MM-1.8M,LS-SER-25MM,suffix,확정,REACH,보유,자재,2,2020-09-28,2021-09-15,BOR Cable (Mr Gu),Reach or MSDS of serial cable,our customer request about Reach or MSDS sheet for serial cable (LS-SER-25MM-1.8M )
+LS-SER-9MF-xM,LS-SER-9MF,suffix,확정,Data sheet,보유,O,1,2022-06-08,2022-06-08,BOR Cable (Mr Gu),Serial cable data sheet Φ,Please re make the data sheet. (LS-SER-9MF-xM) ... mark the molding size ... and 9pin hole size
+LS-SHD20-xm,LS-SHD20,suffix,확정,Data sheet,보유,O,1,2021-01-19,2021-01-19,BOR Cable (Mr Gu),"data sheet about Slim HDMI , DP14 , HDMI to DP",we need data sheet about new cable. 1. LS-SHD20-xm
+LS-SHE-1000HG,LS-SHE-1000HG,exact,확정,Data sheet,보유,O,1,2024-03-20,2024-03-20,BOR Cable (Mr Gu),Data sheet for Rack Shelf,Coulld you please send data sheet about Rack shelf? LS-SHE-1000HG : 472 x 350mm
+LS-SHE-750HG,LS-SHE-750HG,exact,확정,Data sheet,보유,O,1,2024-03-20,2024-03-20,BOR Cable (Mr Gu),Data sheet for Rack Shelf,Coulld you please send data sheet about Rack shelf? LS-SHE-750HG : 495 x 350mm
+LS-SHE-MINI,LS-SHE-MINI,exact,확정,Data sheet,보유,O,1,2025-01-17,2025-01-17,BOR Cable (Mr Gu),data sheet for shelf,Could you please send data sheet for LS-SHE-MINI too?
+LS-SL6-Xm,LS-SL6,suffix,확정,Data sheet,보유,O,2,2021-09-28,2023-08-24,BOR Cable (Mr Gu),Data Sheet about Slim cable,Could you please send Data sheet about LS-SL6-xM?
+LS-SL6-Xm,LS-SL6,suffix,확정,Fluke test,보유,O,1,2021-09-28,2021-09-28,BOR Cable (Mr Gu),Data Sheet and Fluke test,Could you please send the Fluke test report and data sheet?
+LS-SRGB-15MM-Xm,LS-SRGB-15MM,suffix,확정,RoHS,보유,자재,1,2021-08-13,2021-08-13,BOR Cable (Mr Gu),ROHS2,we need the ROHS2 sheet for LS-SRGB-15MM-Xm)
+LS-SSHE-1620HSQ,LS-SSHE-1620HSQ,exact,확정,Data sheet,보유,O,1,2021-05-10,2021-05-10,BOR Cable (Mr Gu),data sheet for shelf,"could you please send the data sheet new shelf? (LS-SSHE-8020HQ , LS-SSHE-1620HSQ)"
+LS-SSHE-8020HQ,LS-SSHE-8020HQ,exact,확정,Data sheet,보유,O,1,2021-05-10,2021-05-10,BOR Cable (Mr Gu),data sheet for shelf,"could you please send the data sheet new shelf? (LS-SSHE-8020HQ , LS-SSHE-1620HSQ)"
+LS-SSTP-CAT.6A-300M,LS-SSTP-CAT.6A-300M|LS-SSTP-CAT6A-300M,exact,확정,Data sheet,보유,O,2,2021-03-12,2025-06-11,BOR Cable (Mr Gu),Request for Rated Voltage and Operating Temperature Range for LS-SSTP-CAT.6A-300M,Please include this information clearly marked on the official datasheet and send it to us
+LS-SSTP-CAT.6A-300M,LS-SSTP-CAT.6A-300M|LS-SSTP-CAT6A-300M,exact,확정,Fluke test,보유,O,1,2025-06-16,2025-06-16,BOR Cable (Mr Gu),Request for ETL Certificate and Fluke Test Report for LS-SSTP-CAT.6A-300M,the ETL certificate and Fluke test report for the following product
+LS-SSTP-CAT.6A-300M,LS-SSTP-CAT.6A-300M|LS-SSTP-CAT6A-300M,exact,확정,RoHS,보유,O,2,2022-08-25,2024-06-14,BOR Cable (Mr Gu),"LS-SSTP-CAT.6A-300M for ROHS , MSDS","We need LS-SSTP-CAT.6A-300M for ROHS , MSDS sheet."
+LS-SSTP-CAT.6A-300M,LS-SSTP-CAT.6A-300M|LS-SSTP-CAT6A-300M,exact,확정,UL,보유,전사,1,2021-11-19,2021-11-19,BOR Cable (Mr Gu),"UL, DELTA, ETL","Could you tell me what certificate the cable below has? ... If have a certificate sheet, please send it. 1. LS-SSTP-CAT.6A-300M"
+LS-SSTP-CAT.6A-300M,LS-SSTP-CAT.6A-300M|LS-SSTP-CAT6A-300M,exact,확정,기타(Other-cert),보유,전사,2,2025-06-05,2025-06-16,BOR Cable (Mr Gu),Request for ETL Certificate and Fluke Test Report for LS-SSTP-CAT.6A-300M,We would like to request the ETL certificate ... Model: LS-SSTP-CAT.6A-300M
+LS-SSTP-CAT.7-100M,LS-SSTP-CAT.7,suffix,확정,Data sheet,보유,O,1,2024-02-01,2024-02-01,BOR Cable (Mr Gu),Data sheet for cat.7 Drum cable,Could you please send data sheet for LS-SSTP-CAT.7-100M?
+LS-SSTP-CAT.7-300M,LS-SSTP-CAT.7,suffix,확정,Test report,보유,O,1,2022-10-28,2022-10-28,BOR Cable (Mr Gu),RE: Re: Re: cat.7 drum cable,Our customer want receive SECRI report too ... CABLE ID : LS-SSTP-CAT.7-300M (BOR-2210001)
+LS-ST-MF-xM,LS-ST-MF,suffix,확정,Data sheet,보유,O,1,2024-08-27,2024-08-27,BOR Cable (Mr Gu),data sheet for audio cable,could you please send data sheet about LS-ST-MF-xM series?
+LS-ST-MM,LS-ST-MM-XXXMN,stem,추정(모델매칭),Data sheet,보유,O,1,2025-06-18,2025-06-18,BOR Cable (Mr Gu),Request for Latest Datasheet of LS-ST-MM Cable,We are in need of the latest datasheet for the LS-ST-MM cable
+LS-U30AMBM-S1M,LS-U30AMBM-S1M,exact,확정,Data sheet,보유,O,2,2023-08-21,2023-08-22,BOR Cable (Mr Gu),RE: Re: Data sheet about USB cable,We need LS-U30AMBM-S1M data sheet too. Please send it.
+LS-U3AOCxx,LS-U3AOCXX,exact,확정,Data sheet,보유,O,1,2025-03-18,2025-03-18,BOR Cable (Mr Gu),Inquiry About the Bend Radius of U3AOC10 Cable,Our customer has requested a datasheet that includes the bend radius of this cable ... Could you please provide the relevant datasheet
+LS-USB-AM5P-Xm,LS-USB-AM5P,suffix,확정,Data sheet,보유,O,1,2022-04-13,2022-04-13,BOR Cable (Mr Gu),Data sheet about USB Mini 5p,We need data sheet about USB Mini 5p CABLE (LS-USB-AM5P-Xm)
+LS-USB-AMAF,LS-USB-AMAF,exact,확정,Data sheet,보유,O,1,2025-04-25,2025-04-25,BOR Cable (Mr Gu),request about Data sheet,Could you please send the Data sheet? ... LS-USB-AMAF
+LS-USB-AMAF-xm,LS-USB-AMAF,suffix,확정,Data sheet,보유,O,1,2021-01-11,2021-01-11,EPNU Cable (Anna),data sheet.,we need new datasheet ... 5. LS-USB-AMAF-xm
+LS-USB-AMAM,LS-USB-AMAM,exact,확정,Data sheet,보유,O,1,2025-04-25,2025-04-25,BOR Cable (Mr Gu),request about Data sheet,Could you please send the Data sheet? ... LS-USB-AMAM
+LS-USB-AMAM-xm,LS-USB-AMAM,suffix,확정,Data sheet,보유,O,1,2021-01-11,2021-01-11,EPNU Cable (Anna),data sheet.,we need new datasheet ... 6. LS-USB-AMAM-xm
+LS-USB-AMBM-0.5M,LS-USB-AMBM,suffix,확정,Data sheet,보유,O,1,2021-08-17,2021-08-17,BOR Cable (Mr Gu),Data sheet,Could you please send the USB cable data sheet? (LS-USB-AMBM-0.5M)
+LS-USB-AMBM-1.8M,LS-USB-AMBM,suffix,추정(인증서 적용범위),RoHS,보유,O*,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for Updated RoHS and MSDS Documents,provide the latest RoHS and MSDS documents for the following five cables
+LS-USB-AMBM-1MC,LS-USB-AMBM,suffix,추정(모델매칭),Data sheet,보유,O,1,2020-09-25,2020-09-25,BOR Cable (Mr Gu),Data Sheet for LS-USB-AMBM-1MC,We need the data sheet for LS-USB-AMBM-1MC
+LS-USB-AMBM-xm,LS-USB-AMBM,suffix,확정,Data sheet,보유,O,1,2021-01-11,2021-01-11,EPNU Cable (Anna),data sheet.,we need new datasheet ... 7. LS-USB-AMBM-xm
+LS-USB2.0-AMAF-sXm,LS-USB2.0-AMAF-SXM,exact,확정,RoHS,보유,O,1,2021-03-22,2021-03-22,BOR Cable (Mr Gu),ROHS - USB screw cable,We need ROHS sheet for LS-USB2.0-AMAF-sXm series
+LS-USB3.0-AMAF-xM,LS-USB3.0-AMAF,suffix,확정,Data sheet,보유,O,1,2023-08-21,2023-08-21,BOR Cable (Mr Gu),Data sheet about USB cable,We need data sheet below cables. 1. LS-USB3.0-AMAF-xM
+LS-USB3.0-AMMIC-xM,LS-USB3.0-AMMIC,suffix,확정,Data sheet,보유,O,1,2022-12-01,2022-12-01,BOR Cable (Mr Gu),Data Sheet - USB3.0 micro B,We need Data sheet for LS-USB3.0-AMMIC-xM
+LS-UTP5H-300MG,LS-UTP5H,suffix,확정,Data sheet,보유,O,1,2022-05-04,2022-05-04,BOR Cable (Mr Gu),"Data Sheet, Rohs2.0",Please send Data sheet and RoHS2.0 sheet. LS-UTP5H-300MG
+LS-UTP5H-300MG,LS-UTP5H,suffix,확정,Fluke test,보유,O,1,2023-05-23,2023-05-23,BOR Cable (Mr Gu),Fluke test for LS-UTP5H-300MG,Could you please send fluke test report for LS-UTP5H-300MG?
+LS-UTP5H-300MG,LS-UTP5H,suffix,확정,MSDS/SDS,보유,자재,1,2022-10-14,2022-10-14,BOR Cable (Mr Gu),MSDS for cat.5e,We need MSDS sheet for LS-UTP5H-300MG
+LS-UTP5H-300MG,LS-UTP5H,suffix,확정,RoHS,보유,O,1,2022-05-04,2022-05-04,BOR Cable (Mr Gu),"Data Sheet, Rohs2.0",Please send Data sheet and RoHS2.0 sheet. LS-UTP5H-300MG
+LS-VM19,LS-VM19,exact,확정,Data sheet,보유,O,1,2023-01-17,2023-01-17,BOR Cable (Mr Gu),Data sheet for LS-VM19,We need data sheet for LS-VM19
+LS-WP151P,LS-WP151P,exact,확정,Data sheet,보유,O,1,2020-10-23,2020-10-23,BOR Cable (Mr Gu),datasheet for Water Proof,We need datasheet for water proof cupler and outlet ... LS-WP151P
+LS-WP151S,LS-WP151S,exact,확정,Data sheet,보유,O,2,2020-10-23,2021-04-22,BOR Cable (Mr Gu),"Data sheet for LS-WP151S , WP152S",We need data sheet for LS-WP151S and LS-WP152S
+LS-WP152S,LS-WP152S,exact,확정,Data sheet,보유,O,1,2021-04-22,2021-04-22,BOR Cable (Mr Gu),"Data sheet for LS-WP151S , WP152S",We need data sheet for LS-WP151S and LS-WP152S
+LS-WP23-1PN ~ 6PN,LS-WP23-1PN,prefix,추정(모델매칭),Data sheet,보유,O,1,2023-03-13,2023-03-13,BOR Cable (Mr Gu),Data Sheet about Wall plate,Could you please send data sheet about below products? 1. LS-WP23-1PN ~ 6PN.
+LS-WP8DS-C6,LS-WP8DS-C6,exact,확정,Data sheet,보유,O,1,2023-01-30,2023-01-30,Shiunn Yang (Erica),UL and Data sheet,We need UL and Data sheet (Drawing file) for LS-WP8DS-C6
+LS-WP8DS-C6,LS-WP8DS-C6,exact,확정,Drawing,보유,O,1,2023-03-14,2023-03-14,Shiunn Yang (Erica),3D Drawing file,our customer want 3D Drawing file. 1. LS-WP8DS-C6
+LS-WP8DS-C6,LS-WP8DS-C6,exact,확정,UL,보유,전사,1,2023-01-30,2023-01-30,Shiunn Yang (Erica),UL and Data sheet,We need UL and Data sheet (Drawing file) for LS-WP8DS-C6
+LS-WPCOP-C6,LS-WPCOP-C6,exact,확정,Data sheet,보유,O,1,2022-03-03,2022-03-03,BOR Cable (Mr Gu),Data Sheet for LS-WPCOP-C6,We need Data Sheet for LS-WPCOP-C6. We need operating temperature.
+LS-WPCOP-C6A,LS-WPCOP-C6A,exact,확정,MSDS/SDS,보유,자재,1,2022-05-13,2022-05-13,BOR Cable (Mr Gu),RE: Re: Data Sheet for LS-WPCOP-C6,Could you please send the Rohs2.0 and MSDS sheet for LS-WPCOP-C6A?
+LS-WPCOP-C6A,LS-WPCOP-C6A,exact,확정,RoHS,보유,O,1,2022-05-13,2022-05-13,BOR Cable (Mr Gu),RE: Re: Data Sheet for LS-WPCOP-C6,Could you please send the Rohs2.0 and MSDS sheet for LS-WPCOP-C6A?
+LS-WPUSB-3.0,LS-WPUSB-3.0,exact,확정,Drawing,보유,O,1,2023-03-14,2023-03-14,Shiunn Yang (Erica),3D Drawing file,our customer want 3D Drawing file. 2. LS-WPUSB-3.0
+LS-WROLLER,LS-WROLLER,exact,확정,Data sheet,보유,O,1,2023-01-13,2023-01-13,BOR Cable (Mr Gu),Data Sheet for LS-WROLLER,Could you please send data sheet for LS-WROLLER?
+LSN-BOOT-COVER-WN,LSN-BOOT-COVER-WN,exact,확정,Data sheet,보유,O,1,2025-02-11,2025-02-11,BOR Cable (Mr Gu),Fwd: RJ45 BOOT - COVER - Broken,Could you please send data sheet for improved boot? ... Model Name: LSN-BOOT-COVER-WN
+LSN-BOOT-COVER-WN,LSN-BOOT-COVER-WN,exact,확정,REACH,보유,자재,1,2026-06-19,2026-06-19,BOR Cable (Mr Gu),"Request for Updated RoHS, REACH, and SGS Test Reports for LSN-BOOT-COVER-WN",REACH Certificate / Test Report
+LSN-BOOT-COVER-WN,LSN-BOOT-COVER-WN,exact,확정,RoHS,보유,자재,1,2026-06-19,2026-06-19,BOR Cable (Mr Gu),"Request for Updated RoHS, REACH, and SGS Test Reports for LSN-BOOT-COVER-WN",RoHS Certificate / Test Report
+LSN-CAT6-STPG,LSN-CAT6-STP,prefix,추정(모델매칭),Data sheet,보유,O,1,2020-07-20,2020-07-20,BOR Cable (Mr Gu),Datasheet and ROHS paper for cat.6 gold connector,We need datasheet and rohs paper. (LSN-CAT6-STPG)
+LSN-CAT6-STPG,LSN-CAT6-STP,prefix,추정(모델매칭),RoHS,보유,자재,1,2020-07-20,2020-07-20,BOR Cable (Mr Gu),Datasheet and ROHS paper for cat.6 gold connector,We need datasheet and rohs paper. (LSN-CAT6-STPG)
+LSP-6IC-FJM,LSP-6IC-FJM,exact,확정,RoHS,보유,O,1,2022-12-16,2022-12-16,BOR Cable (Mr Gu),"ROHS, CE",We need ROHS and CE sheet for below products. 3. LSP-6IC-FJM
+LSP-6IC-FJM,LSP-6IC-FJM,exact,확정,Test report,보유,자재,1,2021-03-30,2021-03-30,BOR Cable (Mr Gu),test report for coupler,Our customer request about test report for LSP-EIC-FJM and LSP-6IC-FJM
+LSP-6IC-FKTMT,LSP-6IC-FKTMT,exact,확정,Data sheet,보유,O,2,2021-05-12,2021-11-09,BOR Cable (Mr Gu),Data sheet and Rohs for keystone Coupler,We need the Data sheet and Rohs sheet about below product. 1. LSP-6IC-FKTMT
+LSP-6IC-FKTMT,LSP-6IC-FKTMT,exact,확정,RoHS,보유,O,2,2021-11-09,2022-12-16,BOR Cable (Mr Gu),"ROHS, CE",We need ROHS and CE sheet for below products. 1. LSP-6IC-FKTMT
+LSP-6IC-UKWT,LSP-6IC-UKWT,exact,확정,Data sheet,보유,O,1,2022-01-06,2022-01-06,BOR Cable (Mr Gu),Data Sheet,We need Data Sheet about below products. 1. LSP-6IC-UKWT
+LSP-6KTVM-F1MT,LSP-6KTVM-F1MT,exact,확정,Data sheet,보유,O,1,2022-03-08,2022-03-08,BOR Cable (Mr Gu),Data sheet - Keystone jack,We need data sheet below products. 2. LSP-6KTVM-F1MT
+LSP-BK-14R~64R,LSP-BK-14R,prefix,추정(모델매칭),Data sheet,보유,O,1,2022-01-06,2022-01-06,BOR Cable (Mr Gu),Data Sheet,We need Data Sheet about below products. 2. LSP-BK-14R~64R
+LSP-EC-USB2A,LSP-EC-USB2A,exact,확정,Data sheet,보유,O,3,2020-05-14,2025-04-25,BOR Cable (Mr Gu),request about Data sheet,Could you please send the Data sheet? ... LSP-EC-USB2A
+LSP-EC-USB2A,LSP-EC-USB2A,exact,확정,RoHS,보유,자재,1,2025-04-29,2025-04-29,BOR Cable (Mr Gu),RE: Re: request about Data sheet,ROHS sheet for ... LSP-EC-USB2A (keystone guide)
+LSP-EC-USB3A,LSP-EC-USB3A,exact,확정,Data sheet,보유,O,2,2020-05-14,2024-03-05,BOR Cable (Mr Gu),Data sheet,Please send data sheet about below products. 2. LSP-EC-USB3A
+LSP-EIC-FJM,LSP-EIC-FJM,exact,확정,RoHS,보유,O,1,2026-07-08,2026-07-08,BOR Cable (Mr Gu),Request for RoHS and MSDS Documents for LSP-EIC-FJM,send us the RoHS and MSDS documents for the LSP-EIC-FJM
+LSP-EIC-FJM,LSP-EIC-FJM,exact,확정,Test report,보유,자재,1,2021-03-30,2021-03-30,BOR Cable (Mr Gu),test report for coupler,Our customer request about test report for LSP-EIC-FJM and LSP-6IC-FJM
+LSP-EIC-FKTMT,LSP-EIC-FKTMT,exact,확정,Data sheet,보유,O,1,2021-05-12,2021-05-12,BOR Cable (Mr Gu),data sheet for LSP-XIC-FKTMT,"We need data sheet about (LSP-EIC-FKTMT , LSP-6IC-FKTMT , LSP-GIC-FKTMT)"
+LSP-GIC-FED4,LSP-GIC-FED4,exact,확정,RoHS,보유,O,1,2023-07-25,2023-07-25,BOR Cable (Mr Gu),ROHS sheet,Could you please send ROHS sheet for LSP-GIC-FED4?
+LSP-GIC-FKTMT,LSP-GIC-FKTMT,exact,확정,Data sheet,보유,O,2,2021-05-12,2021-11-09,BOR Cable (Mr Gu),Data sheet and Rohs for keystone Coupler,We need the Data sheet and Rohs sheet about below product. 2. LSP-GIC-FKTMT
+LSP-GIC-FKTMT,LSP-GIC-FKTMT,exact,확정,RoHS,보유,O,1,2021-11-09,2021-11-09,BOR Cable (Mr Gu),Data sheet and Rohs for keystone Coupler,We need the Data sheet and Rohs sheet about below product. 2. LSP-GIC-FKTMT
+LSP-GIC-UJW,LSP-GIC-UJW,exact,확정,Fluke test,보유,O,1,2023-05-16,2023-05-16,BOR Cable (Mr Gu),RE: test report for LSP-GIC-UJW,"If possible, Please send Fluke test report."
+LSP-GIC-UJW,LSP-GIC-UJW,exact,확정,RoHS,보유,O,1,2023-05-12,2023-05-12,BOR Cable (Mr Gu),RE: test report for LSP-GIC-UJW,And please send ROSH sheet too.
+LSP-GIC-UJW,LSP-GIC-UJW,exact,확정,Test report,보유,O,2,2023-05-12,2023-05-12,BOR Cable (Mr Gu),RE: test report for LSP-GIC-UJW,Re send. (제목: RE: test report for LSP-GIC-UJW)
+LSP-GKTVM-F1MT,LSP-GKTVM-F1MT,exact,확정,Data sheet,보유,O,1,2022-03-08,2022-03-08,BOR Cable (Mr Gu),Data sheet - Keystone jack,We need data sheet below products. 1. LSP-GKTVM-F1MT
+LSP-WP8DS-C6,LSP-WP8DS-C6,exact,확정,Data sheet,보유,O,2,2020-10-23,2023-03-07,BOR Cable (Mr Gu),Data sheet for LSP-WP8DS-C6,Could you please send data sheet about LSP-WP8DS-C6?
+LSP-WP8DS-C6A,LSP-WP8DS-C6A,exact,확정,CE,보유,O,2,2022-02-22,2022-08-30,BOR Cable (Mr Gu),ROHS2.0 and CE certificate for WP8DS-C6A,Could you please send the ROHS 2.0 and CE sheet for LSP-WP8DS-C6A?
+LSP-WP8DS-C6A,LSP-WP8DS-C6A,exact,확정,RoHS,보유,O,1,2022-08-30,2022-08-30,BOR Cable (Mr Gu),ROHS2.0 and CE certificate for WP8DS-C6A,Could you please send the ROHS 2.0 and CE sheet for LSP-WP8DS-C6A?
+LSP-WP8DS-C6A,LSP-WP8DS-C6A,exact,확정,기타(Other-cert),보유,O,1,2022-02-22,2022-02-22,BOR Cable (Mr Gu),Certificate,"(Water proof, CE, COC)"
