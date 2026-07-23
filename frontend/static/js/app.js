@@ -11373,10 +11373,18 @@ function _asstDownloadBtn(docId, filename) {
       b.textContent = "받음";
       setTimeout(() => { b.textContent = label; b.disabled = false; }, 2000);
     } catch (e) {
-      /* 503 = 자격증명 미설정. 오류가 아니라 '아직 안 됨' 이므로 폴더로 안내한다. */
-      b.textContent = (e && e.status === 503) ? "폴더에서 받기" : "실패";
-      b.disabled = false;
-      if (e && e.detail && e.detail.hint) alert(e.detail.hint);
+      /* 503 = 자격증명 미설정. 오류가 아니라 '아직 안 됨' 이라 경고창 대신 카드에 적는다.
+         경고창은 매 파일마다 떠서 확인 버튼만 계속 누르게 된다. */
+      const is503 = e && e.status === 503;
+      b.textContent = is503 ? "서버 직접 받기 불가" : "실패";
+      b.disabled = true;
+      b.title = (e && e.detail && e.detail.hint) || (e && e.message) || "";
+      const row = b.closest(".asst-file") || b.parentElement;
+      if (row && !row.querySelector(".asst-dlnote")) {
+        row.appendChild(_asstEl("div", "asst-dlnote asst-sub", is503
+          ? "서버에 드라이브 권한이 없어 직접 내려받을 수 없습니다 — 옆의 '폴더 열기' 로 받아 주십시오."
+          : ((e && e.message) || "다운로드에 실패했습니다.")));
+      }
     }
   });
   return b;
@@ -11658,14 +11666,23 @@ async function _asstLoadHealth() {
   if (!dot || !txt) return;
   try {
     const h = await api.assistantHealth();
+    /* 드라이브는 두 단계로 나눠 본다 — 계정만 만들고 폴더 공유를 빠뜨리는 것이
+       가장 흔한 실패라, '설정됨' 만으로는 되는지 안 되는지 알 수 없다. */
+    const d = h.drive || {};
+    const driveTxt = !d.service_account_configured ? "드라이브 미연결(폴더 링크만)"
+                   : !d.folder_readable ? "드라이브 폴더 접근 불가"
+                   : "드라이브 OK(PDF 직접 받기)";
     const bits = [
       "인증KB " + ((h.cert_kb && h.cert_kb.documents) || 0) + "건",
       "상담 " + ((h.master && h.master.qa_rows) || 0) + "건",
       "LLM " + (h.llm && h.llm.available ? "ON" : "OFF(규칙기반)"),
+      driveTxt,
     ];
     txt.textContent = bits.join(" · ");
     dot.className = "asst-dot " + (h.ok ? "ok" : "bad");
     let tip = bits.join("\n");
+    if (d.client_email) tip += "\n서비스 계정: " + d.client_email;
+    if (d.folder_id) tip += "\n인증자료 폴더: " + d.folder_id;
     if (h.problems && h.problems.length) tip += "\n\n문제:\n- " + h.problems.join("\n- ");
     if (box) box.title = tip;
     if (h.problems && h.problems.length) {
