@@ -17,7 +17,7 @@ import json
 import re
 import sys
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import loader, policy as policy_mod, render, resolver, search
@@ -234,7 +234,13 @@ def file_ref(doc_id: str, mode: str = policy_mod.INTERNAL,
     view = search.make_doc_view(rec)
     out: Dict[str, Any] = {'doc_id': doc_id, 'mode': pol.mode,
                            'document': doc_dict(view, pol)}
-    if not pol.may_share_file(view):
+    # 사내 모드에서 '단독 전달 불가' 는 고객에게 그냥 주지 말라는 뜻이지, 담당자가 열어
+    # 보지도 말라는 뜻이 아니다. 그 판단을 하려면 열어 봐야 한다. 게다가 링크는 열리는데
+    # 다운로드만 막으면 아무것도 못 막고 혼란만 준다. 경고는 카드에 이미 붙는다.
+    internal_review = (pol.mode != policy_mod.CUSTOMER
+                       and view.deliverable is False
+                       and not view.attribution_rejected)
+    if not pol.may_share_file(view) and not internal_review:
         out['allowed'] = False
         out['file'] = None
         out['reason'] = ('단독 전달 불가 자료' if not view.deliverable else
@@ -251,9 +257,9 @@ def file_ref(doc_id: str, mode: str = policy_mod.INTERNAL,
         return out
     ref = drive_resolver(kb).resolve_document(rec)
     out['allowed'] = True
-    out['file'] = {'status': ref.status, 'filename': ref.filename,
-                   'folder_id': ref.folder_id, 'folder_url': ref.folder_url,
-                   'url': ref.url, 'path': ref.path, 'note': ref.note, 'ok': ref.ok}
+    # DriveRef 필드를 손으로 나열하면 새 필드가 조용히 빠진다 — file_id 가 빠져
+    # 다운로드가 ID 없이 호출돼 전건 실패했다. dataclass 를 그대로 펼친다.
+    out['file'] = {**asdict(ref), 'ok': ref.ok}
     out['notices'] = ([policy_mod.SCAN_NOTICE] if not view.text_extractable else [])
     return out
 
