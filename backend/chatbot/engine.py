@@ -87,6 +87,71 @@ def extract_models(text: str) -> List[str]:
         out.append(name)
         if len(out) >= 3:
             break
+    if out:
+        return out
+    return _bare_code_models(text)
+
+
+#: 접두를 뗀 모델 코드. 담당자는 'LS-' 를 빼고 '6utpd-3mg' 처럼 치는 일이 잦다.
+#: 숫자/영문으로 시작하고 하이픈이 든 토큰만 후보로 본다(일반 단어를 모델로 오인하지 않게).
+_BARE_CODE_RX = re.compile(r'\b([0-9A-Z]{1,6}(?:[.\-][0-9A-Z.]{1,10}){1,4})\b')
+#: 하이픈 없는 코드('300HO'). 숫자와 영문이 섞인 4~12자만 본다.
+_BARE_SOLID_RX = re.compile(r'\b(?=[0-9A-Z]{4,12}\b)(?=[^\s]*\d)(?=[^\s]*[A-Z])([0-9A-Z]{4,12})\b')
+_BARE_PREFIXES = ('LS-', 'LSP-', 'LSN-')
+
+
+def _bare_code_models(text: str) -> List[str]:
+    """'6utpd-3mg' 처럼 접두가 빠진 입력을 KB 에 실재하는 모델로 복원한다.
+
+    복원은 **KB 사전에 그 이름이 실제로 있을 때만** 인정한다. 접두를 붙여 만든 이름이
+    사전에 없으면 버린다 — 없는 모델을 지어내면 엉뚱한 제품군 자료가 붙는다.
+    """
+    up = cert_resolver.normalize_model(text)
+    known = set(_gazetteer())
+    out: List[str] = []
+    for tok in _BARE_CODE_RX.findall(up):
+        if any(tok.startswith(p) for p in _BARE_PREFIXES):
+            continue
+        for pre in _BARE_PREFIXES:
+            cand = pre + tok
+            if cand in known and cand not in out:
+                out.append(cand)
+                break
+        else:
+            # 사전에 없으면 제품군 해석까지 시도한다(길이 변형은 사전에 없을 수 있다)
+            for pre in _BARE_PREFIXES:
+                cand = pre + tok
+                if cert_resolver.resolve_cert(cand).found and cand not in out:
+                    out.append(cand)
+                    break
+        if len(out) >= 3:
+            break
+    if out:
+        return out
+
+    # 하이픈 없는 코드('300ho'). 접두를 붙인 이름의 **골격**(숫자를 지운 형태)이 KB 에
+    # 실재할 때만 인정한다 — 'LS-#HO' 는 LS-1600HO 로 실재하므로 LS-300HO 를 모델로 읽고
+    # "자료 없음 + 같은 라인 제안"으로 답할 수 있다. 반면 '120hz'→'LS-#HZ' 는 실재하지
+    # 않으니 버린다. 이 게이트가 없으면 '4k'·'2024' 가 전부 모델명이 된다.
+    skeletons = {cert_resolver._skeleton(f) for f in cert_loader.load_kb().family_keys}
+    for tok in _BARE_SOLID_RX.findall(up):
+        for pre in _BARE_PREFIXES:
+            cand = pre + tok
+            if cand in known:
+                if cand not in out:
+                    out.append(cand)
+                break
+            if cert_resolver._skeleton(cand) not in skeletons:
+                continue
+            # 골격이 맞아도 여러 제품군의 앞부분일 뿐이면 모델명이 아니다.
+            # 'usb3.0 허브' 의 'USB3' 이 그런 경우로, LS-USB3.0-AMAF/AMAM/… 의 어간이다.
+            if cert_resolver.resolve_cert(cand).reason == 'stem_ambiguous':
+                continue
+            if cand not in out:
+                out.append(cand)
+            break
+        if len(out) >= 2:
+            break
     return out
 
 
@@ -375,9 +440,11 @@ def chat(message: str, session_id: str = '', mode: str = 'internal') -> ChatRepl
 def _dispatch(message: str, sess: session.Session, mode: str,
               model_override: Optional[str] = None,
               resumed: bool = False) -> ChatReply:
-    # 세션으로 모델이 확정된 후속턴이면 라우터에 알려준다 — 그러지 않으면
-    # '자료 있나요?'·'도면도요' 가 문장 안에 모델명이 없다는 이유로 legacy 로 샌다.
-    known = bool(model_override) or bool(
+    # 라우터는 cert_cli 정규식(LS- 접두 필수)으로만 모델을 본다. 접두 없이 친 '300ho' 나
+    # 세션으로 확정된 후속턴은 그 정규식에 안 걸려, 문장 안에 모델명이 없다는 이유로
+    # legacy 로 샌다. 여기서 먼저 해석해 라우터에 알려준다.
+    recovered = extract_models(message)
+    known = bool(model_override) or bool(recovered) or bool(
         sess.last_models and (session.has_deictic(message) or _is_followup(message)))
     r = router.route(message, known_model=known)
     parsed = r['parsed']
