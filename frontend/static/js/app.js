@@ -11418,15 +11418,21 @@ function _asstAddReply(r) {
     const ul = _asstEl("ul");
     r.notices.forEach(t => ul.appendChild(_asstEl("li", null, t)));
     nb.appendChild(ul);
-    nb.appendChild(_asstEl("p", "re",
-      "(정책상 아래 본문은 조회 엔진 원문 그대로 출력합니다 — 같은 문구가 본문 끝에도 남아 있을 수 있습니다.)"));
     card.appendChild(nb);
   }
 
-  /* 본문 — 서버가 준 문자열 그대로 */
+  /* 본문 — 위 박스에 이미 띄운 주의문구 줄만 빼고 원문 그대로.
+     문구를 고쳐 쓰지 않고 줄 단위로 제거만 한다(요약하면 정책 문구가 훼손된다). */
   const badgeKeys = (r.badges || []).map(b => b.key);
   const aiOnly = badgeKeys.indexOf("spec") >= 0 && badgeKeys.indexOf("cert") < 0;
-  card.appendChild(_asstEl("div", "asst-body" + (aiOnly ? " ai-caution" : ""), r.answer || r.text || ""));
+  const noticeSet = new Set((r.notices || []).map(n => (n || "").trim()).filter(Boolean));
+  const body = (r.answer || r.text || "")
+    .split("\n")
+    .filter(line => !noticeSet.has(line.trim()))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  card.appendChild(_asstEl("div", "asst-body" + (aiOnly ? " ai-caution" : ""), body));
 
   /* 되묻기 후보 버튼 */
   if (r.needs_clarification && r.candidates && r.candidates.length) {

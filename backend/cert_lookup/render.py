@@ -63,34 +63,58 @@ def _source_line(doc: DocView) -> str:
     return f"출처: {s.get('sender', '')} / \"{subject}\" / {date} 수신".strip()
 
 
+#: issuer 원문은 '기관명 (풀네임) — 부연설명, 주소' 처럼 길다. 문서를 특정하는 데 필요한 건
+#: 앞의 기관명뿐이라 부연을 자른다(원문은 data['issuer'] 에 그대로 있다).
+_ISSUER_TAIL_RX = re.compile(r'\s*[—(,/].*$')
+
+
 def _issuer_line(doc: DocView) -> str:
     bits = []
     if doc.issuer:
-        bits.append(f'발급기관 {doc.issuer}')
+        name = doc.issuer.strip()
+        if len(name) > 34:
+            name = _ISSUER_TAIL_RX.sub('', name).strip() or name[:34]
+        bits.append(name)
     if doc.doc_number:
-        bits.append(f'문서번호 {doc.doc_number}')
-    bits.append(f'발급일 {doc.issue_date}' if doc.issue_date else '발급일 미상')
+        bits.append(doc.doc_number)
+    if doc.issue_date:
+        bits.append(doc.issue_date)
+    # '유효기간 표기 없음' 은 890건 중 885건이라 정보가 아니다. 표기가 있을 때만 알린다.
     if doc.valid_until:
         bits.append(f'유효기간 {doc.valid_until}')
-    else:
-        bits.append(policy_mod.NO_VALID_UNTIL)
-    return ' / '.join(bits)
+    return ' · '.join(bits)
 
 
 def _location(doc: DocView, pol: Policy) -> Optional[DriveRef]:
-    if not pol.show_file_location or not pol.may_share_file(doc):
+    """파일 위치. 사내 모드에서는 '단독 전달 불가' 자료도 위치를 알려준다.
+
+    담당자는 그 자료를 열어 보고 판단해야 하는 사람이다. 위치를 감추면 '자료는 있는데
+    어디 있는지는 안 알려주는' 상태가 된다 — 전달 여부 경고는 이미 따로 붙는다.
+    고객 모드에서는 종전대로 막는다.
+    """
+    if not pol.show_file_location:
+        return None
+    if pol.mode == policy_mod.CUSTOMER and not pol.may_share_file(doc):
+        return None
+    if doc.attribution_rejected:              # 출처가 반박된 문서는 사내에서도 안내하지 않는다
         return None
     return _drive().resolve_document(doc)
 
 
 def _doc_block(doc: DocView, pol: Policy, idx: int) -> Dict[str, Any]:
+    """문서 한 건. 읽는 사람은 사내 담당자이고, 알아야 할 것은 세 가지뿐이다 —
+    이게 무슨 자료인지 / 써도 되는지 / 파일이 어디 있는지.
+
+    메일 출처(발신인·제목·수신일)는 본문에서 뺀다. 자료를 어떻게 받았는지는 담당자가
+    판단에 쓰지 않는 정보다. 필요하면 data['source'] 에 그대로 있다.
+    발급기관·문서번호·발급일은 남긴다 — 고객사 제출 시 문서를 특정하는 값이다.
+    """
     lines = [f'{idx}. {doc.title_ko or doc.filename}']
     lines.append(f'   {_issuer_line(doc)}')
-    lines.append(f'   적용범위: {doc.scope_ko} — {doc.scope_target}')
-    src = _source_line(doc)
-    if src:
-        lines.append(f'   {src}')
     caveat = policy_mod.effective_caveat(doc)
+    # 적용범위는 caveat 과 상당 부분 겹친다. caveat 이 있으면 그쪽이 더 정확하므로 생략한다.
+    if not caveat:
+        lines.append(f'   적용범위: {doc.scope_ko} — {doc.scope_target}')
     if caveat:
         lines.append(f'   안내: {caveat}')
     if doc.material_cats:
