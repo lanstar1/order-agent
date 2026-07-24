@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -468,3 +468,119 @@ async def api_put_config(request: Request, user: dict = Depends(get_current_user
         updated.append(key)
 
     return {"status": "ok", "updated": updated, "config": bor_db.get_config()}
+
+
+# ─── 판매 이력 시드 (수요 계산용 공백 구간 채움) ──────────────
+#
+# 이카운트 판매현황 CSV(연/월/일="YYYYMMDD-순번", 품목코드, 거래처코드, 모델명,
+# 판매수량/수량, 안전재고수량 6컬럼)를 sales_records에 주입한다.
+# - 지정한 날짜 창(date_from~date_to) 안의 행만 삽입
+# - 창 안에 기존 데이터가 있으면 409 (이중 집계 방지, force="true"로만 우회)
+# - 기존 행은 절대 삭제/수정하지 않음. slip_no는 SEED- 접두로 실전표와 구분.
+
+@router.post("/admin/seed-sales")
+def api_seed_sales(
+    file: UploadFile = File(...),
+    date_from: str = Form(...),
+    date_to: str = Form(...),
+    confirm: str = Form(""),
+    force: str = Form(""),
+    user: dict = Depends(get_current_user),
+):
+    if confirm != "true":
+        raise HTTPException(status_code=400, detail="confirm='true'가 필요합니다")
+
+    d_from = date_from.replace("-", "").strip()
+    d_to = date_to.replace("-", "").strip()
+    if not (d_from.isdigit() and d_to.isdigit() and len(d_from) == 8 and len(d_to) == 8 and d_from <= d_to):
+        raise HTTPException(status_code=400, detail="date_from/date_to는 YYYYMMDD 형식이어야 합니다")
+
+    import csv as csv_mod
+    import re
+
+    raw = file.file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp949", errors="replace")
+
+    reader = csv_mod.reader(io.StringIO(text))
+    header = None
+    qty_idx = code_idx = model_idx = cust_idx = None
+    rows_to_insert = []
+    skipped = 0
+    slip_re = re.compile(r"^\d{8}-\S+")
+
+    for cols in reader:
+        if not cols:
+            continue
+        if header is None:
+            if "품목코드" in [c.strip() for c in cols]:
+                header = [c.strip() for c in cols]
+                code_idx = header.index("품목코드")
+                cust_idx = header.index("거래처코드") if "거래처코드" in header else None
+                model_idx = header.index("모델명") if "모델명" in header else None
+                qty_idx = header.index("판매수량") if "판매수량" in header else (
+                    header.index("수량") if "수량" in header else None)
+                if qty_idx is None:
+                    raise HTTPException(status_code=400, detail="판매수량/수량 컬럼을 찾지 못했습니다")
+            continue
+        date_raw = str(cols[0]).strip()
+        if not slip_re.match(date_raw):
+            continue  # 소계/푸터 행
+        slip_date = date_raw.split("-")[0]
+        if not (d_from <= slip_date <= d_to):
+            skipped += 1
+            continue
+        try:
+            qty = float(str(cols[qty_idx]).strip().replace(",", "") or 0)
+        except ValueError:
+            continue
+        rows_to_insert.append((
+            slip_date,
+            f"SEED-{date_raw}-r{len(rows_to_insert)}",
+            str(cols[code_idx]).strip() if code_idx is not None and code_idx < len(cols) else "",
+            str(cols[cust_idx]).strip() if cust_idx is not None and cust_idx < len(cols) else "",
+            str(cols[model_idx]).strip() if model_idx is not None and model_idx < len(cols) else "",
+            qty,
+            "BOR demand seed",
+        ))
+
+    if header is None:
+        raise HTTPException(status_code=400, detail="품목코드 헤더 행을 찾지 못했습니다 (이카운트 판매현황 CSV인지 확인)")
+    if not rows_to_insert:
+        raise HTTPException(status_code=400, detail=f"창({d_from}~{d_to}) 안에 삽입할 행이 없습니다 (창 밖 {skipped}행)")
+
+    conn = get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM sales_records WHERE slip_date >= ? AND slip_date <= ?",
+            (d_from, d_to),
+        ).fetchone()[0]
+        if existing and force != "true":
+            raise HTTPException(
+                status_code=409,
+                detail=f"창({d_from}~{d_to})에 기존 판매 데이터 {existing}행이 있습니다. "
+                       f"이중 집계 위험 — 창을 조정하거나 force='true'로 우회하세요.")
+
+        CHUNK = 500
+        inserted = 0
+        for i in range(0, len(rows_to_insert), CHUNK):
+            chunk = rows_to_insert[i:i + CHUNK]
+            placeholders = ",".join(["(?,?,?,?,?,?,?)"] * len(chunk))
+            params = [v for row in chunk for v in row]
+            conn.execute(
+                "INSERT INTO sales_records (slip_date, slip_no, item_code, customer_name, "
+                "model_name, quantity, note) VALUES " + placeholders,
+                params,
+            )
+            inserted += len(chunk)
+        conn.commit()
+    finally:
+        conn.close()
+
+    months = sorted({r[0][:6] for r in rows_to_insert})
+    logger.info(f"[BOR오더] 판매 시드 완료: {inserted}행 ({d_from}~{d_to}, by {user.get('name')})")
+    return {"status": "ok", "inserted": inserted, "window": [d_from, d_to],
+            "months": months, "skipped_out_of_window": skipped,
+            "existing_in_window_before": existing}
