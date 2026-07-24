@@ -485,6 +485,7 @@ def api_seed_sales(
     date_to: str = Form(...),
     confirm: str = Form(""),
     force: str = Form(""),
+    replace: str = Form(""),
     user: dict = Depends(get_current_user),
 ):
     if confirm != "true":
@@ -557,11 +558,39 @@ def api_seed_sales(
             "SELECT COUNT(*) FROM sales_records WHERE slip_date >= ? AND slip_date <= ?",
             (d_from, d_to),
         ).fetchone()[0]
-        if existing and force != "true":
+        replaced = 0
+        if existing and replace == "true":
+            # 기존 행을 백업 테이블에 보존한 뒤 창 안에서 삭제 (부분 수집 데이터 교체용)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sales_records_seed_backup (
+                    id INTEGER, slip_date TEXT, slip_no TEXT, item_code TEXT,
+                    customer_name TEXT, item_name TEXT, model_name TEXT,
+                    quantity REAL, unit_price REAL, supply_amount REAL, vat REAL,
+                    total_amount REAL, cost_price REAL, warehouse TEXT,
+                    account_date TEXT, item_group TEXT, note TEXT, staff_name TEXT,
+                    customer_group TEXT, safety_stock REAL, display_code TEXT,
+                    gross_profit REAL, backed_up_at TEXT
+                )""")
+            conn.execute(
+                "INSERT INTO sales_records_seed_backup "
+                "SELECT id, slip_date, slip_no, item_code, customer_name, item_name, "
+                "model_name, quantity, unit_price, supply_amount, vat, total_amount, "
+                "cost_price, warehouse, account_date, item_group, note, staff_name, "
+                "customer_group, safety_stock, display_code, gross_profit, ? "
+                "FROM sales_records WHERE slip_date >= ? AND slip_date <= ?",
+                (datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), d_from, d_to),
+            )
+            conn.execute(
+                "DELETE FROM sales_records WHERE slip_date >= ? AND slip_date <= ?",
+                (d_from, d_to),
+            )
+            replaced = existing
+        elif existing and force != "true":
             raise HTTPException(
                 status_code=409,
                 detail=f"창({d_from}~{d_to})에 기존 판매 데이터 {existing}행이 있습니다. "
-                       f"이중 집계 위험 — 창을 조정하거나 force='true'로 우회하세요.")
+                       f"이중 집계 위험 — 창을 조정하거나 replace='true'(백업 후 교체) 또는 "
+                       f"force='true'(그대로 추가)를 사용하세요.")
 
         CHUNK = 500
         inserted = 0
