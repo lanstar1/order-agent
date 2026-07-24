@@ -1,0 +1,14 @@
+{
+  "name": "랜스타 간편발주",
+  "short_name": "간편발주",
+  "description": "고정 거래처 전용 B2B 간편발주",
+  "start_url": "/b2b/",
+  "scope": "/b2b/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/b2b/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

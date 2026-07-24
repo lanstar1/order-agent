@@ -171,6 +171,115 @@ class ERPClient:
             return {}
 
     # ─────────────────────────────────────────
+    #  품목 단가유형(1~10) 조회 — 거래처별 단가용
+    #  POST https://oapi{ZONE}.ecount.com/OAPI/V2/InventoryBasic/GetBasicProductsList
+    #  ECOUNT는 품목마다 OUT_PRICE1~OUT_PRICE10 (판매단가 유형 10종)을 보유.
+    #  거래처별 단가 = 해당 거래처의 단가유형 번호에 해당하는 OUT_PRICE{n}.
+    # ─────────────────────────────────────────
+    async def get_product_price_tiers(self, prod_cds: list) -> dict:
+        """
+        품목별 전체 판매단가 정보를 조회한다.
+        Returns: {
+          prod_cd: {
+            "name": str, "size": str,
+            "base": float,                 # OUT_PRICE (기본 출고단가)
+            "tiers": {1: float, ..., 10: float},  # OUT_PRICE1~10
+          }
+        }
+        """
+        if not prod_cds:
+            return {}
+        if not self._session_id:
+            await self.ensure_session()
+
+        zone = (self._zone or ERP_ZONE).lower()
+        url = (
+            f"https://oapi{zone}.ecount.com/OAPI/V2/InventoryBasic/GetBasicProductsList"
+            f"?SESSION_ID={self._session_id}"
+        )
+        payload = {"PROD_CD": "∬".join(prod_cds)}
+
+        def _f(v):
+            try:
+                return float(str(v).replace(",", ""))
+            except (ValueError, TypeError):
+                return 0.0
+
+        def _rebuild_url():
+            z = (self._zone or ERP_ZONE).lower()
+            return (
+                f"https://oapi{z}.ecount.com/OAPI/V2/InventoryBasic/GetBasicProductsList"
+                f"?SESSION_ID={self._session_id}"
+            )
+
+        # ECOUNT 응답 코드별 처리:
+        #   301·302(Status) / HTTP 401 → 세션 만료 → 재로그인 후 재시도
+        #   HTTP 412·500            → 과호출/일시오류 → 백오프 후 같은 세션으로 재시도(재로그인 storm 방지)
+        data = None
+        for attempt in range(4):
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(url, json=payload, timeout=15)
+                if r.status_code in (412, 500) and attempt < 3:
+                    logger.warning(f"[ERP PriceTiers] HTTP {r.status_code} 과호출 → {0.8*(attempt+1):.1f}s 후 재시도")
+                    await asyncio.sleep(0.8 * (attempt + 1))
+                    continue
+                if r.status_code == 401 and attempt < 3:
+                    self._session_id = None
+                    await self.ensure_session()
+                    url = _rebuild_url()
+                    await asyncio.sleep(0.4)
+                    continue
+                r.raise_for_status()
+                data = r.json()
+                if str(data.get("Status", "")) in ("301", "302") and attempt < 3:
+                    await self.ensure_session()
+                    url = _rebuild_url()
+                    await asyncio.sleep(0.4)
+                    continue
+                break
+            except httpx.HTTPError as e:
+                logger.warning(f"[ERP PriceTiers] 시도 {attempt+1} 오류: {e}")
+                if attempt < 3:
+                    await asyncio.sleep(0.8 * (attempt + 1))
+
+        if not data or str(data.get("Status", "")) != "200":
+            logger.warning(f"[ERP PriceTiers] 실패: {data}")
+            return {}
+
+        out = {}
+        for item in data.get("Data", {}).get("Result", []):
+            cd = str(item.get("PROD_CD", "") or "").strip()
+            if not cd:
+                continue
+            out[cd] = {
+                "name": item.get("PROD_DES", ""),
+                "size": item.get("SIZE_DES", ""),
+                "base": _f(item.get("OUT_PRICE", 0)),
+                "tiers": {i: _f(item.get(f"OUT_PRICE{i}", 0)) for i in range(1, 11)},
+            }
+        logger.info(f"[ERP PriceTiers] {len(out)}개 품목 단가유형 조회")
+        return out
+
+    async def get_customer_prices(self, prod_cds: list, price_tier: int = 0) -> dict:
+        """
+        거래처 단가유형(price_tier, 1~10)에 해당하는 품목별 단가를 반환한다.
+        가격 선택 우선순위: OUT_PRICE{tier} > 0  →  base OUT_PRICE > 0  →  0(=ERP 자동단가 위임).
+        Returns: {prod_cd: {"price": float, "name": str, "source": "tier{n}"|"base"|"auto"}}
+        """
+        tiers = await self.get_product_price_tiers(prod_cds)
+        result = {}
+        for cd, info in tiers.items():
+            price, source = 0.0, "auto"
+            tv = info["tiers"].get(int(price_tier)) if price_tier else 0
+            if tv and tv > 0:
+                price, source = tv, f"tier{price_tier}"
+            elif info["base"] and info["base"] > 0:
+                price, source = info["base"], "base"
+            result[cd] = {"price": price, "name": info["name"], "source": source}
+        return result
+
+    # ─────────────────────────────────────────
     #  재고조회: ViewInventoryBalanceStatusByLocation
     #  POST https://oapi{ZONE}.ecount.com/OAPI/V2/InventoryBalance/ViewInventoryBalanceStatusByLocation
     # ─────────────────────────────────────────

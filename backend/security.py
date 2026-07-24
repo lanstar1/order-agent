@@ -107,6 +107,33 @@ async def get_optional_user(
 
 
 # ─────────────────────────────────────────
+#  B2B 거래처(고객) 토큰 — 관리자(직원) 토큰과 분리 (typ="b2b")
+# ─────────────────────────────────────────
+def create_customer_token(cust_code: str, cust_name: str, days: int = 30) -> str:
+    """B2B 거래처용 JWT (PWA 유지용 장기 만료)."""
+    payload = {
+        "sub": cust_code,
+        "name": cust_name,
+        "typ": "b2b",
+        "iat": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + timedelta(days=days),
+    }
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+
+async def get_current_customer(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+) -> dict:
+    """B2B 거래처 인증 의존성. typ!='b2b' 토큰(직원용)은 거부."""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    payload = decode_token(credentials.credentials)
+    if payload.get("typ") != "b2b":
+        raise HTTPException(status_code=403, detail="B2B 거래처 토큰이 아닙니다.")
+    return {"cust_code": payload["sub"], "cust_name": payload.get("name", "")}
+
+
+# ─────────────────────────────────────────
 #  Rate Limiting (인메모리)
 # ─────────────────────────────────────────
 _rate_store: dict = defaultdict(list)
