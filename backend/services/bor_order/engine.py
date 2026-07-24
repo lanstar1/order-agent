@@ -14,13 +14,24 @@
 발주량 = 목표재고(월수요 × target_months) − 파이프라인재고
   파이프라인 = 용산재고 + rest잔량 + 최근 60일 오더 중 rest 미반영분
   (벌크 품목은 ECOUNT 통단위 ↔ 중국오더 낱개 → factor 환산)
-라운딩: <100→10단위(최소10), <500→50, <5000→100, >=5000→500
+
+트리거(히스테리시스): 파이프라인 < 목표 × trigger_ratio(기본 0.8)일 때만 발주 라인
+  포함 — 사소한 부족으로 매번 소량 주문하는 것 방지 (사람의 "소진될 때쯤
+  습관수량 주문" 패턴 재현)
+
+수량 스냅핑(습관 수량): 과거 오더 이력(시드 CSV + bor_recent_orders)의 모델별
+  hist_min/median/max·grid_unit 통계로 부족분(낱개)을 습관 단위에 맞춤
+  - 이력 n_orders>=2 : ceil(부족분/grid)×grid, hist_min 미만 → hist_min,
+                       hist_max×1.5 초과 → grid 내림 캡('과거최대초과캡')
+  - 이력 없음        : 월수요(낱개) <20→10단위·최소10, <200→50단위·최소100,
+                       >=200→100단위·최소100
 """
 import asyncio
 import calendar
 import csv
 import json
 import logging
+import math
 import re
 import statistics
 from datetime import datetime, timedelta, timezone
@@ -49,7 +60,11 @@ def normalize_model(m: str) -> str:
 
 # ─── 발주수량 라운딩 ─────────────────────────────────────
 def friendly_round(x: float) -> int:
-    """<100→10단위(최소10), <500→50, <5000→100, >=5000→500"""
+    """<100→10단위(최소10), <500→50, <5000→100, >=5000→500
+
+    (구 라운딩 규칙 — 습관 수량 스냅핑 도입 후 엔진 본류에서는 미사용.
+     외부 호환을 위해 유지)
+    """
     if x <= 0:
         return 0
     if x < 100:
@@ -59,6 +74,136 @@ def friendly_round(x: float) -> int:
     if x < 5000:
         return int(round(x / 100.0) * 100)
     return int(round(x / 500.0) * 500)
+
+
+# ─── 오더 이력(습관 수량) 통계 ───────────────────────────
+# 시드: 과거 발주 xlsx 취합본 (정정 재발행 27468__ 제외, 낱개 수량 기준)
+ORDER_HISTORY_SEED = Path(__file__).parent / "data" / "orders_history_seed.csv"
+GRID_UNITS = (1000, 500, 100, 50, 10)   # 큰 단위 우선 검사
+GRID_MIN_SHARE = 0.7                    # 과거 수량 중 배수 충족 비율 임계
+
+
+def _load_history_rows() -> list:
+    """오더 이력 로딩 → [(order_date, model_norm, qty)] (낱개 수량)
+
+    시드 CSV + bor_recent_orders 중 mail_date가 시드 최대 order_date 이후인
+    라인만 병합 (시드와의 중복 방지). DB 라인은 _dedupe_order_rows로
+    정정 재발행('Re:' 재송부)/답장 재인용 중복 제거 후 반영.
+    """
+    rows = []
+    max_seed_date = ""
+    try:
+        with open(ORDER_HISTORY_SEED, "r", encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f):
+                mnorm = normalize_model(r.get("model") or "")
+                try:
+                    qty = float(str(r.get("qty") or "0").replace(",", ""))
+                except ValueError:
+                    continue
+                odate = str(r.get("order_date") or "").strip()
+                if not mnorm or qty <= 0:
+                    continue
+                rows.append((odate, mnorm, qty))
+                if odate > max_seed_date:
+                    max_seed_date = odate
+    except FileNotFoundError:
+        logger.warning(f"[BOR/엔진] 오더 이력 시드 없음: {ORDER_HISTORY_SEED}")
+
+    conn = get_connection()
+    try:
+        db_rows = conn.execute(
+            "SELECT source, mail_uid, mail_date, order_date, model_norm, qty, note "
+            "FROM bor_recent_orders WHERE SUBSTR(mail_date, 1, 10) > ?",
+            (max_seed_date or "0000-00-00",),
+        ).fetchall()
+    except Exception as e:
+        logger.warning(f"[BOR/엔진] 오더 이력 DB 조회 실패(시드만 사용): {e}")
+        db_rows = []
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    raw = [
+        (str(r[0] or ""), str(r[1] or ""), str(r[2] or ""), str(r[3] or ""),
+         str(r[4] or ""), float(r[5] or 0), str(r[6] or ""))
+        for r in db_rows
+    ]
+    for _src, _uid, _mdate, odate, mnorm, qty, _note in _dedupe_order_rows(raw):
+        if mnorm and qty > 0:
+            rows.append((odate, mnorm, qty))
+    return rows
+
+
+def compute_history_stats(rows: list) -> dict:
+    """모델별 습관수량 통계
+
+    rows: [(order_date, model_norm, qty)]
+    Returns: {model_norm: {n_orders, hist_min, hist_median, hist_max, grid_unit}}
+      grid_unit: GRID_UNITS 중 과거 수량의 70% 이상이 배수가 되는 가장 큰 값 (없으면 10)
+    """
+    by_model = {}
+    for _odate, mnorm, qty in rows:
+        by_model.setdefault(mnorm, []).append(qty)
+
+    stats = {}
+    for mnorm, qtys in by_model.items():
+        grid = 10
+        for unit in GRID_UNITS:
+            if sum(1 for q in qtys if q % unit == 0) >= GRID_MIN_SHARE * len(qtys):
+                grid = unit
+                break
+        stats[mnorm] = {
+            "n_orders": len(qtys),
+            "hist_min": float(min(qtys)),
+            "hist_median": float(statistics.median(qtys)),
+            "hist_max": float(max(qtys)),
+            "grid_unit": grid,
+        }
+    return stats
+
+
+def snap_qty_to_habit(shortage_pcs: float, hist: dict, demand_pcs: float) -> tuple:
+    """부족분(낱개)을 습관 수량으로 스냅핑 → (qty_pcs, habit_note, extra_flag)
+
+    ★ 낱개 공간에서 동작 — 벌크(통단위) 모델은 호출 전에 shortage×factor로
+      낱개 환산해서 넘길 것 (과거 오더 이력이 낱개 기준이므로).
+
+    이력 n_orders>=2: ceil(부족분/grid_unit)×grid_unit,
+                      hist_min 미만 → hist_min (습관적 최소주문량),
+                      hist_max×1.5 초과 → grid 내림 캡 + '과거최대초과캡'
+    이력 없음/1회:    월수요(낱개) <20→10단위·최소10, <200→50단위·최소100,
+                      >=200→100단위·최소100
+    """
+    if shortage_pcs <= 0:
+        return 0, "", ""
+
+    if hist and hist.get("n_orders", 0) >= 2:
+        grid = int(hist.get("grid_unit") or 10)
+        hist_min = float(hist["hist_min"])
+        hist_max = float(hist["hist_max"])
+        qty = int(math.ceil(shortage_pcs / grid) * grid)
+        note = f"습관수량(최소 {hist_min:g}, 단위 {grid}) 적용"
+        flag = ""
+        if qty < hist_min:
+            qty = int(hist_min)
+        cap = hist_max * 1.5
+        if qty > cap:
+            qty = int(max(math.floor(cap / grid) * grid, hist_min))
+            note += f" · 과거최대({hist_max:g})×1.5 캡"
+            flag = "과거최대초과캡"
+        return qty, note, flag
+
+    # 이력 없는 모델 — 월수요(낱개) 규모 기반 단위/최소수량
+    if demand_pcs < 20:
+        unit, min_qty = 10, 10
+    elif demand_pcs < 200:
+        unit, min_qty = 50, 100
+    else:
+        unit, min_qty = 100, 100
+    qty = int(max(min_qty, math.ceil(shortage_pcs / unit) * unit))
+    return qty, f"신규단위({unit}) 최소 {min_qty}", ""
 
 
 # ─── 수요 산정 ───────────────────────────────────────────
@@ -250,6 +395,11 @@ async def generate_draft(target_months: float = None) -> int:
     if target_months is None:
         target_months = float(cfg.get("target_months") or 4.5)
     target_months = float(target_months)
+    # 트리거(히스테리시스): 파이프라인 < 목표 × trigger_ratio 일 때만 라인 포함
+    try:
+        trigger_ratio = float(cfg.get("trigger_ratio") or 0.8)
+    except (TypeError, ValueError):
+        trigger_ratio = 0.8
 
     bulk_factors = {
         normalize_model(k) if not k.endswith("*") else k.upper(): v
@@ -332,9 +482,15 @@ async def generate_draft(target_months: float = None) -> int:
             if not max_po_date or odate > max_po_date:
                 unreflected_map[mnorm] = unreflected_map.get(mnorm, 0.0) + qty
 
+    # ── 3.5) 오더 이력(습관 수량) 통계 ──
+    history_stats = compute_history_stats(_load_history_rows())
+
     # ── 4) BOR 조달 모델 유니버스 ──
+    # (최근 90일 오더 + rest 잔량 + 마스터 CSV + 오더 이력 시드의 모델 —
+    #  이력 모델을 포함해야 한동안 주문 없던 BOR 조달 품목도 소진 시 발주 제안됨)
     master_models = _load_model_master_csv(cfg.get("model_master_csv", ""))
-    universe = order_models | set(rest_qty_map.keys()) | master_models
+    history_models = {m for m, st in history_stats.items() if st["n_orders"] >= 2}
+    universe = order_models | set(rest_qty_map.keys()) | master_models | history_models
     universe = {m for m in universe if m and m not in exclude_models}
 
     # ── 5) 안전재고 조회 (관련 품목코드만) ──
@@ -370,19 +526,34 @@ async def generate_draft(target_months: float = None) -> int:
         pipeline = stock + rest_qty / factor + unreflected / factor
         target_qty = demand * target_months
         need = target_qty - pipeline                       # ECOUNT 단위 부족분
-        qty_pcs = friendly_round(need * factor) if need > 0 else 0
         coverage = round(pipeline / demand, 1) if demand > 0 else None
 
-        is_new = mnorm not in order_models and mnorm not in rest_qty_map
+        # 트리거(히스테리시스): 파이프라인이 목표×trigger_ratio 이상이면 아직 발주 안함
+        # (사소한 부족으로 매번 소량 주문하는 것 방지)
+        if need <= 0 or target_qty <= 0 or pipeline >= target_qty * trigger_ratio:
+            continue
+
+        # 습관 수량 스냅핑 — ★ 낱개 공간에서 (벌크는 부족분 ×factor 낱개 환산 후)
+        hist = history_stats.get(mnorm)
+        qty_pcs, habit_note, habit_flag = snap_qty_to_habit(
+            need * factor, hist, demand * factor
+        )
+        if qty_pcs <= 0:
+            continue
+
+        has_history = bool(hist and hist.get("n_orders", 0) >= 2)
+        is_new = (
+            mnorm not in order_models and mnorm not in rest_qty_map
+            and not has_history
+        )
         included = 1
         flag = ""
         if is_new:
             included, flag = 0, "신규검토"
         elif factor != 1.0 and not bulk_confirmed:
             flag = f"벌크단위 미확정(×{factor:g})"
-
-        if qty_pcs <= 0:
-            continue
+        if habit_flag:
+            flag = f"{flag}; {habit_flag}" if flag else habit_flag
 
         # SPECIFICATION: 품목명 [품목코드] (가능한 경우)
         spec_text = ""
@@ -402,6 +573,7 @@ async def generate_draft(target_months: float = None) -> int:
             + f" → 부족 {need:.0f}"
             + (f" × {factor:g}" if factor != 1.0 else "")
             + f" ≈ {qty_pcs}"
+            + (f" · {habit_note}" if habit_note else "")
         )
 
         lines.append({
@@ -444,9 +616,11 @@ async def generate_draft(target_months: float = None) -> int:
         "new_model_count": sum(1 for ln in lines if ln["flag"] == "신규검토"),
         "quota_hit": quota_hit,
         "target_months": target_months,
+        "trigger_ratio": trigger_ratio,
     }
     params = {
         "target_months": target_months,
+        "trigger_ratio": trigger_ratio,
         "recent_order_days": RECENT_ORDER_DAYS,
         "max_po_date": max_po_date,
         "generated_at": now_kst(),

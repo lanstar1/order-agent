@@ -85,6 +85,7 @@ DEFAULT_BULK_FACTORS = {
 
 DEFAULT_CONFIG = {
     "target_months": "4.5",                              # 목표재고 개월수
+    "trigger_ratio": "0.8",                              # 발주 트리거 — 파이프라인 < 목표×비율일 때만 라인 포함 (히스테리시스)
     "bulk_factors": json.dumps(DEFAULT_BULK_FACTORS),    # 벌크(통단위) 환산 배율
     "bulk_factors_confirmed": "0",                       # 벌크 배율 확정 여부 (0=미확정 → 라인에 플래그)
     "recipient": "guzhiyi@bor-cable.com",                # 발송 수신자
