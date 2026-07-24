@@ -41,6 +41,7 @@ from api.routes.map_monitor import router as map_monitor_router
 from api.routes.mail_auto import router as mail_auto_router
 from api.routes.telegram_bot import router as telegram_bot_router
 from api.routes.datalab import router as datalab_router
+from api.routes.b2b import router as b2b_router
 from api.routes.aicc_ws import customer_ws_handler, admin_ws_handler, admin_list_ws_handler
 from fastapi import WebSocket
 
@@ -78,6 +79,15 @@ except Exception as _asst_err:
     _HAS_ASSISTANT = False
     assistant_router = None
     logging.getLogger(__name__).warning(f"상담봇 모듈 로드 실패 (기존 기능은 계속): {_asst_err}")
+
+# 중국오더(BOR) 자동화 (import 실패해도 나머지 기능은 정상 동작하도록 격리)
+try:
+    from api.routes.bor_order import router as bor_order_router
+    _HAS_BOR_ORDER = True
+except Exception as _bor_err:
+    _HAS_BOR_ORDER = False
+    bor_order_router = None
+    logging.getLogger(__name__).warning(f"중국오더(BOR) 모듈 로드 실패 (기존 기능은 계속): {_bor_err}")
 
 # ─────────────────────────────────────────
 #  로깅 설정
@@ -320,10 +330,13 @@ app.include_router(map_monitor_router)
 app.include_router(mail_auto_router)
 app.include_router(telegram_bot_router)
 app.include_router(datalab_router)
+app.include_router(b2b_router)
 if _HAS_SOURCING and sourcing_router is not None:
     app.include_router(sourcing_router)
 if _HAS_SOURCING_PIPELINE and sourcing_pipeline_router is not None:
     app.include_router(sourcing_pipeline_router)
+if _HAS_BOR_ORDER and bor_order_router is not None:
+    app.include_router(bor_order_router)
 
 # Super Agent 라우터
 if _HAS_SUPER_AGENT:
@@ -375,6 +388,11 @@ async def serve_js_no_cache(filename: str):
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# B2B 간편발주 PWA (order.lanstar.co.kr → /b2b/) — 정적 앱 셸, html=True 로 /b2b/ → index.html
+B2B_DIR = FRONTEND_DIR / "b2b"
+if B2B_DIR.exists():
+    app.mount("/b2b", StaticFiles(directory=str(B2B_DIR), html=True), name="b2b")
 
 
 # 외부 전용 채팅 랜딩 페이지 (/chat)
@@ -466,6 +484,14 @@ async def startup():
         logger.info("리베이트 테이블 초기화 완료")
     except Exception as e:
         logger.warning(f"리베이트 테이블 초기화 실패 (서비스는 계속): {e}")
+
+    # 중국오더(BOR) 테이블 초기화
+    try:
+        from services.bor_order import db as _bor_db
+        _bor_db.ensure_tables()
+        logger.info("중국오더(BOR) 테이블 초기화 완료")
+    except Exception as e:
+        logger.warning(f"중국오더(BOR) 테이블 초기화 실패 (서비스는 계속): {e}")
 
     # 신제품 소싱 모듈 테이블 초기화 (10개) — 모듈 로드 성공 시에만
     if _HAS_SOURCING:
@@ -788,6 +814,63 @@ async def startup():
             logger.info("판매현황 스케줄러 등록 완료 (매시간 자동수집 + 에이전트)")
     except Exception as e:
         logger.warning(f"판매현황 스케줄러 시작 실패: {e}")
+
+    # 중국오더(BOR) 주간 초안 스케줄러 (월요일 08:30 KST)
+    # ★ collect + generate_draft만 실행 — send(발송) 경로는 절대 호출하지 않음 (발송은 UI에서 confirm 후 수동)
+    try:
+        from services.scheduler_service import _scheduler_state as _bor_sched_state
+        _bor_scheduler = _bor_sched_state.get("scheduler")
+        if _bor_scheduler:
+            from apscheduler.triggers.cron import CronTrigger as _BorCronTrigger
+
+            def _bor_order_weekly_job():
+                """중국오더 주간 잡 (동기 래퍼) — 메일 수집 + 초안 생성만.
+
+                sender(send_order_mail)는 여기서 import조차 하지 않으므로
+                스케줄러 경로에서 자동 발송이 일어날 수 없다.
+                """
+                try:
+                    import asyncio as _bor_asyncio
+                    from services.bor_order.mail_collector import (
+                        collect_restlist as _bor_collect_rest,
+                        collect_recent_orders as _bor_collect_orders,
+                    )
+                    from services.bor_order.engine import generate_draft as _bor_generate_draft
+
+                    rest_result = _bor_collect_rest(days_back=60)
+                    orders_result = _bor_collect_orders(days_back=90)
+                    logger.info(
+                        f"[BOR오더] 주간 수집 완료: rest {rest_result.get('line_count', 0)}줄 "
+                        f"({rest_result.get('source_file', '')}), orders {orders_result}"
+                    )
+
+                    from services.scheduler_service import _main_loop as _bor_main_loop
+                    if _bor_main_loop and _bor_main_loop.is_running():
+                        future = _bor_asyncio.run_coroutine_threadsafe(
+                            _bor_generate_draft(), _bor_main_loop
+                        )
+                        draft_id = future.result(timeout=600)
+                    else:
+                        loop = _bor_asyncio.new_event_loop()
+                        _bor_asyncio.set_event_loop(loop)
+                        try:
+                            draft_id = loop.run_until_complete(_bor_generate_draft())
+                        finally:
+                            loop.close()
+                    logger.info(f"[BOR오더] 주간 초안 생성 완료: draft_id={draft_id} (발송은 수동 승인 필요)")
+                except Exception as e:
+                    logger.error(f"[BOR오더] 주간 스케줄러 실행 오류: {e}", exc_info=True)
+
+            _bor_scheduler.add_job(
+                _bor_order_weekly_job,
+                _BorCronTrigger(day_of_week="mon", hour=8, minute=30, timezone="Asia/Seoul"),
+                id="bor_order_weekly",
+                name="중국오더(BOR) 주간 초안 생성 (월 08:30 KST)",
+                replace_existing=True,
+            )
+            logger.info("중국오더(BOR) 주간 스케줄러 등록 완료 (월 08:30 KST, 자동 발송 없음)")
+    except Exception as e:
+        logger.warning(f"중국오더(BOR) 스케줄러 등록 실패: {e}")
 
 
 # ─────────────────────────────────────────

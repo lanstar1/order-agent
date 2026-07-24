@@ -163,6 +163,7 @@ function navigateTo(pageId) {
     map_monitor:  "지도가 감시",
     mail_agent:   "📧 메일 자동화",
     datalab:      "📊 데이터랩",
+    bor_order:    "중국오더(BOR)",
   }[pageId] || "";
   // AI 상담 페이지 진입 시 초기화
   if (pageId === "aicc") initAiccTab();
@@ -200,6 +201,8 @@ function navigateTo(pageId) {
   if (pageId === "rebate" && typeof initRebatePage === "function") initRebatePage();
   // 데이터랩 페이지 진입 시 초기화
   if (pageId === "datalab") initDatalabPage();
+  // 중국오더(BOR) 페이지 진입 시 초기화
+  if (pageId === "bor_order") initBorOrderPage().catch(e => console.error("initBorOrderPage 실패:", e));
 }
 
 function statusBadge(status) {
@@ -11743,4 +11746,322 @@ async function initAssistantPage() {
   }
   const input2 = document.getElementById("asst-input");
   if (input2) input2.focus();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  중국오더(BOR) — 자동 발주 초안 (bor_order)
+// ═══════════════════════════════════════════════════════════
+
+let _borStatus = null;       // GET /status 결과
+let _borDraft = null;        // 현재 표시 중인 draft
+let _borLines = [];          // draft 라인 목록
+const _borPatchTimers = {};  // 라인별 debounce 타이머 (key: lineId:field)
+
+// 숫자 표시 헬퍼
+function _borFmt(v) {
+  if (v == null || v === '' || isNaN(v)) return '-';
+  return Number(v).toLocaleString();
+}
+
+// draft 상태 뱃지
+function _borStatusBadge(status) {
+  const map = {
+    draft:     ['초안',   'background:#FFFBEB;color:#D97706;border:1px solid #FDE68A'],
+    approved:  ['승인',   'background:#EFF6FF;color:#2563EB;border:1px solid #BFDBFE'],
+    sent:      ['발송됨', 'background:#ECFDF5;color:#059669;border:1px solid #A7F3D0'],
+    discarded: ['폐기',   'background:#F8FAFC;color:#94A3B8;border:1px solid #E2E8F0'],
+  };
+  const [label, style] = map[status] || [status || '-', 'background:#F8FAFC;color:#64748B;border:1px solid #E2E8F0'];
+  return `<span style="padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;white-space:nowrap;${style}">${label}</span>`;
+}
+
+// 페이지 초기화: 상태 카드 + 최신 draft 로드
+async function initBorOrderPage() {
+  borLoadStatus();
+  try {
+    const res = await api.get('/api/bor-order/drafts?limit=1');
+    const drafts = res.drafts || res.items || (Array.isArray(res) ? res : []);
+    if (drafts.length > 0 && drafts[0].id) {
+      await borLoadDraft(drafts[0].id);
+    } else {
+      _borDraft = null;
+      _borLines = [];
+      borRenderDraft();
+    }
+  } catch (err) {
+    console.error('BOR 초안 목록 조회 실패:', err);
+  }
+}
+
+// 상태 카드 로드/렌더
+async function borLoadStatus() {
+  let s;
+  try {
+    s = await api.get('/api/bor-order/status');
+  } catch (err) {
+    toast('BOR 상태 조회 실패: ' + (err.message || err), 'error');
+    return;
+  }
+  _borStatus = s || {};
+  const el = id => document.getElementById(id);
+  // 백엔드 응답 키 이름에 방어적으로 대응
+  const rest = _borStatus.restlist || _borStatus.rest_snapshot || _borStatus.rest || {};
+  const recent = _borStatus.recent_orders || _borStatus.recent || {};
+  const draft = _borStatus.latest_draft || _borStatus.draft || {};
+  const nextRun = _borStatus.next_run || _borStatus.scheduler_next_run
+    || (_borStatus.scheduler && _borStatus.scheduler.next_run) || '';
+
+  if (el('bor-stat-snapshot')) el('bor-stat-snapshot').textContent = rest.snapshot_date || '-';
+  if (el('bor-stat-source-file')) el('bor-stat-source-file').textContent = rest.source_file || '';
+  if (el('bor-stat-rest-amount')) {
+    const amt = rest.total_amount_usd;
+    el('bor-stat-rest-amount').textContent = (amt != null && !isNaN(amt)) ? '$' + _borFmt(Math.round(amt)) : '-';
+  }
+  if (el('bor-stat-rest-lines')) {
+    el('bor-stat-rest-lines').textContent = rest.line_count != null ? `${_borFmt(rest.line_count)}라인` : '';
+  }
+  if (el('bor-stat-fetched')) {
+    const fetched = rest.fetched_at || recent.fetched_at || recent.last_fetched || '';
+    el('bor-stat-fetched').textContent = fetched ? String(fetched).substring(0, 16).replace('T', ' ') : '-';
+  }
+  if (el('bor-stat-recent-orders')) {
+    el('bor-stat-recent-orders').textContent = recent.lines != null
+      ? `최근오더 ${_borFmt(recent.lines)}건 (정정섭 ${_borFmt(recent.tiger_orders)} / kyu ${_borFmt(recent.kyu_orders)})` : '';
+  }
+  if (el('bor-stat-draft')) {
+    el('bor-stat-draft').innerHTML = draft.id
+      ? `#${draft.id} ${_borStatusBadge(draft.status)}` : '-';
+  }
+  if (el('bor-stat-next-run')) {
+    el('bor-stat-next-run').textContent = nextRun ? `다음 자동 실행: ${String(nextRun).substring(0, 16).replace('T', ' ')}` : '';
+  }
+}
+
+// 메일 수집 (rest list + 최근 오더)
+async function borCollect() {
+  const btn = document.getElementById('bor-btn-collect');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 수집 중...'; }
+  try {
+    const res = await api.post('/api/bor-order/collect', { days_back: 60 });
+    const rest = res.restlist || res.rest || {};
+    const orders = res.recent_orders || res.orders || {};
+    toast(`메일 수집 완료 — Rest ${_borFmt(rest.line_count)}라인 / 최근오더 ${_borFmt(orders.lines)}건`, 'success');
+    await borLoadStatus();
+  } catch (err) {
+    toast('메일 수집 실패: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📧 메일 수집'; }
+  }
+}
+
+// 발주 초안 생성
+async function borGenerate() {
+  const btn = document.getElementById('bor-btn-generate');
+  const body = {};
+  const tm = (document.getElementById('bor-target-months') || {}).value;
+  if (tm && parseFloat(tm) > 0) body.target_months = parseFloat(tm);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 생성 중...'; }
+  try {
+    const res = await api.post('/api/bor-order/generate', body);
+    const draftId = res.draft_id || res.id;
+    if (!draftId) throw new Error('draft_id가 응답에 없습니다');
+    toast(`초안 생성 완료 (draft #${draftId})`, 'success');
+    await borLoadDraft(draftId);
+    borLoadStatus();
+  } catch (err) {
+    toast('초안 생성 실패: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📝 초안 생성'; }
+  }
+}
+
+// draft 상세(라인 포함) 로드
+async function borLoadDraft(draftId) {
+  const tbody = document.getElementById('bor-draft-lines');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="padding:30px;text-align:center;color:#94a3b8">⏳ 초안을 불러오는 중...</td></tr>';
+  try {
+    const res = await api.get(`/api/bor-order/drafts/${draftId}`);
+    _borDraft = res.draft || res;
+    _borLines = res.lines || _borDraft.lines || [];
+    borRenderDraft();
+  } catch (err) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="padding:20px;text-align:center;color:#dc2626">초안 조회 실패: ${err.message || err}</td></tr>`;
+  }
+}
+
+// draft 타이틀/요약/버튼/테이블 렌더
+function borRenderDraft() {
+  const titleEl = document.getElementById('bor-draft-title');
+  const tbody = document.getElementById('bor-draft-lines');
+  if (!_borDraft || !_borDraft.id) {
+    if (titleEl) titleEl.textContent = '발주 초안';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="padding:30px;text-align:center;color:#94a3b8">초안이 없습니다. [메일 수집] 후 [초안 생성]을 실행하세요.</td></tr>';
+    borRenderDraftSummary();
+    borUpdateButtons();
+    return;
+  }
+  if (titleEl) {
+    const created = (_borDraft.created_at || '').substring(0, 16).replace('T', ' ');
+    titleEl.innerHTML = `발주 초안 #${_borDraft.id} ${_borStatusBadge(_borDraft.status)} <span style="font-weight:400;font-size:12px;color:#94a3b8">${created}</span>`;
+  }
+  if (tbody) {
+    if (_borLines.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:30px;text-align:center;color:#94a3b8">발주 대상 라인이 없습니다.</td></tr>';
+    } else {
+      const editable = _borDraft.status === 'draft';
+      tbody.innerHTML = _borLines.map(l => {
+        const included = l.included === 1 || l.included === true;
+        const qty = (l.qty_final != null ? l.qty_final : l.qty_suggested) || 0;
+        const flagBadge = l.flag
+          ? ` <span style="padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;white-space:nowrap">${escapeHtml(l.flag)}</span>` : '';
+        const factorTag = (l.unit_factor && Number(l.unit_factor) !== 1)
+          ? ` <span style="font-size:10px;color:#7c3aed;white-space:nowrap" title="벌크 환산 계수">×${l.unit_factor}</span>` : '';
+        const basis = [l.demand_note, l.basis_note].filter(Boolean).join(' · ');
+        const cov = (l.coverage_months != null && !isNaN(l.coverage_months)) ? Number(l.coverage_months).toFixed(1) : '-';
+        return `<tr id="bor-line-row-${l.id}" style="border-bottom:1px solid #f1f5f9;${included ? '' : 'opacity:0.45'}">
+          <td style="padding:8px;text-align:center"><input type="checkbox" ${included ? 'checked' : ''} ${editable ? '' : 'disabled'} onchange="borUpdateLine(${l.id}, 'included', this.checked)"></td>
+          <td style="padding:8px;color:#94a3b8">${l.line_no != null ? l.line_no : ''}</td>
+          <td style="padding:8px;font-weight:600;font-size:12px">${escapeHtml(l.model || '')}${flagBadge}${factorTag}</td>
+          <td style="padding:8px;text-align:right"><input type="number" value="${qty}" min="0" ${editable ? '' : 'disabled'}
+            style="width:90px;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;text-align:right"
+            oninput="borUpdateLine(${l.id}, 'qty_final', this.value)"></td>
+          <td style="padding:8px;text-align:right">${_borFmt(l.demand_monthly)}</td>
+          <td style="padding:8px;text-align:right">${_borFmt(l.stock_yongsan)}</td>
+          <td style="padding:8px;text-align:right">${_borFmt(l.rest_qty)}</td>
+          <td style="padding:8px;text-align:right">${cov}</td>
+          <td style="padding:8px;font-size:11px;color:#64748b">${escapeHtml(basis)}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+  borRenderDraftSummary();
+  borUpdateButtons();
+}
+
+// 포함 라인수/총수량 요약
+function borRenderDraftSummary() {
+  const el = document.getElementById('bor-draft-summary');
+  if (!el) return;
+  if (!_borDraft || !_borDraft.id || _borLines.length === 0) { el.textContent = ''; return; }
+  const included = _borLines.filter(l => l.included === 1 || l.included === true);
+  const totalQty = included.reduce((s, l) => s + (parseFloat(l.qty_final != null ? l.qty_final : l.qty_suggested) || 0), 0);
+  const excluded = _borLines.length - included.length;
+  el.textContent = `포함 ${included.length}개 모델 · 총 ${totalQty.toLocaleString()}pcs`
+    + (excluded > 0 ? ` · 제외 ${excluded}개` : '')
+    + (_borDraft.xlsx_filename ? ` · 첨부: ${_borDraft.xlsx_filename}` : '');
+}
+
+// 다운로드/발송 버튼 활성화 상태 (발송은 status='draft'일 때만)
+function borUpdateButtons() {
+  const xlsxBtn = document.getElementById('bor-btn-xlsx');
+  const sendBtn = document.getElementById('bor-btn-send');
+  const hasDraft = !!(_borDraft && _borDraft.id);
+  const sendable = hasDraft && _borDraft.status === 'draft';
+  if (xlsxBtn) { xlsxBtn.disabled = !hasDraft; xlsxBtn.style.opacity = hasDraft ? '1' : '0.5'; }
+  if (sendBtn) { sendBtn.disabled = !sendable; sendBtn.style.opacity = sendable ? '1' : '0.5'; }
+}
+
+// 라인 수정 (수량 입력은 debounce, 포함 체크는 즉시) — PATCH 후 서버에서 xlsx 재생성됨
+function borUpdateLine(lineId, field, value) {
+  if (!_borDraft || !_borDraft.id) return;
+  const body = {};
+  if (field === 'included') {
+    body.included = value ? 1 : 0;
+  } else {
+    const qty = parseFloat(value);
+    if (isNaN(qty) || qty < 0) return; // 입력 중 빈 값/음수는 무시
+    body.qty_final = qty;
+  }
+  const draftId = _borDraft.id;
+  const key = `${lineId}:${field}`;
+  if (_borPatchTimers[key]) clearTimeout(_borPatchTimers[key]);
+  _borPatchTimers[key] = setTimeout(async () => {
+    delete _borPatchTimers[key];
+    try {
+      await api.patch(`/api/bor-order/drafts/${draftId}/lines/${lineId}`, body);
+      // 로컬 상태 갱신 (전체 재렌더 없이 요약만 갱신 → 입력 포커스 유지)
+      const line = _borLines.find(l => l.id === lineId);
+      if (line) Object.assign(line, body);
+      if (field === 'included') {
+        const row = document.getElementById(`bor-line-row-${lineId}`);
+        if (row) row.style.opacity = body.included ? '' : '0.45';
+      }
+      borRenderDraftSummary();
+    } catch (err) {
+      toast('라인 수정 실패: ' + (err.message || err), 'error');
+    }
+  }, field === 'included' ? 0 : 600);
+}
+
+// xlsx 다운로드 (JWT 헤더 포함 fetch → blob)
+async function borDownloadXlsx() {
+  if (!_borDraft || !_borDraft.id) { toast('다운로드할 초안이 없습니다.', 'error'); return; }
+  try {
+    const res = await fetch(`/api/bor-order/drafts/${_borDraft.id}/xlsx`, { headers: api._headers(null) });
+    if (!res.ok) throw new Error(`다운로드 실패 (HTTP ${res.status})`);
+    // Content-Disposition에서 파일명 추출 (없으면 draft의 xlsx_filename 사용)
+    let filename = _borDraft.xlsx_filename || `new order-draft${_borDraft.id}.xlsx`;
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+    if (m) filename = decodeURIComponent(m[1]);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    toast('xlsx 다운로드 실패: ' + (err.message || err), 'error');
+  }
+}
+
+// 승인·발송 — 확인 모달 열기 (수신자 명시)
+async function borSend() {
+  if (!_borDraft || !_borDraft.id) return;
+  if (_borDraft.status !== 'draft') { toast('draft 상태의 초안만 발송할 수 있습니다.', 'error'); return; }
+  // 설정에서 기본 수신자/CC 로드
+  let conf = {};
+  try {
+    const res = await api.get('/api/bor-order/config');
+    conf = res.config || res;
+  } catch (e) { console.error('BOR 설정 조회 실패:', e); }
+  document.getElementById('bor-send-recipient').value = conf.recipient || '';
+  document.getElementById('bor-send-cc').value = conf.cc || '';
+  document.getElementById('bor-send-note').value = '';
+  // 발송 요약
+  const included = _borLines.filter(l => l.included === 1 || l.included === true);
+  const totalQty = included.reduce((s, l) => s + (parseFloat(l.qty_final != null ? l.qty_final : l.qty_suggested) || 0), 0);
+  document.getElementById('bor-send-summary').innerHTML =
+    `<b>draft #${_borDraft.id}</b> · 포함 ${included.length}개 모델 · 총 ${totalQty.toLocaleString()}pcs<br>`
+    + `📎 첨부: ${escapeHtml(_borDraft.xlsx_filename || '-')}`;
+  document.getElementById('bor-send-modal').style.display = 'flex';
+}
+
+function borCloseSendModal() {
+  document.getElementById('bor-send-modal').style.display = 'none';
+}
+
+// 모달에서 발송 확정 → POST /send {confirm:true}
+async function borSendConfirm() {
+  if (!_borDraft || !_borDraft.id) return;
+  const recipient = document.getElementById('bor-send-recipient').value.trim();
+  const cc = document.getElementById('bor-send-cc').value.trim();
+  const note = document.getElementById('bor-send-note').value.trim();
+  if (!recipient) { toast('수신자를 입력하세요.', 'error'); return; }
+  const btn = document.getElementById('bor-send-confirm-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 발송 중...'; }
+  try {
+    await api.post(`/api/bor-order/drafts/${_borDraft.id}/send`, {
+      confirm: true, recipient, cc, body_note: note,
+    });
+    toast(`발주 메일 발송 완료 → ${recipient}`, 'success');
+    borCloseSendModal();
+    await borLoadDraft(_borDraft.id);
+    borLoadStatus();
+  } catch (err) {
+    toast('발송 실패: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✈️ 발송 확정'; }
+  }
 }

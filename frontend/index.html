@@ -132,6 +132,7 @@
           <div class="nav-item" data-page="assistant"><span>💬 상담봇</span></div>
           <div class="nav-item" data-page="price_sheet"><span>단가표</span></div>
           <div class="nav-item" data-page="orderlist"><span>오더리스트</span></div>
+          <div class="nav-item" data-page="bor_order"><span>중국오더(BOR)</span></div>
         </div>
       </div>
 
@@ -926,6 +927,115 @@ C규격품 200개
         </div>
         <!-- 페이지네이션 -->
         <div id="ol-pagination" style="margin-top:12px;text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────
+         페이지: 중국오더(BOR) 자동 발주
+         ────────────────────────────── -->
+    <div class="page" id="page-bor_order">
+      <!-- 상태 카드 -->
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+        <div class="card" style="flex:1;min-width:170px;text-align:center;margin-bottom:0">
+          <div style="font-size:12px;color:#64748b;margin-bottom:4px">📋 최신 Rest List</div>
+          <div style="font-size:20px;font-weight:700;color:#1e293b" id="bor-stat-snapshot">-</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px" id="bor-stat-source-file"></div>
+        </div>
+        <div class="card" style="flex:1;min-width:170px;text-align:center;margin-bottom:0">
+          <div style="font-size:12px;color:#64748b;margin-bottom:4px">💵 미선적 잔량 금액</div>
+          <div style="font-size:20px;font-weight:700;color:#1e293b" id="bor-stat-rest-amount">-</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px" id="bor-stat-rest-lines"></div>
+        </div>
+        <div class="card" style="flex:1;min-width:170px;text-align:center;margin-bottom:0">
+          <div style="font-size:12px;color:#64748b;margin-bottom:4px">📧 최근 수집</div>
+          <div style="font-size:20px;font-weight:700;color:#1e293b" id="bor-stat-fetched">-</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px" id="bor-stat-recent-orders"></div>
+        </div>
+        <div class="card" style="flex:1;min-width:170px;text-align:center;margin-bottom:0">
+          <div style="font-size:12px;color:#64748b;margin-bottom:4px">📝 최신 초안</div>
+          <div style="font-size:20px;font-weight:700;color:#1e293b" id="bor-stat-draft">-</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px" id="bor-stat-next-run"></div>
+        </div>
+      </div>
+
+      <!-- 액션 바 -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div style="font-size:12px;color:#64748b">
+            ℹ️ [메일 수집]으로 Rest List·최근 오더를 가져온 뒤 [초안 생성]을 실행하세요. 매주 월요일 08:30 자동 수집·생성됩니다 (자동 발송 없음).
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:12px;color:#475569;display:flex;align-items:center;gap:4px">
+              목표재고(개월)
+              <input type="number" id="bor-target-months" step="0.5" min="1" max="12" placeholder="4.5"
+                style="width:64px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;text-align:right">
+            </label>
+            <button class="btn btn-sm" id="bor-btn-collect" onclick="borCollect()" style="background:#7c3aed;color:#fff">📧 메일 수집</button>
+            <button class="btn btn-sm" id="bor-btn-generate" onclick="borGenerate()" style="background:#2563eb;color:#fff">📝 초안 생성</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 발주 초안 테이블 -->
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <span id="bor-draft-title">발주 초안</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline btn-sm" id="bor-btn-xlsx" onclick="borDownloadXlsx()" disabled style="opacity:0.5">📥 xlsx 다운로드</button>
+            <button class="btn btn-primary btn-sm" id="bor-btn-send" onclick="borSend()" disabled style="opacity:0.5">✈️ 승인·발송</button>
+          </div>
+        </div>
+        <div id="bor-draft-summary" style="font-size:12px;color:#64748b;margin-bottom:8px"></div>
+        <div style="overflow-x:auto;max-height:calc(100vh - 360px);overflow-y:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:#f8fafc;text-align:left">
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:center;width:44px">포함</th>
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0;width:44px">NO</th>
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0">모델</th>
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right">제안수량</th>
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right" title="월평균 수요 (최근 12개월 기준)">월수요</th>
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right">재고(용산)</th>
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right" title="Rest List 미선적 잔량">미선적</th>
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0;text-align:right" title="파이프라인 재고 ÷ 월수요">커버리지(월)</th>
+                <th style="padding:8px;border-bottom:2px solid #e2e8f0">근거</th>
+              </tr>
+            </thead>
+            <tbody id="bor-draft-lines">
+              <tr><td colspan="9" style="padding:30px;text-align:center;color:#94a3b8">초안이 없습니다. [메일 수집] 후 [초안 생성]을 실행하세요.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 발송 확인 모달 -->
+      <div id="bor-send-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:999;justify-content:center;align-items:center">
+        <div style="background:white;border-radius:12px;padding:24px;width:90%;max-width:480px;max-height:85vh;overflow-y:auto">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="margin:0">✈️ 발주 메일 발송 확인</h3>
+            <button onclick="borCloseSendModal()" style="background:none;border:none;font-size:20px;cursor:pointer">&times;</button>
+          </div>
+          <div id="bor-send-summary" style="padding:12px;background:#F0F9FF;border-radius:8px;margin-bottom:14px;font-size:13px;line-height:1.6"></div>
+          <div style="margin-bottom:12px">
+            <label style="font-size:13px;font-weight:600">수신자 <span style="color:#dc2626">*</span></label>
+            <input type="text" id="bor-send-recipient" placeholder="예: guzhiyi@bor-cable.com" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+          </div>
+          <div style="margin-bottom:12px">
+            <label style="font-size:13px;font-weight:600">참조(CC)</label>
+            <input type="text" id="bor-send-cc" placeholder="쉼표로 구분" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box">
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:13px;font-weight:600">본문 메모 (선택)</label>
+            <textarea id="bor-send-note" rows="3" placeholder="메일 본문에 추가할 메모" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;box-sizing:border-box;resize:vertical"></textarea>
+          </div>
+          <div style="font-size:12px;color:#dc2626;margin-bottom:14px">
+            ⚠️ 확인 후 즉시 실제 발주 메일이 발송됩니다. 수신자와 수량을 다시 확인하세요.
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="borCloseSendModal()" style="flex:1;padding:10px;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer;font-size:14px">취소</button>
+            <button id="bor-send-confirm-btn" onclick="borSendConfirm()" style="flex:2;padding:10px;background:#dc2626;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600">✈️ 발송 확정</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -5568,7 +5678,7 @@ textarea.asst-input { flex:1 1 auto; min-height:44px; max-height:160px; resize:n
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
 <script src="/static/js/api.js?v=20260723f"></script>
-<script src="/static/js/app.js?v=20260723f"></script>
+<script src="/static/js/app.js?v=20260724b"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>
