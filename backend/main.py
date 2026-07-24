@@ -3,6 +3,7 @@ Order Agent - FastAPI 메인 앱
 """
 import asyncio
 import logging
+import os
 import time
 from pathlib import Path
 from fastapi import FastAPI, Request
