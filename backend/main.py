@@ -800,19 +800,40 @@ async def startup():
         scheduler = _scheduler_state.get("scheduler")
         if scheduler:
             from apscheduler.triggers.cron import CronTrigger
+
             # 매시간 정각 — 이카운트 자동 수집
-            scheduler.add_job(
-                _sales_sync_wrapper(_sales_svc.auto_fetch_from_ecount),
-                CronTrigger(minute=0, timezone="Asia/Seoul"),
-                id="sales_auto_fetch", replace_existing=True
-            )
-            # 매시간 5분 — 에이전트 3종 실행
+            #
+            # 2026-07-31: 기본 비활성화.
+            #   auto_fetch_from_ecount() 는 존재하지 않는 엔드포인트
+            #   POST /OAPI/V2/Sale/GetSaleList 를 호출해 100% 실패하고,
+            #   그 폴백으로 OpenAPI SESSION_ID 를 웹 쿠키로 주입해
+            #   logincd.ecount.com 판매현황 화면(prgId=E040207)을 Playwright 로
+            #   자동 조작한다. OpenAPI 세션은 웹 세션과 별개라 이 역시 항상 실패한다.
+            #   → 하루 24회 무의미한 실패 호출이 이카운트에 계속 쌓여 중단.
+            #      (sales_fetch_log 기준 1,079회 중 성공 1회)
+            #   재개하려면 정상 엔드포인트 Sale/GetListSaleBySearch 로 교체한 뒤
+            #   환경변수 SALES_AUTO_FETCH_ENABLED=true 로 켤 것.
+            #      정상 구현 참고: services/erp_client.py get_sales_list()
+            if os.getenv("SALES_AUTO_FETCH_ENABLED", "false").lower() == "true":
+                scheduler.add_job(
+                    _sales_sync_wrapper(_sales_svc.auto_fetch_from_ecount),
+                    CronTrigger(minute=0, timezone="Asia/Seoul"),
+                    id="sales_auto_fetch", replace_existing=True
+                )
+                logger.info("판매현황 이카운트 자동수집 활성화 (매시간 정각)")
+            else:
+                logger.info(
+                    "판매현황 이카운트 자동수집 비활성화 "
+                    "(SALES_AUTO_FETCH_ENABLED 미설정 — 이카운트 반복 실패 호출 방지)"
+                )
+
+            # 매시간 5분 — 에이전트 3종 실행 (로컬 DB 분석만, 외부 호출 없음)
             scheduler.add_job(
                 _sales_sync_wrapper(_sales_svc.run_all_agents),
                 CronTrigger(minute=5, timezone="Asia/Seoul"),
                 id="sales_agents", replace_existing=True
             )
-            logger.info("판매현황 스케줄러 등록 완료 (매시간 자동수집 + 에이전트)")
+            logger.info("판매현황 에이전트 스케줄러 등록 완료")
     except Exception as e:
         logger.warning(f"판매현황 스케줄러 시작 실패: {e}")
 
