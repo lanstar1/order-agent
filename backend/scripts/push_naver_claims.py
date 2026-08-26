@@ -118,25 +118,30 @@ def fetch_claims(token: str, days: int) -> list:
     chunk_start = now - timedelta(days=days)
     url = f"{COMMERCE_URL}/external/v1/pay-order/seller/product-orders/last-changed-statuses"
 
+    # 교환(EXCHANGE)은 CLAIM_REQUESTED에 안 잡히고 COLLECT_DONE에서만 잡히는 케이스가 있어
+    # 두 변경유형을 모두 조회한다. (반품 요청 + 수거완료 → 반품/교환 모두 커버)
+    last_changed_types = ("CLAIM_REQUESTED", "COLLECT_DONE")
     product_order_ids = []
-    while chunk_start < now:
-        chunk_end = min(chunk_start + timedelta(hours=23, minutes=59, seconds=59), now)
-        params = {
-            "lastChangedFrom": chunk_start.strftime("%Y-%m-%dT%H:%M:%S.000+09:00"),
-            "lastChangedTo": chunk_end.strftime("%Y-%m-%dT%H:%M:%S.000+09:00"),
-            "lastChangedType": "CLAIM_REQUESTED",
-        }
-        for _ in range(5):  # 구간당 300건 초과 시 more 페이징
-            r = _request_throttled("GET", url, headers=headers, params=params, timeout=30)
-            r.raise_for_status()
-            data = r.json().get("data", {}) or {}
-            items = data.get("lastChangeStatuses", []) or []
-            product_order_ids.extend(i["productOrderId"] for i in items if i.get("productOrderId"))
-            more = data.get("more") or {}
-            if not more.get("moreSequence"):
-                break
-            params = {**params, "lastChangedFrom": more.get("moreFrom"), "moreSequence": more["moreSequence"]}
-        chunk_start = chunk_end + timedelta(seconds=1)
+    for lct in last_changed_types:
+        chunk_start = now - timedelta(days=days)
+        while chunk_start < now:
+            chunk_end = min(chunk_start + timedelta(hours=23, minutes=59, seconds=59), now)
+            params = {
+                "lastChangedFrom": chunk_start.strftime("%Y-%m-%dT%H:%M:%S.000+09:00"),
+                "lastChangedTo": chunk_end.strftime("%Y-%m-%dT%H:%M:%S.000+09:00"),
+                "lastChangedType": lct,
+            }
+            for _ in range(5):  # 구간당 300건 초과 시 more 페이징
+                r = _request_throttled("GET", url, headers=headers, params=params, timeout=30)
+                r.raise_for_status()
+                data = r.json().get("data", {}) or {}
+                items = data.get("lastChangeStatuses", []) or []
+                product_order_ids.extend(i["productOrderId"] for i in items if i.get("productOrderId"))
+                more = data.get("more") or {}
+                if not more.get("moreSequence"):
+                    break
+                params = {**params, "lastChangedFrom": more.get("moreFrom"), "moreSequence": more["moreSequence"]}
+            chunk_start = chunk_end + timedelta(seconds=1)
 
     product_order_ids = list(dict.fromkeys(product_order_ids))
     if not product_order_ids:

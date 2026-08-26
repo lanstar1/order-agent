@@ -297,24 +297,27 @@ class NaverCommerceClient:
             return r
 
         try:
+            # 교환은 CLAIM_REQUESTED에 안 잡히고 COLLECT_DONE에서만 잡히는 케이스가 있어 둘 다 조회
+            last_changed_types = ("CLAIM_REQUESTED", "COLLECT_DONE")
             product_order_ids = []
-            for c_from, c_to in time_chunks:
-                params = {
-                    "lastChangedFrom": c_from.strftime("%Y-%m-%dT%H:%M:%S.000+09:00"),
-                    "lastChangedTo": c_to.strftime("%Y-%m-%dT%H:%M:%S.000+09:00"),
-                    "lastChangedType": "CLAIM_REQUESTED",
-                }
-                # 구간당 300건 초과 시 more 페이징
-                for _ in range(5):
-                    r = await request_throttled("GET", url, params=params)
-                    r.raise_for_status()
-                    data = r.json().get("data", {}) or {}
-                    items = data.get("lastChangeStatuses", []) or []
-                    product_order_ids.extend(i["productOrderId"] for i in items if i.get("productOrderId"))
-                    more = data.get("more") or {}
-                    if not more.get("moreSequence"):
-                        break
-                    params = {**params, "lastChangedFrom": more.get("moreFrom"), "moreSequence": more["moreSequence"]}
+            for lct in last_changed_types:
+                for c_from, c_to in time_chunks:
+                    params = {
+                        "lastChangedFrom": c_from.strftime("%Y-%m-%dT%H:%M:%S.000+09:00"),
+                        "lastChangedTo": c_to.strftime("%Y-%m-%dT%H:%M:%S.000+09:00"),
+                        "lastChangedType": lct,
+                    }
+                    # 구간당 300건 초과 시 more 페이징
+                    for _ in range(5):
+                        r = await request_throttled("GET", url, params=params)
+                        r.raise_for_status()
+                        data = r.json().get("data", {}) or {}
+                        items = data.get("lastChangeStatuses", []) or []
+                        product_order_ids.extend(i["productOrderId"] for i in items if i.get("productOrderId"))
+                        more = data.get("more") or {}
+                        if not more.get("moreSequence"):
+                            break
+                        params = {**params, "lastChangedFrom": more.get("moreFrom"), "moreSequence": more["moreSequence"]}
 
             product_order_ids = list(dict.fromkeys(product_order_ids))
             if not product_order_ids:
