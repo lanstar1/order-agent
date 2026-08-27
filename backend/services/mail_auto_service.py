@@ -539,6 +539,14 @@ def _load_workbook_grid(file_data: bytes, max_rows: int = 500) -> dict:
     return grids
 
 
+def list_sheet_names(file_data: bytes) -> str:
+    """진단용 — 통합문서의 시트명을 사람이 읽을 문자열로."""
+    try:
+        return ", ".join(_load_workbook_grid(file_data, max_rows=1).keys()) or "(시트 없음)"
+    except Exception as e:
+        return f"(열기 실패: {e})"
+
+
 def detect_excel_format(file_data: bytes, filename: str = "") -> str:
     """
     업로드된 Excel 이 어느 양식인지 판별. 'pusimai' | 'bor' | 'unknown'

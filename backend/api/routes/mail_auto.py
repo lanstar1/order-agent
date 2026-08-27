@@ -29,6 +29,7 @@ from services.mail_auto_service import (
     get_auto_state, start_mail_auto_scheduler, stop_mail_auto_scheduler,
     MAIL_AUTO_PASSWORD, ERP_SUPPLIER_CODE,
     detect_excel_format, process_excel_pusimai, ERP_SUPPLIER_CODE_PUSIMAI,
+    list_sheet_names,
 )
 
 router = APIRouter(prefix="/api/mail-auto", tags=["mail-auto"])
@@ -48,11 +49,23 @@ EXCEL_FORMATS = {
 
 
 def _parse_upload(data: bytes, filename: str):
-    """업로드 Excel → (양식키, 파싱결과). 감지 실패 시 기존 BOR 파서로 폴백."""
+    """업로드 Excel → (양식키, 파싱결과)."""
     fmt = detect_excel_format(data, filename)
     if fmt == "pusimai":
         return fmt, process_excel_pusimai(data, filename)
-    return ("bor" if fmt == "bor" else "unknown"), process_excel_hs_code(data, filename)
+    if fmt == "unknown":
+        # invoice 시트조차 없는 파일 — BOR 파서에 넘겨봐야 무의미한 에러만 나온다.
+        # 어느 양식도 아닌 이유를 사용자가 바로 알 수 있게 시트 목록을 돌려준다.
+        return fmt, {
+            "success": False,
+            "error": (
+                f"지원하지 않는 Excel 양식입니다.  "
+                f"이 파일의 시트: [{list_sheet_names(data)}]  ·  "
+                "필요한 양식 → BOR: 'Invoice' 시트 + I열 'HS CODE' 헤더 / "
+                "PU SI MAI: 'INVOICE' 시트 + 'Description of Goods' 헤더"
+            ),
+        }
+    return "bor", process_excel_hs_code(data, filename)
 
 
 
