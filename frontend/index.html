@@ -2361,8 +2361,13 @@ C규격품 200개
         <!-- Excel 테스트: HS코드 + ERP -->
         <div class="card" style="padding:20px;margin-bottom:20px">
           <h3 style="margin:0 0 12px">🧪 선적시트 테스트 (Excel 업로드)</h3>
+          <div style="font-size:12px;color:#64748b;margin-bottom:10px">
+            ℹ️ 양식은 자동 감지됩니다 —
+            <b>BOR</b>(.xlsx, HS코드 자동입력) ·
+            <b>PU SI MAI</b>(.xls, HS코드 기입본 → 구매전표만)
+          </div>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-            <input type="file" id="mail-test-file" accept=".xlsx" style="flex:1">
+            <input type="file" id="mail-test-file" accept=".xlsx,.xls" style="flex:1">
             <button id="mail-test-btn" onclick="mailTestUpload()" class="btn">🔍 HS코드 테스트</button>
             <button id="mail-erp-btn" onclick="mailTestERP()" class="btn" style="background:#7c3aed;color:#fff">📋 ERP 전표 미리보기</button>
           </div>
@@ -5678,7 +5683,7 @@ textarea.asst-input { flex:1 1 auto; min-height:44px; max-height:160px; resize:n
 <script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
 
 <script src="/static/js/api.js?v=20260723f"></script>
-<script src="/static/js/app.js?v=20260724b"></script>
+<script src="/static/js/app.js?v=20260827a"></script>
 <script src="/static/js/super_agent.js?v=20260323a"></script>
 <script src="/static/js/sourcing.js?v=20260420n"></script>
 </body>

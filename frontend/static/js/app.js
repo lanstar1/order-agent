@@ -10033,6 +10033,7 @@ function reconcileNewMatch() {
     try {
       const r = await fetch('/api/mail-auto/process-file', {method:'POST', body: fd});
       const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || d.error || `HTTP ${r.status}`);
       const div = document.getElementById('mail-test-result');
       const unknowns = d.items.filter(i => i.confidence === 'unknown');
       const unmatchedCnt = d.stats.unmatched || 0;
@@ -10136,7 +10137,10 @@ function reconcileNewMatch() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <div>
             <h4 style="margin:0;color:#7c3aed">📋 ERP 구매전표 미리보기</h4>
-            <p style="font-size:12px;color:#666;margin:4px 0 0">거래처: ${d.cust_code} | 전표일자: ${d.io_date} | 환율: ${d.exchange_rate?.toLocaleString()}원</p>
+            <p style="font-size:12px;color:#666;margin:4px 0 0">
+              양식: <span style="padding:1px 7px;border-radius:9px;background:#ede9fe;color:#6d28d9;font-weight:600">${d.format_label||'BOR (기존)'}</span>
+              | 거래처: <b>${d.cust_code}</b> | 전표일자: ${d.io_date} | 환율: ${d.exchange_rate?.toLocaleString()}원
+            </p>
           </div>
           <button onclick="mailSubmitERP()" class="btn" style="background:#7c3aed;color:#fff;padding:8px 16px" id="mail-erp-submit-btn">
             ⚡ ERP 전표 전송
@@ -10146,7 +10150,7 @@ function reconcileNewMatch() {
           <thead><tr><th>모델명</th><th>품목코드</th><th style="text-align:right">수량</th><th style="text-align:right">USD단가</th><th style="text-align:center">세율</th><th style="text-align:right">KRW단가</th><th style="text-align:right">공급가</th></tr></thead>
           <tbody>`;
       d.erp_lines.forEach(l => {
-        const taxLabel = l.tax_rate === 1.22 ? '<span style="color:#dc2626">×1.22</span>' : '<span style="color:#2563eb">×1.18</span>';
+        const taxLabel = `<span style="color:${l.tax_rate >= 1.22 ? '#dc2626' : '#2563eb'}">×${l.tax_rate}</span>`;
         const prodLabel = l.prod_cd
           ? l.prod_cd
           : (l.unmatched_model
@@ -10188,8 +10192,8 @@ function reconcileNewMatch() {
 
   window.mailSubmitERP = async function() {
     if (!window._erpPreviewData) return alert('먼저 미리보기를 실행하세요');
-    if (!confirm('ERP에 구매전표를 전송합니다.\n계속하시겠습니까?')) return;
     const d = window._erpPreviewData;
+    if (!confirm(`ERP에 구매전표를 전송합니다.\n\n양식: ${d.format_label||'BOR (기존)'}\n거래처: ${d.cust_code}\n건수: ${d.total_lines}건\n\n계속하시겠습니까?`)) return;
     const btn = document.getElementById('mail-erp-submit-btn');
     btn.disabled = true; btn.textContent = '전송 중...';
     try {
@@ -10199,6 +10203,7 @@ function reconcileNewMatch() {
           erp_lines: d.erp_lines,
           exchange_rate: d.exchange_rate,
           io_date: d.io_date,
+          cust_code: d.cust_code,
         })
       });
       const result = await r.json();

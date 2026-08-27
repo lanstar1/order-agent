@@ -28,6 +28,7 @@ from services.mail_auto_service import (
     fetch_exchange_rate, run_mail_automation_pipeline,
     get_auto_state, start_mail_auto_scheduler, stop_mail_auto_scheduler,
     MAIL_AUTO_PASSWORD, ERP_SUPPLIER_CODE,
+    detect_excel_format, process_excel_pusimai, ERP_SUPPLIER_CODE_PUSIMAI,
 )
 
 router = APIRouter(prefix="/api/mail-auto", tags=["mail-auto"])
@@ -36,6 +37,23 @@ KST = timezone(timedelta(hours=9))
 
 # 메모리 캐시 (세션 비밀번호 검증 대용 - 간단 구현)
 _exchange_rate_cache = {"rate": None, "updated": None}
+
+# 지원 양식 — 업로드 파일에서 자동 감지한다
+EXCEL_FORMATS = {
+    "bor":     {"label": "BOR (기존)",      "cust_code": ERP_SUPPLIER_CODE,
+                "hs_code": True},
+    "pusimai": {"label": "PU SI MAI (신규)", "cust_code": ERP_SUPPLIER_CODE_PUSIMAI,
+                "hs_code": False},
+}
+
+
+def _parse_upload(data: bytes, filename: str):
+    """업로드 Excel → (양식키, 파싱결과). 감지 실패 시 기존 BOR 파서로 폴백."""
+    fmt = detect_excel_format(data, filename)
+    if fmt == "pusimai":
+        return fmt, process_excel_pusimai(data, filename)
+    return ("bor" if fmt == "bor" else "unknown"), process_excel_hs_code(data, filename)
+
 
 
 def _ensure_tables():
@@ -370,15 +388,22 @@ async def trigger_pipeline(request: Request):
 @router.post("/process-file")
 async def process_uploaded_file(file: UploadFile = File(...)):
     """업로드된 Excel 파일에 HS코드 적용 (테스트용)"""
-    if not file.filename.lower().endswith(".xlsx"):
-        raise HTTPException(400, "xlsx 파일만 지원합니다")
-    
+    if not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(400, "xlsx / xls 파일만 지원합니다")
+
     data = await file.read()
-    result = process_excel_hs_code(data, file.filename)
-    
+    fmt, result = _parse_upload(data, file.filename)
+
     if not result["success"]:
         raise HTTPException(400, result.get("error", "처리 실패"))
-    
+
+    if not EXCEL_FORMATS.get(fmt, {}).get("hs_code", True):
+        raise HTTPException(
+            400,
+            f"{EXCEL_FORMATS[fmt]['label']} 양식은 HS코드가 이미 기입되어 있습니다. "
+            "「📋 ERP 전표 미리보기」를 사용하세요.",
+        )
+
     # 처리된 Excel 반환
     return {
         "filename": result["filename"],
@@ -386,6 +411,8 @@ async def process_uploaded_file(file: UploadFile = File(...)):
         "items": result["items"][:50],  # 최대 50개
         "erp_lines": result["erp_lines"][:50],
         "oem_items": result["oem_items"],
+        "format": fmt,
+        "format_label": EXCEL_FORMATS.get(fmt, EXCEL_FORMATS["bor"])["label"],
     }
 
 
@@ -393,10 +420,17 @@ async def process_uploaded_file(file: UploadFile = File(...)):
 async def process_and_download(file: UploadFile = File(...)):
     """업로드 Excel → HS코드 입력 → 다운로드"""
     data = await file.read()
-    result = process_excel_hs_code(data, file.filename)
+    fmt, result = _parse_upload(data, file.filename)
 
     if not result["success"]:
         raise HTTPException(400, result.get("error"))
+
+    if not result.get("output_data"):
+        raise HTTPException(
+            400,
+            f"{EXCEL_FORMATS.get(fmt, {}).get('label', fmt)} 양식은 "
+            "HS코드 입력 대상이 아니라 내려받을 수정본이 없습니다.",
+        )
 
     return StreamingResponse(
         io.BytesIO(result["output_data"]),
@@ -458,7 +492,8 @@ async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float =
     """업로드 Excel → ERP 구매전표 미리보기 (실제 전송 안함)"""
     try:
         data = await file.read()
-        result = process_excel_hs_code(data, file.filename)
+        fmt, result = _parse_upload(data, file.filename)
+        meta = EXCEL_FORMATS.get(fmt, EXCEL_FORMATS["bor"])
 
         if not result.get("success"):
             raise HTTPException(400, result.get("error", "Excel 처리 실패"))
@@ -532,7 +567,9 @@ async def test_erp_purchase(file: UploadFile = File(...), exchange_rate: float =
             "total_amount": sum(l["supply_amt"] for l in erp_preview),
             "exchange_rate": rate,
             "io_date": io_date,
-            "cust_code": ERP_SUPPLIER_CODE,
+            "cust_code": meta["cust_code"],
+            "format": fmt,
+            "format_label": meta["label"],
         }
     except HTTPException:
         raise
@@ -549,6 +586,7 @@ async def submit_erp_purchase(request: Request):
     body = await request.json()
     erp_lines = body.get("erp_lines", [])
     io_date_str = body.get("io_date", "")
+    cust_code = str(body.get("cust_code") or "").strip() or ERP_SUPPLIER_CODE
     
     if not erp_lines:
         raise HTTPException(400, "전표 항목이 없습니다")
@@ -577,10 +615,11 @@ async def submit_erp_purchase(request: Request):
     
     try:
         result = await erp_client.save_purchase(
-            cust_code=ERP_SUPPLIER_CODE,
+            cust_code=cust_code,
             lines=lines,
             io_date=io_date,
         )
+        result["cust_code"] = cust_code
         if skipped:
             result["skipped_models"] = skipped
             result["skipped_count"] = len(skipped)

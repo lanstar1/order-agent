@@ -481,6 +481,273 @@ def process_excel_hs_code(file_data: bytes, filename: str) -> dict:
     }
 
 
+# ─── 신규 양식: PU SI MAI COMMERCIAL INVOICE ──────────────
+#
+# SHEN ZHEN PU SI MAI TECHNOLOGY CO.,LTD 가 보내는 선적 인보이스.
+# BOR 양식과 두 가지가 다르다.
+#   1) 레거시 .xls(OLE2) 라 openpyxl 로 못 연다 → xlrd 사용
+#   2) HS코드가 이미 채워져 있어 기입/회신이 필요 없다 → 구매전표만 생성
+#
+#   시트     INVOICE
+#   헤더행   'Description of Goods' 가 있는 행 (샘플 16행)
+#   D열      "제품설명\n모델명"
+#   G열      Quantity
+#   H열      Unite Price (USD, 원본 오타 그대로)
+#   I열      Amount
+#   J열      HS코드 (헤더 없이 값만 들어있음)
+#   종료     A열이 TOTAL 로 시작하는 행
+
+PUSIMAI_TAX_RATE = float(os.getenv("PUSIMAI_TAX_RATE", "1.23"))
+ERP_SUPPLIER_CODE_PUSIMAI = os.getenv("ERP_SUPPLIER_CODE_PUSIMAI", "20130102")
+
+_OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_PUSIMAI_HEADER_MARK = "description of goods"
+
+# 모델명처럼 생긴 토큰: 대문자로 시작하고 하이픈/슬래시 그룹이 최소 1개
+#   LS-LAN1002 · LS-91P · LS-CON-RG6-5C2C ✓   /   SPLITTER · BNC adapter ✗
+_MODEL_TOKEN_RE = re.compile(r'^[A-Z][A-Z0-9]*(?:[-/][A-Z0-9.]+)+$')
+
+
+def _load_workbook_grid(file_data: bytes, max_rows: int = 500) -> dict:
+    """
+    .xls(OLE2) / .xlsx(ZIP) 를 모두 {시트명: [[셀,...], ...]} 그리드로 정규화.
+    양식 감지와 파싱이 같은 표현을 쓰도록 한 겹 씌운 것.
+    """
+    grids = {}
+    if file_data[:8] == _OLE2_MAGIC:
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=file_data)
+        for name in wb.sheet_names():
+            ws = wb.sheet_by_name(name)
+            grids[name] = [
+                [ws.cell_value(r, c) for c in range(ws.ncols)]
+                for r in range(min(ws.nrows, max_rows))
+            ]
+    else:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
+        try:
+            for name in wb.sheetnames:
+                rows = []
+                for i, row in enumerate(wb[name].iter_rows(values_only=True)):
+                    if i >= max_rows:
+                        break
+                    rows.append(list(row))
+                grids[name] = rows
+        finally:
+            wb.close()
+    return grids
+
+
+def detect_excel_format(file_data: bytes, filename: str = "") -> str:
+    """
+    업로드된 Excel 이 어느 양식인지 판별. 'pusimai' | 'bor' | 'unknown'
+
+    두 양식 모두 시트명이 대소문자만 다른 invoice 라 헤더 내용으로 가른다.
+    기존 BOR 이 새 양식으로 오탐되면 HS코드 입력이 통째로 빠지므로
+    BOR 고유 신호(I열 'HS CODE' 헤더 · BOR-/PAR- 주문번호 행)를 먼저 보고,
+    판별이 안 되면 BOR 으로 폴백해 기존 동작을 유지한다.
+    """
+    try:
+        grids = _load_workbook_grid(file_data, max_rows=40)
+    except Exception as e:
+        logger.warning(f"[양식감지] 통합문서 열기 실패 ({filename}): {e}")
+        return "unknown"
+
+    invoice_rows = None
+    for name, rows in grids.items():
+        if name.strip().upper() == "INVOICE":
+            invoice_rows = rows
+            break
+    if invoice_rows is None:
+        logger.warning(f"[양식감지] INVOICE 시트 없음 ({filename}) — 시트: {list(grids)}")
+        return "unknown"
+
+    # BOR 고유 신호를 먼저 본다 — 기존 양식이 오탐되면 안 되므로.
+    # BOR 은 I열 'HS CODE' 헤더와 BOR-/PAR- 주문번호 행을 갖는다.
+    for row in invoice_rows:
+        if len(row) > 8 and str(row[8] or "").strip().upper() == "HS CODE":
+            logger.info(f"[양식감지] BOR 양식으로 판별 (HS CODE 헤더): {filename}")
+            return "bor"
+        if row and re.match(r'^(BOR|PAR)-\d', str(row[0] or "").strip(), re.IGNORECASE):
+            logger.info(f"[양식감지] BOR 양식으로 판별 (주문번호 행): {filename}")
+            return "bor"
+
+    for row in invoice_rows:
+        joined = " ".join(str(v).lower() for v in row if v not in (None, ""))
+        if _PUSIMAI_HEADER_MARK in joined:
+            logger.info(f"[양식감지] PU SI MAI 양식으로 판별: {filename}")
+            return "pusimai"
+
+    # INVOICE 시트는 있는데 어느 쪽 신호도 없으면 기존 BOR 파서에 맡긴다
+    logger.info(f"[양식감지] 신호 없음 → BOR 으로 폴백: {filename}")
+    return "bor"
+
+
+def _split_pusimai_desc(text: str):
+    """
+    "1000Mbps 1*2 Splitter\\nLS-LAN1002" → ("LS-LAN1002", "1000Mbps 1*2 Splitter")
+
+    줄 단위로 뒤에서부터 모델명을 찾는다. hs_engine 의 LS/LSP/LSN/ZOT 규칙을
+    먼저 태우고, 거기서 안 걸리면 모델 토큰 정규식으로 한 번 더 본다.
+    """
+    lines = [l.strip() for l in re.split(r'[\r\n]+', str(text)) if l.strip()]
+    if not lines:
+        return "", ""
+
+    def _pick(i):
+        rest = " ".join(lines[:i] + lines[i + 1:]).strip()
+        return lines[i], (rest or lines[i])
+
+    for i in range(len(lines) - 1, -1, -1):
+        if hs_engine.extract_model_name(lines[i]):
+            return _pick(i)
+    for i in range(len(lines) - 1, -1, -1):
+        if _MODEL_TOKEN_RE.match(lines[i].upper()):
+            return _pick(i)
+
+    # 모델명을 못 고르면 마지막 줄을 쓰되 호출부가 '미인식'으로 처리하게 둔다
+    return lines[-1], " ".join(lines[:-1]) or lines[-1]
+
+
+def process_excel_pusimai(file_data: bytes, filename: str = "") -> dict:
+    """
+    PU SI MAI COMMERCIAL INVOICE → ERP 구매전표 라인 추출.
+
+    HS코드는 이미 채워져 있으므로 원본을 수정하지 않는다(output_data=None).
+    반환 형태는 process_excel_hs_code 와 동일하게 맞춰 라우터가 그대로 쓴다.
+    """
+    try:
+        grids = _load_workbook_grid(file_data)
+    except Exception as e:
+        return {"success": False, "error": f"Excel 열기 실패: {e}"}
+
+    sheet = None
+    for name, rows in grids.items():
+        if name.strip().upper() == "INVOICE":
+            sheet = rows
+            break
+    if sheet is None:
+        return {"success": False, "error": "INVOICE 시트가 없습니다"}
+
+    # 헤더행을 찾아 컬럼 위치를 확정 — 양식이 몇 행 밀려도 따라간다
+    col = {}
+    header_idx = -1
+    for idx, row in enumerate(sheet):
+        cells = {c: str(v).strip().lower()
+                 for c, v in enumerate(row) if v not in (None, "")}
+        if not any(_PUSIMAI_HEADER_MARK in t for t in cells.values()):
+            continue
+        header_idx = idx
+        for c, t in cells.items():
+            if _PUSIMAI_HEADER_MARK in t:
+                col["desc"] = c
+            elif t.startswith("quantity") or t in ("qty", "q'ty"):
+                col["qty"] = c
+            elif "price" in t:            # 'Unite Price' 오타 포함
+                col["price"] = c
+            elif t.startswith("amount"):
+                col["amount"] = c
+            elif t.replace(" ", "").startswith("hs"):
+                col["hs"] = c
+        break
+
+    if header_idx < 0:
+        return {"success": False,
+                "error": "'Description of Goods' 헤더를 찾지 못했습니다"}
+    missing = [k for k in ("desc", "qty", "price") if k not in col]
+    if missing:
+        return {"success": False, "error": f"헤더 컬럼 인식 실패: {missing}"}
+    # HS코드 열은 헤더가 비어있는 양식이라 Amount 다음 칸으로 추정
+    if "hs" not in col and "amount" in col:
+        col["hs"] = col["amount"] + 1
+
+    def _num(val):
+        if val is None or val == "":
+            return 0.0
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            try:
+                return float(str(val).replace(",", "").strip())
+            except (ValueError, TypeError):
+                return 0.0
+
+    items, erp_lines, oem_items = [], [], []
+    stats = {"total": 0, "hs_filled": 0, "skipped": 0, "unknown": 0, "unmatched": 0}
+    blank_streak = 0
+
+    for idx in range(header_idx + 1, len(sheet)):
+        row = sheet[idx]
+
+        def cell(key):
+            c = col.get(key, -1)
+            return row[c] if 0 <= c < len(row) else None
+
+        first = str(row[0]).strip() if row and row[0] not in (None, "") else ""
+        if first.upper().startswith("TOTAL"):
+            break
+
+        desc_raw = cell("desc")
+        if desc_raw in (None, ""):
+            blank_streak += 1
+            if blank_streak >= 10:      # 합계행 없이 끝나는 파일 방어
+                break
+            continue
+        blank_streak = 0
+
+        qty = _num(cell("qty"))
+        price = _num(cell("price"))
+        if qty <= 0 or price <= 0:      # 소계·주석 행
+            continue
+
+        model, description = _split_pusimai_desc(desc_raw)
+        if not model:
+            continue
+
+        recognized = bool(hs_engine.extract_model_name(model)) or \
+            bool(_MODEL_TOKEN_RE.match(model.upper()))
+        hs_code = str(cell("hs") or "").strip()
+
+        stats["total"] += 1
+        if hs_code:
+            stats["hs_filled"] += 1
+        if not recognized:
+            stats["unmatched"] += 1
+
+        items.append({
+            "row": idx + 1,
+            "model": model,
+            "category": "",
+            "hs_code": hs_code,
+            "rule": "pusimai",
+            "confidence": "prefilled" if hs_code else ("unmatched" if not recognized else "ok"),
+        })
+        erp_lines.append({
+            "prod_cd": model,
+            "qty": qty,
+            "price_usd": price,
+            "tax_rate": PUSIMAI_TAX_RATE,
+            "description": description[:100],
+            "unmatched_model": not recognized,
+        })
+
+    logger.info(
+        f"[PUSIMAI] {filename} 파싱 완료 — 헤더 {header_idx + 1}행, "
+        f"라인 {len(erp_lines)}건, 미인식 {stats['unmatched']}건"
+    )
+
+    return {
+        "success": True,
+        "output_data": None,     # 원본 수정 없음
+        "filename": filename,
+        "items": items,
+        "erp_lines": erp_lines,
+        "oem_items": oem_items,
+        "stats": stats,
+    }
+
+
 # ─── ERP 구매전표 생성 ────────────────────────────────────
 
 async def create_purchase_slip(
