@@ -28,6 +28,7 @@ from api.routes.shipping import router as shipping_router
 from api.routes.cs import router as cs_router
 
 from api.routes.sales_analytics import router as sales_analytics_router
+from api.routes.data_feed import router as data_feed_router
 from api.routes.purchases import router as purchases_router
 from api.routes.aicc import router as aicc_router
 from api.routes.inventory_alert import router as inventory_alert_router
@@ -317,6 +318,7 @@ app.include_router(shipping_router)
 app.include_router(cs_router)
 
 app.include_router(sales_analytics_router)
+app.include_router(data_feed_router)
 app.include_router(purchases_router)
 app.include_router(aicc_router, prefix="/api/aicc", tags=["AICC"])
 app.include_router(inventory_alert_router)

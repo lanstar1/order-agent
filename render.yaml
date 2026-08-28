@@ -25,6 +25,8 @@ services:
         sync: false
       - key: ERP_API_KEY
         sync: false
+      - key: DATA_FEED_KEY
+        sync: false
       - key: ERP_WH_CD
         sync: false
       - key: ERP_WEB_USER_ID

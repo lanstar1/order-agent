@@ -49,6 +49,9 @@ ERP_EMP_CD    = os.getenv("ERP_EMP_CD",   "")    # 담당자 코드 (ERP에서 �
 ERP_WEB_USER_ID = os.getenv("ERP_WEB_USER_ID", "")   # 웹 로그인 ID
 ERP_WEB_USER_PW = os.getenv("ERP_WEB_USER_PW", "")   # 웹 로그인 PW
 
+# 데이터 피드 (NAS 수집기 → 판매/구매현황 업로드) 인증 키
+DATA_FEED_KEY = os.getenv("DATA_FEED_KEY", "")
+
 # ─────────────────────────────────────────
 #  데이터베이스
 # ─────────────────────────────────────────

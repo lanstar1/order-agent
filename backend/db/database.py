@@ -93,6 +93,7 @@ def _sql_to_pg(sql):
                 'super_agent_uploads', 'super_agent_events',
                 'erp_cache',
                 'po_mail_senders', 'po_mail_imports',
+                'purchase_records',
             }
             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
                 logger.warning(f"[DB] PRAGMA table_info 거부: 잘못된 테이블명 '{table}'")
@@ -955,6 +956,26 @@ def init_db():
     )""")
 
     # ── 인덱스 추가 (성능 최적화) ──
+    # ── 구매현황 테이블 (datafeed 적재용) ──
+    cur_or_conn.execute("""
+    CREATE TABLE IF NOT EXISTS purchase_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slip_date TEXT NOT NULL,
+        slip_no TEXT,
+        item_code TEXT,
+        item_name TEXT,
+        spec TEXT,
+        quantity REAL DEFAULT 0,
+        unit_price REAL DEFAULT 0,
+        partner_price REAL DEFAULT 0,
+        cost_price REAL DEFAULT 0,
+        supply_amount REAL DEFAULT 0,
+        vat REAL DEFAULT 0,
+        total_amount REAL DEFAULT 0,
+        supplier_name TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_orders_cust_code ON orders(cust_code);
         CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
@@ -1000,6 +1021,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_po_mail_imports_sender ON po_mail_imports(sender_email);
         CREATE INDEX IF NOT EXISTS idx_po_mail_imports_uid ON po_mail_imports(message_uid);
         CREATE INDEX IF NOT EXISTS idx_po_mail_imports_po ON po_mail_imports(po_number);
+        CREATE INDEX IF NOT EXISTS idx_pr_date ON purchase_records(slip_date);
+        CREATE INDEX IF NOT EXISTS idx_pr_item ON purchase_records(item_code);
+        CREATE INDEX IF NOT EXISTS idx_pr_supplier ON purchase_records(supplier_name);
     """)
 
     # ── 기본 PO 발신자 시드 (T3 INDUSTRIAL) ──
