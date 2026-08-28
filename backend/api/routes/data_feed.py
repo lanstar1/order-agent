@@ -286,7 +286,8 @@ async def product_latest(request: Request, q: str = Query(..., min_length=1),
 
         # 1) 품목 확정: 판매/구매에서 정확 일치 우선, 없으면 부분 일치
         exact_s = conn.execute(
-            "SELECT item_code FROM sales_records WHERE item_code=? OR model_name=? "
+            "SELECT item_code FROM sales_records "
+            "WHERE (item_code=? OR model_name=?) AND slip_no NOT LIKE 'SEED-%' "
             "ORDER BY slip_date DESC LIMIT 1", (qs, qs)).fetchone()
         exact_p = None
         if not exact_s:
@@ -302,7 +303,8 @@ async def product_latest(request: Request, q: str = Query(..., min_length=1),
                 "SELECT item_code, MAX(item_name) AS item_name, MAX(model_name) AS model_name, "
                 "MAX(slip_date) AS last_date "
                 "FROM sales_records "
-                "WHERE item_code LIKE ? OR model_name LIKE ? OR item_name LIKE ? "
+                "WHERE (item_code LIKE ? OR model_name LIKE ? OR item_name LIKE ?) "
+                "AND slip_no NOT LIKE 'SEED-%' "
                 "GROUP BY item_code ORDER BY last_date DESC LIMIT 6",
                 (like, like, like))
             candidates = _rowdicts(cur, ["item_code", "item_name", "model_name", "last_date"])
@@ -324,7 +326,7 @@ async def product_latest(request: Request, q: str = Query(..., min_length=1),
         cur = conn.execute(
             "SELECT slip_date, slip_no, customer_name, quantity, unit_price, "
             "supply_amount, warehouse, item_name, model_name, cost_price "
-            "FROM sales_records WHERE item_code=? "
+            "FROM sales_records WHERE item_code=? AND slip_no NOT LIKE 'SEED-%' "
             "ORDER BY slip_date DESC, id DESC LIMIT ?", (item_code, limit))
         recent_sales = _rowdicts(cur, ["slip_date", "slip_no", "customer_name", "quantity",
                                        "unit_price", "supply_amount", "warehouse",
